@@ -527,6 +527,8 @@ export type LibraryItem = {
   created: number;
   name?: string;
   error?: string;
+  /** Fork: persisted scope when using CombinedLibraryAdapter (public / personal / canvas). */
+  scope?: "personal" | "public" | "canvas";
 };
 export type LibraryItems = readonly LibraryItem[];
 export type LibraryItems_anyVersion = LibraryItems | LibraryItems_v1;
@@ -919,8 +921,11 @@ export interface ExcalidrawImperativeAPI {
   isDestroyed: boolean;
   updateScene: InstanceType<typeof App>["updateScene"];
   applyDeltas: InstanceType<typeof App>["applyDeltas"];
+  restoreUndoStackFromDeltas: InstanceType<typeof App>["restoreUndoStackFromDeltas"];
   mutateElement: InstanceType<typeof App>["mutateElement"];
   updateLibrary: InstanceType<typeof Library>["updateLibrary"];
+  /** Latest merged library items (same as Library.getLatestLibrary). */
+  getLibraryItems: InstanceType<typeof Library>["getLatestLibrary"];
   resetScene: InstanceType<typeof App>["resetScene"];
   getSceneElementsIncludingDeleted: InstanceType<
     typeof App

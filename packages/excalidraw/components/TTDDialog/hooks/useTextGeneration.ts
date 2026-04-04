@@ -17,6 +17,7 @@ import {
   removeLastAssistantMessage,
   updateAssistantContent,
 } from "../utils/chat";
+import { extractMermaidDefinition } from "../utils/extractMermaidFromLlmResponse";
 
 import type { LLMMessage, TTTDDialog } from "../types";
 
@@ -172,9 +173,12 @@ export const useTextGeneration = ({
         const isAborted =
           error.name === "AbortError" ||
           error.message === "Aborted" ||
+          error.message === "请求已取消" ||
+          error.message?.includes("回复已中断") ||
+          error.status === 499 ||
           abortController.signal.aborted;
 
-        // do nothing if the request was aborted by the user
+        /** 用户停止或离开导致中断：本条不继续走 Mermaid 解析，已流式写入的内容保留在对话里 */
         if (isAborted) {
           return;
         }
@@ -191,8 +195,14 @@ export const useTextGeneration = ({
       }
 
       try {
-        await parseMermaidToExcalidraw(generatedResponse ?? "");
+        const normalized = extractMermaidDefinition(generatedResponse ?? "");
+        await parseMermaidToExcalidraw(normalized);
         trackEvent("ai", "mermaid parse success", "ttd");
+        setChatHistory((prev) =>
+          updateAssistantContent(prev, {
+            content: normalized,
+          }),
+        );
       } catch (error: any) {
         trackEvent("ai", "mermaid parse failed", "ttd");
         const _error = new Error(

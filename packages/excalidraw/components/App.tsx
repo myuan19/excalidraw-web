@@ -358,7 +358,7 @@ import { exportCanvas, loadFromBlob } from "../data";
 import Library, { distributeLibraryItemsOnSquareGrid } from "../data/library";
 import { restoreAppState, restoreElements } from "../data/restore";
 import { getCenter, getDistance } from "../gesture";
-import { History } from "../history";
+import { History, HistoryChangedEvent, HistoryDelta } from "../history";
 import { defaultLang, getLanguage, languages, setLanguage, t } from "../i18n";
 
 import {
@@ -745,8 +745,10 @@ class App extends React.Component<AppProps, AppState> {
       isDestroyed: false,
       updateScene: this.updateScene,
       applyDeltas: this.applyDeltas,
+      restoreUndoStackFromDeltas: this.restoreUndoStackFromDeltas,
       mutateElement: this.mutateElement,
       updateLibrary: this.library.updateLibrary,
+      getLibraryItems: this.library.getLatestLibrary,
       addFiles: this.addFiles,
       resetScene: this.resetScene,
       getSceneElementsIncludingDeleted: this.getSceneElementsIncludingDeleted,
@@ -2115,7 +2117,7 @@ class App extends React.Component<AppProps, AppState> {
           ["--ui-pointerEvents" as any]: shouldBlockPointerEvents
             ? POINTER_EVENTS.disabled
             : POINTER_EVENTS.enabled,
-          ["--right-sidebar-width" as any]: "302px",
+          ["--right-sidebar-width" as any]: "400px",
         }}
         ref={this.excalidrawContainerRef}
         onDrop={this.handleAppOnDrop}
@@ -4597,6 +4599,27 @@ class App extends React.Component<AppProps, AppState> {
       nextElements,
       nextAppState,
       options,
+    );
+  };
+
+  /**
+   * 恢复持久化后的撤销栈（与 {@link History.record} 一致：栈内为 inverse(delta)）。
+   * 由 fork 在 IndexedDB 恢复后调用。
+   */
+  public restoreUndoStackFromDeltas = (deltas: StoreDelta[]) => {
+    this.history.clear();
+    for (const delta of deltas) {
+      if (delta.isEmpty()) {
+        continue;
+      }
+      const historyDelta = HistoryDelta.inverse(delta);
+      this.history.undoStack.push(historyDelta);
+    }
+    this.history.onHistoryChangedEmitter.trigger(
+      new HistoryChangedEvent(
+        this.history.isUndoStackEmpty,
+        this.history.isRedoStackEmpty,
+      ),
     );
   };
 

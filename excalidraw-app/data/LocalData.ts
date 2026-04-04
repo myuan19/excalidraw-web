@@ -5,32 +5,26 @@
  * Notes:
  *
  * - DataState refers to full state of the app: appState, elements, images,
- *   though some state is saved separately (collab username, library) for one
- *   reason or another. We also save different data to different storage
- *   (localStorage, indexedDB).
+ *   though some state is saved separately (library) for one reason or another.
+ *   We also save different data to different storage (localStorage, indexedDB).
+ * - Full scene JSON is not written to legacy upstream localStorage keys; fork
+ *   mode uses {@link FileSyncState} per-file cache and the server as authority.
  */
 
-import { clearAppStateForLocalStorage } from "@excalidraw/excalidraw/appState";
-import {
-  CANVAS_SEARCH_TAB,
-  DEFAULT_SIDEBAR,
-  debounce,
-} from "@excalidraw/common";
+import { debounce } from "@excalidraw/common";
 import {
   createStore,
-  entries,
   del,
+  entries,
   getMany,
   set,
   setMany,
   get,
 } from "idb-keyval";
 
-import { appJotaiStore, atom } from "excalidraw-app/app-jotai";
-import { getNonDeletedElements } from "@excalidraw/element";
+import { atom } from "excalidraw-app/app-jotai";
 
 import type { LibraryPersistedData } from "@excalidraw/excalidraw/data/library";
-import type { ImportedDataState } from "@excalidraw/excalidraw/data/types";
 import type { ExcalidrawElement, FileId } from "@excalidraw/element/types";
 import type {
   AppState,
@@ -44,7 +38,6 @@ import { SAVE_TO_LOCAL_STORAGE_TIMEOUT, STORAGE_KEYS } from "../app_constants";
 import { FileManager } from "./FileManager";
 import { FileStatusStore } from "./fileStatusStore";
 import { Locker } from "./Locker";
-import { updateBrowserStateVersion } from "./tabSync";
 
 const filesStore = createStore("files-db", "files-store");
 
@@ -70,48 +63,6 @@ class LocalFileManager extends FileManager {
   };
 }
 
-const saveDataStateToLocalStorage = (
-  elements: readonly ExcalidrawElement[],
-  appState: AppState,
-) => {
-  const localStorageQuotaExceeded = appJotaiStore.get(
-    localStorageQuotaExceededAtom,
-  );
-  try {
-    const _appState = clearAppStateForLocalStorage(appState);
-
-    if (
-      _appState.openSidebar?.name === DEFAULT_SIDEBAR.name &&
-      _appState.openSidebar.tab === CANVAS_SEARCH_TAB
-    ) {
-      _appState.openSidebar = null;
-    }
-
-    localStorage.setItem(
-      STORAGE_KEYS.LOCAL_STORAGE_ELEMENTS,
-      JSON.stringify(getNonDeletedElements(elements)),
-    );
-    localStorage.setItem(
-      STORAGE_KEYS.LOCAL_STORAGE_APP_STATE,
-      JSON.stringify(_appState),
-    );
-    updateBrowserStateVersion(STORAGE_KEYS.VERSION_DATA_STATE);
-    if (localStorageQuotaExceeded) {
-      appJotaiStore.set(localStorageQuotaExceededAtom, false);
-    }
-  } catch (error: any) {
-    // Unable to access window.localStorage
-    console.error(error);
-    if (isQuotaExceededError(error) && !localStorageQuotaExceeded) {
-      appJotaiStore.set(localStorageQuotaExceededAtom, true);
-    }
-  }
-};
-
-const isQuotaExceededError = (error: any) => {
-  return error instanceof DOMException && error.name === "QuotaExceededError";
-};
-
 type SavingLockTypes = "collaboration";
 
 export class LocalData {
@@ -122,8 +73,6 @@ export class LocalData {
       files: BinaryFiles,
       onFilesSaved: () => void,
     ) => {
-      saveDataStateToLocalStorage(elements, appState);
-
       await this.fileStorage.saveFiles({
         elements,
         files,
@@ -133,7 +82,7 @@ export class LocalData {
     SAVE_TO_LOCAL_STORAGE_TIMEOUT,
   );
 
-  /** Saves DataState, including files. Bails if saving is paused */
+  /** Saves embedded image blobs to IndexedDB. Bails if saving is paused */
   static save = (
     elements: readonly ExcalidrawElement[],
     appState: AppState,
@@ -205,11 +154,6 @@ export class LocalData {
       const savedFiles = new Map<FileId, BinaryFileData>();
       const erroredFiles = new Map<FileId, BinaryFileData>();
 
-      // before we use `storage` event synchronization, let's update the flag
-      // optimistically. Hopefully nothing fails, and an IDB read executed
-      // before an IDB write finishes will read the latest value.
-      updateBrowserStateVersion(STORAGE_KEYS.VERSION_FILES);
-
       await Promise.all(
         [...addedFiles].map(async ([id, fileData]) => {
           try {
@@ -252,26 +196,5 @@ export class LibraryIndexedDBAdapter {
       data,
       LibraryIndexedDBAdapter.store,
     );
-  }
-}
-
-/** LS Adapter used only for migrating LS library data
- * to indexedDB */
-export class LibraryLocalStorageMigrationAdapter {
-  static load() {
-    const LSData = localStorage.getItem(
-      STORAGE_KEYS.__LEGACY_LOCAL_STORAGE_LIBRARY,
-    );
-    if (LSData != null) {
-      const libraryItems: ImportedDataState["libraryItems"] =
-        JSON.parse(LSData);
-      if (libraryItems) {
-        return { libraryItems };
-      }
-    }
-    return null;
-  }
-  static clear() {
-    localStorage.removeItem(STORAGE_KEYS.__LEGACY_LOCAL_STORAGE_LIBRARY);
   }
 }

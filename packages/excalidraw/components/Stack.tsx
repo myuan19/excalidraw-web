@@ -10,11 +10,24 @@ type StackProps = {
   justifyContent?: "center" | "space-around" | "space-between";
   className?: string | boolean;
   style?: React.CSSProperties;
+  onDragOver?: React.DragEventHandler<HTMLDivElement>;
+  onDragOverCapture?: React.DragEventHandler<HTMLDivElement>;
+  onDrop?: React.DragEventHandler<HTMLDivElement>;
 };
 
 const RowStack = forwardRef(
   (
-    { children, gap, align, justifyContent, className, style }: StackProps,
+    {
+      children,
+      gap,
+      align,
+      justifyContent,
+      className,
+      style,
+      onDragOver,
+      onDragOverCapture,
+      onDrop,
+    }: StackProps,
     ref: React.ForwardedRef<HTMLDivElement>,
   ) => {
     return (
@@ -27,6 +40,9 @@ const RowStack = forwardRef(
           ...style,
         }}
         ref={ref}
+        onDragOver={onDragOver}
+        onDragOverCapture={onDragOverCapture}
+        onDrop={onDrop}
       >
         {children}
       </div>
@@ -36,7 +52,17 @@ const RowStack = forwardRef(
 
 const ColStack = forwardRef(
   (
-    { children, gap, align, justifyContent, className, style }: StackProps,
+    {
+      children,
+      gap,
+      align,
+      justifyContent,
+      className,
+      style,
+      onDragOver,
+      onDragOverCapture,
+      onDrop,
+    }: StackProps,
     ref: React.ForwardedRef<HTMLDivElement>,
   ) => {
     return (
@@ -49,6 +75,9 @@ const ColStack = forwardRef(
           ...style,
         }}
         ref={ref}
+        onDragOver={onDragOver}
+        onDragOverCapture={onDragOverCapture}
+        onDrop={onDrop}
       >
         {children}
       </div>

@@ -1,0 +1,88 @@
+.ai-settings-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.ai-settings-dialog {
+  background: #fff;
+  border-radius: 12px;
+  padding: 1.5rem 2rem;
+  width: 420px;
+  max-width: 90vw;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+
+  h2 {
+    margin: 0 0 0.25rem;
+    font-size: 1.2rem;
+  }
+
+  .ai-settings-desc {
+    color: #666;
+    font-size: 0.85rem;
+    margin: 0 0 1rem;
+  }
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #333;
+
+    input {
+      padding: 0.5rem 0.65rem;
+      border: 1px solid #d0d0d0;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      outline: none;
+      font-weight: 400;
+
+      &:focus {
+        border-color: #6965db;
+        box-shadow: 0 0 0 2px rgba(105, 101, 219, 0.15);
+      }
+    }
+  }
+}
+
+.ai-settings-buttons {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+
+.ai-btn-primary {
+  padding: 0.5rem 1.25rem;
+  background: #6965db;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+
+  &:hover {
+    background: #5b57c4;
+  }
+}
+
+.ai-btn-secondary {
+  padding: 0.5rem 1.25rem;
+  background: #f5f5f5;
+  color: #333;
+  border: 1px solid #d0d0d0;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+
+  &:hover {
+    background: #eee;
+  }
+}

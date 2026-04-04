@@ -122,6 +122,8 @@
     "theme": "主题",
     "personalLib": "个人素材库",
     "excalidrawLib": "Excalidraw 素材库",
+    "libraryTabPublic": "公共",
+    "libraryTabPersonal": "个人",
     "decreaseFontSize": "缩小字体大小",
     "increaseFontSize": "放大字体大小",
     "unbindText": "取消文本绑定",
@@ -182,6 +184,7 @@
     "noItems": "尚未添加任何项目……",
     "hint_emptyLibrary": "选中画布上的项目添加到此处，或从下方的公共素材库中导入。",
     "hint_emptyPrivateLibrary": "选中画布上的项目添加到此处。",
+    "hint_emptyPublicTab": "暂无公共素材。在「个人」标签中选图形后，通过顶部工具栏发布。",
     "search": {
       "inputPlaceholder": "搜索库",
       "heading": "匹配的库",

@@ -1,0 +1,446 @@
+/* 历史版本面板 */
+.excalidraw .nb-history-panel {
+  position: fixed;
+  top: 50%;
+  right: 24px;
+  transform: translateY(-50%);
+  width: min(280px, calc(100vw - 48px));
+  max-height: min(420px, 85vh);
+  background: var(--island-bg-color);
+  color: var(--text-primary-color);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-island-stronger);
+  z-index: var(--zIndex-popup);
+  font-family: var(--ui-font), Assistant, system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.excalidraw .nb-history-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary-color);
+  border-bottom: 1px solid var(--default-border-color);
+}
+
+.excalidraw .nb-history-close {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: var(--border-radius-lg, 0.5rem);
+  cursor: pointer;
+  color: var(--color-gray-50);
+  font-size: 16px;
+  line-height: 1;
+
+  &:hover {
+    background: var(--button-hover-bg);
+    color: var(--text-primary-color);
+  }
+}
+
+.excalidraw .nb-history-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.excalidraw .nb-history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--default-border-color);
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.excalidraw .nb-history-time {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text-primary-color);
+}
+
+.excalidraw .nb-history-item--local {
+  background: var(--color-surface-low);
+}
+
+.excalidraw .nb-history-badge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.3;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.excalidraw .nb-history-badge--synced {
+  background: rgba(34, 197, 94, 0.12);
+  color: #16a34a;
+}
+
+.excalidraw .nb-history-badge--unsaved {
+  background: rgba(245, 158, 11, 0.12);
+  color: #d97706;
+}
+
+.excalidraw.theme--dark .nb-history-badge--synced {
+  background: rgba(34, 197, 94, 0.18);
+  color: #4ade80;
+}
+
+.excalidraw.theme--dark .nb-history-badge--unsaved {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+}
+
+.excalidraw .nb-history-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.excalidraw .nb-history-sub {
+  font-size: 0.6875rem;
+  color: var(--color-gray-50);
+  line-height: 1.3;
+}
+
+.excalidraw .nb-history-restore {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  font-family: inherit;
+  line-height: 1.2;
+  border: none;
+  border-radius: var(--border-radius-lg, 6px);
+  background: var(--color-surface-low);
+  color: var(--text-primary-color);
+  box-shadow: 0 0 0 1px var(--color-surface-lowest);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background: var(--button-hover-bg);
+  }
+}
+
+/* Fork 顶栏：透明底、与 layer-ui__top-right 内素材库等控件垂直居中对齐；字体同 packages/excalidraw --ui-font（Assistant） */
+.excalidraw {
+  .layer-ui__wrapper__top-right {
+    align-items: center;
+  }
+
+  .excal-fork-toolbar-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 2px;
+    align-self: center;
+    background: transparent;
+  }
+
+  .excal-fork-toolbar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-inline-start: auto;
+    margin-inline-end: 6px;
+    padding: 0;
+    font-family: var(--ui-font);
+    -webkit-font-smoothing: antialiased;
+    background: transparent;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .excal-toolbar-host {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    margin-inline-end: 4px;
+  }
+
+  .excal-custom-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: var(--lg-button-size);
+    font-family: var(--ui-font);
+  }
+
+  .excal-action-bar {
+    gap: 6px;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+  }
+
+  .excal-btn-home {
+    padding-inline-start: 10px;
+  }
+
+  .excal-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    box-sizing: border-box;
+    min-height: var(--lg-button-size);
+    height: var(--lg-button-size);
+    padding: 0 10px;
+    border-radius: var(--border-radius-lg);
+    /* 与画布 UI（ToolIcon 标签、缩放区）一致：Assistant + 14px */
+    font-size: 0.875rem;
+    font-weight: 500;
+    font-family: var(--ui-font), Assistant, system-ui, sans-serif;
+    line-height: 1.2;
+    cursor: pointer;
+    border: none;
+    color: var(--text-primary-color);
+    background-color: var(--color-surface-low);
+    box-shadow: 0 0 0 1px var(--color-surface-lowest);
+    transition: background-color 0.15s ease, box-shadow 0.15s ease,
+      color 0.15s ease, opacity 0.15s ease;
+    white-space: nowrap;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+
+    svg {
+      width: var(--lg-icon-size);
+      height: var(--lg-icon-size);
+      flex-shrink: 0;
+      color: var(--icon-fill-color);
+    }
+
+    &:hover:not(:disabled) {
+      background-color: var(--button-hover-bg);
+    }
+
+    &:active:not(:disabled) {
+      background-color: var(--button-hover-bg);
+      box-shadow: 0 0 0 1px var(--color-brand-active);
+    }
+
+    &:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 2px var(--focus-highlight-color);
+    }
+  }
+
+  .excal-btn-save {
+    background-color: var(--color-primary);
+    color: #fff;
+    box-shadow: 0 0 0 1px var(--color-surface-lowest);
+
+    svg {
+      color: #fff;
+    }
+
+    &:hover:not(:disabled) {
+      background-color: var(--color-brand-hover);
+    }
+
+    &:active:not(:disabled) {
+      background-color: var(--color-brand-active);
+      box-shadow: 0 0 0 1px var(--color-brand-active);
+    }
+
+    &:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+  }
+
+  &.theme--dark .excal-btn-save {
+    color: var(--color-gray-100);
+
+    svg {
+      color: var(--color-gray-100);
+    }
+  }
+
+  .excal-btn-history.excal-btn-history--active {
+    background: var(--color-surface-primary-container);
+    color: var(--color-on-primary-container);
+    box-shadow: 0 0 0 1px var(--color-surface-lowest);
+
+    svg {
+      color: var(--color-on-primary-container);
+    }
+
+    &:hover {
+      background: var(--color-surface-primary-container);
+      color: var(--color-on-primary-container);
+    }
+  }
+
+  .excal-btn-danger-ghost {
+    background-color: var(--color-surface-low);
+    color: var(--color-danger, #e11d48);
+    box-shadow: 0 0 0 1px var(--color-surface-lowest);
+
+    &:hover {
+      background-color: var(--button-hover-bg);
+    }
+  }
+
+  &.theme--dark .excal-btn-danger-ghost {
+    color: #f87171;
+  }
+
+  .excal-fork-save-hint {
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: var(--color-gray-50);
+    line-height: 1.35;
+    max-width: 320px;
+    text-align: right;
+    padding-inline-end: 6px;
+    font-family: var(--ui-font), Assistant, system-ui, sans-serif;
+  }
+
+  &.theme--dark .excal-fork-save-hint {
+    color: var(--color-gray-40);
+  }
+}
+
+/* 主页：未保存时选择丢弃 / 本机暂存 / 上传 */
+.excalidraw-app .fork-home-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200000;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  font-family: var(--ui-font), Assistant, system-ui, sans-serif;
+}
+
+.excalidraw-app .fork-home-dialog {
+  max-width: 400px;
+  width: 100%;
+  background: var(--dialog-bg-color, #fff);
+  color: var(--text-primary-color, #1b1b1f);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem 1rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+}
+
+.excalidraw-app .fork-home-dialog h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.excalidraw-app .fork-home-dialog-desc {
+  margin: 0 0 1rem;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--color-gray-50, #6b7280);
+}
+
+.excalidraw-app .fork-home-dialog-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.excalidraw-app .fork-home-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.excalidraw-app .fork-home-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.excalidraw-app .fork-home-btn--primary {
+  background: #6965db;
+  color: #fff;
+
+  &:hover:not(:disabled) {
+    background: #5753d0;
+  }
+}
+
+.excalidraw-app .fork-home-btn--secondary {
+  background: var(--color-surface-low, #f3f3f9);
+  color: var(--text-primary-color, #1b1b1f);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+
+  &:hover:not(:disabled) {
+    filter: brightness(0.97);
+  }
+}
+
+.excalidraw-app .fork-home-btn--danger {
+  background: rgba(239, 68, 68, 0.12);
+  color: #b91c1c;
+
+  &:hover:not(:disabled) {
+    background: rgba(239, 68, 68, 0.2);
+  }
+}
+
+.excalidraw-app .fork-home-dialog-cancel {
+  margin-top: 0.75rem;
+  width: 100%;
+  padding: 0.4rem;
+  background: transparent;
+  border: none;
+  font-size: 0.8125rem;
+  color: var(--color-gray-50, #6b7280);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.excalidraw-app .fork-home-dialog-cancel:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.excalidraw-app.theme--dark .fork-home-dialog {
+  background: #2a2a32;
+  color: #ececec;
+}
+
+.excalidraw-app.theme--dark .fork-home-dialog-desc {
+  color: #a3a3a3;
+}

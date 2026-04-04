@@ -2,28 +2,33 @@
 
 .excalidraw {
   .library-unit {
-    align-items: center;
-    border: 1px solid transparent;
-    display: flex;
-    justify-content: center;
     position: relative;
-    width: 55px;
-    height: 55px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    aspect-ratio: 1;
     box-sizing: border-box;
     border-radius: var(--border-radius-lg);
+    border: 1px solid transparent;
+    cursor: default;
+    transition: background 0.1s, border-color 0.1s;
 
     svg {
-      // to prevent clicks on links and such
       pointer-events: none;
     }
 
     &--hover {
-      background-color: var(--color-surface-mid);
+      background: var(--color-surface-mid);
     }
 
-    &:active:not(:has(.library-unit__checkbox:hover)),
     &--selected {
-      background-color: var(--color-surface-high);
+      background: var(--color-primary-light);
+      border-color: var(--color-primary);
+    }
+
+    &:active:not(:has(.library-unit__checkbox:hover)) {
+      background: var(--color-surface-high);
     }
 
     &--skeleton {
@@ -35,7 +40,7 @@
         var(--color-gray-10)
       );
       background-size: 200% 200%;
-      animation: library-unit__skeleton-opacity-animation 0.2s linear;
+      animation: lib-unit-skeleton 0.2s linear;
     }
   }
 
@@ -48,42 +53,51 @@
     );
   }
 
+  // Reorder insert indicator — positioned at the midpoint of the grid gap
+  // so that "after item A" and "before item B" share the same visual line.
+  .library-unit__reorder-line {
+    position: absolute;
+    top: 0.25rem;
+    bottom: 0.25rem;
+    width: 0;
+    pointer-events: none;
+    z-index: 4;
+    border-left: 2.5px solid var(--color-primary);
+    border-radius: 1px;
+    opacity: 0.9;
+
+    &--before {
+      left: calc(-0.375rem / 2 - 1px);
+    }
+
+    &--after {
+      right: calc(-0.375rem / 2 - 1px);
+    }
+  }
+
+  // Thumbnail container
   .library-unit__dragger {
     display: flex;
     align-items: center;
     justify-content: center;
     height: 100%;
     width: 100%;
-  }
+    padding: 0.25rem;
+    box-sizing: border-box;
 
-  .library-unit__dragger > svg {
-    filter: var(--theme-filter);
-    flex-grow: 1;
-    max-height: 100%;
-    max-width: 100%;
-  }
-
-  .library-unit__checkbox-container,
-  .library-unit__checkbox-container:hover,
-  .library-unit__checkbox-container:active {
-    align-items: center;
-    background: none;
-    border: none;
-    color: var(--icon-fill-color);
-    display: flex;
-    justify-content: center;
-    margin: 0;
-    padding: 0.5rem;
-    position: absolute;
-    left: 2rem;
-    bottom: 2rem;
-    cursor: pointer;
-
-    input {
-      cursor: pointer;
+    & > svg {
+      filter: var(--theme-filter);
+      flex-grow: 1;
+      max-height: 100%;
+      max-width: 100%;
     }
   }
 
+  .library-unit__active {
+    cursor: pointer;
+  }
+
+  // Checkbox
   .library-unit__checkbox {
     position: absolute;
     top: 0.125rem;
@@ -92,57 +106,45 @@
 
     .Checkbox-box {
       margin: 0;
-      width: 1rem;
-      height: 1rem;
-      border-radius: 4px;
+      width: 0.875rem;
+      height: 0.875rem;
+      border-radius: 3px;
       background-color: var(--color-primary-light);
       border: 1px solid var(--color-primary);
       box-shadow: none !important;
-      padding: 2px;
+      padding: 1px;
     }
 
-    &.Checkbox:hover {
-      .Checkbox-box {
-        background-color: var(--color-primary-light);
-      }
+    &.Checkbox:hover .Checkbox-box {
+      background-color: var(--color-primary-light);
     }
 
-    &.is-checked {
-      .Checkbox-box {
-        background-color: var(--color-primary) !important;
+    &.is-checked .Checkbox-box {
+      background-color: var(--color-primary) !important;
 
-        svg {
-          color: var(--color-primary-light);
-        }
+      svg {
+        color: var(--color-primary-light);
       }
     }
   }
 
-  .library-unit__removeFromLibrary > svg {
-    height: 16px;
-    width: 16px;
-  }
-
+  // "Add to library" pulse icon
   .library-unit__adder {
-    transform: scale(1);
-    animation: library-unit__adder-animation 1s ease-in infinite;
-
     position: absolute;
-    width: 1.5rem;
-    height: 1.5rem;
+    width: 1.25rem;
+    height: 1.25rem;
     background-color: var(--color-primary);
     border-radius: var(--border-radius-md);
-
     display: flex;
     justify-content: center;
     align-items: center;
-
     pointer-events: none;
+    animation: lib-unit-adder-pulse 1s ease-in infinite;
 
     svg {
       color: var(--color-primary-light);
-      width: 1rem;
-      height: 1rem;
+      width: 0.875rem;
+      height: 0.875rem;
     }
   }
 
@@ -151,35 +153,36 @@
     transform: scale(0.8);
   }
 
-  .library-unit__active {
-    cursor: pointer;
+  // Name label on hover
+  .library-unit__name {
+    position: absolute;
+    bottom: -0.125rem;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 0.5625rem;
+    line-height: 1.3;
+    color: var(--text-primary-color);
+    background: var(--island-bg-color);
+    border-radius: 0 0 var(--border-radius-lg) var(--border-radius-lg);
+    padding: 0.0625rem 0.125rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 3;
+    opacity: 0.9;
   }
 
-  @keyframes library-unit__adder-animation {
-    0% {
-      transform: scale(0.85);
-    }
-
-    50% {
-      transform: scale(1);
-    }
-
-    100% {
-      transform: scale(0.85);
-    }
+  @keyframes lib-unit-adder-pulse {
+    0% { transform: scale(0.85); }
+    50% { transform: scale(1); }
+    100% { transform: scale(0.85); }
   }
 
-  @keyframes library-unit__skeleton-opacity-animation {
-    0% {
-      opacity: 0;
-    }
-
-    75% {
-      opacity: 0;
-    }
-
-    100% {
-      opacity: 0.5;
-    }
+  @keyframes lib-unit-skeleton {
+    0% { opacity: 0; }
+    75% { opacity: 0; }
+    100% { opacity: 0.5; }
   }
 }

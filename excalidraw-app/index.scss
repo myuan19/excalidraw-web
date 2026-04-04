@@ -1,4 +1,33 @@
 @import "../packages/excalidraw/css/variables.module.scss";
+@import "./styles/notionUiTokens.scss";
+
+// ---------------------------------------------------------------------------
+// Editor lazy-load fallback
+// ---------------------------------------------------------------------------
+.editor-loading-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  flex-direction: column;
+  gap: 1rem;
+  color: var(--nb-text-muted, #999);
+  font-family: var(--nb-font-ui, system-ui, sans-serif);
+  font-size: 0.95rem;
+}
+
+@keyframes editor-spin {
+  to { transform: rotate(360deg); }
+}
+
+.editor-loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(55, 53, 47, 0.12);
+  border-top-color: var(--nb-blue, #2eaadc);
+  border-radius: 50%;
+  animation: editor-spin 0.7s linear infinite;
+}
 
 .excalidraw {
   --color-primary-contrast-offset: #625ee0; // to offset Chubb illusion

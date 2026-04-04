@@ -107,6 +107,7 @@ const LibraryMenuContent = memo(
               elements: processedElements,
               id: randomId(),
               created: Date.now(),
+              scope: "personal",
             },
             ...libraryItems,
           ];
@@ -141,9 +142,6 @@ const LibraryMenuContent = memo(
       );
     }
 
-    const showBtn =
-      libraryItemsData.libraryItems.length > 0 || pendingElements.length > 0;
-
     return (
       <LibraryMenuWrapper>
         <LibraryMenuItems
@@ -158,15 +156,12 @@ const LibraryMenuContent = memo(
           onSelectItems={onSelectItems}
           selectedItems={selectedItems}
         />
-        {showBtn && (
-          <LibraryMenuControlButtons
-            className="library-menu-control-buttons--at-bottom"
-            style={{ padding: "16px 12px 0 12px" }}
-            id={id}
-            libraryReturnUrl={libraryReturnUrl}
-            theme={theme}
-          />
-        )}
+        <LibraryMenuControlButtons
+          className="lib-footer"
+          id={id}
+          libraryReturnUrl={libraryReturnUrl}
+          theme={theme}
+        />
       </LibraryMenuWrapper>
     );
   },

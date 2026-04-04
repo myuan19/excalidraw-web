@@ -186,6 +186,13 @@ const LayerUI = ({
 
   const [eyeDropperState, setEyeDropperState] = useAtom(activeEyeDropperAtom);
 
+  const isSidebarDocked = useAtomValue(isSidebarDockedAtom);
+  /** Match zen-mode slide animations when the default sidebar is docked with a tab open — not `zenModeEnabled`. */
+  const dockUILayoutShift =
+    isSidebarDocked &&
+    appState.openSidebar?.name === DEFAULT_SIDEBAR.name &&
+    !!appState.openSidebar?.tab;
+
   const renderJSONExportDialog = () => {
     if (!UIOptions.canvasActions.export) {
       return null;
@@ -241,7 +248,7 @@ const LayerUI = ({
       <Section
         heading="selectedShapeActions"
         className={clsx("selected-shape-actions zen-mode-transition", {
-          "transition-left": appState.zenModeEnabled,
+          "transition-left": appState.zenModeEnabled || dockUILayoutShift,
         })}
       >
         {isCompactMode ? (
@@ -396,7 +403,8 @@ const LayerUI = ({
             className={clsx(
               "layer-ui__wrapper__top-right zen-mode-transition",
               {
-                "transition-right": appState.zenModeEnabled,
+                "transition-right":
+                  appState.zenModeEnabled || dockUILayoutShift,
                 "layer-ui__wrapper__top-right--compact": isCompactStylesPanel,
               },
             )}
@@ -449,8 +457,6 @@ const LayerUI = ({
       />
     );
   };
-
-  const isSidebarDocked = useAtomValue(isSidebarDockedAtom);
 
   const layerUIJSX = (
     <>
@@ -605,6 +611,7 @@ const LayerUI = ({
               actionManager={actionManager}
               showExitZenModeBtn={showExitZenModeBtn}
               renderWelcomeScreen={renderWelcomeScreen}
+              dockUILayoutShift={dockUILayoutShift}
             />
             {(appState.toast || appState.scrolledOutside) && (
               <div className="floating-status-stack">

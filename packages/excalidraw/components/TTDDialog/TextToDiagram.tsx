@@ -10,6 +10,7 @@ import { useChatAgent } from "./Chat";
 
 import {
   convertMermaidToExcalidraw,
+  extractMermaidDefinition,
   insertToEditor,
   saveMermaidDataToStorage,
 } from "./common";
@@ -81,7 +82,9 @@ const TextToDiagramContent = ({
 
   const onViewAsMermaid = () => {
     if (typeof lastAssistantMessage?.content === "string") {
-      saveMermaidDataToStorage(lastAssistantMessage.content);
+      saveMermaidDataToStorage(
+        extractMermaidDefinition(lastAssistantMessage.content),
+      );
       setAppState({
         openDialog: { name: "ttd", tab: "mermaid" },
       });
@@ -89,7 +92,7 @@ const TextToDiagramContent = ({
   };
 
   const handleMermaidTabClick = (message: TChat.ChatMessage) => {
-    const mermaidContent = message.content || "";
+    const mermaidContent = extractMermaidDefinition(message.content || "");
     if (mermaidContent) {
       saveMermaidDataToStorage(mermaidContent);
       setAppState({
@@ -124,14 +127,14 @@ const TextToDiagramContent = ({
       insertToEditor({
         app,
         data: tempDataRef,
-        text: mermaidContent,
+        text: result.normalizedDefinition,
         shouldSaveMermaidDataToStorage: true,
       });
     }
   };
 
   const handleAiRepairClick = async (message: TChat.ChatMessage) => {
-    const mermaidContent = message.content || "";
+    const mermaidContent = extractMermaidDefinition(message.content || "");
     const errorMessage = message.error || "";
 
     if (!mermaidContent) {

@@ -1,11 +1,6 @@
 import clsx from "clsx";
-import { useCallback, useState } from "react";
+import { useState } from "react";
 
-import { muteFSAbortError } from "@excalidraw/common";
-
-import { useUIAppState } from "../context/ui-appState";
-import { fileOpen } from "../data/filesystem";
-import { saveLibraryAsJSON } from "../data/json";
 import { libraryItemsAtom } from "../data/library";
 import { useAtom } from "../editor-jotai";
 import { useLibraryCache } from "../hooks/useLibraryItemSvg";
@@ -13,36 +8,17 @@ import { t } from "../i18n";
 
 import { useApp, useExcalidrawSetAppState } from "./App";
 import ConfirmDialog from "./ConfirmDialog";
-import { Dialog } from "./Dialog";
-import { isLibraryMenuOpenAtom } from "./LibraryMenu";
-import PublishLibrary from "./PublishLibrary";
-import { ToolButton } from "./ToolButton";
-import Trans from "./Trans";
-import DropdownMenu from "./dropdownMenu/DropdownMenu";
-import {
-  DotsIcon,
-  ExportIcon,
-  LoadIcon,
-  publishIcon,
-  TrashIcon,
-} from "./icons";
+import { TrashIcon } from "./icons";
 
 import type Library from "../data/library";
 import type { LibraryItem, LibraryItems, UIAppState } from "../types";
 
-const getSelectedItems = (
-  libraryItems: LibraryItems,
-  selectedItems: LibraryItem["id"][],
-) => libraryItems.filter((item) => selectedItems.includes(item.id));
-
-export const LibraryDropdownMenuButton: React.FC<{
+export const LibraryHeaderActionsBar: React.FC<{
   setAppState: React.Component<any, UIAppState>["setState"];
   selectedItems: LibraryItem["id"][];
   library: Library;
   onRemoveFromLibrary: () => void;
   resetLibrary: () => void;
-  onSelectItems: (items: LibraryItem["id"][]) => void;
-  appState: UIAppState;
   className?: string;
 }> = ({
   setAppState,
@@ -50,16 +26,22 @@ export const LibraryDropdownMenuButton: React.FC<{
   library,
   onRemoveFromLibrary,
   resetLibrary,
-  onSelectItems,
-  appState,
   className,
 }) => {
   const [libraryItemsData] = useAtom(libraryItemsAtom);
-  const [isLibraryMenuOpen, setIsLibraryMenuOpen] = useAtom(
-    isLibraryMenuOpenAtom,
-  );
+  const [showRemoveLibAlert, setShowRemoveLibAlert] = useState(false);
 
-  const renderRemoveLibAlert = () => {
+  const itemsSelected = !!selectedItems.length;
+  const items = itemsSelected
+    ? libraryItemsData.libraryItems.filter((item) =>
+        selectedItems.includes(item.id),
+      )
+    : libraryItemsData.libraryItems;
+  const resetLabel = itemsSelected
+    ? t("buttons.remove")
+    : t("buttons.resetLibrary");
+
+  const renderConfirmDialog = () => {
     const content = selectedItems.length
       ? t("alerts.removeItemsFromsLibrary", { count: selectedItems.length })
       : t("alerts.resetLibrary");
@@ -76,9 +58,7 @@ export const LibraryDropdownMenuButton: React.FC<{
           }
           setShowRemoveLibAlert(false);
         }}
-        onCancel={() => {
-          setShowRemoveLibAlert(false);
-        }}
+        onCancel={() => setShowRemoveLibAlert(false)}
         title={title}
       >
         <p>{content}</p>
@@ -86,194 +66,27 @@ export const LibraryDropdownMenuButton: React.FC<{
     );
   };
 
-  const [showRemoveLibAlert, setShowRemoveLibAlert] = useState(false);
-
-  const itemsSelected = !!selectedItems.length;
-  const items = itemsSelected
-    ? libraryItemsData.libraryItems.filter((item) =>
-        selectedItems.includes(item.id),
-      )
-    : libraryItemsData.libraryItems;
-  const resetLabel = itemsSelected
-    ? t("buttons.remove")
-    : t("buttons.resetLibrary");
-
-  const [showPublishLibraryDialog, setShowPublishLibraryDialog] =
-    useState(false);
-  const [publishLibSuccess, setPublishLibSuccess] = useState<null | {
-    url: string;
-    authorName: string;
-  }>(null);
-  const renderPublishSuccess = useCallback(() => {
-    return (
-      <Dialog
-        onCloseRequest={() => setPublishLibSuccess(null)}
-        title={t("publishSuccessDialog.title")}
-        className="publish-library-success"
-        size="small"
-      >
-        <p>
-          <Trans
-            i18nKey="publishSuccessDialog.content"
-            authorName={publishLibSuccess!.authorName}
-            link={(el) => (
-              <a
-                href={publishLibSuccess?.url}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {el}
-              </a>
-            )}
-          />
-        </p>
-        <ToolButton
-          type="button"
-          title={t("buttons.close")}
-          aria-label={t("buttons.close")}
-          label={t("buttons.close")}
-          onClick={() => setPublishLibSuccess(null)}
-          data-testid="publish-library-success-close"
-          className="publish-library-success-close"
-        />
-      </Dialog>
-    );
-  }, [setPublishLibSuccess, publishLibSuccess]);
-
-  const onPublishLibSuccess = (
-    data: { url: string; authorName: string },
-    libraryItems: LibraryItems,
-  ) => {
-    setShowPublishLibraryDialog(false);
-    setPublishLibSuccess({ url: data.url, authorName: data.authorName });
-    const nextLibItems = libraryItems.slice();
-    nextLibItems.forEach((libItem) => {
-      if (selectedItems.includes(libItem.id)) {
-        libItem.status = "published";
-      }
-    });
-    library.setLibrary(nextLibItems);
-  };
-
-  const onLibraryImport = async () => {
-    try {
-      await library.updateLibrary({
-        libraryItems: fileOpen({
-          description: "Excalidraw library files",
-          // ToDo: Be over-permissive until https://bugs.webkit.org/show_bug.cgi?id=34442
-          // gets resolved. Else, iOS users cannot open `.excalidraw` files.
-          /*
-            extensions: [".json", ".excalidrawlib"],
-            */
-        }),
-        merge: true,
-        openLibraryMenu: true,
-      });
-    } catch (error: any) {
-      if (error?.name === "AbortError") {
-        console.warn(error);
-        return;
-      }
-      setAppState({ errorMessage: t("errors.importLibraryError") });
-    }
-  };
-
-  const onLibraryExport = async () => {
-    const libraryItems = itemsSelected
-      ? items
-      : await library.getLatestLibrary();
-    saveLibraryAsJSON(libraryItems)
-      .catch(muteFSAbortError)
-      .catch((error) => {
-        setAppState({ errorMessage: error.message });
-      });
-  };
-
-  const renderLibraryMenu = () => {
-    return (
-      <DropdownMenu open={isLibraryMenuOpen}>
-        <DropdownMenu.Trigger
-          onToggle={() => setIsLibraryMenuOpen(!isLibraryMenuOpen)}
-        >
-          {DotsIcon}
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Content
-          onClickOutside={() => setIsLibraryMenuOpen(false)}
-          onSelect={() => setIsLibraryMenuOpen(false)}
-          className="library-menu"
-        >
-          {!itemsSelected && (
-            <DropdownMenu.Item
-              onSelect={onLibraryImport}
-              icon={LoadIcon}
-              data-testid="lib-dropdown--load"
-            >
-              {t("buttons.load")}
-            </DropdownMenu.Item>
-          )}
-          {!!items.length && (
-            <DropdownMenu.Item
-              onSelect={onLibraryExport}
-              icon={ExportIcon}
-              data-testid="lib-dropdown--export"
-            >
-              {t("buttons.export")}
-            </DropdownMenu.Item>
-          )}
-          {itemsSelected && (
-            <DropdownMenu.Item
-              icon={publishIcon}
-              onSelect={() => setShowPublishLibraryDialog(true)}
-              data-testid="lib-dropdown--remove"
-            >
-              {t("buttons.publishLibrary")}
-            </DropdownMenu.Item>
-          )}
-          {!!items.length && (
-            <DropdownMenu.Item
-              onSelect={() => setShowRemoveLibAlert(true)}
-              icon={TrashIcon}
-            >
-              {resetLabel}
-            </DropdownMenu.Item>
-          )}
-        </DropdownMenu.Content>
-      </DropdownMenu>
-    );
-  };
-
   return (
-    <div className={clsx("library-menu-dropdown-container", className)}>
-      {renderLibraryMenu()}
-      {selectedItems.length > 0 && (
-        <div className="library-actions-counter">{selectedItems.length}</div>
-      )}
-      {showRemoveLibAlert && renderRemoveLibAlert()}
-      {showPublishLibraryDialog && (
-        <PublishLibrary
-          onClose={() => setShowPublishLibraryDialog(false)}
-          libraryItems={getSelectedItems(
-            libraryItemsData.libraryItems,
-            selectedItems,
-          )}
-          appState={appState}
-          onSuccess={(data) =>
-            onPublishLibSuccess(data, libraryItemsData.libraryItems)
-          }
-          onError={(error) => window.alert(error)}
-          updateItemsInStorage={() =>
-            library.setLibrary(libraryItemsData.libraryItems)
-          }
-          onRemove={(id: string) =>
-            onSelectItems(selectedItems.filter((_id) => _id !== id))
-          }
-        />
-      )}
-      {publishLibSuccess && renderPublishSuccess()}
+    <div className={clsx("library-actions", className)}>
+      <div className="library-actions__row" role="toolbar">
+        {!!items.length && (
+          <button
+            type="button"
+            className="library-actions__btn library-actions__btn--danger"
+            onClick={() => setShowRemoveLibAlert(true)}
+            title={resetLabel}
+            aria-label={resetLabel}
+          >
+            <span className="library-actions__icon">{TrashIcon}</span>
+          </button>
+        )}
+      </div>
+      {showRemoveLibAlert && renderConfirmDialog()}
     </div>
   );
 };
 
+/** Convenience wrapper that wires remove/reset callbacks from app context. */
 export const LibraryDropdownMenu = ({
   selectedItems,
   onSelectItems,
@@ -285,7 +98,6 @@ export const LibraryDropdownMenu = ({
 }) => {
   const { library } = useApp();
   const { clearLibraryCache, deleteItemsFromLibraryCache } = useLibraryCache();
-  const appState = useUIAppState();
   const setAppState = useExcalidrawSetAppState();
 
   const [libraryItemsData] = useAtom(libraryItemsAtom);
@@ -297,9 +109,7 @@ export const LibraryDropdownMenu = ({
     library.setLibrary(nextItems).catch(() => {
       setAppState({ errorMessage: t("alerts.errorRemovingFromLibrary") });
     });
-
     deleteItemsFromLibraryCache(selectedItems);
-
     onSelectItems([]);
   };
 
@@ -309,11 +119,9 @@ export const LibraryDropdownMenu = ({
   };
 
   return (
-    <LibraryDropdownMenuButton
-      appState={appState}
+    <LibraryHeaderActionsBar
       setAppState={setAppState}
       selectedItems={selectedItems}
-      onSelectItems={onSelectItems}
       library={library}
       onRemoveFromLibrary={() =>
         removeFromLibrary(libraryItemsData.libraryItems)

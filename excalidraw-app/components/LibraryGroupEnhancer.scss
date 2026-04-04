@@ -1,0 +1,31 @@
+/**
+ * Library Group Enhancer — styles for React-rendered group dividers
+ * and cross-tab drag indicators.
+ *
+ * The group UI is rendered by GroupDividerRow in LibraryMenuItems.tsx.
+ * These legacy selectors are kept for backward compat with the enhancer
+ * module; the primary styles now live in LibraryMenuItems.scss under
+ * the `.lib-group*` class namespace.
+ */
+
+// Tab drop-target highlight when dragging items across sections
+.lib-tab--drop-hover {
+  background: var(--color-primary-light, rgba(105, 101, 219, 0.12)) !important;
+  color: var(--color-primary, #6965db) !important;
+  box-shadow: 0 0 0 1.5px var(--color-primary, #6965db) !important;
+  transition:
+    background 0.15s ease,
+    box-shadow 0.15s ease,
+    color 0.15s ease;
+}
+
+// Legacy compat: keep old class names working in case anything references them
+.nb-lib-group-divider {
+  grid-column: 1 / -1;
+  display: none;
+}
+
+.nb-lib-group-gap {
+  grid-column: 1 / -1;
+  display: none;
+}

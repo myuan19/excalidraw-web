@@ -15,12 +15,16 @@ const Footer = ({
   actionManager,
   showExitZenModeBtn,
   renderWelcomeScreen,
+  dockUILayoutShift = false,
 }: {
   appState: UIAppState;
   actionManager: ActionManager;
   showExitZenModeBtn: boolean;
   renderWelcomeScreen: boolean;
+  /** Sidebar docked + tab open: same slide animation as zen, without zen mode. */
+  dockUILayoutShift?: boolean;
 }) => {
+  const footerShift = appState.zenModeEnabled || dockUILayoutShift;
   const { FooterCenterTunnel, WelcomeScreenHelpHintTunnel } = useTunnels();
 
   return (
@@ -30,8 +34,7 @@ const Footer = ({
     >
       <div
         className={clsx("layer-ui__wrapper__footer-left zen-mode-transition", {
-          "layer-ui__wrapper__footer-left--transition-left":
-            appState.zenModeEnabled,
+          "layer-ui__wrapper__footer-left--transition-left": footerShift,
         })}
       >
         <Stack.Col gap={2}>
@@ -46,7 +49,7 @@ const Footer = ({
                 renderAction={actionManager.renderAction}
                 className={clsx("zen-mode-transition", {
                   "layer-ui__wrapper__footer-left--transition-bottom":
-                    appState.zenModeEnabled,
+                    footerShift,
                 })}
               />
             )}
@@ -56,7 +59,7 @@ const Footer = ({
       <FooterCenterTunnel.Out />
       <div
         className={clsx("layer-ui__wrapper__footer-right zen-mode-transition", {
-          "transition-right": appState.zenModeEnabled,
+          "transition-right": footerShift,
         })}
       >
         <div style={{ position: "relative" }}>

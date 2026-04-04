@@ -11,9 +11,14 @@
 !scripts/
 !tsconfig.json
 !yarn.lock
+!_server/
+!docker/
 
 # keep (sub)sub directories at the end to exclude from explicit included
 # e.g. ./packages/excalidraw/{dist,node_modules}
 **/build
 **/dist
 **/node_modules
+
+# 开发机上的本地数据不打包进镜像（运行时挂载卷）
+_server/data

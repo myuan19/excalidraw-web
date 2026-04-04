@@ -17,8 +17,6 @@ import type { ExcalidrawElement } from "@excalidraw/element/types";
 
 import type { AllPossibleKeys } from "@excalidraw/common/utility-types";
 
-import { STORAGE_KEYS } from "../../../excalidraw-app/app_constants";
-
 import { Pointer, UI } from "./helpers/ui";
 import * as toolQueries from "./queries/toolQueries";
 
@@ -131,18 +129,16 @@ export class GlobalTestState {
   }
 }
 
+/** Upstream app keys; fork app no longer reads these, tests may still seed them. */
+const TEST_LS_ELEMENTS = "excalidraw";
+const TEST_LS_APP_STATE = "excalidraw-state";
+
 const initLocalStorage = (data: ImportedDataState) => {
   if (data.elements) {
-    localStorage.setItem(
-      STORAGE_KEYS.LOCAL_STORAGE_ELEMENTS,
-      JSON.stringify(data.elements),
-    );
+    localStorage.setItem(TEST_LS_ELEMENTS, JSON.stringify(data.elements));
   }
   if (data.appState) {
-    localStorage.setItem(
-      STORAGE_KEYS.LOCAL_STORAGE_APP_STATE,
-      JSON.stringify(data.appState),
-    );
+    localStorage.setItem(TEST_LS_APP_STATE, JSON.stringify(data.appState));
   }
 };
 

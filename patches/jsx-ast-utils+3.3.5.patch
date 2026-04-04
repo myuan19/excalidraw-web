@@ -1,0 +1,105 @@
+diff --git a/node_modules/jsx-ast-utils/lib/values/expressions/MetaProperty.js b/node_modules/jsx-ast-utils/lib/values/expressions/MetaProperty.js
+new file mode 100644
+index 0000000..5bfa562
+--- /dev/null
++++ b/node_modules/jsx-ast-utils/lib/values/expressions/MetaProperty.js
+@@ -0,0 +1,18 @@
++'use strict';
++
++Object.defineProperty(exports, "__esModule", {
++  value: true
++});
++exports.default = extractValueFromMetaProperty;
++/**
++ * Extractor for MetaProperty (e.g. import.meta, new.target).
++ * Represent as dotted id so MemberExpression chaining resolves (import.meta.env.*).
++ */
++function extractValueFromMetaProperty(value) {
++  var metaName = value.meta && value.meta.name;
++  var propName = value.property && value.property.name;
++  if (metaName && propName) {
++    return metaName + '.' + propName;
++  }
++  return 'MetaProperty';
++}
+diff --git a/node_modules/jsx-ast-utils/lib/values/expressions/index.js b/node_modules/jsx-ast-utils/lib/values/expressions/index.js
+index 2e12a31..b618e20 100644
+--- a/node_modules/jsx-ast-utils/lib/values/expressions/index.js
++++ b/node_modules/jsx-ast-utils/lib/values/expressions/index.js
+@@ -121,6 +121,10 @@ var _AssignmentExpression = require('./AssignmentExpression');
+ 
+ var _AssignmentExpression2 = _interopRequireDefault(_AssignmentExpression);
+ 
++var _MetaProperty = require('./MetaProperty');
++
++var _MetaProperty2 = _interopRequireDefault(_MetaProperty);
++
+ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+ 
+ // Composition map of types to their extractor functions.
+@@ -153,7 +157,8 @@ var TYPES = {
+   TypeCastExpression: _TypeCastExpression2.default,
+   SequenceExpression: _SequenceExpression2.default,
+   TSNonNullExpression: _TSNonNullExpression2.default,
+-  AssignmentExpression: _AssignmentExpression2.default
++  AssignmentExpression: _AssignmentExpression2.default,
++  MetaProperty: _MetaProperty2.default
+ };
+ 
+ var noop = function noop() {
+@@ -259,7 +264,8 @@ var LITERAL_TYPES = _extends({}, TYPES, {
+   TSAsExpression: noop,
+   TypeCastExpression: noop,
+   SequenceExpression: noop,
+-  ChainExpression: noop
++  ChainExpression: noop,
++  MetaProperty: noop
+ });
+ 
+ /**
+diff --git a/node_modules/jsx-ast-utils/src/values/expressions/MetaProperty.js b/node_modules/jsx-ast-utils/src/values/expressions/MetaProperty.js
+new file mode 100644
+index 0000000..c410e91
+--- /dev/null
++++ b/node_modules/jsx-ast-utils/src/values/expressions/MetaProperty.js
+@@ -0,0 +1,12 @@
++/**
++ * Extractor for MetaProperty (e.g. import.meta, new.target).
++ * Represent as dotted id so MemberExpression chaining resolves (import.meta.env.*).
++ */
++export default function extractValueFromMetaProperty(value) {
++  const metaName = value.meta && value.meta.name;
++  const propName = value.property && value.property.name;
++  if (metaName && propName) {
++    return `${metaName}.${propName}`;
++  }
++  return "MetaProperty";
++}
+diff --git a/node_modules/jsx-ast-utils/src/values/expressions/index.js b/node_modules/jsx-ast-utils/src/values/expressions/index.js
+index d4ebeb5..d87203a 100644
+--- a/node_modules/jsx-ast-utils/src/values/expressions/index.js
++++ b/node_modules/jsx-ast-utils/src/values/expressions/index.js
+@@ -26,6 +26,7 @@ import TypeCastExpression from './TypeCastExpression';
+ import SequenceExpression from './SequenceExpression';
+ import TSNonNullExpression from './TSNonNullExpression';
+ import AssignmentExpression from './AssignmentExpression';
++import MetaProperty from './MetaProperty';
+ 
+ // Composition map of types to their extractor functions.
+ const TYPES = {
+@@ -58,6 +59,7 @@ const TYPES = {
+   SequenceExpression,
+   TSNonNullExpression,
+   AssignmentExpression,
++  MetaProperty,
+ };
+ 
+ const noop = () => null;
+@@ -157,6 +159,7 @@ const LITERAL_TYPES = {
+   TypeCastExpression: noop,
+   SequenceExpression: noop,
+   ChainExpression: noop,
++  MetaProperty: noop,
+ };
+ 
+ /**

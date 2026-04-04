@@ -19,6 +19,10 @@ import type { MermaidToExcalidrawLibProps } from "./types";
 
 import type { AppClassProperties, BinaryFiles } from "../../types";
 
+import { extractMermaidDefinition } from "./utils/extractMermaidFromLlmResponse";
+
+export { extractMermaidDefinition };
+
 export const resetPreview = ({
   canvasRef,
   setError,
@@ -57,7 +61,10 @@ export const convertMermaidToExcalidraw = async ({
     files: BinaryFiles | null;
   }>;
   theme: Theme;
-}): Promise<{ success: true } | { success: false; error?: Error }> => {
+}): Promise<
+  | { success: true; normalizedDefinition: string }
+  | { success: false; error?: Error }
+> => {
   const canvasNode = canvasRef.current;
   const parent = canvasNode?.parentElement;
 
@@ -70,22 +77,28 @@ export const convertMermaidToExcalidraw = async ({
     return { success: false };
   }
 
+  const normalized = extractMermaidDefinition(mermaidDefinition);
+  if (!normalized) {
+    resetPreview({ canvasRef, setError });
+    return { success: false };
+  }
+
   let ret;
   try {
     const api = await mermaidToExcalidrawLib.api;
 
     try {
-      ret = await api.parseMermaidToExcalidraw(mermaidDefinition);
+      ret = await api.parseMermaidToExcalidraw(normalized);
     } catch (err: unknown) {
       const originalParseError = err as Error;
 
-      if (!mermaidDefinition.includes('"')) {
+      if (!normalized.includes('"')) {
         return { success: false, error: originalParseError };
       }
 
       try {
         ret = await api.parseMermaidToExcalidraw(
-          mermaidDefinition.replace(/"/g, "'"),
+          normalized.replace(/"/g, "'"),
         );
       } catch {
         // Keep the original error so line/column references stay aligned with
@@ -118,10 +131,10 @@ export const convertMermaidToExcalidraw = async ({
 
     parent.style.background = "var(--default-bg-color)";
     canvasNode.replaceChildren(canvas);
-    return { success: true };
+    return { success: true, normalizedDefinition: normalized };
   } catch (err: any) {
     parent.style.background = "var(--default-bg-color)";
-    if (mermaidDefinition) {
+    if (normalized) {
       setError(err);
     }
 

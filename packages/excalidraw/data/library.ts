@@ -11,6 +11,7 @@ import {
   cloneJSON,
   preventUnload,
   promiseTry,
+  randomId,
   resolvablePromise,
   toValidURL,
   Queue,
@@ -56,6 +57,23 @@ const ALLOWED_LIBRARY_URLS = [
   // when installing from github PRs
   "raw.githubusercontent.com/excalidraw/excalidraw-libraries",
 ];
+
+/** Console filter: `[lib-url-import]` — diagnostics for #addLibrary / ?addLibrary= flows (does not change behavior). */
+const LIB_URL_IMPORT_LOG = "[lib-url-import]";
+function logLibUrlImport(
+  phase: string,
+  detail?: Record<string, unknown> | string,
+) {
+  try {
+    if (typeof detail === "string") {
+      console.info(LIB_URL_IMPORT_LOG, phase, detail);
+    } else {
+      console.info(LIB_URL_IMPORT_LOG, phase, detail ?? "");
+    }
+  } catch {
+    /* ignore */
+  }
+}
 
 type LibraryUpdate = {
   /** deleted library items since last onLibraryChange event */
@@ -116,40 +134,25 @@ export const libraryItemsAtom = atom<{
 const cloneLibraryItems = (libraryItems: LibraryItems): LibraryItems =>
   cloneJSON(libraryItems);
 
-/**
- * checks if library item does not exist already in current library
+/** Merges otherItems into localItems.
+ *  All incoming items are always added (no dedup). If an incoming item's
+ *  ID already exists in localItems it receives a fresh ID to avoid collision.
  */
-const isUniqueItem = (
-  existingLibraryItems: LibraryItems,
-  targetLibraryItem: LibraryItem,
-) => {
-  return !existingLibraryItems.find((libraryItem) => {
-    if (libraryItem.elements.length !== targetLibraryItem.elements.length) {
-      return false;
-    }
-
-    // detect z-index difference by checking the excalidraw elements
-    // are in order
-    return libraryItem.elements.every((libItemExcalidrawItem, idx) => {
-      return (
-        libItemExcalidrawItem.id === targetLibraryItem.elements[idx].id &&
-        libItemExcalidrawItem.versionNonce ===
-          targetLibraryItem.elements[idx].versionNonce
-      );
-    });
-  });
-};
-
-/** Merges otherItems into localItems. Unique items in otherItems array are
-    sorted first. */
 export const mergeLibraryItems = (
   localItems: LibraryItems,
   otherItems: LibraryItems,
 ): LibraryItems => {
-  const newItems = [];
+  const existingIds = new Set(localItems.map((i) => i.id));
+  const newItems: LibraryItem[] = [];
+
   for (const item of otherItems) {
-    if (isUniqueItem(localItems, item)) {
+    if (existingIds.has(item.id)) {
+      const freshId = randomId();
+      newItems.push({ ...item, id: freshId });
+      existingIds.add(freshId);
+    } else {
       newItems.push(item);
+      existingIds.add(item.id);
     }
   }
 
@@ -383,7 +386,6 @@ class Library {
     })
       .catch((error) => {
         if (error.name === "AbortError") {
-          console.warn("Library update aborted by user");
           return this.currLibraryItems;
         }
         throw error;
@@ -539,6 +541,17 @@ export const parseLibraryTokensFromUrl = () => {
     ? new URLSearchParams(window.location.hash.slice(1)).get("token")
     : null;
 
+  if (libraryUrl) {
+    logLibUrlImport("parseTokens", {
+      fromHash: window.location.hash.includes(URL_HASH_KEYS.addLibrary),
+      fromQuery: new URLSearchParams(window.location.search).has(
+        URL_QUERY_KEYS.addLibrary,
+      ),
+      hasToken: !!idToken,
+      urlLen: libraryUrl.length,
+    });
+  }
+
   return libraryUrl ? { libraryUrl, idToken } : null;
 };
 
@@ -682,6 +695,14 @@ export const useHandleLibrary = (
      * If not supplied, only the excalidraw.com base domain is allowed.
      */
     validateLibraryUrl?: (libraryUrl: string) => boolean;
+    /**
+     * Called after a remote `.excalidrawlib` was merged from `#addLibrary` / `?addLibrary=`.
+     * Runs after `onLibraryChange`; `addedItemIds` are new published items from this merge.
+     */
+    onLibraryUrlImport?: (detail: {
+      libraryUrl: string;
+      addedItemIds: LibraryItem["id"][];
+    }) => void | Promise<void>;
   } & (
     | {
         /** @deprecated we recommend using `opts.adapter` instead */
@@ -722,6 +743,11 @@ export const useHandleLibrary = (
       libraryUrl: string;
       idToken: string | null;
     }) => {
+      logLibUrlImport("import:start", {
+        idTokenMatch: idToken === excalidrawAPI.id,
+        documentHidden: document.hidden,
+      });
+
       const libraryPromise = new Promise<Blob>(async (resolve, reject) => {
         try {
           libraryUrl = decodeURIComponent(libraryUrl);
@@ -731,9 +757,16 @@ export const useHandleLibrary = (
           validateLibraryUrl(libraryUrl, optsRef.current.validateLibraryUrl);
 
           const request = await fetch(libraryUrl);
+          logLibUrlImport("fetch:response", {
+            ok: request.ok,
+            status: request.status,
+            ct: request.headers.get("content-type"),
+          });
           const blob = await request.blob();
+          logLibUrlImport("fetch:blob", { size: blob.size, type: blob.type });
           resolve(blob);
         } catch (error: any) {
+          logLibUrlImport("fetch:error", { message: error?.message });
           reject(error);
         }
       });
@@ -751,14 +784,43 @@ export const useHandleLibrary = (
         : null);
 
       try {
-        await excalidrawAPI.updateLibrary({
+        const before = await excalidrawAPI.getLibraryItems();
+        const beforeIds = new Set(before.map((i) => i.id));
+
+        logLibUrlImport("merge:before", {
+          beforeCount: before.length,
+          shouldPrompt,
+        });
+
+        const merged = await excalidrawAPI.updateLibrary({
           libraryItems: libraryPromise,
           prompt: shouldPrompt,
           merge: true,
           defaultStatus: "published",
           openLibraryMenu: true,
         });
+
+        const addedItemIds = merged
+          .filter(
+            (i) =>
+              !beforeIds.has(i.id) && i.status === "published",
+          )
+          .map((i) => i.id);
+
+        logLibUrlImport("merge:after", {
+          mergedCount: merged.length,
+          addedCount: addedItemIds.length,
+        });
+
+        await optsRef.current.onLibraryUrlImport?.({
+          libraryUrl,
+          addedItemIds,
+        });
       } catch (error: any) {
+        logLibUrlImport("import:error", {
+          message: error?.message,
+          name: error?.name,
+        });
         excalidrawAPI.updateScene({
           appState: {
             errorMessage: error.message,
@@ -766,21 +828,29 @@ export const useHandleLibrary = (
         });
         throw error;
       } finally {
+        let clearedHashOrQuery = false;
         if (window.location.hash.includes(URL_HASH_KEYS.addLibrary)) {
+          clearedHashOrQuery = true;
           const hash = new URLSearchParams(window.location.hash.slice(1));
           hash.delete(URL_HASH_KEYS.addLibrary);
           window.history.replaceState({}, APP_NAME, `#${hash.toString()}`);
         } else if (window.location.search.includes(URL_QUERY_KEYS.addLibrary)) {
+          clearedHashOrQuery = true;
           const query = new URLSearchParams(window.location.search);
           query.delete(URL_QUERY_KEYS.addLibrary);
           window.history.replaceState({}, APP_NAME, `?${query.toString()}`);
         }
+        logLibUrlImport("import:finally", { clearedHashOrQuery });
       }
     };
     const onHashChange = (event: HashChangeEvent) => {
       event.preventDefault();
       const libraryUrlTokens = parseLibraryTokensFromUrl();
       if (libraryUrlTokens) {
+        logLibUrlImport("hashchange", {
+          oldURL: event.oldURL?.slice(0, 120),
+          newURL: event.newURL?.slice(0, 120),
+        });
         event.stopImmediatePropagation();
         // If hash changed and it contains library url, import it and replace
         // the url to its previous state (important in case of collaboration

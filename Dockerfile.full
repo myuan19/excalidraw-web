@@ -1,0 +1,46 @@
+# syntax=docker/dockerfile:1
+# 前端静态资源 + nginx（反代 /api）+ Node server（SQLite 与文件队列在 EXCALIDRAW_DATA_DIR）
+# 构建: ./_scripts/docker-build.sh
+
+FROM node:20-bookworm AS build
+WORKDIR /opt/node_app
+COPY . .
+RUN --mount=type=cache,target=/root/.cache/yarn \
+    yarn --network-timeout 600000
+ARG NODE_ENV=production
+RUN yarn build:app:docker
+
+FROM node:20-bookworm-slim AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    nginx \
+    ca-certificates \
+    wget \
+    python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/excalidraw
+
+COPY --from=build /opt/node_app/excalidraw-app/build /var/www/excalidraw-static
+
+COPY server/package.json server/package-lock.json ./server/
+RUN cd server && npm ci --omit=dev
+COPY server/index.js server/db.js ./server/
+COPY server/routes ./server/routes
+
+COPY docker/full/nginx.conf /etc/nginx/nginx-excalidraw.conf
+COPY docker/full/entrypoint.sh /usr/local/bin/entrypoint-excalidraw.sh
+RUN chmod +x /usr/local/bin/entrypoint-excalidraw.sh
+
+VOLUME ["/var/lib/excalidraw"]
+
+ENV NODE_ENV=production \
+    EXCALIDRAW_DATA_DIR=/var/lib/excalidraw \
+    PORT=3033 \
+    LISTEN_HOST=127.0.0.1
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD wget -q -O- http://127.0.0.1/api/health >/dev/null || exit 1
+
+ENTRYPOINT ["/usr/local/bin/entrypoint-excalidraw.sh"]

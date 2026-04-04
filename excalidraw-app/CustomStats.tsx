@@ -12,20 +12,34 @@ import { useEffect, useState } from "react";
 import type { NonDeletedExcalidrawElement } from "@excalidraw/element/types";
 import type { UIAppState } from "@excalidraw/excalidraw/types";
 
-import {
-  getElementsStorageSize,
-  getTotalStorageSize,
-} from "./data/localStorage";
-
 type StorageSizes = { scene: number; total: number };
 
 const STORAGE_SIZE_TIMEOUT = 500;
 
+function getLocalStorageSizeBreakdown(): StorageSizes {
+  try {
+    let scene = 0;
+    let total = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) {
+        continue;
+      }
+      const v = localStorage.getItem(key);
+      const len = (v?.length ?? 0) + key.length;
+      total += len;
+      if (key.startsWith("excalidraw-file-local-cache-")) {
+        scene += len;
+      }
+    }
+    return { scene, total };
+  } catch {
+    return { scene: 0, total: 0 };
+  }
+}
+
 const getStorageSizes = debounce((cb: (sizes: StorageSizes) => void) => {
-  cb({
-    scene: getElementsStorageSize(),
-    total: getTotalStorageSize(),
-  });
+  cb(getLocalStorageSizeBreakdown());
 }, STORAGE_SIZE_TIMEOUT);
 
 type Props = {

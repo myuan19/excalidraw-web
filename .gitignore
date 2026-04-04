@@ -27,3 +27,13 @@ dev-dist
 html
 meta*.json
 .claude
+
+# Local API server runtime data (SQLite DB + user files)
+server/data/
+
+# Local-only management scripts & docs (not part of source)
+_scripts/
+_docs/
+
+# Scratch notes at repo root
+/Untitled

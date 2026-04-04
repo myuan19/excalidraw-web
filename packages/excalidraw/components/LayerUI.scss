@@ -42,22 +42,30 @@
     }
 
     .zen-mode-transition {
-      transition: transform 0.5s ease-in-out;
+      transition: transform 0.5s ease-in-out, visibility 0s linear 0s;
 
       :root[dir="ltr"] &.transition-left {
         transform: translate(-999px, 0);
+        visibility: hidden;
+        transition: transform 0.5s ease-in-out, visibility 0s linear 0.5s;
       }
 
       :root[dir="ltr"] &.transition-right {
         transform: translate(999px, 0);
+        visibility: hidden;
+        transition: transform 0.5s ease-in-out, visibility 0s linear 0.5s;
       }
 
       :root[dir="rtl"] &.transition-left {
         transform: translate(999px, 0);
+        visibility: hidden;
+        transition: transform 0.5s ease-in-out, visibility 0s linear 0.5s;
       }
 
       :root[dir="rtl"] &.transition-right {
         transform: translate(-999px, 0);
+        visibility: hidden;
+        transition: transform 0.5s ease-in-out, visibility 0s linear 0.5s;
       }
 
       &.layer-ui__wrapper__footer-left--transition-bottom {

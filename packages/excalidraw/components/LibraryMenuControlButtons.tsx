@@ -11,19 +11,22 @@ export const LibraryMenuControlButtons = ({
   style,
   children,
   className,
+  prepend,
 }: {
   libraryReturnUrl: ExcalidrawProps["libraryReturnUrl"];
   theme: UIAppState["theme"];
   id: string;
-  style: React.CSSProperties;
+  style?: React.CSSProperties;
   children?: React.ReactNode;
   className?: string;
+  prepend?: React.ReactNode;
 }) => {
   return (
     <div
-      className={clsx("library-menu-control-buttons", className)}
+      className={clsx("lib-footer", className)}
       style={style}
     >
+      {prepend}
       <LibraryMenuBrowseButton
         id={id}
         libraryReturnUrl={libraryReturnUrl}

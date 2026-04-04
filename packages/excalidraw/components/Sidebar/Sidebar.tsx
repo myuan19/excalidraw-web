@@ -7,6 +7,7 @@ import React, {
   forwardRef,
   useImperativeHandle,
   useCallback,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 
 import {
@@ -34,6 +35,70 @@ import { SidebarTab } from "./SidebarTab";
 import "./Sidebar.scss";
 
 import type { SidebarProps, SidebarPropsContextValue } from "./common";
+
+const SIDEBAR_MIN_WIDTH = 200;
+const SIDEBAR_MAX_WIDTH = 600;
+
+const SidebarResizeHandle: React.FC = () => {
+  const handleRef = useRef<HTMLDivElement>(null);
+
+  const onPointerDown = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      const handle = handleRef.current;
+      if (!handle) return;
+
+      const excalidrawRoot = handle.closest(".excalidraw") as HTMLElement | null;
+      if (!excalidrawRoot) return;
+
+      const startX = e.clientX;
+      const startWidth = parseInt(
+        getComputedStyle(excalidrawRoot).getPropertyValue(
+          "--right-sidebar-width",
+        ),
+        10,
+      ) || 302;
+
+      const isRtl =
+        document.documentElement.getAttribute("dir") === "rtl";
+
+      const onMove = (ev: globalThis.PointerEvent) => {
+        const dx = ev.clientX - startX;
+        const newWidth = Math.round(
+          Math.min(
+            SIDEBAR_MAX_WIDTH,
+            Math.max(SIDEBAR_MIN_WIDTH, startWidth + (isRtl ? dx : -dx)),
+          ),
+        );
+        excalidrawRoot.style.setProperty(
+          "--right-sidebar-width",
+          `${newWidth}px`,
+        );
+      };
+
+      const onUp = () => {
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+    },
+    [],
+  );
+
+  return (
+    <div
+      ref={handleRef}
+      className="sidebar__resize-handle"
+      onPointerDown={onPointerDown}
+    />
+  );
+};
 
 /**
  * Flags whether the currently rendered Sidebar is docked or not, for use
@@ -150,6 +215,7 @@ export const SidebarInner = forwardRef(
         )}
         ref={islandRef}
       >
+        <SidebarResizeHandle />
         <SidebarPropsContext.Provider value={headerPropsRef.current}>
           {children}
         </SidebarPropsContext.Provider>
