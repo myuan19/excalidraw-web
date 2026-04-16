@@ -1,32 +1,53 @@
-# syntax=docker/dockerfile:1
-# 前端静态资源 + nginx（反代 /api）+ Node server（SQLite 与文件队列在 EXCALIDRAW_DATA_DIR）
-# 构建: ./_scripts/docker-build.sh
+# 三阶段最小化构建：前端静态 + Node API + nginx 反代
+# 最终镜像基于 nginx:alpine (~8MB)，总体 ~80-100MB
 
-FROM node:20-bookworm AS build
+# ── Stage 1: 前端构建 ──────────────────────────────────────
+FROM node:20-bookworm AS frontend
+ARG HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy all_proxy ALL_PROXY
 WORKDIR /opt/node_app
+
+# 1a) 先只复制依赖定义 → yarn install 层在代码不变时直接命中缓存
+COPY package.json yarn.lock ./
+COPY excalidraw-app/package.json excalidraw-app/
+COPY packages/common/package.json packages/common/
+COPY packages/element/package.json packages/element/
+COPY packages/excalidraw/package.json packages/excalidraw/
+COPY packages/math/package.json packages/math/
+COPY packages/utils/package.json packages/utils/
+RUN sed -i 's|https://registry.yarnpkg.com|https://registry.npmmirror.com|g' yarn.lock && \
+    yarn --network-timeout 600000 --registry https://registry.npmmirror.com
+
+# 1b) 再复制全部源码 → 只有代码变了才重新 build
 COPY . .
-RUN --mount=type=cache,target=/root/.cache/yarn \
-    yarn --network-timeout 600000
 ARG NODE_ENV=production
 RUN yarn build:app:docker
 
-FROM node:20-bookworm-slim AS runtime
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    nginx \
-    ca-certificates \
-    wget \
-    python3 make g++ \
-    && rm -rf /var/lib/apt/lists/*
+# ── Stage 2: server 依赖编译（better-sqlite3 需要原生编译） ──
+FROM node:20-alpine AS server-deps
+ARG HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy all_proxy ALL_PROXY
+RUN apk add --no-cache python3 make g++
+WORKDIR /opt/server
+COPY server/package.json server/package-lock.json ./
+RUN npm ci --omit=dev --registry https://registry.npmmirror.com && rm -rf /root/.npm
+
+# ── Stage 3: 最终运行镜像 ─────────────────────────────────
+FROM nginx:1.27-alpine
+
+COPY --from=server-deps /usr/local/bin/node /usr/local/bin/node
+RUN apk add --no-cache libstdc++ libgcc
 
 WORKDIR /opt/excalidraw
 
-COPY --from=build /opt/node_app/excalidraw-app/build /var/www/excalidraw-static
+# 前端静态资源
+COPY --from=frontend /opt/node_app/excalidraw-app/build /var/www/excalidraw-static
 
-COPY server/package.json server/package-lock.json ./server/
-RUN cd server && npm ci --omit=dev
+# server 代码 + 已编译的 node_modules
+COPY --from=server-deps /opt/server/node_modules ./server/node_modules
 COPY server/index.js server/db.js ./server/
 COPY server/routes ./server/routes
+COPY server/package.json ./server/
 
+# nginx 配置 + entrypoint
 COPY docker/full/nginx.conf /etc/nginx/nginx-excalidraw.conf
 COPY docker/full/entrypoint.sh /usr/local/bin/entrypoint-excalidraw.sh
 RUN chmod +x /usr/local/bin/entrypoint-excalidraw.sh

@@ -1,18 +1,14 @@
 import { createRoot } from "react-dom/client";
-import { registerSW } from "virtual:pwa-register";
 
 import ExcalidrawApp from "./App";
 
 window.__EXCALIDRAW_SHA__ = import.meta.env.VITE_APP_GIT_SHA;
 
-// Belt-and-suspenders: if code reaches here in dev (e.g. user did
-// Ctrl+Shift+R to bypass stale SW), eagerly nuke any leftover SW &
-// caches so the *next* normal refresh is also clean.
-// The primary fix lives in public/sw.js (self-destructing SW).
-if (
-  import.meta.env.DEV &&
-  import.meta.env.VITE_APP_ENABLE_PWA !== "true"
-) {
+const pwaEnabled = import.meta.env.VITE_APP_ENABLE_PWA === "true";
+
+// If PWA is disabled, aggressively remove any previously-installed SW/cache
+// from older deployments so stale bundles stop shadowing freshly deployed code.
+if (!pwaEnabled) {
   if ("serviceWorker" in navigator) {
     void navigator.serviceWorker.getRegistrations().then((regs) =>
       Promise.all(regs.map((r) => r.unregister())),
@@ -27,5 +23,4 @@ if (
 
 const rootElement = document.getElementById("root")!;
 const root = createRoot(rootElement);
-registerSW({ immediate: true });
 root.render(<ExcalidrawApp />);

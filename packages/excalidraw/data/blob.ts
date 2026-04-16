@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
 
 import {
+  EXPORT_DATA_TYPES,
   IMAGE_MIME_TYPES,
   MIME_TYPES,
   bytesToHexString,
@@ -29,10 +30,45 @@ import type { AppState, DataURL, LibraryItem } from "../types";
 
 import type { ImportedLibraryData } from "./types";
 
+/** When dragging files from the OS, browsers often set empty, octet-stream, or text/plain even for .excalidraw / .png / .svg — infer from the file name like the open dialog does. */
+const getEffectiveMimeTypeForParse = (blob: Blob | File): string => {
+  const t = (blob.type || "").trim();
+  const name = "name" in blob && blob.name ? blob.name : "";
+  const fromName = (): string => {
+    if (/\.(excalidraw|json)$/i.test(name)) {
+      return MIME_TYPES.json;
+    }
+    if (/\.png$/i.test(name)) {
+      return MIME_TYPES.png;
+    }
+    if (/\.jpe?g$/i.test(name)) {
+      return MIME_TYPES.jpg;
+    }
+    if (/\.svg$/i.test(name)) {
+      return MIME_TYPES.svg;
+    }
+    if (/\.excalidrawlib$/i.test(name)) {
+      return MIME_TYPES.excalidrawlib;
+    }
+    return "";
+  };
+  if (
+    !t ||
+    t === "application/octet-stream" ||
+    t === "binary/octet-stream" ||
+    t === "text/plain"
+  ) {
+    return fromName() || t;
+  }
+  return t;
+};
+
 const parseFileContents = async (blob: Blob | File): Promise<string> => {
   let contents: string;
 
-  if (blob.type === MIME_TYPES.png) {
+  const mime = getEffectiveMimeTypeForParse(blob);
+
+  if (mime === MIME_TYPES.png) {
     try {
       return await (await import("./image")).decodePngMetadata(blob);
     } catch (error: any) {
@@ -59,7 +95,7 @@ const parseFileContents = async (blob: Blob | File): Promise<string> => {
         };
       });
     }
-    if (blob.type === MIME_TYPES.svg) {
+    if (mime === MIME_TYPES.svg) {
       try {
         return decodeSvgBase64Payload({
           svg: contents,
@@ -156,6 +192,17 @@ export const loadSceneOrLibraryFromBlob = async (
         );
       }
       throw error;
+    }
+    // Legacy / third-party JSON often has elements + appState but omits `type: "excalidraw"`.
+    if (
+      data &&
+      typeof data === "object" &&
+      data.type !== EXPORT_DATA_TYPES.excalidrawLibrary &&
+      !data.type &&
+      Array.isArray(data.elements) &&
+      (!data.appState || typeof data.appState === "object")
+    ) {
+      data = { ...data, type: EXPORT_DATA_TYPES.excalidraw };
     }
     if (isValidExcalidrawData(data)) {
       return {

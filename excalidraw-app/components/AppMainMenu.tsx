@@ -15,6 +15,7 @@ export const AppMainMenu: React.FC<{
   theme: Theme | "system";
   setTheme: (theme: Theme | "system") => void;
   refresh: () => void;
+  onGoHome: () => void;
 }> = React.memo((props) => {
   return (
     <MainMenu>
@@ -25,8 +26,7 @@ export const AppMainMenu: React.FC<{
       <MainMenu.Item
         icon={smallHouseIcon}
         onSelect={() => {
-          window.location.hash = "";
-          window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
+          props.onGoHome();
         }}
       >
         返回首页

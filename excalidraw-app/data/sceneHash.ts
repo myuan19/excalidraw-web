@@ -26,11 +26,30 @@ export function hashSceneSnapshot(data: ForkSceneSnapshot | unknown): string {
   }
   try {
     const payload = { elements: o.elements, appState, files: o.files ?? {} };
-    const s = JSON.stringify(payload, Object.keys(payload).sort());
+    const s = JSON.stringify(stableNormalize(payload));
     return hashString(s);
   } catch {
     return hashString(JSON.stringify(data));
   }
+}
+
+function stableNormalize(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => stableNormalize(item));
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, entryValue]) => entryValue !== undefined)
+    .sort(([a], [b]) => a.localeCompare(b));
+
+  const normalized: Record<string, unknown> = {};
+  for (const [key, entryValue] of entries) {
+    normalized[key] = stableNormalize(entryValue);
+  }
+  return normalized;
 }
 
 function hashString(s: string): string {

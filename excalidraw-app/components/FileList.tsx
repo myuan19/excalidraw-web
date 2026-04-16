@@ -13,11 +13,11 @@ import {
   loadExcalidrawFileAsServerSceneData,
 } from "../data/importExcalidrawScene";
 import { LocalThumbnailCache } from "../data/localThumbnailCache";
-import {
-  FILE_LIST_THUMB_EXPORT_PADDING,
-  appStateForThumbnailExport,
-} from "../data/thumbnailExport";
 import { ServerSync, type ServerFile } from "../data/ServerSync";
+import {
+  buildSceneThumbnailSvg,
+  patchThumbnailSvgForCard,
+} from "../data/thumbnailSvg";
 import {
   ensureAIConfigLoaded,
   isAIConfigured,
@@ -39,16 +39,6 @@ function sanitizeFileBaseName(name: string): string {
 }
 
 type SortKey = "updated_at" | "created_at" | "name";
-
-/** Force SVG to fill & crop in the card thumbnail area. */
-function patchSvgFillCrop(svgMarkup: string): string {
-  return svgMarkup
-    .replace(/\s+preserveAspectRatio="[^"]*"/gi, "")
-    .replace(
-      /(<svg\b[^>]*?)(\s*>)/i,
-      '$1 preserveAspectRatio="xMidYMid slice"$2',
-    );
-}
 
 function highlightMatch(text: string, q: string): React.ReactNode {
   if (!q.trim()) {
@@ -77,16 +67,15 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [dropOverlay, setDropOverlay] = useState(false);
+  const [fetchedThumbs, setFetchedThumbs] = useState<Record<string, string>>({});
+  const [draftThumbs, setDraftThumbs] = useState<Record<string, string>>({});
   const rootRef = useRef<HTMLDivElement>(null);
   const sceneImportInputRef = useRef<HTMLInputElement>(null);
-  const [flash, setFlash] = useState<{ ok: boolean; message: string } | null>(
-    null,
-  );
   const [searchQuery, setSearchQuery] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const nameClickTimer = useRef<number | null>(null);
-  const [, syncBump] = useState(0);
+  const [syncVersion, setSyncVersion] = useState(0);
   const [sortKey, setSortKey] = useState<SortKey>("updated_at");
   const [showAISettings, setShowAISettings] = useState(false);
   const [detailFile, setDetailFile] = useState<ServerFile | null>(null);
@@ -107,7 +96,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
   }, []);
 
   useEffect(() => {
-    const bump = () => syncBump((n) => n + 1);
+    const bump = () => setSyncVersion((n) => n + 1);
     window.addEventListener("excalidraw-file-sync-state", bump);
     window.addEventListener("excalidraw-server-saved", bump);
     window.addEventListener("storage", bump);
@@ -139,6 +128,15 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
       for (const f of list) {
         if (f.content_sha256) {
           FileSyncState.setServerHash(f.id, f.content_sha256);
+        }
+        // Clear stale "draft" state for files the user hasn't actively edited.
+        // This handles old files whose hash state was left inconsistent.
+        if (
+          FileSyncState.getSyncState(f.id) === "draft" &&
+          !FileSyncState.getLocalEditTime(f.id)
+        ) {
+          debugLog.fileList(`clearing stale draft hash for ${f.id.slice(0, 8)}`);
+          FileSyncState.clearHashStateForFile(f.id);
         }
       }
       debugLog.fileList("refresh done", {
@@ -181,13 +179,131 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
     refresh();
   }, [refresh]);
 
-  useEffect(() => {
-    if (!flash) {
-      return;
+  const draftStateById = useMemo(() => {
+    const byId: Record<
+      string,
+      {
+        syncState: "synced" | "draft";
+        baseHash: string | null;
+        draftHash: string | null;
+        localDraftThumb: string | null;
+        localRecord: ReturnType<typeof FileSyncState.getLocalCache>;
+        localElementCount: number;
+        hasDraftLocalState: boolean;
+      }
+    > = {};
+    for (const f of files) {
+      const syncState = FileSyncState.getSyncState(f.id);
+      const localDraftThumb =
+        syncState === "draft" ? LocalThumbnailCache.get(f.id) : null;
+      const localRecord =
+        syncState === "draft" ? FileSyncState.getLocalCache(f.id) : null;
+      const localElementCount = Array.isArray(localRecord?.elements)
+        ? localRecord.elements.length
+        : 0;
+      byId[f.id] = {
+        syncState,
+        baseHash: FileSyncState.getBaselineHash(f.id),
+        draftHash: FileSyncState.getDraftHash(f.id),
+        localDraftThumb,
+        localRecord,
+        localElementCount,
+        hasDraftLocalState: syncState === "draft" && !!localRecord,
+      };
     }
-    const t = window.setTimeout(() => setFlash(null), 4000);
-    return () => window.clearTimeout(t);
-  }, [flash]);
+    return byId;
+  }, [files, syncVersion]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const missing: string[] = [];
+    const missingDrafts: string[] = [];
+    const cached: string[] = [];
+    const noThumb: string[] = [];
+    for (const f of files) {
+      const state = draftStateById[f.id];
+      const syncState = state?.syncState ?? "synced";
+      const localDraftThumb = state?.localDraftThumb ?? null;
+      const localRecord = state?.localRecord ?? null;
+      const localElementCount = state?.localElementCount ?? 0;
+      if (syncState === "draft") {
+        debugLog.thumbnail(`draft inspect ${f.id.slice(0, 8)}`, {
+          hasLocalThumb: !!localDraftThumb,
+          localThumbLen: localDraftThumb?.length ?? 0,
+          hasLocalRecord: !!localRecord,
+          localElements: localElementCount,
+          localFiles: Object.keys(localRecord?.files || {}).length,
+        });
+      }
+      if (localDraftThumb) {
+        cached.push(f.id.slice(0, 8));
+        continue;
+      }
+      if (syncState === "draft") {
+        if (!localRecord) {
+          noThumb.push(f.id.slice(0, 8));
+          debugLog.thumbnail(`draft skip ${f.id.slice(0, 8)}: no local record`);
+          continue;
+        }
+        missingDrafts.push(f.id.slice(0, 8));
+        void (async () => {
+          try {
+            const thumbnail = await buildSceneThumbnailSvg({
+              elements: localRecord.elements,
+              appState: localRecord.appState,
+              files: localRecord.files,
+            });
+            LocalThumbnailCache.set(f.id, thumbnail);
+            if (!cancelled) {
+              setDraftThumbs((prev) => ({ ...prev, [f.id]: thumbnail }));
+            }
+            debugLog.thumbnail(
+              `draft generated ${f.id.slice(0, 8)}, len=${thumbnail.length}`,
+            );
+          } catch (err) {
+            debugLog.thumbnail(`draft generate error ${f.id.slice(0, 8)}`, err);
+          }
+        })();
+        continue;
+      }
+      if (!f.has_thumbnail) {
+        noThumb.push(f.id.slice(0, 8));
+        continue;
+      }
+      missing.push(f.id.slice(0, 8));
+      const url = `/api/files/${f.id}/thumbnail${
+        f.content_sha256 ? `?h=${encodeURIComponent(f.content_sha256)}` : ""
+      }`;
+      fetch(url)
+        .then((r) => {
+          if (!r.ok) {
+            debugLog.thumbnail(`fetch ${f.id.slice(0, 8)} → ${r.status}`);
+            return null;
+          }
+          return r.text();
+        })
+        .then((svg) => {
+          if (cancelled || !svg) {
+            return;
+          }
+          debugLog.thumbnail(`fetched ${f.id.slice(0, 8)}, len=${svg.length}`);
+          setFetchedThumbs((prev) => ({ ...prev, [f.id]: svg }));
+        })
+        .catch((err) => {
+          debugLog.thumbnail(`fetch error ${f.id.slice(0, 8)}`, err);
+        });
+    }
+    debugLog.thumbnail("sync", {
+      total: files.length,
+      cached,
+      draftGenerating: missingDrafts,
+      noThumb,
+      fetching: missing,
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [draftStateById, files]);
 
   const effectiveUpdatedAt = useCallback((f: ServerFile): string => {
     const local = FileSyncState.getLocalEditTime(f.id);
@@ -225,10 +341,61 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
     return sorted;
   }, [files, searchQuery, sortKey, effectiveUpdatedAt]);
 
+  /**
+   * Core file creation: create on server, optionally save initial scene with
+   * thumbnail and hash state. Returns the new file id.
+   */
+  const createFileOnServer = useCallback(
+    async (name: string, initialScene?: { elements: unknown[]; appState: unknown; files: unknown }): Promise<string> => {
+      debugLog.fileList("createFileOnServer", {
+        name,
+        hasScene: !!initialScene,
+        elements: initialScene ? (initialScene.elements as unknown[]).length : 0,
+      });
+      const created = await ServerSync.createFile(name);
+      const id = created.id;
+
+      if (initialScene) {
+        let thumbnail: string | undefined;
+        try {
+          thumbnail = await buildSceneThumbnailSvg({
+            elements: initialScene.elements,
+            appState: initialScene.appState,
+            files: initialScene.files,
+          });
+          LocalThumbnailCache.set(id, thumbnail);
+          debugLog.thumbnail(
+            `createFileOnServer ${id.slice(0, 8)}, svgLen=${thumbnail.length}`,
+          );
+        } catch (err) {
+          debugLog.thumbnail(
+            `createFileOnServer ${id.slice(0, 8)} exportToSvg FAILED`,
+            err,
+          );
+        }
+
+        await ServerSync.saveFileImmediate(id, initialScene, name, thumbnail);
+
+        FileSyncState.setLocalCache(id, {
+          elements: initialScene.elements,
+          appState: initialScene.appState,
+          files: initialScene.files,
+          deltas: [],
+        });
+        debugLog.fileList(
+          `createFileOnServer ${id.slice(0, 8)} saved, thumb=${!!thumbnail}`,
+        );
+      }
+
+      return id;
+    },
+    [],
+  );
+
   const handleCreate = async () => {
     try {
-      const f = await ServerSync.createFile("Untitled");
-      onOpenFile(f.id);
+      const id = await createFileOnServer("Untitled");
+      onOpenFile(id);
     } catch (e: any) {
       setError(e.message);
     }
@@ -236,51 +403,27 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
 
   const importExcalidrawToServer = useCallback(
     async (file: File) => {
+      debugLog.fileList("import start", { name: file.name, type: file.type, size: file.size });
       setImporting(true);
       setError(null);
       try {
         const { elements, appState, files: sceneFiles } =
           await loadExcalidrawFileAsServerSceneData(file);
-        const displayName = sanitizeFileBaseName(file.name);
-        const created = await ServerSync.createFile(displayName);
-        const scene = { elements, appState, files: sceneFiles };
-
-        let thumbnail: string | undefined;
-        try {
-          const { exportToSvg } = await import("@excalidraw/excalidraw");
-          const svg = await exportToSvg({
-            elements: elements as any,
-            appState: appStateForThumbnailExport(appState as any),
-            files: sceneFiles as any,
-            exportPadding: FILE_LIST_THUMB_EXPORT_PADDING,
-          });
-          thumbnail = svg.outerHTML;
-          LocalThumbnailCache.set(created.id, thumbnail);
-        } catch {
-          // thumbnail generation is optional
-        }
-
-        await ServerSync.saveFileImmediate(
-          created.id,
-          scene,
-          displayName,
-          thumbnail,
-        );
-        setError(null);
-        setFlash({
-          ok: true,
-          message: `已导入「${displayName}」，已保存到服务器（未打开）`,
+        debugLog.fileList("import parsed", { elements: elements.length, files: Object.keys(sceneFiles).length });
+        await createFileOnServer(sanitizeFileBaseName(file.name), {
+          elements,
+          appState,
+          files: sceneFiles,
         });
         await refresh({ silent: true });
       } catch (e: unknown) {
-        const msg = formatImportErrorMessage(e);
-        setFlash({ ok: false, message: msg });
-        setError(msg);
+        debugLog.fileList("import error", e);
+        setError(formatImportErrorMessage(e));
       } finally {
         setImporting(false);
       }
     },
-    [refresh],
+    [createFileOnServer, refresh],
   );
 
   const onRootDragEnter = (e: React.DragEvent) => {
@@ -416,7 +559,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
             </svg>
             <p className="filelist__drop-title">松手以导入</p>
             <p className="filelist__drop-hint">
-              支持 .excalidraw / JSON 等，上传到服务器并加入列表（不自动打开）
+              支持 .excalidraw / JSON 等，导入到服务器并加入列表
             </p>
           </div>
         </div>
@@ -424,16 +567,6 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
       {importing && (
         <div className="filelist__import-blocking" aria-busy>
           <span>正在导入…</span>
-        </div>
-      )}
-      {flash && (
-        <div
-          className={`filelist__flash filelist__flash--${
-            flash.ok ? "ok" : "err"
-          }`}
-          role="status"
-        >
-          {flash.message}
         </div>
       )}
       <header className="filelist__header">
@@ -592,17 +725,46 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
       ) : (
         <div className="filelist__grid">
           {filteredFiles.map((f) => {
-            const syncState = FileSyncState.getSyncState(f.id);
-            const localSvg = LocalThumbnailCache.get(f.id);
-            const legacyInline = f.thumbnail_svg;
-            const remoteThumb = f.has_thumbnail
-              ? `/api/files/${f.id}/thumbnail${
-                  f.content_sha256
-                    ? `?h=${encodeURIComponent(f.content_sha256)}`
-                    : ""
-                }`
-              : null;
-            const thumbSvg = localSvg || legacyInline;
+            const state = draftStateById[f.id];
+            const syncState = state?.syncState ?? "synced";
+            const baseH = state?.baseHash ?? null;
+            const draftH = state?.draftHash ?? null;
+            const localDraftThumb = state?.localDraftThumb ?? null;
+            const generatedDraftThumb =
+              syncState === "draft" ? draftThumbs[f.id] : null;
+            const localRecord = state?.localRecord ?? null;
+            const localElementCount = state?.localElementCount ?? 0;
+            const hasDraftLocalState = state?.hasDraftLocalState ?? false;
+            const thumbSvg = hasDraftLocalState
+              ? localDraftThumb || generatedDraftThumb || null
+              : localDraftThumb ||
+                generatedDraftThumb ||
+                fetchedThumbs[f.id] ||
+                f.thumbnail_svg ||
+                null;
+            debugLog.fileList("card", {
+              id: f.id.slice(0, 8),
+              name: f.name,
+              syncState,
+              hasThumbSvg: !!thumbSvg,
+              thumbSource: localDraftThumb
+                ? "localCache"
+                : generatedDraftThumb
+                  ? "draft_generated"
+                : hasDraftLocalState
+                  ? "awaiting_draft_thumb"
+                : fetchedThumbs[f.id]
+                  ? "fetched"
+                  : f.thumbnail_svg
+                    ? "server_inline"
+                    : "none",
+              has_thumbnail: f.has_thumbnail,
+              baseHash: baseH?.slice(0, 8) ?? null,
+              draftHash: draftH?.slice(0, 8) ?? null,
+              serverSha: f.content_sha256?.slice(0, 8) ?? null,
+              hasLocalRecord: !!localRecord,
+              localElements: localElementCount,
+            });
             const q = searchQuery.trim();
             return (
               <div
@@ -623,16 +785,8 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
                     <div
                       className="filelist__card-thumb-svg"
                       dangerouslySetInnerHTML={{
-                        __html: patchSvgFillCrop(thumbSvg),
+                        __html: patchThumbnailSvgForCard(thumbSvg),
                       }}
-                    />
-                  ) : remoteThumb ? (
-                    <img
-                      className="filelist__card-thumb-img"
-                      src={remoteThumb}
-                      alt=""
-                      loading="lazy"
-                      decoding="async"
                     />
                   ) : (
                     <div className="filelist__card-thumb-placeholder">

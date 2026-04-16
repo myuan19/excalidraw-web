@@ -3,6 +3,7 @@ import {
   toForkLocalCacheStored,
   type ForkLocalCacheRecord,
 } from "./forkFileTypes";
+import { debugLog } from "./debugLog";
 
 const PREFIX = "excalidraw-file-";
 
@@ -27,7 +28,12 @@ export const FileSyncState = {
         this.localCacheKey(fileId),
         JSON.stringify(toForkLocalCacheStored(data)),
       );
+      const elementCount = Array.isArray(data.elements) ? data.elements.length : 0;
+      debugLog.stash(
+        `setLocalCache ${fileId.slice(0, 8)} elements=${elementCount} deltas=${data.deltas.length} files=${Object.keys(data.files || {}).length}`,
+      );
     } catch {
+      debugLog.stash(`setLocalCache FAILED ${fileId.slice(0, 8)}`);
       // ignore quota
     }
     emitSyncState();
@@ -37,11 +43,20 @@ export const FileSyncState = {
     try {
       const raw = localStorage.getItem(this.localCacheKey(fileId));
       if (!raw) {
+        debugLog.stash(`getLocalCache ${fileId.slice(0, 8)} hit=false`);
         return null;
       }
       const parsed: unknown = JSON.parse(raw);
-      return parseForkLocalCache(parsed);
+      const record = parseForkLocalCache(parsed);
+      const elementCount = Array.isArray(record?.elements)
+        ? record.elements.length
+        : 0;
+      debugLog.stash(
+        `getLocalCache ${fileId.slice(0, 8)} hit=true elements=${elementCount} deltas=${record?.deltas.length ?? 0} files=${Object.keys(record?.files || {}).length}`,
+      );
+      return record;
     } catch {
+      debugLog.stash(`getLocalCache FAILED ${fileId.slice(0, 8)}`);
       return null;
     }
   },

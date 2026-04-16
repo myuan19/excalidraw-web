@@ -11,7 +11,7 @@
 !scripts/
 !tsconfig.json
 !yarn.lock
-!_server/
+!server/
 !docker/
 
 # keep (sub)sub directories at the end to exclude from explicit included
@@ -20,5 +20,5 @@
 **/dist
 **/node_modules
 
-# 开发机上的本地数据不打包进镜像（运行时挂载卷）
-_server/data
+# 运行时数据不打包进镜像（通过卷挂载）
+server/data

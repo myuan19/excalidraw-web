@@ -134,6 +134,7 @@ router.post("/", (req, res) => {
   const id = randomUUID();
   const name = req.body.name || "Untitled";
   const now = new Date().toISOString();
+  console.log("[excalidraw-web-server]", now, "POST /api/files (create)", { id: id.slice(0, 8), name });
 
   db.prepare("INSERT INTO files (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)").run(
     id,
@@ -174,11 +175,18 @@ router.put("/:id", (req, res) => {
 
   const hasData = !!req.body.data;
   const hasThumb = typeof req.body.thumbnail === "string" && req.body.thumbnail.length > 0;
+  const hasName = !!req.body.name;
+  const elementCount = hasData && Array.isArray(req.body.data?.elements) ? req.body.data.elements.length : 0;
+  const fileCount = hasData && req.body.data?.files ? Object.keys(req.body.data.files).length : 0;
   console.log("[excalidraw-web-server]", new Date().toISOString(), "PUT /api/files/:id", {
-    id,
+    id: id.slice(0, 8),
     hasData,
+    hasName,
+    name: req.body.name || "(unchanged)",
     hasThumb,
     thumbLen: hasThumb ? req.body.thumbnail.length : 0,
+    elementCount,
+    fileCount,
   });
 
   /** 与磁盘上当前文件内容一致则跳过数据写入与版本记录（仍允许仅改文件名或缩略图） */
@@ -199,6 +207,7 @@ router.put("/:id", (req, res) => {
 
   if (skipDataWrite && !req.body.name && !hasThumb) {
     const sha = hasData ? hashSceneDataJson(req.body.data) : undefined;
+    console.log("[excalidraw-web-server]", new Date().toISOString(), "PUT /api/files/:id → SKIPPED (unchanged)", { id: id.slice(0, 8), sha: sha?.slice(0, 8) });
     return res.json({
       ok: true,
       skipped: true,
@@ -250,6 +259,12 @@ router.put("/:id", (req, res) => {
     );
   }
 
+  console.log("[excalidraw-web-server]", now, "PUT /api/files/:id → SAVED", {
+    id: id.slice(0, 8),
+    skipDataWrite,
+    wroteThumb: !!req.body.thumbnail,
+    sha: contentSha256Out?.slice(0, 8) ?? "none",
+  });
   res.json({
     ok: true,
     updated_at: now,
@@ -260,11 +275,14 @@ router.put("/:id", (req, res) => {
 router.get("/:id/thumbnail", (req, res) => {
   const tp = thumbnailPath(req.params.id);
   if (!existsSync(tp)) {
+    console.log("[excalidraw-web-server]", new Date().toISOString(), `GET /api/files/${req.params.id.slice(0, 8)}/thumbnail → 404`);
     return res.status(404).json({ error: "no thumbnail" });
   }
+  const svg = readFileSync(tp, "utf-8");
+  console.log("[excalidraw-web-server]", new Date().toISOString(), `GET /api/files/${req.params.id.slice(0, 8)}/thumbnail → 200, len=${svg.length}`);
   res.setHeader("Content-Type", "image/svg+xml");
   res.setHeader("Cache-Control", "public, max-age=60");
-  res.send(readFileSync(tp, "utf-8"));
+  res.send(svg);
 });
 
 router.patch("/:id", (req, res) => {
