@@ -1159,7 +1159,7 @@ const ExcalidrawWrapper = () => {
             >
               {toolbarSaveIcon}
               <span>
-                {forkSaving ? "上传中…" : "上传并退出"}
+                {forkSaving ? "上传中…" : "保存退出"}
               </span>
             </button>
             <button

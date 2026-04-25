@@ -53,6 +53,8 @@ export interface ServerFile {
   name: string;
   created_at: string;
   updated_at: string;
+  folder_id?: string | null;
+  sort_index?: number;
   archive_count?: number;
   /** 服务器磁盘上有 thumbnail.svg（用 /api/files/:id/thumbnail 展示） */
   has_thumbnail?: boolean;
@@ -71,6 +73,24 @@ export interface ArchiveEntry {
   /** 服务端 SHA-256（场景 JSON），可选 */
   content_sha256?: string | null;
 }
+
+export interface ServerFolder {
+  id: string;
+  parent_id: string | null;
+  name: string;
+  sort_index: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FileTreeResponse {
+  folders: ServerFolder[];
+  files: ServerFile[];
+}
+
+export type FileOrderItem =
+  | { type: "folder"; id: string }
+  | { type: "file"; id: string };
 
 export interface PutFileResult {
   ok?: boolean;
@@ -113,11 +133,40 @@ export const ServerSync = {
     return api<ServerFileHash[]>("/files/hashes");
   },
 
-  createFile(name = "Untitled"): Promise<ServerFile> {
+  listFileTree(opts?: { signal?: AbortSignal }): Promise<FileTreeResponse> {
+    return api<FileTreeResponse>("/files/tree", { signal: opts?.signal });
+  },
+
+  createFile(name = "Untitled", folderId?: string | null): Promise<ServerFile> {
     return api("/files", {
       method: "POST",
+      body: JSON.stringify({ name, folder_id: folderId ?? null }),
+    });
+  },
+
+  createFolder(name: string, parentId?: string | null): Promise<ServerFolder> {
+    return api("/files/folders", {
+      method: "POST",
+      body: JSON.stringify({ name, parent_id: parentId ?? null }),
+    });
+  },
+
+  renameFolder(id: string, name: string): Promise<ServerFolder> {
+    return api(`/files/folders/${id}`, {
+      method: "PATCH",
       body: JSON.stringify({ name }),
     });
+  },
+
+  moveFolder(id: string, parentId: string | null): Promise<ServerFolder> {
+    return api(`/files/folders/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ parent_id: parentId }),
+    });
+  },
+
+  deleteFolder(id: string): Promise<unknown> {
+    return api(`/files/folders/${id}`, { method: "DELETE" });
   },
 
   getFile(id: string): Promise<ServerFile> {
@@ -179,6 +228,20 @@ export const ServerSync = {
     return api(`/files/${id}`, {
       method: "PATCH",
       body: JSON.stringify({ name }),
+    });
+  },
+
+  moveFiles(fileIds: string[], folderId: string | null): Promise<unknown> {
+    return api("/files/move", {
+      method: "POST",
+      body: JSON.stringify({ file_ids: fileIds, folder_id: folderId }),
+    });
+  },
+
+  saveOrder(parentId: string | null, items: FileOrderItem[]): Promise<unknown> {
+    return api("/files/order", {
+      method: "POST",
+      body: JSON.stringify({ parent_id: parentId, items }),
     });
   },
 

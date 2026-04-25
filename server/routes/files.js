@@ -36,6 +36,94 @@ function hashSceneDataJson(data) {
 /** 每个文件最多保留的版本快照条数（更早的从 DB 与磁盘删除） */
 const MAX_ARCHIVES_PER_FILE = 8;
 
+function normalizeFolderId(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function nextSortIndex(table, parentColumn, parentId) {
+  const where = parentId == null ? `${parentColumn} IS NULL` : `${parentColumn} = ?`;
+  const row =
+    parentId == null
+      ? db.prepare(`SELECT COALESCE(MAX(sort_index), -1) + 1 AS next FROM ${table} WHERE ${where}`).get()
+      : db.prepare(`SELECT COALESCE(MAX(sort_index), -1) + 1 AS next FROM ${table} WHERE ${where}`).get(parentId);
+  return row?.next ?? 0;
+}
+
+function folderExists(folderId) {
+  if (folderId == null) {
+    return true;
+  }
+  return !!db.prepare("SELECT id FROM file_folders WHERE id = ?").get(folderId);
+}
+
+function assertFolderExists(folderId, res) {
+  if (!folderExists(folderId)) {
+    res.status(404).json({ error: "folder not found" });
+    return false;
+  }
+  return true;
+}
+
+function mapFileRow(r) {
+  return {
+    ...r,
+    folder_id: r.folder_id ?? null,
+    sort_index: r.sort_index ?? 0,
+    has_thumbnail: existsSync(thumbnailPath(r.id)),
+    content_sha256: r.content_sha256 ?? null,
+  };
+}
+
+function mapFolderRow(r) {
+  return {
+    id: r.id,
+    parent_id: r.parent_id ?? null,
+    name: r.name,
+    sort_index: r.sort_index ?? 0,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+  };
+}
+
+function getDescendantFolderIds(folderId) {
+  const ids = [];
+  const queue = [folderId];
+  for (let i = 0; i < queue.length; i++) {
+    const id = queue[i];
+    ids.push(id);
+    const children = db
+      .prepare("SELECT id FROM file_folders WHERE parent_id = ?")
+      .all(id);
+    for (const child of children) {
+      queue.push(child.id);
+    }
+  }
+  return ids;
+}
+
+function wouldCreateFolderCycle(folderId, nextParentId) {
+  if (nextParentId == null) {
+    return false;
+  }
+  if (folderId === nextParentId) {
+    return true;
+  }
+  let cursor = nextParentId;
+  while (cursor) {
+    const row = db
+      .prepare("SELECT parent_id FROM file_folders WHERE id = ?")
+      .get(cursor);
+    if (!row) {
+      return false;
+    }
+    cursor = row.parent_id;
+    if (cursor === folderId) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** 在插入新快照之前腾出位置，避免先出现第 9 条再删（与客户端「满 8 删最旧」一致） */
 function trimArchivesBeforeAppend(fileId) {
   for (;;) {
@@ -113,34 +201,195 @@ router.get("/hashes", (_req, res) => {
   res.json(rows);
 });
 
+router.get("/tree", (_req, res) => {
+  const folders = db
+    .prepare(
+      `SELECT id, parent_id, name, sort_index, created_at, updated_at
+       FROM file_folders
+       ORDER BY parent_id IS NOT NULL, parent_id ASC, sort_index ASC, name COLLATE NOCASE ASC`,
+    )
+    .all()
+    .map(mapFolderRow);
+  const files = db
+    .prepare(
+      `SELECT f.id, f.name, f.created_at, f.updated_at, f.content_sha256, f.folder_id, f.sort_index,
+              (SELECT count(*) FROM archives a WHERE a.file_id = f.id) AS archive_count
+       FROM files f
+       ORDER BY f.folder_id IS NOT NULL, f.folder_id ASC, f.sort_index ASC, f.updated_at DESC`,
+    )
+    .all()
+    .map(mapFileRow);
+  res.json({ folders, files });
+});
+
+router.post("/folders", (req, res) => {
+  const id = randomUUID();
+  const name = String(req.body.name || "新建文件夹").trim() || "新建文件夹";
+  const parentId = normalizeFolderId(req.body.parent_id);
+  if (!assertFolderExists(parentId, res)) {
+    return;
+  }
+  const now = new Date().toISOString();
+  const sortIndex =
+    Number.isFinite(Number(req.body.sort_index))
+      ? Number(req.body.sort_index)
+      : nextSortIndex("file_folders", "parent_id", parentId);
+  db.prepare(
+    `INSERT INTO file_folders (id, parent_id, name, sort_index, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(id, parentId, name, sortIndex, now, now);
+  res.status(201).json({
+    id,
+    parent_id: parentId,
+    name,
+    sort_index: sortIndex,
+    created_at: now,
+    updated_at: now,
+  });
+});
+
+router.patch("/folders/:id", (req, res) => {
+  const row = db
+    .prepare("SELECT * FROM file_folders WHERE id = ?")
+    .get(req.params.id);
+  if (!row) {
+    return res.status(404).json({ error: "folder not found" });
+  }
+  const nextName =
+    req.body.name !== undefined
+      ? String(req.body.name).trim() || row.name
+      : row.name;
+  const hasParent = Object.prototype.hasOwnProperty.call(req.body, "parent_id");
+  const nextParentId = hasParent ? normalizeFolderId(req.body.parent_id) : row.parent_id;
+  if (!assertFolderExists(nextParentId, res)) {
+    return;
+  }
+  if (wouldCreateFolderCycle(req.params.id, nextParentId)) {
+    return res.status(400).json({ error: "cannot move folder into itself" });
+  }
+  const now = new Date().toISOString();
+  db.prepare(
+    "UPDATE file_folders SET name = ?, parent_id = ?, updated_at = ? WHERE id = ?",
+  ).run(nextName, nextParentId, now, req.params.id);
+  const updated = db
+    .prepare(
+      "SELECT id, parent_id, name, sort_index, created_at, updated_at FROM file_folders WHERE id = ?",
+    )
+    .get(req.params.id);
+  res.json(mapFolderRow(updated));
+});
+
+router.delete("/folders/:id", (req, res) => {
+  const row = db
+    .prepare("SELECT * FROM file_folders WHERE id = ?")
+    .get(req.params.id);
+  if (!row) {
+    return res.status(404).json({ error: "folder not found" });
+  }
+  const folderIds = getDescendantFolderIds(req.params.id);
+  const deleteTxn = db.transaction(() => {
+    for (const folderId of folderIds) {
+      db.prepare("UPDATE files SET folder_id = NULL WHERE folder_id = ?").run(
+        folderId,
+      );
+    }
+    db.prepare("DELETE FROM file_folders WHERE id = ?").run(req.params.id);
+  });
+  deleteTxn();
+  res.json({ ok: true });
+});
+
+router.post("/move", (req, res) => {
+  const fileIds = Array.isArray(req.body.file_ids)
+    ? req.body.file_ids.filter((id) => typeof id === "string" && id)
+    : [];
+  const folderId = normalizeFolderId(req.body.folder_id);
+  if (fileIds.length === 0) {
+    return res.status(400).json({ error: "file_ids required" });
+  }
+  if (!assertFolderExists(folderId, res)) {
+    return;
+  }
+  const now = new Date().toISOString();
+  const moveTxn = db.transaction(() => {
+    const update = db.prepare(
+      "UPDATE files SET folder_id = ?, sort_index = ?, updated_at = ? WHERE id = ?",
+    );
+    let sortIndex = nextSortIndex("files", "folder_id", folderId);
+    for (const fileId of fileIds) {
+      update.run(folderId, sortIndex++, now, fileId);
+    }
+  });
+  moveTxn();
+  res.json({ ok: true });
+});
+
+router.post("/order", (req, res) => {
+  const parentId = normalizeFolderId(req.body.parent_id);
+  const items = Array.isArray(req.body.items) ? req.body.items : [];
+  if (!assertFolderExists(parentId, res)) {
+    return;
+  }
+  const orderTxn = db.transaction(() => {
+    const updateFile = db.prepare(
+      "UPDATE files SET folder_id = ?, sort_index = ? WHERE id = ?",
+    );
+    const updateFolder = db.prepare(
+      "UPDATE file_folders SET parent_id = ?, sort_index = ?, updated_at = ? WHERE id = ?",
+    );
+    const now = new Date().toISOString();
+    items.forEach((item, index) => {
+      if (!item || typeof item.id !== "string") {
+        return;
+      }
+      if (item.type === "folder") {
+        if (!wouldCreateFolderCycle(item.id, parentId)) {
+          updateFolder.run(parentId, index, now, item.id);
+        }
+        return;
+      }
+      if (item.type === "file") {
+        updateFile.run(parentId, index, item.id);
+      }
+    });
+  });
+  orderTxn();
+  res.json({ ok: true });
+});
+
 router.get("/", (_req, res) => {
   console.log("[excalidraw-web-server]", new Date().toISOString(), "GET /api/files list");
   const rows = db
     .prepare(
-      `SELECT f.id, f.name, f.created_at, f.updated_at, f.content_sha256,
+      `SELECT f.id, f.name, f.created_at, f.updated_at, f.content_sha256, f.folder_id, f.sort_index,
               (SELECT count(*) FROM archives a WHERE a.file_id = f.id) AS archive_count
        FROM files f ORDER BY f.updated_at DESC`,
     )
     .all();
-  const result = rows.map((r) => ({
-    ...r,
-    has_thumbnail: existsSync(thumbnailPath(r.id)),
-    content_sha256: r.content_sha256 ?? null,
-  }));
+  const result = rows.map(mapFileRow);
   res.json(result);
 });
 
 router.post("/", (req, res) => {
   const id = randomUUID();
   const name = req.body.name || "Untitled";
+  const folderId = normalizeFolderId(req.body.folder_id);
+  if (!assertFolderExists(folderId, res)) {
+    return;
+  }
   const now = new Date().toISOString();
   console.log("[excalidraw-web-server]", now, "POST /api/files (create)", { id: id.slice(0, 8), name });
 
-  db.prepare("INSERT INTO files (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)").run(
+  const sortIndex = nextSortIndex("files", "folder_id", folderId);
+  db.prepare(
+    "INSERT INTO files (id, name, created_at, updated_at, folder_id, sort_index) VALUES (?, ?, ?, ?, ?, ?)",
+  ).run(
     id,
     name,
     now,
     now,
+    folderId,
+    sortIndex,
   );
 
   ensureFileDir(id);
@@ -154,7 +403,14 @@ router.post("/", (req, res) => {
   });
   writeFileSync(currentPath(id), empty, "utf-8");
 
-  res.status(201).json({ id, name, created_at: now, updated_at: now });
+  res.status(201).json({
+    id,
+    name,
+    created_at: now,
+    updated_at: now,
+    folder_id: folderId,
+    sort_index: sortIndex,
+  });
 });
 
 router.get("/:id", (req, res) => {
@@ -275,13 +531,15 @@ router.put("/:id", (req, res) => {
 router.get("/:id/thumbnail", (req, res) => {
   const tp = thumbnailPath(req.params.id);
   if (!existsSync(tp)) {
-    console.log("[excalidraw-web-server]", new Date().toISOString(), `GET /api/files/${req.params.id.slice(0, 8)}/thumbnail → 404`);
     return res.status(404).json({ error: "no thumbnail" });
   }
   const svg = readFileSync(tp, "utf-8");
-  console.log("[excalidraw-web-server]", new Date().toISOString(), `GET /api/files/${req.params.id.slice(0, 8)}/thumbnail → 200, len=${svg.length}`);
   res.setHeader("Content-Type", "image/svg+xml");
-  res.setHeader("Cache-Control", "public, max-age=60");
+  if (req.query.h) {
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  } else {
+    res.setHeader("Cache-Control", "public, max-age=300");
+  }
   res.send(svg);
 });
 
@@ -298,7 +556,24 @@ router.patch("/:id", (req, res) => {
       req.params.id,
     );
   }
-  res.json({ ok: true, updated_at: now });
+  if (Object.prototype.hasOwnProperty.call(req.body, "folder_id")) {
+    const folderId = normalizeFolderId(req.body.folder_id);
+    if (!assertFolderExists(folderId, res)) {
+      return;
+    }
+    const sortIndex = nextSortIndex("files", "folder_id", folderId);
+    db.prepare(
+      "UPDATE files SET folder_id = ?, sort_index = ?, updated_at = ? WHERE id = ?",
+    ).run(folderId, sortIndex, now, req.params.id);
+  }
+  const updated = db
+    .prepare(
+      `SELECT f.id, f.name, f.created_at, f.updated_at, f.content_sha256, f.folder_id, f.sort_index,
+              (SELECT count(*) FROM archives a WHERE a.file_id = f.id) AS archive_count
+       FROM files f WHERE f.id = ?`,
+    )
+    .get(req.params.id);
+  res.json({ ok: true, ...mapFileRow(updated) });
 });
 
 router.delete("/:id", (req, res) => {
