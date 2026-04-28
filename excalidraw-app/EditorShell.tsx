@@ -30,6 +30,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { t } from "@excalidraw/excalidraw/i18n";
 import { isElementLink } from "@excalidraw/element";
 import { restoreAppState, restoreElements } from "@excalidraw/excalidraw/data/restore";
+import { getNormalizedZoom } from "@excalidraw/excalidraw/scene";
 import { newElementWith, StoreIncrement, type StoreDelta } from "@excalidraw/element";
 import { isInitializedImageElement } from "@excalidraw/element";
 import {
@@ -166,6 +167,40 @@ function sanitizePersistedAppState(raw: Record<string, unknown> | null | undefin
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// Viewport persistence helpers
+// ---------------------------------------------------------------------------
+
+type SavedViewport = { scrollX: number; scrollY: number; zoomValue: number };
+
+const viewportKey = (fileId: string) => `excal-vp-${fileId}`;
+
+function readSavedViewport(fileId: string): SavedViewport | null {
+  try {
+    const raw = localStorage.getItem(viewportKey(fileId));
+    if (!raw) return null;
+    const p = JSON.parse(raw);
+    if (
+      typeof p?.scrollX === "number" &&
+      typeof p?.scrollY === "number" &&
+      typeof p?.zoomValue === "number"
+    ) {
+      return p as SavedViewport;
+    }
+  } catch {}
+  return null;
+}
+
+/** 供 onChange 内部调用，直接写 localStorage（已在外部防抖）。 */
+function persistViewport(fileId: string, scrollX: number, scrollY: number, zoomValue: number) {
+  try {
+    localStorage.setItem(
+      viewportKey(fileId),
+      JSON.stringify({ scrollX, scrollY, zoomValue }),
+    );
+  } catch {}
+}
+
 const initializeScene = async (opts: {
   excalidrawAPI: ExcalidrawImperativeAPI;
 }): Promise<{
@@ -183,6 +218,8 @@ const initializeScene = async (opts: {
       : [];
     const localHasContent = localElements.length > 0;
     debugLog.init(`file=${fid8} localHasContent=${localHasContent}, localElements=${localElements.length}`);
+
+    const savedViewport = readSavedViewport(fileIdFromHash);
 
     let serverNewerThanLocal = false;
     try {
@@ -215,15 +252,18 @@ const initializeScene = async (opts: {
       FileSyncState.setDraftHash(fileIdFromHash, draftH);
       debugLog.init(`file=${fid8} → use LOCAL cache, hash=${draftH.slice(0, 8)}, existingBaseline=${existingBaseline?.slice(0, 8) ?? "none"}`);
       await DeltaStorage.restoreSnapshot(data.deltas);
+      const restoredLocal1 = restoreAppState(sanitizePersistedAppState(data.appState as any) as any, null);
       return {
         scene: {
           elements: restoreElements(data.elements as any, null, {
             repairBindings: true,
             deleteInvisibleElements: true,
           }),
-          appState: restoreAppState(sanitizePersistedAppState(data.appState as any) as any, null),
+          appState: savedViewport
+            ? { ...restoredLocal1, scrollX: savedViewport.scrollX, scrollY: savedViewport.scrollY, zoom: { value: getNormalizedZoom(savedViewport.zoomValue) } }
+            : restoredLocal1,
           files: (data.files || {}) as any,
-          scrollToContent: true,
+          ...(savedViewport ? {} : { scrollToContent: true }),
         },
         isExternalScene: false,
       };
@@ -253,15 +293,18 @@ const initializeScene = async (opts: {
       FileSyncState.setDraftHash(fileIdFromHash, draftH);
       debugLog.init(`file=${fid8} → use LOCAL (no server data), hash=${draftH.slice(0, 8)}`);
       await DeltaStorage.restoreSnapshot(data.deltas);
+      const restoredLocal2 = restoreAppState(sanitizePersistedAppState(data.appState as any) as any, null);
       return {
         scene: {
           elements: restoreElements(data.elements as any, null, {
             repairBindings: true,
             deleteInvisibleElements: true,
           }),
-          appState: restoreAppState(sanitizePersistedAppState(data.appState as any) as any, null),
+          appState: savedViewport
+            ? { ...restoredLocal2, scrollX: savedViewport.scrollX, scrollY: savedViewport.scrollY, zoom: { value: getNormalizedZoom(savedViewport.zoomValue) } }
+            : restoredLocal2,
           files: (data.files || {}) as any,
-          scrollToContent: true,
+          ...(savedViewport ? {} : { scrollToContent: true }),
         },
         isExternalScene: false,
       };
@@ -287,15 +330,18 @@ const initializeScene = async (opts: {
       });
       debugLog.init(`file=${fid8} → use SERVER data, hash=${h.slice(0, 8)}, baseline=draft=${h.slice(0, 8)}`);
       await DeltaStorage.restoreSnapshot([]);
+      const restoredServer = restoreAppState(sanitizePersistedAppState(mergedAppState as any) as any, null);
       return {
         scene: {
           elements: restoreElements(data.elements as any, null, {
             repairBindings: true,
             deleteInvisibleElements: true,
           }),
-          appState: restoreAppState(sanitizePersistedAppState(mergedAppState as any) as any, null),
+          appState: savedViewport
+            ? { ...restoredServer, scrollX: savedViewport.scrollX, scrollY: savedViewport.scrollY, zoom: { value: getNormalizedZoom(savedViewport.zoomValue) } }
+            : restoredServer,
           files: (data.files || {}) as any,
-          scrollToContent: true,
+          ...(savedViewport ? {} : { scrollToContent: true }),
         },
         isExternalScene: false,
       };
@@ -543,6 +589,12 @@ const ExcalidrawWrapper = () => {
 
   const localPersistGenRef = useRef(0);
 
+  const saveViewportDebouncedRef = useRef(
+    debounce((fileId: string, scrollX: number, scrollY: number, zoomValue: number) => {
+      persistViewport(fileId, scrollX, scrollY, zoomValue);
+    }, 500),
+  );
+
   const updateDraftHashDebouncedRef = useRef(
     debounce(
       (fileId: string, getScene: () => ReturnType<typeof getSceneData>) => {
@@ -598,8 +650,10 @@ const ExcalidrawWrapper = () => {
 
   useEffect(() => {
     const debounced = updateDraftHashDebouncedRef.current;
+    const debouncedVp = saveViewportDebouncedRef.current;
     return () => {
       debounced.cancel();
+      debouncedVp.cancel();
     };
   }, []);
 
@@ -1168,6 +1222,7 @@ const ExcalidrawWrapper = () => {
     const fid = getFileIdFromHash();
     if (fid && excalidrawAPI) {
       updateDraftHashDebouncedRef.current(fid, getSceneData);
+      saveViewportDebouncedRef.current(fid, appState.scrollX, appState.scrollY, appState.zoom.value);
     }
 
     if (debugCanvasRef.current && excalidrawAPI) {
