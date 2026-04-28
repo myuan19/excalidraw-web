@@ -227,17 +227,23 @@ function assignOrphanPublishedItemsToGroups(
 
 /**
  * Remove redundant empty group rows: multiple server/UI placeholders collapse
- * to one; when there are published items, drop empty shells that have no items.
+ * to one; when at least one group already holds items, remove **all** empty
+ * shells (e.g. URL 导入时按路径名建的 `forms` 空分组，而素材已在其它分组中).
+ * When every group is empty, keep as-is (dedupe by name only).
  */
 function dedupeEmptyGroups(
   groups: LibraryGroup[],
   _items: LibraryItemRecord[],
 ): LibraryGroup[] {
-  if (groups.length <= 1) {
-    return groups;
+  const hasAnyWithItems = groups.some((g) => g.itemIds.length > 0);
+  let next = hasAnyWithItems
+    ? groups.filter((g) => g.itemIds.length > 0)
+    : groups;
+  if (next.length <= 1) {
+    return next;
   }
   const seen = new Set<string>();
-  return groups.filter((g) => {
+  return next.filter((g) => {
     if (g.itemIds.length > 0) {
       return true;
     }

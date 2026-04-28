@@ -190,7 +190,10 @@
       "heading": "匹配的库",
       "noResults": "无匹配项……",
       "clearSearch": "清除搜索"
-    }
+    },
+    "interactionHint": "单击插入画布 · Ctrl/⌘+单击查看详情 · 长按查看详情（触屏）",
+    "detailBack": "返回列表",
+    "browseOpenExternal": "在新标签页打开"
   },
   "search": {
     "title": "在画布上查找",

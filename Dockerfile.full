@@ -43,7 +43,7 @@ COPY --from=frontend /opt/node_app/excalidraw-app/build /var/www/excalidraw-stat
 
 # server 代码 + 已编译的 node_modules
 COPY --from=server-deps /opt/server/node_modules ./server/node_modules
-COPY server/index.js server/db.js ./server/
+COPY server/index.js server/db.js server/logger.js ./server/
 COPY server/routes ./server/routes
 COPY server/package.json ./server/
 
@@ -56,6 +56,9 @@ VOLUME ["/var/lib/excalidraw"]
 
 ENV NODE_ENV=production \
     EXCALIDRAW_DATA_DIR=/var/lib/excalidraw \
+    EXCALIDRAW_CLIENT_LOG=1 \
+    EXCALIDRAW_HTTP_TRACE=1 \
+    EXCALIDRAW_THUMB_AUDIT_LOG=1 \
     PORT=3033 \
     LISTEN_HOST=127.0.0.1
 

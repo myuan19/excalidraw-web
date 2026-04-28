@@ -4,8 +4,10 @@
 
 import { debugLog } from "./debugLog";
 import { FileSyncState } from "./FileSyncState";
-import type { ForkSceneSnapshot } from "./forkFileTypes";
+
 import { hashSceneSnapshot } from "./sceneHash";
+
+import type { ForkSceneSnapshot } from "./forkFileTypes";
 
 function url(path: string): string {
   return `/api${path}`;
@@ -16,6 +18,13 @@ async function api<T = unknown>(
   opts: RequestInit = {},
 ): Promise<T> {
   const method = opts.method || "GET";
+  const t0 =
+    typeof performance !== "undefined" ? performance.now() : Date.now();
+  const elapsedMs = () =>
+    Math.round(
+      (typeof performance !== "undefined" ? performance.now() : Date.now()) -
+        t0,
+    );
   debugLog.sync(`api ${method}`, path);
   const res = await fetch(url(path), {
     headers: { "Content-Type": "application/json" },
@@ -24,22 +33,34 @@ async function api<T = unknown>(
   const ct = res.headers.get("content-type") || "";
   if (!ct.includes("application/json")) {
     const text = await res.text();
-    const hint =
+    const looksLikeHtml =
       text.trimStart().startsWith("<!DOCTYPE") ||
-      text.trimStart().startsWith("<html")
-        ? " Got HTML instead of JSON — is the Vite dev proxy to server running? Start API (e.g. ./_scripts/run.sh --dev or --server) and restart Vite."
-        : "";
-    debugLog.sync(`api non-JSON ${res.status}`, path, text.slice(0, 120));
+      text.trimStart().startsWith("<html");
+    const hint = looksLikeHtml
+      ? import.meta.env.DEV
+        ? " Got HTML instead of JSON — the Vite dev server is serving the SPA for /api (API not reached). Run ./_scripts/run.sh dev so Express runs on :3033 with proxy, or start server/index.js and set VITE_DEV_API_PROXY_TARGET in .env.development, then restart Vite."
+        : " Got HTML instead of JSON — /api is not hitting the Node API (nginx error page or SPA fallback). With Docker: rebuild/restart the image, then docker logs <container> and confirm Node listens (e.g. missing server/logger.js in image leaves nginx up without API)."
+      : "";
+    debugLog.sync(
+      `api non-JSON ${res.status} ${elapsedMs()}ms`,
+      path,
+      text.slice(0, 120),
+    );
     throw new Error(
       `API ${path} expected JSON but got ${ct || "unknown type"}.${hint}`,
     );
   }
   if (!res.ok) {
     const text = await res.text();
-    debugLog.sync(`api error ${res.status}`, path, text.slice(0, 200));
+    debugLog.sync(
+      `api error ${res.status} ${elapsedMs()}ms`,
+      path,
+      text.slice(0, 200),
+    );
     throw new Error(`API ${res.status}: ${text}`);
   }
   const data = (await res.json()) as T;
+  debugLog.sync(`api ok ${elapsedMs()}ms`, path, method);
   if (method === "PUT" && path.includes("/files/")) {
     debugLog.sync("api PUT ok", path, data);
   }

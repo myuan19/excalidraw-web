@@ -5,7 +5,11 @@
  * 3. Canvas (server /api/library/files/:fileId) — items scoped to current drawing
  *
  * On load: fetches all three in parallel and merges into one list.
- * On save: diffs items by scope and routes to POST /api/library/sync.
+ * On save: Excalidraw core calls `save()` → {@link queueLibrarySync} → POST `/api/library/sync`
+ * (debounced ~400ms) with personal / public / canvas payloads + group metadata — **持久化到后端**。
+ *
+ * Canvas `fileId`：`load()` 优先读当前 `location.hash`（`#file=`），避免首次打开时 `_currentFileId` 尚未写入而漏拉画布素材。
+ *
  * Published-library groups + fold state: SQLite `library_groups` only (see /api/library/groups).
  */
 import { debugLog } from "./debugLog";
@@ -26,6 +30,15 @@ import { queueLibrarySync } from "./librarySyncQueue";
 
 function url(path: string): string {
   return `/api${path}`;
+}
+
+/** 与 excalidraw-app `getFileIdFromHash` 一致，避免 useEffect 设置 fileId 晚于首次 library load */
+function fileIdFromLocationHash(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const m = window.location.hash.match(/^#file=(.+)$/);
+  return m ? m[1] : null;
 }
 
 async function apiJson<T = unknown>(
@@ -104,12 +117,14 @@ export const CombinedLibraryAdapter: LibraryPersistenceAdapter = {
     debugLog.library("load called", metadata);
     const isSaveSource = metadata?.source === "save";
 
+    const canvasFileId = fileIdFromLocationHash() ?? _currentFileId;
+
     const [publicItems, canvasItems, personalRows, serverGroups] =
       await Promise.all([
         apiJson<ServerLibraryItem[]>("/library").catch(() => []),
-        _currentFileId
+        canvasFileId
           ? apiJson<ServerLibraryItem[]>(
-              `/library/files/${_currentFileId}`,
+              `/library/files/${canvasFileId}`,
             ).catch(() => [])
           : Promise.resolve([]),
         apiJson<ServerLibraryItem[]>("/library/personal").catch(() => []),

@@ -24,7 +24,8 @@ type LibraryOrPendingItem = readonly (
 
 interface Props {
   items: LibraryOrPendingItem;
-  onClick: (id: LibraryItem["id"] | null) => void;
+  onClick: (id: LibraryItem["id"] | null, event: React.MouseEvent) => void;
+  onOpenDetail?: (id: string) => void;
   onItemSelectToggle: (id: LibraryItem["id"], event: React.MouseEvent) => void;
   onItemDrag: (id: LibraryItem["id"], event: React.DragEvent) => void;
   isItemSelected: (id: LibraryItem["id"] | null) => boolean;
@@ -109,6 +110,7 @@ export const LibraryMenuSection = memo(
     onItemDrag,
     isItemSelected,
     onClick,
+    onOpenDetail,
     svgCache,
     itemsRenderedPerBatch,
     enableLibraryReorder,
@@ -135,6 +137,7 @@ export const LibraryMenuSection = memo(
               elements={item?.elements}
               isPending={!item?.id && !!item?.elements}
               onClick={onClick}
+              onOpenDetail={onOpenDetail}
               svgCache={svgCache}
               id={item?.id}
               selected={isItemSelected(item.id)}

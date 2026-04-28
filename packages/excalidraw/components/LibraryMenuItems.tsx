@@ -176,6 +176,7 @@ function LibraryItemDetailPanel({
   aiError,
   onDismissAiError,
   onPreviewDragStart,
+  isPhoneLayout,
 }: {
   item: LibraryItem;
   svgCache: SvgCache;
@@ -186,6 +187,7 @@ function LibraryItemDetailPanel({
   aiError: string | null;
   onDismissAiError: () => void;
   onPreviewDragStart?: (event: React.DragEvent) => void;
+  isPhoneLayout?: boolean;
 }) {
   const [editingName, setEditingName] = useState(item.name || "");
   const previewRef = useRef<HTMLDivElement | null>(null);
@@ -208,18 +210,20 @@ function LibraryItemDetailPanel({
   };
 
   return (
-    <div className="lib-detail">
+    <div
+      className={clsx("lib-detail", isPhoneLayout && "lib-detail--sheet")}
+    >
       <div className="lib-detail__header">
         <button
           type="button"
           className="lib-detail__back"
           onClick={onClose}
-          aria-label={t("buttons.close")}
+          aria-label={t("library.detailBack")}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
           </svg>
-          {"Back"}
+          {t("library.detailBack")}
         </button>
       </div>
       <div
@@ -1305,19 +1309,31 @@ export default function LibraryMenuItems({
     [selectedItems],
   );
 
-  const onAddToLibraryClick = useCallback(() => {
-    onAddToLibrary(pendingElements);
-  }, [pendingElements, onAddToLibrary]);
+  const onAddToLibraryClick = useCallback(
+    (_id: LibraryItem["id"] | null, _event: React.MouseEvent) => {
+      onAddToLibrary(pendingElements);
+    },
+    [pendingElements, onAddToLibrary],
+  );
 
   const [detailItemId, setDetailItemId] = useState<string | null>(null);
 
+  const handleOpenLibraryDetail = useCallback((id: string) => {
+    setDetailItemId(id);
+  }, []);
+
   const onItemClick = useCallback(
-    (clickedId: LibraryItem["id"] | null) => {
-      if (clickedId) {
-        setDetailItemId(clickedId);
+    (clickedId: LibraryItem["id"] | null, event: React.MouseEvent) => {
+      if (!clickedId) {
+        return;
       }
+      if (event.ctrlKey || event.metaKey) {
+        setDetailItemId(clickedId);
+        return;
+      }
+      onInsertLibraryItems(getInsertedElements(clickedId));
     },
-    [],
+    [getInsertedElements, onInsertLibraryItems],
   );
 
   const detailItem = useMemo(
@@ -1624,6 +1640,7 @@ export default function LibraryMenuItems({
           onItemSelectToggle={onItemSelectToggle}
           onItemDrag={onItemDrag}
           onClick={onItemClick}
+          onOpenDetail={handleOpenLibraryDetail}
           isItemSelected={isItemSelected}
           svgCache={svgCache}
           enableLibraryReorder={enableReorder}
@@ -1658,6 +1675,7 @@ export default function LibraryMenuItems({
             onItemSelectToggle={onItemSelectToggle}
             onItemDrag={onItemDrag}
             onClick={onItemClick}
+            onOpenDetail={handleOpenLibraryDetail}
             isItemSelected={isItemSelected}
             svgCache={svgCache}
             enableLibraryReorder={enableReorder}
@@ -1706,6 +1724,7 @@ export default function LibraryMenuItems({
                     onItemSelectToggle={onItemSelectToggle}
                     onItemDrag={onItemDrag}
                     onClick={onItemClick}
+                    onOpenDetail={handleOpenLibraryDetail}
                     isItemSelected={isItemSelected}
                     svgCache={svgCache}
                     enableLibraryReorder={enableReorder}
@@ -1762,6 +1781,7 @@ export default function LibraryMenuItems({
               onItemSelectToggle={onItemSelectToggle}
               onItemDrag={onItemDrag}
               onClick={onItemClick}
+              onOpenDetail={handleOpenLibraryDetail}
               isItemSelected={isItemSelected}
               svgCache={svgCache}
               reorderDropIndicator={reorderDropIndicator}
@@ -1862,6 +1882,11 @@ export default function LibraryMenuItems({
               </button>
             </div>
           </div>
+          {!detailItemId && (
+            <p className="lib-interaction-hint" id="lib-interaction-hint">
+              {t("library.interactionHint")}
+            </p>
+          )}
         </div>
       )}
 
@@ -1881,6 +1906,7 @@ export default function LibraryMenuItems({
             aiError={aiTagError}
             onDismissAiError={() => setAiTagError(null)}
             onPreviewDragStart={onDetailPreviewDragStart}
+            isPhoneLayout={editorInterface.formFactor === "phone"}
           />
         ) : (
           <>

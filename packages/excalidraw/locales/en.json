@@ -205,7 +205,10 @@
       "heading": "Library matches",
       "noResults": "No matching items found...",
       "clearSearch": "Clear search"
-    }
+    },
+    "interactionHint": "Click to insert · Ctrl/⌘+click for details · Long-press on touch",
+    "detailBack": "Back to list",
+    "browseOpenExternal": "Open in new browser tab"
   },
   "search": {
     "title": "Find on canvas",

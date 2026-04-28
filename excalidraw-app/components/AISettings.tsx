@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   type AIConfig,
@@ -17,6 +17,28 @@ export {
   subscribeAIConfig,
 } from "../data/aiConfig";
 
+/** 仅在按下与松手都点在遮罩上时关闭，避免选区/复制时松手在外侧误关。 */
+function useStrictOverlayDismiss(onDismiss: () => void) {
+  const pointerDownOnBackdrop = useRef(false);
+  return useMemo(
+    () => ({
+      onPointerDown: (e: React.PointerEvent) => {
+        pointerDownOnBackdrop.current = e.target === e.currentTarget;
+      },
+      onPointerUp: (e: React.PointerEvent) => {
+        if (e.target === e.currentTarget && pointerDownOnBackdrop.current) {
+          onDismiss();
+        }
+        pointerDownOnBackdrop.current = false;
+      },
+      onPointerCancel: () => {
+        pointerDownOnBackdrop.current = false;
+      },
+    }),
+    [onDismiss],
+  );
+}
+
 const DEFAULT_CONFIG: AIConfig = {
   endpoint: "",
   apiKey: "",
@@ -34,7 +56,7 @@ export const AISettings: React.FC<AISettingsProps> = ({ open, onClose }) => {
   const [config, setConfig] = useState<AIConfig>(DEFAULT_CONFIG);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const mouseDownInsideRef = useRef(false);
+  const overlayDismiss = useStrictOverlayDismiss(onClose);
 
   useEffect(() => {
     if (!open) {
@@ -77,26 +99,10 @@ export const AISettings: React.FC<AISettingsProps> = ({ open, onClose }) => {
   }
 
   return (
-    <div
-      className="ai-settings-overlay"
-      onMouseDown={() => {
-        mouseDownInsideRef.current = false;
-      }}
-      onMouseUp={() => {
-        if (!mouseDownInsideRef.current) {
-          onClose();
-        }
-      }}
-    >
+    <div className="ai-settings-overlay" {...overlayDismiss}>
       <div
         className="ai-settings-dialog"
-        onMouseDown={(e) => {
-          e.stopPropagation();
-          mouseDownInsideRef.current = true;
-        }}
-        onMouseUp={(e) => {
-          e.stopPropagation();
-        }}
+        onPointerDown={(e) => e.stopPropagation()}
       >
         <h2>AI 配置</h2>
         <p className="ai-settings-desc">
@@ -108,9 +114,7 @@ export const AISettings: React.FC<AISettingsProps> = ({ open, onClose }) => {
         </p>
 
         {loadError ? (
-          <p className="ai-settings-desc" style={{ color: "#c92a2a" }}>
-            {loadError}
-          </p>
+          <p className="ai-settings-desc ai-settings-desc--error">{loadError}</p>
         ) : null}
 
         <label>

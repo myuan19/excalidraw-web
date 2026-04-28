@@ -1,10 +1,70 @@
 /**
- * UI tokens aligned with the Excalidraw editor palette.
- * Primary purple #6965db matches the editor's --color-primary.
+ * Design tokens — fork app shell & file list (spacing/sizing in rem only).
+ * Raw colors live here; components use var(--nb-*) only (no #hex / px in consumers).
  */
 :root {
-  --nb-font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica,
-    "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol";
+  /* ── base unit: 2px — use calc(var(--nb-unit) * N) for ad-hoc multiples ── */
+  --nb-unit: 0.125rem;
+
+  /* ── space scale (rem) ── */
+  --nb-space-0: 0;
+  --nb-space-1: calc(var(--nb-unit) * 1); /* 2px */
+  --nb-space-1-5: calc(var(--nb-unit) * 3 / 2);
+  --nb-space-2: calc(var(--nb-unit) * 2);
+  --nb-space-3: calc(var(--nb-unit) * 3);
+  --nb-space-4: calc(var(--nb-unit) * 4);
+  --nb-space-5: calc(var(--nb-unit) * 5);
+  --nb-space-6: calc(var(--nb-unit) * 6);
+  --nb-space-7: calc(var(--nb-unit) * 7);
+  --nb-space-8: calc(var(--nb-unit) * 8);
+  --nb-space-9: calc(var(--nb-unit) * 9);
+  --nb-space-10: calc(var(--nb-unit) * 10);
+  --nb-space-11: calc(var(--nb-unit) * 11);
+  --nb-space-12: calc(var(--nb-unit) * 12);
+  --nb-space-13: calc(var(--nb-unit) * 13);
+  --nb-space-14: calc(var(--nb-unit) * 14);
+  --nb-space-15: calc(var(--nb-unit) * 15);
+  --nb-space-16: calc(var(--nb-unit) * 16);
+  --nb-space-17: calc(var(--nb-unit) * 17);
+  --nb-space-18: calc(var(--nb-unit) * 18);
+  --nb-space-20: calc(var(--nb-unit) * 20);
+  --nb-space-24: calc(var(--nb-unit) * 24);
+  --nb-space-25: calc(var(--nb-unit) * 25);
+  --nb-space-27: calc(var(--nb-unit) * 27);
+
+  /* ── radii (rem) ── */
+  --nb-radius-2xs: calc(var(--nb-unit) * 1);
+  --nb-radius-hair: var(--nb-space-1-5);
+  --nb-radius-xs: calc(var(--nb-unit) * 2);
+  --nb-radius-sm: calc(var(--nb-unit) * 3);
+  --nb-radius-md: calc(var(--nb-unit) * 4);
+  --nb-radius-lg: calc(var(--nb-unit) * 5);
+  --nb-radius-xl: calc(var(--nb-unit) * 6);
+  --nb-radius-2xl: calc(var(--nb-unit) * 7);
+  --nb-radius-3xl: calc(var(--nb-unit) * 8);
+  --nb-radius-sheet-top: var(--nb-space-8);
+
+  /* ── typography (rem) ── */
+  --nb-font-micro: 0.625rem;
+  --nb-font-caption: 0.6875rem;
+  --nb-font-small: 0.75rem;
+  --nb-font-body-sm: 0.8125rem;
+  --nb-font-body: 0.875rem;
+  --nb-font-body-lg: 0.9375rem;
+  --nb-font-title-sm: 1rem;
+  --nb-font-title: 1.0625rem;
+  --nb-font-title-lg: 1.125rem;
+  --nb-font-loading: 0.9375rem;
+  --nb-font-banner: 0.8333rem;
+  --nb-font-mono-sm: 0.72rem;
+
+  /* ── borders ── */
+  --nb-border-width: var(--nb-unit);
+  --nb-border-width-thick: calc(var(--nb-unit) * 2);
+  --nb-border-width-ring: calc(var(--nb-unit) * 3);
+  --nb-border-width-accent: 0.09375rem;
+
+  /* ── semantic colors (light) ── */
   --nb-text: #1b1b1f;
   --nb-text-muted: rgba(27, 27, 31, 0.55);
   --nb-text-faint: rgba(27, 27, 31, 0.38);
@@ -21,22 +81,210 @@
   --nb-blue-hover: #5b57d1;
   --nb-blue-soft: rgba(105, 101, 219, 0.12);
   --nb-blue-focus: #5753d0;
-  --nb-btn-primary-shadow: rgba(15, 15, 15, 0.1) 0 0 0 1px inset, rgba(15, 15, 15, 0.1) 0 1px 2px;
-  --nb-btn-ghost-shadow: rgba(15, 15, 15, 0.1) 0 0 0 1px inset;
-  --nb-radius-btn: 8px;
-  --nb-radius-card: 8px;
-  --nb-radius-pill: 6px;
+  --nb-on-primary: #ffffff;
+  --nb-on-primary-dark-contrast: #000000;
   --nb-page-bg: #ffffff;
   --nb-surface: #ffffff;
   --nb-surface-high: #f1f0ff;
-  --nb-card-shadow: 0 1px 2px rgba(15, 15, 15, 0.06),
-    0 0 0 1px rgba(15, 15, 15, 0.04);
-  --nb-card-shadow-hover: 0 4px 16px rgba(15, 15, 15, 0.1),
-    0 0 0 1px rgba(15, 15, 15, 0.06);
+  --nb-surface-muted: #f6f6f9;
+  --nb-surface-sidebar-top: #faf9fd;
+  --nb-surface-sidebar-bottom: #f4f3fa;
+  --nb-surface-secondary: #f3f3f9;
+  --nb-surface-row-hover: #e3e2fe;
+  --nb-danger: #b91c1c;
+  --nb-danger-foreground: #dc2626;
+  --nb-danger-soft-text-dark: #f87171;
+  --nb-danger-surface: #fef2f2;
+  --nb-danger-border: #fecaca;
+  --nb-danger-soft-bg: rgba(239, 68, 68, 0.12);
+  --nb-danger-soft-bg-hover: rgba(239, 68, 68, 0.2);
+  --nb-danger-ui-bg: rgba(220, 38, 38, 0.08);
+  --nb-danger-ui-border: rgba(220, 38, 38, 0.2);
+  --nb-success: #16a34a;
+  --nb-success-bright: #22c55e;
+  --nb-success-soft-bg: rgba(34, 197, 94, 0.12);
+  --nb-success-soft-bg-dark: rgba(34, 197, 94, 0.18);
+  --nb-success-glow: rgba(34, 197, 94, 0.4);
+  --nb-success-text-dark: #4ade80;
+  --nb-warning: #d97706;
+  --nb-warning-soft-bg: rgba(245, 158, 11, 0.12);
+  --nb-warning-soft-bg-dark: rgba(245, 158, 11, 0.18);
+  --nb-warning-text-dark: #fbbf24;
+  --nb-amber-badge-text: #92400e;
+  --nb-amber-badge-bg: rgba(251, 191, 36, 0.2);
+  --nb-amber-badge-border: rgba(251, 191, 36, 0.3);
+  --nb-neutral-dot: #9ca3af;
+  --nb-highlight-search: #fef08a;
+  --nb-shimmer-from: #f1f0ff;
+  --nb-shimmer-mid: #e8e7f8;
+  --nb-shimmer-line-from: #ececf4;
+  --nb-shimmer-line-mid: #e0dfee;
+  --nb-collab-green-bg: #ecfdf5;
+  --nb-collab-green-text: #064e3c;
+  --nb-collab-green-bg-dark: #064e3c;
+  --nb-collab-green-text-dark: #ecfdf5;
+  --nb-primary-chubb-offset: #625ee0;
+  --nb-primary-chubb-offset-dark: #726dff;
+  --nb-spinner-track: rgba(55, 53, 47, 0.12);
+  --nb-muted-icon-tint: rgba(105, 101, 219, 0.25);
+  --nb-drop-line: rgba(105, 101, 219, 0.35);
+  --nb-font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica,
+    "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol";
+
+  /* ── overlays & shadows (rem offsets / blurs) ── */
+  --nb-overlay-scrim: rgba(15, 23, 42, 0.4);
+  --nb-overlay-scrim-strong: rgba(0, 0, 0, 0.45);
+  --nb-shadow-surface-weak: rgba(15, 23, 42, 0.04);
+  --nb-shadow-surface: rgba(15, 23, 42, 0.06);
+  --nb-shadow-surface-md: rgba(15, 23, 42, 0.08);
+  --nb-shadow-surface-strong: rgba(15, 23, 42, 0.12);
+  --nb-shadow-ink: rgba(0, 0, 0, 0.03);
+  --nb-shadow-ink-md: rgba(0, 0, 0, 0.05);
+  --nb-shadow-ink-strong: rgba(0, 0, 0, 0.08);
+  --nb-shadow-primary-weak: rgba(105, 101, 219, 0.22);
+  --nb-shadow-primary: rgba(105, 101, 219, 0.25);
+  --nb-shadow-primary-strong: rgba(105, 101, 219, 0.28);
+  --nb-shadow-primary-medium: rgba(105, 101, 219, 0.3);
+  --nb-shadow-card: 0 var(--nb-space-1) var(--nb-space-3) var(--nb-shadow-ink),
+    0 0 0 var(--nb-border-width) var(--nb-shadow-ink);
+  --nb-shadow-card-hover: 0 var(--nb-space-4) var(--nb-space-16)
+      var(--nb-shadow-ink-strong),
+    0 0 0 var(--nb-border-width) var(--nb-shadow-ink-md);
+  --nb-shadow-soft: 0 var(--nb-space-4) var(--nb-space-20)
+      var(--nb-shadow-surface),
+    0 var(--nb-space-1) var(--nb-space-6) var(--nb-shadow-surface-weak);
+  --nb-shadow-dialog: 0 var(--nb-space-20) var(--nb-space-25)
+      var(--nb-shadow-surface-strong),
+    0 var(--nb-space-8) var(--nb-space-20) var(--nb-shadow-surface);
+  --nb-shadow-dialog-tight: 0 var(--nb-space-8) var(--nb-space-24)
+      var(--nb-shadow-ink-strong);
+  --nb-shadow-modal-deep: 0 var(--nb-space-24) var(--nb-space-27)
+      rgba(15, 23, 42, 0.12),
+    0 var(--nb-space-4) var(--nb-space-12) rgba(15, 23, 42, 0.06);
+  --nb-shadow-sheet: var(--nb-space-3) 0 var(--nb-space-24)
+    rgba(15, 23, 42, 0.1);
+  --nb-shadow-sidebar-float: calc(-1 * var(--nb-space-12)) 0 var(--nb-space-24)
+    rgba(15, 23, 42, 0.07);
+  --nb-shadow-tab-active: 0 var(--nb-space-1) var(--nb-space-3)
+      rgba(15, 23, 42, 0.08),
+    0 0 0 var(--nb-border-width) var(--nb-shadow-ink);
+  --nb-shadow-tab-active-dark: 0 var(--nb-space-1) var(--nb-space-3)
+    rgba(0, 0, 0, 0.35);
+  --nb-line-on-dark-subtle: rgba(255, 255, 255, 0.06);
+  --nb-inset-divider-triggers: inset 0 0 0 var(--nb-border-width)
+    var(--nb-line-on-dark-subtle);
+  --nb-shadow-btn-primary: 0 var(--nb-space-1) var(--nb-space-2)
+    var(--nb-shadow-primary-weak);
+  --nb-shadow-btn-primary-hover: 0 var(--nb-space-2) var(--nb-space-8)
+    var(--nb-shadow-primary-medium);
+  --nb-shadow-focus-primary: 0 0 0 var(--nb-border-width-ring)
+    var(--nb-primary-soft);
+  --nb-shadow-focus-danger: 0 0 0 var(--nb-border-width-ring)
+    rgba(220, 38, 38, 0.12);
+
+  --nb-btn-primary-shadow: rgba(15, 15, 15, 0.1) 0 0 0 var(--nb-border-width)
+      inset,
+    rgba(15, 15, 15, 0.1) 0 var(--nb-space-1) var(--nb-space-2);
+  --nb-btn-ghost-shadow: rgba(15, 15, 15, 0.1) 0 0 0 var(--nb-border-width)
+    inset;
+
+  /* legacy aliases */
+  --nb-radius-btn: var(--nb-radius-md);
+  --nb-radius-card: var(--nb-radius-md);
+  --nb-radius-pill: var(--nb-radius-sm);
+
+  --nb-card-shadow: var(--nb-shadow-card);
+  --nb-card-shadow-hover: var(--nb-shadow-card-hover);
+
   --nb-ease-ui: cubic-bezier(0.4, 0, 0.2, 1);
   --nb-dur-fast: 20ms;
   --nb-dur-hover: 140ms;
+
+  /* layout */
+  --nb-sidebar-width-fork: 27rem;
+  --nb-touch-target-min: 2.75rem;
+  --nb-history-panel-max-w: 17.5rem;
+  --nb-history-panel-max-h: 26.25rem;
+  --nb-dialog-max-w-home: 25rem;
+  --nb-dialog-max-w-standard: 26.25rem;
+  --nb-dialog-max-h-tall: 45rem;
+  --nb-filelist-search-width: 12.5rem;
+  --nb-filelist-sidebar-min: 11.25rem;
+  --nb-filelist-sidebar-max-vw: 35vw;
+  --nb-filelist-grid-min: 13.75rem;
+  --nb-filelist-breadcrumb-max: 10rem;
+  --nb-filelist-mobile-sheet: min(82vw, 20rem);
+  --nb-filelist-panel-glass: rgba(255, 255, 255, 0.92);
+  --nb-filelist-border: rgba(27, 27, 31, 0.08);
+  --nb-filelist-border-strong: rgba(27, 27, 31, 0.15);
+  --nb-filelist-muted: rgba(27, 27, 31, 0.03);
+  --nb-filelist-primary-soft: rgba(105, 101, 219, 0.1);
+  --nb-filelist-header-bg: rgba(255, 255, 255, 0.88);
+  --nb-filelist-header-line: var(--nb-shadow-surface-weak);
+  --nb-filelist-blur-header: var(--nb-space-10);
+  --nb-transition-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --nb-filelist-thumb-faint: rgba(27, 27, 31, 0.1);
+  --nb-filelist-card-fade-top: rgba(255, 255, 255, 0.92);
+  --nb-filelist-inset-drop: inset 0 0 0 var(--nb-border-width-thick)
+    var(--nb-drop-line);
+  --nb-filelist-hint-border: rgba(105, 101, 219, 0.15);
+  --nb-shimmer-bg-size: 50rem;
+  --nb-bp-lg: 51.25rem;
+  --nb-bp-md: 31.25rem;
+  --nb-bp-sm: 26.25rem;
+  --nb-font-sidebar-label: 0.68rem;
+  --nb-font-folder-name: 0.85rem;
+  --nb-font-card-name: 0.82rem;
+  --nb-space-micro: 0.1rem;
+  --nb-thumb-badge-pad-y: 0.08rem;
+  --nb-thumb-badge-pad-x: var(--nb-space-3);
+  --nb-sr-pixel: 0.0625rem;
+  --nb-filelist-action-bg: rgba(255, 255, 255, 0.85);
+  --nb-filelist-import-block-bg: rgba(255, 255, 255, 0.6);
+  --nb-filelist-overlay-weak: rgba(15, 23, 42, 0.35);
+  --nb-filelist-sheet-backdrop: rgba(15, 23, 42, 0.3);
+  --nb-filelist-move-active-bg: rgba(105, 101, 219, 0.14);
+  --nb-filelist-empty-icon-tint: rgba(105, 101, 219, 0.25);
+  --nb-z-filelist-import: 205;
+  --nb-z-filelist-sheet: 250;
+  --nb-z-filelist-detail: 300;
+  --nb-filelist-move-max-w: 27.5rem;
+  --nb-filelist-move-list-max-h: 22.5rem;
+  --nb-filelist-dl-label-w: 5rem;
+  --nb-blur-overlay: var(--nb-space-10);
+  --nb-blur-sheet: var(--nb-space-4);
+  --nb-z-modal: 9999;
+  --nb-z-fork-home: 200000;
+  --nb-z-editor-alert: 6;
+
+  /* editor shell / canvas chrome */
+  --nb-editor-alert-top: 6.5rem;
+  --nb-line-height-relaxed: 1.5;
+  --nb-line-height-card-name: 1.4;
+  --nb-icon-encrypted-size: 1.2rem;
+  --nb-icon-encrypted-margin-end: 0.6em;
+  --nb-stroke-width-emphasis: 2;
+  --nb-filelist-empty-icon-size: 6.25rem;
+  --nb-filelist-card-name-row-min-height: 1.3rem;
+  --nb-toolbar-save-hint-max-w: 20rem;
+
+  /* motion */
+  --nb-keyframe-slide-sm: var(--nb-space-8);
+  --nb-keyframe-slide-md: var(--nb-space-16);
+  --nb-shimmer-distance: 25rem;
+
+  /* AI / system dark surfaces (prefers-color-scheme) */
+  --nb-ai-dialog-bg: var(--nb-surface);
+  --nb-ai-dialog-text: var(--nb-text);
+  --nb-ai-dialog-border: var(--nb-border);
+  --nb-ai-dialog-shadow: var(--nb-shadow-dialog);
+  --nb-ai-input-bg: var(--nb-page-bg);
+  --nb-ai-focus-border: var(--nb-primary-focus);
+  --nb-ai-focus-ring: var(--nb-primary-soft);
 }
+
+/* Breakpoint tokens: use rem in @media (no px in query values). */
+/* --nb-bp-xs: 23.75rem (380px); --nb-bp-sm: 40rem (640px); etc. */
 
 .excalidraw.theme--dark {
   --nb-text: #e3e3e8;
@@ -49,7 +297,37 @@
   --nb-border-input: rgba(255, 255, 255, 0.16);
   --nb-primary-soft: rgba(168, 165, 255, 0.16);
   --nb-blue-soft: rgba(168, 165, 255, 0.16);
-  --nb-btn-primary-shadow: rgba(0, 0, 0, 0.3) 0 0 0 1px inset,
-    rgba(0, 0, 0, 0.2) 0 1px 2px;
-  --nb-btn-ghost-shadow: rgba(0, 0, 0, 0.25) 0 0 0 1px inset;
+  --nb-btn-primary-shadow: rgba(0, 0, 0, 0.3) 0 0 0 var(--nb-border-width)
+      inset,
+    rgba(0, 0, 0, 0.2) 0 var(--nb-space-1) var(--nb-space-2);
+  --nb-btn-ghost-shadow: rgba(0, 0, 0, 0.25) 0 0 0 var(--nb-border-width) inset;
+}
+
+.excalidraw-app.theme--dark {
+  --nb-fork-home-surface: #2a2a32;
+  --nb-fork-home-text: #ececec;
+  --nb-fork-home-muted: #a3a3a3;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --nb-ai-dialog-bg: #1e1e24;
+    --nb-ai-dialog-text: #ececf1;
+    --nb-ai-dialog-shadow: 0 var(--nb-space-24) var(--nb-space-27)
+        rgba(0, 0, 0, 0.45),
+      0 0 0 var(--nb-border-width) rgba(255, 255, 255, 0.06);
+    --nb-ai-dialog-border: rgba(255, 255, 255, 0.1);
+    --nb-ai-desc-muted: rgba(236, 236, 241, 0.65);
+    --nb-ai-error-bg: rgba(248, 113, 113, 0.12);
+    --nb-ai-error-border: rgba(248, 113, 113, 0.28);
+    --nb-ai-error-text: #fecaca;
+    --nb-ai-input-bg: #121218;
+    --nb-ai-input-border: rgba(255, 255, 255, 0.14);
+    --nb-ai-placeholder: rgba(236, 236, 241, 0.35);
+    --nb-ai-focus-border: #a5a3ff;
+    --nb-ai-focus-ring: rgba(168, 165, 255, 0.2);
+    --nb-ai-secondary-bg: rgba(255, 255, 255, 0.06);
+    --nb-ai-secondary-border: rgba(255, 255, 255, 0.12);
+    --nb-ai-secondary-hover: rgba(255, 255, 255, 0.1);
+  }
 }

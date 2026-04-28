@@ -126,10 +126,9 @@ const LibraryMenuContent = memo(
       [libraryItemsData],
     );
 
-    if (
-      libraryItemsData.status === "loading" &&
-      !libraryItemsData.isInitialized
-    ) {
+    // 首次打开侧栏时 atom 默认为 `loaded` + `isInitialized: false`，若只判断
+    // `status === "loading"` 会误走空列表 UI，用户误以为「没有素材库」。
+    if (!libraryItemsData.isInitialized) {
       return (
         <LibraryMenuWrapper>
           <div className="layer-ui__library-message">

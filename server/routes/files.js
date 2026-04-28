@@ -3,6 +3,13 @@ import { createHash, randomUUID } from "crypto";
 import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "fs";
 import { join } from "path";
 import db, { DATA_DIR } from "../db.js";
+import {
+  apiLog,
+  apiLogDebug,
+  isThumbAuditLogEnabled,
+  summarizeScenePayload,
+  truncStr,
+} from "../logger.js";
 
 const router = Router();
 
@@ -202,6 +209,7 @@ router.get("/hashes", (_req, res) => {
 });
 
 router.get("/tree", (_req, res) => {
+  const t0 = Date.now();
   const folders = db
     .prepare(
       `SELECT id, parent_id, name, sort_index, created_at, updated_at
@@ -219,6 +227,13 @@ router.get("/tree", (_req, res) => {
     )
     .all()
     .map(mapFileRow);
+  const withThumb = files.filter((f) => f.has_thumbnail).length;
+  apiLog("files", "GET /tree", {
+    ms: Date.now() - t0,
+    folders: folders.length,
+    files: files.length,
+    withThumbnail: withThumb,
+  });
   res.json({ folders, files });
 });
 
@@ -267,10 +282,19 @@ router.patch("/folders/:id", (req, res) => {
   if (wouldCreateFolderCycle(req.params.id, nextParentId)) {
     return res.status(400).json({ error: "cannot move folder into itself" });
   }
-  const now = new Date().toISOString();
-  db.prepare(
-    "UPDATE file_folders SET name = ?, parent_id = ?, updated_at = ? WHERE id = ?",
-  ).run(nextName, nextParentId, now, req.params.id);
+  const nameChanged =
+    Object.prototype.hasOwnProperty.call(req.body, "name") && nextName !== row.name;
+  if (nameChanged) {
+    const now = new Date().toISOString();
+    db.prepare(
+      "UPDATE file_folders SET name = ?, parent_id = ?, updated_at = ? WHERE id = ?",
+    ).run(nextName, nextParentId, now, req.params.id);
+  } else {
+    // 仅改 parent（拖拽移动）：不触发展示用的「修改时间」
+    db.prepare(
+      "UPDATE file_folders SET name = ?, parent_id = ? WHERE id = ?",
+    ).run(nextName, nextParentId, req.params.id);
+  }
   const updated = db
     .prepare(
       "SELECT id, parent_id, name, sort_index, created_at, updated_at FROM file_folders WHERE id = ?",
@@ -310,14 +334,15 @@ router.post("/move", (req, res) => {
   if (!assertFolderExists(folderId, res)) {
     return;
   }
-  const now = new Date().toISOString();
   const moveTxn = db.transaction(() => {
+    // Do not touch updated_at: pure folder moves should not change "modified" time
+    // (user expectation; same as reorder-only updates in /order for files).
     const update = db.prepare(
-      "UPDATE files SET folder_id = ?, sort_index = ?, updated_at = ? WHERE id = ?",
+      "UPDATE files SET folder_id = ?, sort_index = ? WHERE id = ?",
     );
     let sortIndex = nextSortIndex("files", "folder_id", folderId);
     for (const fileId of fileIds) {
-      update.run(folderId, sortIndex++, now, fileId);
+      update.run(folderId, sortIndex++, fileId);
     }
   });
   moveTxn();
@@ -335,16 +360,15 @@ router.post("/order", (req, res) => {
       "UPDATE files SET folder_id = ?, sort_index = ? WHERE id = ?",
     );
     const updateFolder = db.prepare(
-      "UPDATE file_folders SET parent_id = ?, sort_index = ?, updated_at = ? WHERE id = ?",
+      "UPDATE file_folders SET parent_id = ?, sort_index = ? WHERE id = ?",
     );
-    const now = new Date().toISOString();
     items.forEach((item, index) => {
       if (!item || typeof item.id !== "string") {
         return;
       }
       if (item.type === "folder") {
         if (!wouldCreateFolderCycle(item.id, parentId)) {
-          updateFolder.run(parentId, index, now, item.id);
+          updateFolder.run(parentId, index, item.id);
         }
         return;
       }
@@ -378,7 +402,11 @@ router.post("/", (req, res) => {
     return;
   }
   const now = new Date().toISOString();
-  console.log("[excalidraw-web-server]", now, "POST /api/files (create)", { id: id.slice(0, 8), name });
+  apiLog("files", "POST / create file (随后导入会 PUT 场景)", {
+    id: id.slice(0, 8),
+    name: truncStr(String(name), 120),
+    folder_id: folderId,
+  });
 
   const sortIndex = nextSortIndex("files", "folder_id", folderId);
   db.prepare(
@@ -414,13 +442,29 @@ router.post("/", (req, res) => {
 });
 
 router.get("/:id", (req, res) => {
-  const row = db.prepare("SELECT * FROM files WHERE id = ?").get(req.params.id);
-  if (!row) return res.status(404).json({ error: "not found" });
+  const fid = req.params.id;
+  const row = db.prepare("SELECT * FROM files WHERE id = ?").get(fid);
+  if (!row) {
+    apiLog("files", "GET /:id not found", { id: fid.slice(0, 8) });
+    return res.status(404).json({ error: "not found" });
+  }
 
-  const fp = currentPath(req.params.id);
-  if (!existsSync(fp)) return res.status(404).json({ error: "file data missing" });
+  const fp = currentPath(fid);
+  if (!existsSync(fp)) {
+    apiLog("files", "GET /:id disk missing", { id: fid.slice(0, 8), path: fp });
+    return res.status(404).json({ error: "file data missing" });
+  }
 
-  const data = JSON.parse(readFileSync(fp, "utf-8"));
+  let data;
+  try {
+    data = JSON.parse(readFileSync(fp, "utf-8"));
+  } catch (e) {
+    apiLog("files", "GET /:id JSON.parse failed", {
+      id: fid.slice(0, 8),
+      message: e.message,
+    });
+    return res.status(500).json({ error: "corrupt scene file", message: e.message });
+  }
   res.json({ ...row, data });
 });
 
@@ -434,15 +478,19 @@ router.put("/:id", (req, res) => {
   const hasName = !!req.body.name;
   const elementCount = hasData && Array.isArray(req.body.data?.elements) ? req.body.data.elements.length : 0;
   const fileCount = hasData && req.body.data?.files ? Object.keys(req.body.data.files).length : 0;
-  console.log("[excalidraw-web-server]", new Date().toISOString(), "PUT /api/files/:id", {
+  const sceneSummary = hasData ? summarizeScenePayload(req.body.data) : null;
+  apiLog("files", "PUT /:id (导入会走：创建 → archives 检查 → 本请求)", {
     id: id.slice(0, 8),
+    contentLength: req.headers["content-length"] ?? null,
+    bodyKeys: Object.keys(req.body || {}),
     hasData,
     hasName,
-    name: req.body.name || "(unchanged)",
+    name: req.body.name != null ? truncStr(String(req.body.name), 80) : "(unchanged)",
     hasThumb,
     thumbLen: hasThumb ? req.body.thumbnail.length : 0,
     elementCount,
     fileCount,
+    sceneSummary,
   });
 
   /** 与磁盘上当前文件内容一致则跳过数据写入与版本记录（仍允许仅改文件名或缩略图） */
@@ -463,7 +511,10 @@ router.put("/:id", (req, res) => {
 
   if (skipDataWrite && !req.body.name && !hasThumb) {
     const sha = hasData ? hashSceneDataJson(req.body.data) : undefined;
-    console.log("[excalidraw-web-server]", new Date().toISOString(), "PUT /api/files/:id → SKIPPED (unchanged)", { id: id.slice(0, 8), sha: sha?.slice(0, 8) });
+    apiLog("files", "PUT /:id → SKIPPED (unchanged)", {
+      id: id.slice(0, 8),
+      sha: sha?.slice(0, 8),
+    });
     return res.json({
       ok: true,
       skipped: true,
@@ -515,11 +566,12 @@ router.put("/:id", (req, res) => {
     );
   }
 
-  console.log("[excalidraw-web-server]", now, "PUT /api/files/:id → SAVED", {
+  apiLog("files", "PUT /:id → SAVED", {
     id: id.slice(0, 8),
     skipDataWrite,
     wroteThumb: !!req.body.thumbnail,
     sha: contentSha256Out?.slice(0, 8) ?? "none",
+    wroteData: !!(req.body.data && !skipDataWrite),
   });
   res.json({
     ok: true,
@@ -529,11 +581,38 @@ router.put("/:id", (req, res) => {
 });
 
 router.get("/:id/thumbnail", (req, res) => {
-  const tp = thumbnailPath(req.params.id);
+  const fid = req.params.id;
+  const tp = thumbnailPath(fid);
   if (!existsSync(tp)) {
+    apiLog("files", "GET /:id/thumbnail 404 (no file on disk)", {
+      id: fid.slice(0, 8),
+    });
     return res.status(404).json({ error: "no thumbnail" });
   }
   const svg = readFileSync(tp, "utf-8");
+  if (svg.trim().length < 80) {
+    apiLog("files", "WARN thumbnail file very small (check client export)", {
+      id: fid.slice(0, 8),
+      bytes: svg.length,
+      head: truncStr(svg.trim().slice(0, 160), 160),
+    });
+  }
+  if (isThumbAuditLogEnabled()) {
+    apiLog(
+      "thumb-send",
+      `GET thumbnail → 200 bytes=${svg.length}`,
+      {
+        id: truncStr(fid, 48),
+        id8: fid.slice(0, 8),
+        immutableHit: !!req.query.h,
+      },
+    );
+  }
+  apiLogDebug("files", "GET /:id/thumbnail OK", {
+    id: fid.slice(0, 8),
+    bytes: svg.length,
+    cacheHit: !!req.query.h,
+  });
   res.setHeader("Content-Type", "image/svg+xml");
   if (req.query.h) {
     res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
@@ -629,6 +708,11 @@ router.get("/:id/archives", (req, res) => {
       `SELECT id, label, created_at, content_sha256 FROM archives WHERE file_id = ? ORDER BY created_at DESC LIMIT ?`,
     )
     .all(req.params.id, MAX_ARCHIVES_PER_FILE);
+  apiLog("files", "GET /:id/archives (导入保存前会调)", {
+    fileId: req.params.id.slice(0, 8),
+    count: rows.length,
+    max: MAX_ARCHIVES_PER_FILE,
+  });
   res.json(rows);
 });
 
@@ -691,8 +775,17 @@ router.delete("/:id/archives/:archiveId", (req, res) => {
     .prepare("SELECT * FROM archives WHERE id = ? AND file_id = ?")
     .get(req.params.archiveId, req.params.id);
   if (!archive) {
+    apiLog("files", "DELETE archive 404", {
+      fileId: req.params.id.slice(0, 8),
+      archiveId: req.params.archiveId.slice(0, 8),
+    });
     return res.status(404).json({ error: "archive not found" });
   }
+
+  apiLog("files", "DELETE archive (为保存腾快照位，导入亦可能触发)", {
+    fileId: req.params.id.slice(0, 8),
+    archiveId: req.params.archiveId.slice(0, 8),
+  });
 
   const absPath = join(DATA_DIR, archive.path);
   db.prepare("DELETE FROM archives WHERE id = ?").run(req.params.archiveId);

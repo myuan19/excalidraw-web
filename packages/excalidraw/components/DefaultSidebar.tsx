@@ -20,6 +20,7 @@ import { SearchMenu } from "./SearchMenu";
 import { Sidebar } from "./Sidebar/Sidebar";
 import { withInternalFallback } from "./hoc/withInternalFallback";
 import { LibraryIcon, searchIcon } from "./icons";
+import { t } from "../i18n";
 
 import type { SidebarProps, SidebarTriggerProps } from "./Sidebar/common";
 
@@ -99,10 +100,18 @@ export const DefaultSidebar = Object.assign(
           <Sidebar.Tabs>
             <Sidebar.Header>
               <Sidebar.TabTriggers>
-                <Sidebar.TabTrigger tab={CANVAS_SEARCH_TAB}>
+                <Sidebar.TabTrigger
+                  tab={CANVAS_SEARCH_TAB}
+                  title={t("search.title")}
+                  aria-label={t("search.title")}
+                >
                   {searchIcon}
                 </Sidebar.TabTrigger>
-                <Sidebar.TabTrigger tab={LIBRARY_SIDEBAR_TAB}>
+                <Sidebar.TabTrigger
+                  tab={LIBRARY_SIDEBAR_TAB}
+                  title={t("toolBar.library")}
+                  aria-label={t("toolBar.library")}
+                >
                   {LibraryIcon}
                 </Sidebar.TabTrigger>
                 <DefaultSidebarTabTriggersTunnel.Out />

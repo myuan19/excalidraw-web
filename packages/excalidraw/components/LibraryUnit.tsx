@@ -1,6 +1,9 @@
 import clsx from "clsx";
 import { memo, useRef, useState } from "react";
 
+const LONG_PRESS_MS = 480;
+const LONG_PRESS_MOVE_CANCEL_PX = 10;
+
 import { MIME_TYPES } from "@excalidraw/common";
 
 import { useLibraryItemSvg } from "../hooks/useLibraryItemSvg";
@@ -24,6 +27,7 @@ export const LibraryUnit = memo(
     elements,
     isPending,
     onClick,
+    onOpenDetail,
     selected,
     onToggle,
     onDrag,
@@ -37,7 +41,9 @@ export const LibraryUnit = memo(
     id: LibraryItem["id"] | null;
     elements?: LibraryItem["elements"];
     isPending?: boolean;
-    onClick: (id: LibraryItem["id"] | null) => void;
+    onClick: (id: LibraryItem["id"] | null, event: React.MouseEvent) => void;
+    /** 长按（触屏）或可由父级用于打开详情 */
+    onOpenDetail?: (id: string) => void;
     selected: boolean;
     onToggle: (id: string, event: React.MouseEvent) => void;
     onDrag: (id: string, event: React.DragEvent) => void;
@@ -58,6 +64,17 @@ export const LibraryUnit = memo(
 
     const [isHovered, setIsHovered] = useState(false);
     const isMobile = useEditorInterface().formFactor === "phone";
+    const longPressTimerRef = useRef<number | null>(null);
+    const longPressTriggeredRef = useRef(false);
+    const suppressClickRef = useRef(false);
+    const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+
+    const clearLongPressTimer = () => {
+      if (longPressTimerRef.current != null) {
+        window.clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    };
 
     const adder = isPending && (
       <div className="library-unit__adder">{PlusIcon}</div>
@@ -157,8 +174,16 @@ export const LibraryUnit = memo(
           onClick={
             !!elements || !!isPending
               ? (event) => {
+                  if (suppressClickRef.current) {
+                    suppressClickRef.current = false;
+                    return;
+                  }
+                  if (longPressTriggeredRef.current) {
+                    longPressTriggeredRef.current = false;
+                    return;
+                  }
                   if (isPending) {
-                    onClick(id);
+                    onClick(id, event);
                     return;
                   }
                   if (!id) {
@@ -168,7 +193,63 @@ export const LibraryUnit = memo(
                     onToggle(id, event);
                     return;
                   }
-                  onClick(id);
+                  onClick(id, event);
+                }
+              : undefined
+          }
+          onPointerDown={
+            isMobile && id && elements && onOpenDetail
+              ? (e) => {
+                  longPressStartRef.current = { x: e.clientX, y: e.clientY };
+                  longPressTriggeredRef.current = false;
+                  clearLongPressTimer();
+                  longPressTimerRef.current = window.setTimeout(() => {
+                    longPressTimerRef.current = null;
+                    longPressTriggeredRef.current = true;
+                    onOpenDetail(id);
+                    suppressClickRef.current = true;
+                  }, LONG_PRESS_MS);
+                }
+              : undefined
+          }
+          onPointerMove={
+            isMobile && id && elements && onOpenDetail
+              ? (e) => {
+                  const start = longPressStartRef.current;
+                  if (!start || longPressTimerRef.current == null) {
+                    return;
+                  }
+                  if (
+                    Math.abs(e.clientX - start.x) > LONG_PRESS_MOVE_CANCEL_PX ||
+                    Math.abs(e.clientY - start.y) > LONG_PRESS_MOVE_CANCEL_PX
+                  ) {
+                    clearLongPressTimer();
+                    longPressStartRef.current = null;
+                  }
+                }
+              : undefined
+          }
+          onPointerUp={
+            isMobile && onOpenDetail
+              ? () => {
+                  clearLongPressTimer();
+                  longPressStartRef.current = null;
+                }
+              : undefined
+          }
+          onPointerCancel={
+            isMobile && onOpenDetail
+              ? () => {
+                  clearLongPressTimer();
+                  longPressStartRef.current = null;
+                }
+              : undefined
+          }
+          onPointerLeave={
+            isMobile && onOpenDetail
+              ? () => {
+                  clearLongPressTimer();
+                  longPressStartRef.current = null;
                 }
               : undefined
           }

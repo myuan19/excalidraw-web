@@ -10,9 +10,9 @@
 
 // Tab drop-target highlight when dragging items across sections
 .lib-tab--drop-hover {
-  background: var(--color-primary-light, rgba(105, 101, 219, 0.12)) !important;
-  color: var(--color-primary, #6965db) !important;
-  box-shadow: 0 0 0 1.5px var(--color-primary, #6965db) !important;
+  background: var(--color-primary-light) !important;
+  color: var(--color-primary) !important;
+  box-shadow: 0 0 0 var(--nb-border-width-accent) var(--color-primary) !important;
   transition:
     background 0.15s ease,
     box-shadow 0.15s ease,

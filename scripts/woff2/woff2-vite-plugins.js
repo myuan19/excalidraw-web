@@ -74,29 +74,13 @@ module.exports.woff2BrowserPlugin = () => {
         ];
       </script>
 
-      <!-- Preload all default fonts to avoid swap on init -->
-      <link
-        rel="preload"
-        href="${OSS_FONTS_CDN}fonts/Excalifont/Excalifont-Regular-a88b72a24fb54c9f94e3b5fdaa7481c9.woff2"
-        as="font"
-        type="font/woff2"
-        crossorigin="anonymous"
-      />
-      <!-- For Nunito only preload the latin range, which should be good enough for now -->
-      <link
-        rel="preload"
-        href="${OSS_FONTS_CDN}fonts/Nunito/Nunito-Regular-XRXI3I6Li01BKofiOc5wtlZ2di8HDIkhdTQ3j6zbXWjgeg.woff2"
-        as="font"
-        type="font/woff2"
-        crossorigin="anonymous"
-      />
-      <link
-        rel="preload"
-        href="${OSS_FONTS_CDN}fonts/ComicShanns/ComicShanns-Regular-279a7b317d12eb88de06167bd672b4b4.woff2"
-        as="font"
-        type="font/woff2"
-        crossorigin="anonymous"
-      />
+      <!--
+        Do not <link rel="preload"> default canvas woff2 here: the file-list home (/#) often loads
+        before the editor, so the browser reports "preloaded but not used within a few seconds".
+        Fonts are loaded on demand from fonts.css / Fonts.ts when the canvas mounts. Warm DNS+TLS
+        to the font CDN so the first editor open is not slower than before for network setup.
+      -->
+      <link rel="preconnect" href="https://excalidraw.nyc3.cdn.digitaloceanspaces.com" crossorigin />
     `,
         );
       }

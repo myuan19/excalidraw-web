@@ -28,8 +28,24 @@ export default defineConfig(({ mode }) => {
     },
   };
 
+  /** 与 `package.json` 的 `homepage: "."` 一致；相对路径避免部署在子路径时请求根 `/assets/…` 导致 404。可用 `VITE_BASE_PATH=/` 显式用绝对根路径。 */
+  const appBase = (() => {
+    const raw = (envVars.VITE_BASE_PATH ?? "").trim();
+    if (raw.length > 0) {
+      if (raw === "/" || raw === "./") {
+        return raw;
+      }
+      if (raw.startsWith("/")) {
+        return raw.endsWith("/") ? raw : `${raw}/`;
+      }
+      return raw.endsWith("/") ? raw : `${raw}/`;
+    }
+    return "./";
+  })();
+
   // https://vitejs.dev/config/
   return {
+    base: appBase,
     server: {
       port: Number(envVars.VITE_APP_PORT || 3000),
       open: true,

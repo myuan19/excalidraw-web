@@ -14,7 +14,6 @@ import {
 } from "@excalidraw/excalidraw/components/CommandPalette/CommandPalette";
 import { ErrorDialog } from "@excalidraw/excalidraw/components/ErrorDialog";
 import { OverwriteConfirmDialog } from "@excalidraw/excalidraw/components/OverwriteConfirm/OverwriteConfirm";
-import { historyIcon } from "@excalidraw/excalidraw/components/icons";
 import {
   EVENT,
   THEME,
@@ -33,7 +32,6 @@ import { isElementLink } from "@excalidraw/element";
 import { restoreAppState, restoreElements } from "@excalidraw/excalidraw/data/restore";
 import { newElementWith, StoreIncrement, type StoreDelta } from "@excalidraw/element";
 import { isInitializedImageElement } from "@excalidraw/element";
-import clsx from "clsx";
 import {
   parseLibraryTokensFromUrl,
   useHandleLibrary,
@@ -77,6 +75,7 @@ import { AppSidebar } from "./components/AppSidebar";
 import { smallHouseIcon, toolbarSaveIcon } from "./components/appToolbarIcons";
 import { ArchivePanel } from "./components/ArchivePanel";
 import "./components/ExcalToolbar.scss";
+import "./components/ForkLibrarySidebar.scss";
 import {
   mountLibraryGroupEnhancer,
   syncLibraryItems,
@@ -88,8 +87,10 @@ import {
 } from "./data/CombinedLibraryAdapter";
 import { mountLibraryAIActions } from "./data/libraryAIMount";
 import { DeltaStorage } from "./data/DeltaStorage";
+import { FileEditDirty, VISIBILITY_BACKGROUND_SAVE_DELAY_MS } from "./data/fileEditDirty";
+import { discardLocalEditsNavigateHome } from "./data/fileEditSession";
 import { FileSyncState } from "./data/FileSyncState";
-import { scrollEditorToFitContent } from "./data/scrollEditorToFit";
+import { revealForkCanvasAfterFit } from "./data/scrollEditorToFit";
 import { buildSceneThumbnailSvg } from "./data/thumbnailSvg";
 import type { ForkSceneSnapshot } from "./data/forkFileTypes";
 import { resolveSaveDisplayName } from "./data/forkFileNaming";
@@ -321,6 +322,19 @@ const initializeScene = async (opts: {
   };
 };
 
+type SaveToServerSource =
+  | "toolbar"
+  | "hotkey"
+  | "visibility"
+  | "home";
+
+type SaveToServerOptions = {
+  /** What triggered the save (controls toasts and no-op behavior). */
+  source?: SaveToServerSource;
+  /** After a successful upload, go to file list (used by 主页). */
+  navigateAfter?: boolean;
+};
+
 // ---------------------------------------------------------------------------
 // ExcalidrawWrapper — the full editor component
 // ---------------------------------------------------------------------------
@@ -328,11 +342,30 @@ const initializeScene = async (opts: {
 const ExcalidrawWrapper = () => {
   const excalidrawAPI = useExcalidrawAPI();
 
+  const forkFileId = getFileIdFromHash();
+  const [forkCanvasRevealed, setForkCanvasRevealed] = useState(
+    () => !getFileIdFromHash(),
+  );
+
+  useEffect(() => {
+    setForkCanvasRevealed(!forkFileId);
+  }, [forkFileId]);
+
+  const [forkHomeNavDialogOpen, setForkHomeNavDialogOpen] = useState(false);
+
+  useEffect(() => {
+    setForkHomeNavDialogOpen(false);
+  }, [forkFileId]);
+
   const [errorMessage, setErrorMessage] = useState("");
   const [forkSaving, setForkSaving] = useState(false);
   const [forkSaveHint, setForkSaveHint] = useState<string | null>(null);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
   const skipLeaveStashOnceRef = useRef(false);
+  const saveToServerRef = useRef<
+    (opts?: SaveToServerOptions) => Promise<boolean>
+  >(() => Promise.resolve(false));
+  const visibilitySaveInFlightRef = useRef(false);
 
   const { editorTheme, appTheme, setAppTheme } = useHandleAppTheme();
 
@@ -579,7 +612,7 @@ const ExcalidrawWrapper = () => {
       loadImages(data, /* isInitialLoad */ true);
       initialStatePromiseRef.current.promise.resolve(data.scene);
       await restorePersistedUndoStack(excalidrawAPI);
-      setTimeout(() => scrollEditorToFitContent(excalidrawAPI), 50);
+      revealForkCanvasAfterFit(excalidrawAPI, () => setForkCanvasRevealed(true));
       setTimeout(async () => {
         const fid = getFileIdFromHash();
         if (!fid) {
@@ -615,6 +648,7 @@ const ExcalidrawWrapper = () => {
       const libraryUrlTokens = parseLibraryTokensFromUrl();
       if (!libraryUrlTokens) {
         excalidrawAPI.updateScene({ appState: { isLoading: true } });
+        setForkCanvasRevealed(false);
 
         initializeScene({ excalidrawAPI }).then(async (data) => {
           loadImages(data, !!newFileId);
@@ -639,7 +673,9 @@ const ExcalidrawWrapper = () => {
             });
           }
           await restorePersistedUndoStack(excalidrawAPI);
-          queueMicrotask(() => scrollEditorToFitContent(excalidrawAPI));
+          revealForkCanvasAfterFit(excalidrawAPI, () =>
+            setForkCanvasRevealed(true),
+          );
           setTimeout(() => {
             const fid = getFileIdFromHash();
             if (!fid) {
@@ -676,9 +712,17 @@ const ExcalidrawWrapper = () => {
       visibilityFlushTimer = window.setTimeout(() => {
         visibilityFlushTimer = null;
         if (document.hidden) {
-          LocalData.flushSave();
+          FileEditDirty.runVisibilityHiddenSavePipeline({
+            flushEmbeddedLocalFiles: () => LocalData.flushSave(),
+            draftFlusher: updateDraftHashDebouncedRef.current,
+            fileId: getFileIdFromHash(),
+            uploadInFlight: visibilitySaveInFlightRef.current,
+            onShouldUpload: () => {
+              void saveToServerRef.current?.({ source: "visibility" });
+            },
+          });
         }
-      }, 400);
+      }, VISIBILITY_BACKGROUND_SAVE_DELAY_MS);
     };
 
     window.addEventListener(EVENT.HASHCHANGE, onHashChange, false);
@@ -700,16 +744,24 @@ const ExcalidrawWrapper = () => {
         false,
       );
     };
-  }, [excalidrawAPI, loadImages, getSceneData, restorePersistedUndoStack]);
+  }, [
+    excalidrawAPI,
+    loadImages,
+    getSceneData,
+    restorePersistedUndoStack,
+    setForkCanvasRevealed,
+  ]);
 
   useEffect(() => {
     const unloadHandler = (event: BeforeUnloadEvent) => {
-      LocalData.flushSave();
+      FileEditDirty.prepareForDirtyEvaluation({
+        flushEmbeddedLocalFiles: () => LocalData.flushSave(),
+        draftFlusher: updateDraftHashDebouncedRef.current,
+      });
 
       const fid = getFileIdFromHash();
       let didEmergencyLocalCache = false;
-      if (fid && excalidrawAPI && FileSyncState.hasUnsavedChanges(fid)) {
-        updateDraftHashDebouncedRef.current.flush();
+      if (fid && excalidrawAPI && FileEditDirty.hasUnsavedChanges(fid)) {
         const sceneData = getSceneData();
         if (sceneData) {
           try {
@@ -770,6 +822,7 @@ const ExcalidrawWrapper = () => {
     FileSyncState.setBaselineHash(fid, h);
     FileSyncState.setDraftHash(fid, h);
     await DeltaStorage.restoreSnapshot([]);
+    setForkCanvasRevealed(false);
     const restoredAppState = restoreAppState(sanitizePersistedAppState(mergedAppState as any) as any, null);
     // Preserve current sidebar state so that a restore does not close
     // the sidebar or the history panel unexpectedly.
@@ -793,9 +846,9 @@ const ExcalidrawWrapper = () => {
       files: serverData.files,
       deltas: [],
     });
-    queueMicrotask(() => scrollEditorToFitContent(excalidrawAPI));
+    revealForkCanvasAfterFit(excalidrawAPI, () => setForkCanvasRevealed(true));
     window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
-  }, [excalidrawAPI]);
+  }, [excalidrawAPI, setForkCanvasRevealed]);
 
   const navigateToFileListHome = useCallback(() => {
     skipLeaveStashOnceRef.current = true;
@@ -804,6 +857,18 @@ const ExcalidrawWrapper = () => {
     }
     window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
   }, []);
+
+  /** 放弃未保存编辑（与服务器基线对齐），再回列表；编排见 discardLocalEditsNavigateHome。 */
+  const discardLocalEditsForHomeNavigation = useCallback(async () => {
+    await discardLocalEditsNavigateHome({
+      getFileId: () => getFileIdFromHash(),
+      flushDraftDebounce: () => updateDraftHashDebouncedRef.current.flush(),
+      bumpPersistGeneration: () => {
+        localPersistGenRef.current += 1;
+      },
+      navigateToFileListHome,
+    });
+  }, [navigateToFileListHome]);
 
   const persistLocalDraftToCache = useCallback(async (forcedFileId?: string): Promise<boolean> => {
     const fid = forcedFileId ?? getFileIdFromHash();
@@ -861,118 +926,209 @@ const ExcalidrawWrapper = () => {
     return true;
   }, [excalidrawAPI, getSceneData]);
 
-  const forkStashLocalAndGoHome = useCallback(async () => {
-    debugLog.stash("goHome clicked");
-    const ok = await persistLocalDraftToCache();
-    debugLog.stash(`goHome persist result ok=${ok}`);
-    if (ok) {
-      window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
-      window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
-      excalidrawAPI?.setToast({ message: "已暂存并返回" });
-    }
-    navigateToFileListHome();
-  }, [persistLocalDraftToCache, navigateToFileListHome, excalidrawAPI]);
+  const finishNavigateHome = useCallback(() => {
+    window.setTimeout(() => {
+      skipLeaveStashOnceRef.current = true;
+      navigateToFileListHome();
+    }, 80);
+  }, [navigateToFileListHome]);
 
-  const saveCurrentFileToServer = useCallback(async (): Promise<boolean> => {
-    const fid = getFileIdFromHash();
-    if (!excalidrawAPI || !fid) {
-      return false;
-    }
-    updateDraftHashDebouncedRef.current.flush();
-    localPersistGenRef.current += 1;
-    const sceneData = getSceneData();
-    if (!sceneData) {
-      return false;
-    }
-    const h = hashSceneSnapshot(sceneData);
-    const baseline = FileSyncState.getBaselineHash(fid);
-    if (baseline && h === baseline) {
-      setForkSaveHint("内容与最新提交一致，无需上传");
-      return false;
-    }
-    setForkSaving(true);
-    setForkSaveHint(null);
-    try {
-      const nameForPut = await resolveSaveDisplayName(fid, sceneData.appState);
-      let thumbnail: string | undefined;
+  const saveCurrentFileToServer = useCallback(
+    async (opts?: SaveToServerOptions): Promise<boolean> => {
+      const source: SaveToServerSource = opts?.source ?? "toolbar";
+      const navigateAfter = opts?.navigateAfter ?? false;
+      const fid = getFileIdFromHash();
+      if (!excalidrawAPI || !fid) {
+        if (navigateAfter) {
+          finishNavigateHome();
+        }
+        return false;
+      }
+      updateDraftHashDebouncedRef.current.flush();
+      localPersistGenRef.current += 1;
+      const sceneData = getSceneData();
+      if (!sceneData) {
+        if (navigateAfter) {
+          finishNavigateHome();
+        }
+        return false;
+      }
+      const h = hashSceneSnapshot(sceneData);
+      const baseline = FileSyncState.getBaselineHash(fid);
+      if (baseline && h === baseline) {
+        if (source === "toolbar" || source === "hotkey") {
+          setForkSaveHint("内容与最新提交一致，无需保存");
+        }
+        if (navigateAfter) {
+          FileSyncState.clearLocalCache(fid);
+          finishNavigateHome();
+        }
+        return false;
+      }
+      if (source !== "visibility") {
+        setForkSaving(true);
+      } else {
+        visibilitySaveInFlightRef.current = true;
+      }
+      if (source === "toolbar" || source === "home" || source === "hotkey") {
+        setForkSaveHint(null);
+      }
       try {
-        thumbnail = await buildSceneThumbnailSvg({
+        const nameForPut = await resolveSaveDisplayName(fid, sceneData.appState);
+        let thumbnail: string | undefined;
+        try {
+          thumbnail = await buildSceneThumbnailSvg({
+            elements: sceneData.elements,
+            appState: sceneData.appState,
+            files: sceneData.files,
+          });
+          LocalThumbnailCache.set(fid, thumbnail);
+          debugLog.thumbnail(`saveToServer file=${fid.slice(0, 8)}, svgLen=${thumbnail.length}`);
+        } catch (err) {
+          debugLog.thumbnail(`saveToServer file=${fid.slice(0, 8)}, exportToSvg FAILED`, err);
+        }
+        debugLog.save(
+          `saveToServer file=${fid.slice(0, 8)}, name=${nameForPut}, hasThumb=${!!thumbnail}, elements=${sceneData.elements.length}, source=${source}`,
+        );
+        const result = await ServerSync.saveFileImmediate(
+          fid,
+          sceneData,
+          nameForPut,
+          thumbnail,
+          { suppressSavedEvent: true },
+        );
+        debugLog.save(`saveToServer file=${fid.slice(0, 8)}, result`, result);
+        const deltasAfterSave = await DeltaStorage.getAllPersistedDtos();
+        FileSyncState.setLocalCache(fid, {
           elements: sceneData.elements,
           appState: sceneData.appState,
           files: sceneData.files,
+          deltas: deltasAfterSave,
         });
-        LocalThumbnailCache.set(fid, thumbnail);
-        debugLog.thumbnail(`saveToServer file=${fid.slice(0, 8)}, svgLen=${thumbnail.length}`);
-      } catch (err) {
-        debugLog.thumbnail(`saveToServer file=${fid.slice(0, 8)}, exportToSvg FAILED`, err);
-      }
-      debugLog.save(`saveToServer file=${fid.slice(0, 8)}, name=${nameForPut}, hasThumb=${!!thumbnail}, elements=${sceneData.elements.length}`);
-      const result = await ServerSync.saveFileImmediate(
-        fid,
-        sceneData,
-        nameForPut,
-        thumbnail,
-        { suppressSavedEvent: true },
-      );
-      debugLog.save(`saveToServer file=${fid.slice(0, 8)}, result`, result);
-      const deltasAfterSave = await DeltaStorage.getAllPersistedDtos();
-      FileSyncState.setLocalCache(fid, {
-        elements: sceneData.elements,
-        appState: sceneData.appState,
-        files: sceneData.files,
-        deltas: deltasAfterSave,
-      });
 
-      if (result?.content_sha256) {
-        FileSyncState.setServerHash(fid, result.content_sha256);
-      }
-      updateDraftHashDebouncedRef.current.cancel();
-      localPersistGenRef.current += 1;
-      const hAfter = hashSceneSnapshot(getSceneData() ?? sceneData);
-      FileSyncState.setBaselineHash(fid, hAfter);
-      FileSyncState.setDraftHash(fid, hAfter);
-      FileSyncState.clearLocalEditTime(fid);
-      debugLog.hash(`saveToServer done file=${fid.slice(0, 8)}, baseline=draft=${hAfter.slice(0, 8)}, serverSha=${result?.content_sha256?.slice(0, 8) ?? "none"}`);
-
-      window.dispatchEvent(
-        new CustomEvent("excalidraw-server-saved", {
-          detail: { id: fid, hash: hAfter },
-        }),
-      );
-      window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
-      window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
-      if (result?.skipped) {
-        setForkSaveHint("已是最新版本");
-      } else {
-        excalidrawAPI.setToast({ message: "已上传至服务器" });
-      }
-      return true;
-    } catch (e: any) {
-      console.error("[saveCurrentFileToServer]", e);
-      setErrorMessage(e?.message ?? String(e));
-      return false;
-    } finally {
-      setForkSaving(false);
-    }
-  }, [excalidrawAPI, getSceneData]);
-
-  const handleForkSaveAndExit = useCallback(async () => {
-    const ok = await saveCurrentFileToServer();
-    if (ok) {
-      updateDraftHashDebouncedRef.current.flush();
-      const fid = getFileIdFromHash();
-      if (fid) {
-        const latest = getSceneData();
-        if (latest) {
-          const h = hashSceneSnapshot(latest);
-          FileSyncState.setBaselineHash(fid, h);
-          FileSyncState.setDraftHash(fid, h);
+        if (result?.content_sha256) {
+          FileSyncState.setServerHash(fid, result.content_sha256);
         }
-        FileSyncState.clearLocalCache(fid);
+        updateDraftHashDebouncedRef.current.cancel();
+        localPersistGenRef.current += 1;
+        const hAfter = hashSceneSnapshot(getSceneData() ?? sceneData);
+        FileSyncState.setBaselineHash(fid, hAfter);
+        FileSyncState.setDraftHash(fid, hAfter);
+        FileSyncState.clearLocalEditTime(fid);
+        debugLog.hash(
+          `saveToServer done file=${fid.slice(0, 8)}, baseline=draft=${hAfter.slice(0, 8)}, serverSha=${result?.content_sha256?.slice(0, 8) ?? "none"}`,
+        );
+
+        window.dispatchEvent(
+          new CustomEvent("excalidraw-server-saved", {
+            detail: { id: fid, hash: hAfter },
+          }),
+        );
+        window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
+        window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
+        if (result?.skipped) {
+          if (source === "toolbar" || source === "hotkey") {
+            setForkSaveHint("已是最新版本");
+          }
+        } else if (source === "visibility") {
+          excalidrawAPI.setToast({ message: "切换到后台时已保存到服务器" });
+        } else if (source === "hotkey" || source === "toolbar") {
+          excalidrawAPI.setToast({ message: "已保存" });
+        } else if (source === "home") {
+          /* 主页：不单独提示成功，直接返回 */
+        }
+        if (navigateAfter) {
+          FileSyncState.clearLocalCache(fid);
+          finishNavigateHome();
+        }
+        return true;
+      } catch (e: any) {
+        console.error("[saveCurrentFileToServer]", e);
+        if (source === "visibility") {
+          /* visibility 静默失败，只打控制台 */
+        } else {
+          setErrorMessage(e?.message ?? String(e));
+        }
+        if (navigateAfter) {
+          const okLocal = await persistLocalDraftToCache();
+          if (okLocal) {
+            window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
+            window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
+            excalidrawAPI.setToast({ message: "无法上传到服务器，已暂存到本机并返回" });
+          }
+          finishNavigateHome();
+        }
+        return false;
+      } finally {
+        if (source !== "visibility") {
+          setForkSaving(false);
+        } else {
+          visibilitySaveInFlightRef.current = false;
+        }
       }
-      window.setTimeout(() => navigateToFileListHome(), 400);
+    },
+    [excalidrawAPI, getSceneData, finishNavigateHome, persistLocalDraftToCache],
+  );
+
+  useEffect(() => {
+    saveToServerRef.current = saveCurrentFileToServer;
+  }, [saveCurrentFileToServer]);
+
+  const forkGoHomeWithServerSave = useCallback(async () => {
+    const fid = getFileIdFromHash();
+    if (!excalidrawAPI || !fid) {
+      navigateToFileListHome();
+      return;
     }
-  }, [saveCurrentFileToServer, navigateToFileListHome, getSceneData]);
+    FileEditDirty.prepareForDirtyEvaluation({
+      flushEmbeddedLocalFiles: () => LocalData.flushSave(),
+      draftFlusher: updateDraftHashDebouncedRef.current,
+    });
+    if (!FileEditDirty.hasUnsavedChanges(fid)) {
+      navigateToFileListHome();
+      return;
+    }
+    setForkHomeNavDialogOpen(true);
+  }, [excalidrawAPI, navigateToFileListHome]);
+
+  const forkHomeConfirmSave = useCallback(async () => {
+    setForkHomeNavDialogOpen(false);
+    await saveCurrentFileToServer({ source: "home", navigateAfter: true });
+  }, [saveCurrentFileToServer]);
+
+  const forkHomeConfirmDiscard = useCallback(async () => {
+    setForkHomeNavDialogOpen(false);
+    await discardLocalEditsForHomeNavigation();
+  }, [discardLocalEditsForHomeNavigation]);
+
+  const forkHomeDismissDialog = useCallback(() => {
+    setForkHomeNavDialogOpen(false);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key !== "s") {
+        return;
+      }
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      if (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        (e as KeyboardEvent & { isComposing?: boolean }).isComposing
+      ) {
+        return;
+      }
+      if (!getFileIdFromHash()) {
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      void saveToServerRef.current?.({ source: "hotkey" });
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, []);
 
   const onChange = (
     elements: readonly OrderedExcalidrawElement[],
@@ -1101,8 +1257,6 @@ const ExcalidrawWrapper = () => {
     );
   }
 
-  const forkFileId = getFileIdFromHash();
-
   useEffect(() => {
     if (!forkFileId) {
       return;
@@ -1130,11 +1284,17 @@ const ExcalidrawWrapper = () => {
 
   const renderForkTopRightUI = useCallback(
     (isMobile: boolean) => {
-      if (!forkFileId || isMobile) {
+      if (!forkFileId) {
         return null;
       }
       return (
-        <div className="excal-fork-toolbar-stack excalidraw-ui-top-right">
+        <div
+          className={
+            isMobile
+              ? "excal-fork-toolbar-stack excal-fork-toolbar-stack--phone excalidraw-ui-top-right"
+              : "excal-fork-toolbar-stack excalidraw-ui-top-right"
+          }
+        >
           <div
             className="excal-fork-toolbar-wrap"
             role="toolbar"
@@ -1142,39 +1302,24 @@ const ExcalidrawWrapper = () => {
           >
             <button
               type="button"
+              className="excal-action-btn excal-btn-save"
+              disabled={forkSaving}
+              title="保存到服务器（Ctrl+S / ⌘S）"
+              aria-label="保存到服务器"
+              onClick={() => void saveCurrentFileToServer({ source: "toolbar" })}
+            >
+              {toolbarSaveIcon}
+              <span>{forkSaving ? "保存中…" : "保存"}</span>
+            </button>
+            <button
+              type="button"
               className="excal-action-btn excal-btn-stash excal-btn-home"
-              title="暂存到本机并返回文件列表"
-              onClick={() => void forkStashLocalAndGoHome()}
+              disabled={forkSaving}
+              title="返回文件列表（有未保存修改时将询问）"
+              onClick={() => void forkGoHomeWithServerSave()}
             >
               {smallHouseIcon}
               <span>主页</span>
-            </button>
-            <button
-              type="button"
-              className="excal-action-btn excal-btn-save"
-              disabled={forkSaving}
-              title="先将当前画布上传到服务器，成功后再返回文件列表"
-              aria-label="上传画布到服务器后返回文件列表"
-              onClick={() => void handleForkSaveAndExit()}
-            >
-              {toolbarSaveIcon}
-              <span>
-                {forkSaving ? "上传中…" : "保存退出"}
-              </span>
-            </button>
-            <button
-              type="button"
-              className={clsx(
-                "excal-action-btn excal-btn-history",
-                showHistoryPanel && "excal-btn-history--active",
-              )}
-              title="历史版本"
-              aria-label="历史版本"
-              aria-pressed={showHistoryPanel}
-              onClick={() => setShowHistoryPanel((v) => !v)}
-            >
-              {historyIcon}
-              <span>历史版本</span>
             </button>
           </div>
           {forkSaveHint ? (
@@ -1185,15 +1330,10 @@ const ExcalidrawWrapper = () => {
         </div>
       );
     },
-    [
-      forkFileId,
-      forkSaving,
-      forkSaveHint,
-      showHistoryPanel,
-      forkStashLocalAndGoHome,
-      handleForkSaveAndExit,
-    ],
+    [forkFileId, forkSaving, forkSaveHint, saveCurrentFileToServer, forkGoHomeWithServerSave],
   );
+
+  const hideForkCanvasUntilFit = !!forkFileId && !forkCanvasRevealed;
 
   return (
     <div
@@ -1202,6 +1342,13 @@ const ExcalidrawWrapper = () => {
         editorTheme === THEME.DARK ? " theme--dark" : ""
       }`}
     >
+      <div
+        style={{
+          height: "100%",
+          opacity: hideForkCanvasUntilFit ? 0 : 1,
+          pointerEvents: hideForkCanvasUntilFit ? "none" : "auto",
+        }}
+      >
       <Excalidraw
         onChange={onChange}
         onIncrement={onIncrement}
@@ -1232,7 +1379,14 @@ const ExcalidrawWrapper = () => {
           theme={appTheme}
           setTheme={(theme) => setAppTheme(theme)}
           refresh={() => forceRefresh((prev) => !prev)}
-          onGoHome={() => void forkStashLocalAndGoHome()}
+          onGoHome={() => void forkGoHomeWithServerSave()}
+          onSaveToServer={
+            forkFileId
+              ? () => void saveCurrentFileToServer({ source: "toolbar" })
+              : undefined
+          }
+          saveToServerPending={forkSaving}
+          onToggleHistory={() => setShowHistoryPanel((v) => !v)}
         />
         <AppWelcomeScreen />
         <OverwriteConfirmDialog>
@@ -1264,7 +1418,16 @@ const ExcalidrawWrapper = () => {
               keywords: ["home", "list", "files", "主页", "返回"],
               predicate: () => !!getFileIdFromHash(),
               perform: () => {
-                void forkStashLocalAndGoHome();
+                void forkGoHomeWithServerSave();
+              },
+            },
+            {
+              label: "历史版本",
+              category: DEFAULT_CATEGORIES.app,
+              keywords: ["history", "version", "archive", "历史", "版本"],
+              predicate: () => !!getFileIdFromHash(),
+              perform: () => {
+                setShowHistoryPanel((v) => !v);
               },
             },
             {
@@ -1307,6 +1470,57 @@ const ExcalidrawWrapper = () => {
           />
         )}
       </Excalidraw>
+      </div>
+      {forkHomeNavDialogOpen && forkFileId ? (
+        <div
+          className="fork-home-dialog-overlay"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              forkHomeDismissDialog();
+            }
+          }}
+        >
+          <div
+            className="fork-home-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="fork-home-nav-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="fork-home-nav-title">返回文件列表</h3>
+            <p className="fork-home-dialog-desc">
+              当前画布有未保存的修改，是否先保存？
+            </p>
+            <div className="fork-home-dialog-actions">
+              <button
+                type="button"
+                className="fork-home-btn fork-home-btn--primary"
+                disabled={forkSaving}
+                onClick={() => void forkHomeConfirmSave()}
+              >
+                保存并返回
+              </button>
+              <button
+                type="button"
+                className="fork-home-btn fork-home-btn--danger"
+                disabled={forkSaving}
+                onClick={() => void forkHomeConfirmDiscard()}
+              >
+                不保存，放弃修改并返回
+              </button>
+            </div>
+            <button
+              type="button"
+              className="fork-home-dialog-cancel"
+              disabled={forkSaving}
+              onClick={forkHomeDismissDialog}
+            >
+              取消，继续编辑
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

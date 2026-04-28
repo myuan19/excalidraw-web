@@ -6,6 +6,7 @@ import {
 } from "./app-jotai";
 import { TopErrorBoundary } from "./components/TopErrorBoundary";
 import { FileList } from "./components/FileList";
+import { debugLog } from "./data/debugLog";
 
 import "./index.scss";
 
@@ -51,8 +52,18 @@ function hashNeedsEditor(): boolean {
 const ForkRoot = () => {
   const [, bump] = useState(0);
   useEffect(() => {
-    const h = () => bump((n) => n + 1);
+    const h = () => {
+      debugLog.fileListOpen("App hashchange (ForkRoot)", {
+        hash: window.location.hash,
+        needsEditor: hashNeedsEditor(),
+      });
+      bump((n) => n + 1);
+    };
     window.addEventListener("hashchange", h);
+    debugLog.fileListOpen("App ForkRoot mount", {
+      hash: window.location.hash,
+      needsEditor: hashNeedsEditor(),
+    });
     return () => window.removeEventListener("hashchange", h);
   }, []);
 
@@ -64,7 +75,18 @@ const ForkRoot = () => {
       <div className="excalidraw-app" style={{ height: "100%" }}>
         <FileList
           onOpenFile={(id) => {
-            window.location.hash = `#file=${id}`;
+            const next = `#file=${id}`;
+            debugLog.fileListOpen("App onOpenFile → assign location.hash", {
+              id8: id.slice(0, 8),
+              nextHash: next,
+            });
+            window.location.hash = next;
+            queueMicrotask(() => {
+              debugLog.fileListOpen("App onOpenFile after microtask", {
+                hash: window.location.hash,
+                needsEditor: hashNeedsEditor(),
+              });
+            });
           }}
           onReady={onFileListReady}
         />
