@@ -30,7 +30,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { t } from "@excalidraw/excalidraw/i18n";
 import { isElementLink } from "@excalidraw/element";
 import { restoreAppState, restoreElements } from "@excalidraw/excalidraw/data/restore";
-import { getNormalizedZoom } from "@excalidraw/excalidraw/scene";
 import { newElementWith, StoreIncrement, type StoreDelta } from "@excalidraw/element";
 import { isInitializedImageElement } from "@excalidraw/element";
 import {
@@ -96,6 +95,7 @@ import { buildSceneThumbnailSvg } from "./data/thumbnailSvg";
 import type { ForkSceneSnapshot } from "./data/forkFileTypes";
 import { resolveSaveDisplayName } from "./data/forkFileNaming";
 import { LocalThumbnailCache } from "./data/localThumbnailCache";
+import { readForkBrowserAppStateOverlay } from "./data/forkBrowserSceneStorage";
 import { hashSceneSnapshot } from "./data/sceneHash";
 import { ServerSync } from "./data/ServerSync";
 import { persistDtoToStoreDelta } from "./data/storeDeltaPersist";
@@ -167,45 +167,12 @@ function sanitizePersistedAppState(raw: Record<string, unknown> | null | undefin
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// Viewport persistence helpers
-// ---------------------------------------------------------------------------
-
-type SavedViewport = { scrollX: number; scrollY: number; zoomValue: number };
-
-const viewportKey = (fileId: string) => `excal-vp-${fileId}`;
-
-function readSavedViewport(fileId: string): SavedViewport | null {
-  try {
-    const raw = localStorage.getItem(viewportKey(fileId));
-    if (!raw) return null;
-    const p = JSON.parse(raw);
-    if (
-      typeof p?.scrollX === "number" &&
-      typeof p?.scrollY === "number" &&
-      typeof p?.zoomValue === "number"
-    ) {
-      return p as SavedViewport;
-    }
-  } catch {}
-  return null;
-}
-
-/** 供 onChange 内部调用，直接写 localStorage（已在外部防抖）。 */
-function persistViewport(fileId: string, scrollX: number, scrollY: number, zoomValue: number) {
-  try {
-    localStorage.setItem(
-      viewportKey(fileId),
-      JSON.stringify({ scrollX, scrollY, zoomValue }),
-    );
-  } catch {}
-}
-
 const initializeScene = async (opts: {
   excalidrawAPI: ExcalidrawImperativeAPI;
 }): Promise<{
   scene: ExcalidrawInitialDataState | null;
   isExternalScene: false;
+  hasBrowserViewport: boolean;
 }> => {
   const fileIdFromHash = getFileIdFromHash();
   if (fileIdFromHash) {
@@ -219,7 +186,7 @@ const initializeScene = async (opts: {
     const localHasContent = localElements.length > 0;
     debugLog.init(`file=${fid8} localHasContent=${localHasContent}, localElements=${localElements.length}`);
 
-    const savedViewport = readSavedViewport(fileIdFromHash);
+    const forkBrowserOverlay = readForkBrowserAppStateOverlay(fileIdFromHash);
 
     let serverNewerThanLocal = false;
     try {
@@ -259,13 +226,12 @@ const initializeScene = async (opts: {
             repairBindings: true,
             deleteInvisibleElements: true,
           }),
-          appState: savedViewport
-            ? { ...restoredLocal1, scrollX: savedViewport.scrollX, scrollY: savedViewport.scrollY, zoom: { value: getNormalizedZoom(savedViewport.zoomValue) } }
-            : restoredLocal1,
+          appState: forkBrowserOverlay ? { ...restoredLocal1, ...forkBrowserOverlay } : restoredLocal1,
           files: (data.files || {}) as any,
-          ...(savedViewport ? {} : { scrollToContent: true }),
+          ...(forkBrowserOverlay ? {} : { scrollToContent: true }),
         },
         isExternalScene: false,
+        hasBrowserViewport: !!forkBrowserOverlay,
       };
     }
 
@@ -300,13 +266,12 @@ const initializeScene = async (opts: {
             repairBindings: true,
             deleteInvisibleElements: true,
           }),
-          appState: savedViewport
-            ? { ...restoredLocal2, scrollX: savedViewport.scrollX, scrollY: savedViewport.scrollY, zoom: { value: getNormalizedZoom(savedViewport.zoomValue) } }
-            : restoredLocal2,
+          appState: forkBrowserOverlay ? { ...restoredLocal2, ...forkBrowserOverlay } : restoredLocal2,
           files: (data.files || {}) as any,
-          ...(savedViewport ? {} : { scrollToContent: true }),
+          ...(forkBrowserOverlay ? {} : { scrollToContent: true }),
         },
         isExternalScene: false,
+        hasBrowserViewport: !!forkBrowserOverlay,
       };
     }
 
@@ -337,13 +302,12 @@ const initializeScene = async (opts: {
             repairBindings: true,
             deleteInvisibleElements: true,
           }),
-          appState: savedViewport
-            ? { ...restoredServer, scrollX: savedViewport.scrollX, scrollY: savedViewport.scrollY, zoom: { value: getNormalizedZoom(savedViewport.zoomValue) } }
-            : restoredServer,
+          appState: forkBrowserOverlay ? { ...restoredServer, ...forkBrowserOverlay } : restoredServer,
           files: (data.files || {}) as any,
-          ...(savedViewport ? {} : { scrollToContent: true }),
+          ...(forkBrowserOverlay ? {} : { scrollToContent: true }),
         },
         isExternalScene: false,
+        hasBrowserViewport: !!forkBrowserOverlay,
       };
     }
 
@@ -355,6 +319,7 @@ const initializeScene = async (opts: {
         scrollToContent: true,
       },
       isExternalScene: false,
+      hasBrowserViewport: false,
     };
   }
 
@@ -365,6 +330,7 @@ const initializeScene = async (opts: {
       scrollToContent: true,
     },
     isExternalScene: false,
+    hasBrowserViewport: false,
   };
 };
 
@@ -589,12 +555,6 @@ const ExcalidrawWrapper = () => {
 
   const localPersistGenRef = useRef(0);
 
-  const saveViewportDebouncedRef = useRef(
-    debounce((fileId: string, scrollX: number, scrollY: number, zoomValue: number) => {
-      persistViewport(fileId, scrollX, scrollY, zoomValue);
-    }, 500),
-  );
-
   const updateDraftHashDebouncedRef = useRef(
     debounce(
       (fileId: string, getScene: () => ReturnType<typeof getSceneData>) => {
@@ -650,10 +610,8 @@ const ExcalidrawWrapper = () => {
 
   useEffect(() => {
     const debounced = updateDraftHashDebouncedRef.current;
-    const debouncedVp = saveViewportDebouncedRef.current;
     return () => {
       debounced.cancel();
-      debouncedVp.cancel();
     };
   }, []);
 
@@ -666,7 +624,7 @@ const ExcalidrawWrapper = () => {
       loadImages(data, /* isInitialLoad */ true);
       initialStatePromiseRef.current.promise.resolve(data.scene);
       await restorePersistedUndoStack(excalidrawAPI);
-      revealForkCanvasAfterFit(excalidrawAPI, () => setForkCanvasRevealed(true));
+      revealForkCanvasAfterFit(excalidrawAPI, () => setForkCanvasRevealed(true), { skipFit: data.hasBrowserViewport });
       setTimeout(async () => {
         const fid = getFileIdFromHash();
         if (!fid) {
@@ -729,6 +687,7 @@ const ExcalidrawWrapper = () => {
           await restorePersistedUndoStack(excalidrawAPI);
           revealForkCanvasAfterFit(excalidrawAPI, () =>
             setForkCanvasRevealed(true),
+            { skipFit: data.hasBrowserViewport },
           );
           setTimeout(() => {
             const fid = getFileIdFromHash();
@@ -1216,13 +1175,12 @@ const ExcalidrawWrapper = () => {
             });
           }
         }
-      });
+      }, getFileIdFromHash());
     }
 
     const fid = getFileIdFromHash();
     if (fid && excalidrawAPI) {
       updateDraftHashDebouncedRef.current(fid, getSceneData);
-      saveViewportDebouncedRef.current(fid, appState.scrollX, appState.scrollY, appState.zoom.value);
     }
 
     if (debugCanvasRef.current && excalidrawAPI) {

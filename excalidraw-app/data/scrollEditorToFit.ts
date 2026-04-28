@@ -15,14 +15,18 @@ export function scrollEditorToFitContent(api: ExcalidrawImperativeAPI): void {
 }
 
 /**
- * 在下一帧执行 fit，再下一帧回调，避免用户看到「先按保存的缩放/滚动一帧，再跳到适配视口」的闪烁。
+ * 在下一帧回调揭示画布。
+ * 当 skipFit=true（浏览器快照已恢复视口）时不做 fitToViewport，直接揭示。
  */
 export function revealForkCanvasAfterFit(
   api: ExcalidrawImperativeAPI,
   onDone: () => void,
+  opts?: { skipFit?: boolean },
 ): void {
   requestAnimationFrame(() => {
-    scrollEditorToFitContent(api);
+    if (!opts?.skipFit) {
+      scrollEditorToFitContent(api);
+    }
     requestAnimationFrame(() => {
       onDone();
     });

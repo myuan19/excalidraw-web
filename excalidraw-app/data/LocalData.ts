@@ -7,8 +7,9 @@
  * - DataState refers to full state of the app: appState, elements, images,
  *   though some state is saved separately (library) for one reason or another.
  *   We also save different data to different storage (localStorage, indexedDB).
- * - Full scene JSON is not written to legacy upstream localStorage keys; fork
- *   mode uses {@link FileSyncState} per-file cache and the server as authority.
+ * - Fork additionally mirrors upstream's browser snapshot (non-deleted elements +
+ *   clearAppStateForLocalStorage) into per-file localStorage keys via
+ *   {@link saveForkBrowserScene}; authority for collaboration remains server/cache.
  */
 
 import { debounce } from "@excalidraw/common";
@@ -37,6 +38,7 @@ import { SAVE_TO_LOCAL_STORAGE_TIMEOUT, STORAGE_KEYS } from "../app_constants";
 
 import { FileManager } from "./FileManager";
 import { FileStatusStore } from "./fileStatusStore";
+import { saveForkBrowserScene } from "./forkBrowserSceneStorage";
 import { Locker } from "./Locker";
 
 const filesStore = createStore("files-db", "files-store");
@@ -72,7 +74,11 @@ export class LocalData {
       appState: AppState,
       files: BinaryFiles,
       onFilesSaved: () => void,
+      fileId: string | null,
     ) => {
+      if (fileId) {
+        saveForkBrowserScene(fileId, elements, appState);
+      }
       await this.fileStorage.saveFiles({
         elements,
         files,
@@ -88,10 +94,12 @@ export class LocalData {
     appState: AppState,
     files: BinaryFiles,
     onFilesSaved: () => void,
+    /** When set (fork mode with #file=…), mirrors upstream: persist elements + browser appState slice to localStorage. */
+    fileId?: string | null,
   ) => {
     // we need to make the `isSavePaused` check synchronously (undebounced)
     if (!this.isSavePaused()) {
-      this._save(elements, appState, files, onFilesSaved);
+      this._save(elements, appState, files, onFilesSaved, fileId ?? null);
     }
   };
 
