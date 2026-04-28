@@ -7,6 +7,10 @@ import React, {
 } from "react";
 
 import { debugLog } from "../data/debugLog";
+import {
+  readFileListTreeCache,
+  writeFileListTreeCache,
+} from "../data/fileListSessionCache";
 import { FileSyncState } from "../data/FileSyncState";
 import {
   formatImportErrorMessage,
@@ -21,6 +25,7 @@ import {
 } from "../data/ServerSync";
 import {
   buildSceneThumbnailSvg,
+  extractThumbBg,
   patchThumbnailSvgForCard,
 } from "../data/thumbnailSvg";
 import {
@@ -28,7 +33,10 @@ import {
   isAIConfigured,
   subscribeAIConfig,
 } from "../data/aiConfig";
+import { computeThumbFetchAllowIds } from "../data/thumbCoverage";
 import { AISettings } from "./AISettings";
+
+import { useThumbnailPipeline } from "../hooks/useThumbnailPipeline";
 
 import "./FileList.scss";
 
@@ -37,49 +45,50 @@ interface FileListProps {
   onReady?: () => void;
 }
 
-type SortKey = "manual" | "updated_at" | "created_at" | "name";
-type DragItem =
-  | { type: "file"; id: string }
-  | { type: "folder"; id: string };
+type SortKey = "updated_at" | "created_at" | "name";
 type FolderDraft =
   | { mode: "create"; parentId: string | null }
   | { mode: "rename"; folder: ServerFolder };
 
 const ROOT_ID: string | null = null;
-const SIDEBAR_ROOT = "__ROOT__";
-const INTERNAL_DRAG_MIME = "application/x-excalidraw-filelist-item";
 
-function dragItemKey(item: DragItem): string {
-  return `${item.type}:${item.id}`;
-}
-
-function parseDragKey(key: string): DragItem | null {
-  const [type, id] = key.split(":") as [string, string];
-  if ((type === "file" || type === "folder") && id) {
-    return { type, id };
-  }
-  return null;
-}
-
-function computeDropZone(
-  clientX: number,
-  el: HTMLElement,
-  isFolder: boolean,
-): "left" | "right" | "center" {
-  const rect = el.getBoundingClientRect();
-  const ratio = (clientX - rect.left) / rect.width;
-  if (isFolder) {
-    if (ratio < 0.25) return "left";
-    if (ratio > 0.75) return "right";
-    return "center";
-  }
-  return ratio < 0.5 ? "left" : "right";
-}
+const FILELIST_SCENE_IMPORT_INPUT_ID = "filelist-scene-import-input";
+/** HTML5 DnD payload for internal folder reparenting / reorder (sidebar only). */
+const FOLDER_DND_MIME = "application/x-excalidraw-fork-folder";
 
 function sanitizeFileBaseName(name: string): string {
   const base =
     name.replace(/\.(excalidraw|json|png|svg)$/i, "").trim() || "Imported";
   return base.slice(0, 120);
+}
+
+/** 从拖放/多选里筛出可能为 Excalidraw 场景：扩展名 或 典型 MIME。不再「无 type 就全收」，免杂文件进导入。 */
+const IMPORTABLE_NAME = /\.(excalidraw|excalidrawlib|json|png|svg|jpe?g)$/i;
+function takeImportableFilesFromList(fileList: FileList | File[]): File[] {
+  return Array.from(fileList).filter(
+    (f) =>
+      IMPORTABLE_NAME.test(f.name) ||
+      f.type === "application/json" ||
+      f.type?.startsWith("image/") ||
+      f.type === "application/vnd.excalidraw+json" ||
+      f.type === "application/x-excalidraw",
+  );
+}
+
+/** 多文件导入中途失败时回滚；返回**未能**删除的 id（或网络失败）。 */
+async function rollbackCreatedImportFiles(createdIds: string[]): Promise<string[]> {
+  const failed: string[] = [];
+  for (const id of createdIds) {
+    try {
+      await ServerSync.deleteFile(id);
+      FileSyncState.clearLocalCache(id);
+      FileSyncState.clearHashStateForFile(id);
+      LocalThumbnailCache.clear(id);
+    } catch {
+      failed.push(id);
+    }
+  }
+  return failed;
 }
 
 function highlightMatch(text: string, q: string): React.ReactNode {
@@ -116,7 +125,24 @@ function compareManual(a: { sort_index?: number; name: string }, b: { sort_index
   return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
 }
 
-function iconPath(type: "folder" | "file" | "grid" | "chevron" | "plus" | "upload" | "search" | "ai" | "info" | "open" | "edit" | "download" | "delete" | "menu" | "sort") {
+function iconPath(
+  type:
+    | "folder"
+    | "file"
+    | "grid"
+    | "chevron"
+    | "plus"
+    | "upload"
+    | "search"
+    | "ai"
+    | "edit"
+    | "download"
+    | "delete"
+    | "menu"
+    | "sort"
+    | "move"
+    | "drag",
+) {
   const paths = {
     folder:
       "M10 4l2 2h8c1.1 0 2 .9 2 2v10c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h6z",
@@ -129,13 +155,14 @@ function iconPath(type: "folder" | "file" | "grid" | "chevron" | "plus" | "uploa
     search:
       "M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z",
     ai: "M12 2l1.5 5L18 5l-2 4.5 5 1.5-5 1.5L18 17l-4.5-2L12 20l-1.5-5L6 17l2-4.5L3 11l5-1.5L6 5l4.5 2L12 2z",
-    info: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z",
-    open: "M19 19H5V5h7V3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z",
     edit: "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z",
     download: "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z",
     delete: "M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z",
     menu: "M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z",
     sort: "M7 4h10v2H7V4zm-3 7h16v2H4v-2zm5 7h6v2H9v-2z",
+    drag: "M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z",
+    move:
+      "M4 12l4-4v3h3v2H8v3l-4-4zM12 7l2 2h7c1.1 0 2 .9 2 2v9H12V7z",
   };
   return paths[type];
 }
@@ -152,6 +179,48 @@ function Icon({
       <path fill="currentColor" d={iconPath(type)} />
     </svg>
   );
+}
+
+/**
+ * 仅在「按下」和「松手」都点在同一层遮罩上时才关闭，避免在弹层内选区/复制时松手落在外侧误关。
+ */
+function useStrictOverlayDismiss(onDismiss: () => void) {
+  const pointerDownOnBackdrop = useRef(false);
+  return useMemo(
+    () => ({
+      onPointerDown: (e: React.PointerEvent) => {
+        pointerDownOnBackdrop.current = e.target === e.currentTarget;
+      },
+      onPointerUp: (e: React.PointerEvent) => {
+        if (e.target === e.currentTarget && pointerDownOnBackdrop.current) {
+          onDismiss();
+        }
+        pointerDownOnBackdrop.current = false;
+      },
+      onPointerCancel: () => {
+        pointerDownOnBackdrop.current = false;
+      },
+    }),
+    [onDismiss],
+  );
+}
+
+function getDescendantFolderIds(
+  folderId: string | null,
+  allFolders: ServerFolder[],
+): Set<string> {
+  const result = new Set<string>();
+  const queue: (string | null)[] = [folderId];
+  while (queue.length > 0) {
+    const parentId = queue.shift()!;
+    for (const f of allFolders) {
+      if (folderParentId(f) === parentId && !result.has(f.id)) {
+        result.add(f.id);
+        queue.push(f.id);
+      }
+    }
+  }
+  return result;
 }
 
 function buildFolderPath(
@@ -173,9 +242,26 @@ function buildFolderPath(
   return path;
 }
 
+function getInitialFileListStateFromCache(): {
+  files: ServerFile[];
+  folders: ServerFolder[];
+  loading: boolean;
+} {
+  const cached = readFileListTreeCache();
+  if (!cached) {
+    return { files: [], folders: [], loading: true };
+  }
+  return {
+    files: cached.files,
+    folders: cached.folders,
+    loading: false,
+  };
+}
+
 export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
-  const [files, setFiles] = useState<ServerFile[]>([]);
-  const [folders, setFolders] = useState<ServerFolder[]>([]);
+  const initialList = getInitialFileListStateFromCache();
+  const [files, setFiles] = useState<ServerFile[]>(initialList.files);
+  const [folders, setFolders] = useState<ServerFolder[]>(initialList.folders);
   const [currentFolderId, setCurrentFolderIdRaw] = useState<string | null>(() => {
     try {
       const saved = sessionStorage.getItem("excalidraw-filelist-folder");
@@ -196,19 +282,17 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
   }, []);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [mobileTreeOpen, setMobileTreeOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initialList.loading);
   const [error, setError] = useState<string | null>(null);
+  const [importNotice, setImportNotice] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
-  const [dropOverlay, setDropOverlay] = useState(false);
   const [fetchedThumbs, setFetchedThumbs] = useState<Record<string, string>>({});
   const fetchedThumbsRef = useRef(fetchedThumbs);
   fetchedThumbsRef.current = fetchedThumbs;
   const [draftThumbs, setDraftThumbs] = useState<Record<string, string>>({});
-  const thumbFetchingRef = useRef<Set<string>>(new Set());
   const [visibleThumbIds, setVisibleThumbIds] = useState<Set<string>>(
     () => new Set(),
   );
-  const rootRef = useRef<HTMLDivElement>(null);
   const sceneImportInputRef = useRef<HTMLInputElement>(null);
   const thumbObserverRef = useRef<IntersectionObserver | null>(null);
   const thumbNodeMap = useRef<Map<string, HTMLElement>>(new Map());
@@ -218,39 +302,51 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
   const [folderDraft, setFolderDraft] = useState<FolderDraft | null>(null);
   const [folderNameValue, setFolderNameValue] = useState("");
   const [syncVersion, setSyncVersion] = useState(0);
-  const [sortKey, setSortKey] = useState<SortKey>("updated_at");
-  const [showAISettings, setShowAISettings] = useState(false);
-  const [detailFile, setDetailFile] = useState<ServerFile | null>(null);
-  const [aiDotOk, setAiDotOk] = useState(false);
-
-  const [dragItem, setDragItem] = useState<DragItem | null>(null);
-  const [dropIndicator, setDropIndicator] = useState<{
-    key: string;
-    edge: "left" | "right";
-  } | null>(null);
-  const [dropIntoFolder, setDropIntoFolder] = useState<string | null>(null);
-  const [sidebarDropId, setSidebarDropId] = useState<string | null>(null);
-
-  const [pointerDrag, setPointerDrag] = useState<{
-    item: DragItem;
-    pointerId: number;
-    startX: number;
-    startY: number;
-    active: boolean;
-  } | null>(null);
-  const longPressTimer = useRef<number | null>(null);
-  const suppressNextClickRef = useRef(false);
-
-  const customSortEnabled = sortKey === "manual";
-  const searchActive = !!searchQuery.trim();
-  const canReorder = customSortEnabled && !searchActive;
-
-  const clearDragState = useCallback(() => {
-    setDragItem(null);
-    setDropIndicator(null);
-    setDropIntoFolder(null);
-    setSidebarDropId(null);
+  const [sortKey, setSortKeyRaw] = useState<SortKey>(() => {
+    try {
+      const saved = localStorage.getItem("excalidraw-filelist-sort");
+      if (saved === "updated_at" || saved === "created_at" || saved === "name") {
+        return saved;
+      }
+    } catch { /* ignore */ }
+    return "updated_at";
+  });
+  const setSortKey = useCallback((key: SortKey) => {
+    setSortKeyRaw(key);
+    try { localStorage.setItem("excalidraw-filelist-sort", key); } catch { /* ignore */ }
   }, []);
+  const [showAISettings, setShowAISettings] = useState(false);
+  const [aiDotOk, setAiDotOk] = useState(false);
+  const [newFileDialogOpen, setNewFileDialogOpen] = useState(false);
+  const [newFileName, setNewFileName] = useState("未命名");
+
+  const [moveDialogFile, setMoveDialogFile] = useState<ServerFile | null>(null);
+  const [moveTargetFolderId, setMoveTargetFolderId] = useState<string | null>(null);
+
+  /** Sidebar: folder reorder / reparent via HTML5 drag (handle only). */
+  const [draggingFolderId, setDraggingFolderId] = useState<string | null>(null);
+  type FolderDropInd = {
+    targetId: string | "__ROOT__";
+    mode: "before" | "after" | "into";
+  };
+  const [folderDropIndicator, setFolderDropIndicator] =
+    useState<FolderDropInd | null>(null);
+  const folderDropIndicatorRef = useRef<FolderDropInd | null>(null);
+  const setFolderDropInd = useCallback((v: FolderDropInd | null) => {
+    folderDropIndicatorRef.current = v;
+    setFolderDropIndicator(v);
+  }, []);
+
+  const dismissFolderDraft = useCallback(() => setFolderDraft(null), []);
+  const dismissNewFileDialog = useCallback(() => setNewFileDialogOpen(false), []);
+  const dismissMoveDialog = useCallback(() => setMoveDialogFile(null), []);
+  const dismissMobileTree = useCallback(() => setMobileTreeOpen(false), []);
+  const folderDraftOverlayDismiss = useStrictOverlayDismiss(dismissFolderDraft);
+  const newFileOverlayDismiss = useStrictOverlayDismiss(dismissNewFileDialog);
+  const moveDialogOverlayDismiss = useStrictOverlayDismiss(dismissMoveDialog);
+  const mobileTreeBackdropDismiss = useStrictOverlayDismiss(dismissMobileTree);
+
+  const searchActive = !!searchQuery.trim();
 
   useEffect(() => {
     const syncAiDot = () => setAiDotOk(isAIConfigured());
@@ -305,14 +401,6 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
   }, []);
 
   useEffect(() => {
-    return () => {
-      if (longPressTimer.current != null) {
-        window.clearTimeout(longPressTimer.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
     const bump = () => setSyncVersion((n) => n + 1);
     window.addEventListener("excalidraw-file-sync-state", bump);
     window.addEventListener("excalidraw-server-saved", bump);
@@ -325,13 +413,15 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
   }, []);
 
   const inflightRef = useRef<AbortController | null>(null);
+  const currentFolderIdRef = useRef(currentFolderId);
+  currentFolderIdRef.current = currentFolderId;
 
   const foldersById = useMemo(() => {
     return new Map(folders.map((folder) => [folder.id, folder]));
   }, [folders]);
 
   const refresh = useCallback(
-    async (options?: { silent?: boolean }) => {
+    async (options?: { silent?: boolean; noErrorOnFailure?: boolean }) => {
       if (inflightRef.current) {
         inflightRef.current.abort();
       }
@@ -369,7 +459,11 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
             FileSyncState.clearHashStateForFile(f.id);
           }
         }
-        if (currentFolderId && !tree.folders.some((f) => f.id === currentFolderId)) {
+        // Use ref to read latest currentFolderId without it being a dep,
+        // preventing unwanted re-fetches when folder navigation triggers a
+        // setCurrentFolderId here (which would create a dep-change loop).
+        const fid = currentFolderIdRef.current;
+        if (fid && !tree.folders.some((f) => f.id === fid)) {
           setCurrentFolderId(ROOT_ID);
         }
         debugLog.fileList("refresh done", {
@@ -380,16 +474,25 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
           withSha: tree.files.filter((x) => x.content_sha256).length,
         });
         setError(null);
+        setImportNotice(null);
+        writeFileListTreeCache(tree);
         onReady?.();
       } catch (e: any) {
         if (ac.signal.aborted) {
           return;
         }
         debugLog.fileList("refresh error", e);
+        if (options?.noErrorOnFailure) {
+          onReady?.();
+          throw e;
+        }
         setError(e.message || "Failed to load files");
         onReady?.();
       } finally {
-        if (!ac.signal.aborted && !options?.silent) {
+        // Always reset loading for non-silent requests, even if the request was
+        // aborted mid-flight — otherwise loading stays stuck at true when an
+        // in-progress refresh is cancelled by an excalidraw-file-list-refresh event.
+        if (!options?.silent) {
           setLoading(false);
         }
         if (inflightRef.current === ac) {
@@ -397,13 +500,13 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
         }
       }
     },
-    [currentFolderId, onReady],
+    [onReady],
   );
 
   useEffect(() => {
     const onListRefresh = () => {
-      debugLog.fileList("excalidraw-file-list-refresh -> refresh()");
-      void refresh();
+      debugLog.fileList("excalidraw-file-list-refresh -> refresh(silent)");
+      void refresh({ silent: true });
     };
     window.addEventListener("excalidraw-file-list-refresh", onListRefresh);
     return () =>
@@ -411,23 +514,12 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
   }, [refresh]);
 
   useEffect(() => {
-    refresh();
+    void refresh({ silent: !!readFileListTreeCache() });
   }, [refresh]);
 
-  const currentFolder = currentFolderId
-    ? foldersById.get(currentFolderId) ?? null
-    : null;
   const currentPath = useMemo(
     () => buildFolderPath(currentFolderId, foldersById),
     [currentFolderId, foldersById],
-  );
-
-  const childFolders = useMemo(
-    () =>
-      folders
-        .filter((folder) => folderParentId(folder) === currentFolderId)
-        .sort(compareManual),
-    [currentFolderId, folders],
   );
 
   const draftStateById = useMemo(() => {
@@ -475,19 +567,24 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
       : f.updated_at;
   }, []);
 
+  const descendantFolderIds = useMemo(
+    () => getDescendantFolderIds(currentFolderId, folders),
+    [currentFolderId, folders],
+  );
+
   const filteredFiles = useMemo(() => {
     let list = files;
     const q = searchQuery.trim().toLowerCase();
     if (q) {
       list = files.filter((f) => f.name.toLowerCase().includes(q));
     } else {
-      list = files.filter((f) => (f.folder_id ?? null) === currentFolderId);
+      list = files.filter((f) => {
+        const fid = f.folder_id ?? null;
+        return fid === currentFolderId || descendantFolderIds.has(fid as string);
+      });
     }
     const sorted = [...list];
     sorted.sort((a, b) => {
-      if (sortKey === "manual") {
-        return compareManual(a, b);
-      }
       if (sortKey === "name") {
         return a.name.localeCompare(b.name, undefined, {
           sensitivity: "base",
@@ -504,87 +601,30 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
       );
     });
     return sorted;
-  }, [currentFolderId, effectiveUpdatedAt, files, searchQuery, sortKey]);
+  }, [currentFolderId, descendantFolderIds, effectiveUpdatedAt, files, searchQuery, sortKey]);
 
-  useEffect(() => {
-    setVisibleThumbIds((prev) => {
-      const next = new Set(prev);
-      filteredFiles.slice(0, 30).forEach((file) => next.add(file.id));
-      return next;
-    });
-  }, [filteredFiles]);
+  /**
+   * 当前视图所有文件均参与缩略图拉取/生成，包括嵌套子文件夹中的文件。
+   * thumbCoverage 机制（visibleIds ∪ 前 N 条）已通过 IntersectionObserver 控制优先级。
+   */
+  const thumbLoadScopeFiles = useMemo(() => filteredFiles, [filteredFiles]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const toFetch: { id: string; url: string }[] = [];
-    for (const f of filteredFiles) {
-      if (!visibleThumbIds.has(f.id)) {
-        continue;
-      }
-      const state = draftStateById[f.id];
-      const syncState = state?.syncState ?? "synced";
-      const localDraftThumb = state?.localDraftThumb ?? null;
-      const localRecord = state?.localRecord ?? null;
-      if (localDraftThumb) {
-        continue;
-      }
-      if (syncState === "draft") {
-        if (!localRecord) {
-          continue;
-        }
-        if (thumbFetchingRef.current.has(f.id)) {
-          continue;
-        }
-        thumbFetchingRef.current.add(f.id);
-        void (async () => {
-          try {
-            const thumbnail = await buildSceneThumbnailSvg({
-              elements: localRecord.elements,
-              appState: localRecord.appState,
-              files: localRecord.files,
-            });
-            LocalThumbnailCache.set(f.id, thumbnail);
-            if (!cancelled) {
-              setDraftThumbs((prev) => ({ ...prev, [f.id]: thumbnail }));
-            }
-          } catch {
-            // ignore
-          } finally {
-            thumbFetchingRef.current.delete(f.id);
-          }
-        })();
-        continue;
-      }
-      if (!f.has_thumbnail || thumbFetchingRef.current.has(f.id) || fetchedThumbsRef.current[f.id]) {
-        continue;
-      }
-      toFetch.push({
-        id: f.id,
-        url: `/api/files/${f.id}/thumbnail${
-          f.content_sha256 ? `?h=${encodeURIComponent(f.content_sha256)}` : ""
-        }`,
-      });
-    }
+  /**
+   * 首屏必须与 IntersectionObserver 可见集合并：可见 id ∪ 当前作用域排序前 N 条（见 thumbCoverage）。
+   */
+  const thumbFetchAllowIds = useMemo(
+    () => computeThumbFetchAllowIds(visibleThumbIds, thumbLoadScopeFiles),
+    [visibleThumbIds, thumbLoadScopeFiles],
+  );
 
-    for (const item of toFetch) {
-      thumbFetchingRef.current.add(item.id);
-      fetch(item.url)
-        .then((r) => (r.ok ? r.text() : null))
-        .then((svg) => {
-          if (cancelled || !svg) {
-            return;
-          }
-          setFetchedThumbs((prev) => ({ ...prev, [item.id]: svg }));
-        })
-        .catch(() => {})
-        .finally(() => {
-          thumbFetchingRef.current.delete(item.id);
-        });
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [draftStateById, filteredFiles, visibleThumbIds]);
+  const { thumbFetchingRef } = useThumbnailPipeline({
+    thumbLoadScopeFiles,
+    thumbFetchAllowIds,
+    draftStateById,
+    fetchedThumbSvgByIdRef: fetchedThumbsRef,
+    setDraftThumbs,
+    setFetchedThumbs,
+  });
 
   const createFileOnServer = useCallback(
     async (
@@ -637,101 +677,155 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
     [currentFolderId],
   );
 
-  const handleCreate = async () => {
+  const openNewFileDialog = useCallback(() => {
+    setNewFileName("未命名");
+    setNewFileDialogOpen(true);
+  }, []);
+
+  const commitNewFile = useCallback(async () => {
+    const name = newFileName.trim() || "未命名";
+    setNewFileDialogOpen(false);
     try {
-      const id = await createFileOnServer("Untitled");
+      const id = await createFileOnServer(name);
       onOpenFile(id);
     } catch (e: any) {
       setError(e.message);
     }
-  };
+  }, [newFileName, createFileOnServer, onOpenFile]);
 
-  const importExcalidrawToServer = useCallback(
-    async (file: File) => {
-      debugLog.fileList("import start", {
-        name: file.name,
-        type: file.type,
-        size: file.size,
-      });
+  const openMoveDialog = useCallback((e: React.MouseEvent, f: ServerFile) => {
+    e.stopPropagation();
+    setMoveDialogFile(f);
+    setMoveTargetFolderId(f.folder_id ?? null);
+  }, []);
+
+  const commitMove = useCallback(async () => {
+    if (!moveDialogFile) {
+      return;
+    }
+    const current = moveDialogFile.folder_id ?? null;
+    if (moveTargetFolderId === current) {
+      setMoveDialogFile(null);
+      return;
+    }
+    try {
+      await ServerSync.moveFiles([moveDialogFile.id], moveTargetFolderId);
+      await refresh({ silent: true });
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setMoveDialogFile(null);
+    }
+  }, [moveDialogFile, moveTargetFolderId, refresh]);
+
+  const importExcalidrawFiles = useCallback(
+    async (fileList: File[]) => {
+      if (fileList.length === 0) {
+        return;
+      }
       setImporting(true);
       setError(null);
+      setImportNotice(null);
+      const createdIds: string[] = [];
       try {
-        const { elements, appState, files: sceneFiles } =
-          await loadExcalidrawFileAsServerSceneData(file);
-        debugLog.fileList("import parsed", {
-          elements: elements.length,
-          files: Object.keys(sceneFiles).length,
-        });
-        await createFileOnServer(sanitizeFileBaseName(file.name), {
-          elements,
-          appState,
-          files: sceneFiles,
-        });
-        await refresh({ silent: true });
+        for (const file of fileList) {
+          debugLog.fileList("import start", {
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            folderId: currentFolderId,
+          });
+          const { elements, appState, files: sceneFiles } =
+            await loadExcalidrawFileAsServerSceneData(file);
+          debugLog.fileList("import parsed", {
+            elements: elements.length,
+            files: Object.keys(sceneFiles).length,
+          });
+          const id = await createFileOnServer(sanitizeFileBaseName(file.name), {
+            elements,
+            appState,
+            files: sceneFiles,
+          });
+          createdIds.push(id);
+        }
+        try {
+          await refresh({ silent: true, noErrorOnFailure: true });
+          setImportNotice(null);
+        } catch {
+          setImportNotice(
+            `已导入 ${createdIds.length} 个文件，但列表未能自动更新。请刷新本页以查看最新文件。`,
+          );
+        }
       } catch (e: unknown) {
         debugLog.fileList("import error", e);
-        setError(formatImportErrorMessage(e));
+        const failedDeletes = await rollbackCreatedImportFiles(createdIds);
+        let msg = formatImportErrorMessage(e);
+        if (failedDeletes.length > 0) {
+          msg += ` 另：有 ${failedDeletes.length} 个已创建项未能从服务器自动删除，请刷新列表后检查并手动删除重复或空白文件。`;
+        }
+        setImportNotice(null);
+        setError(msg);
       } finally {
         setImporting(false);
       }
     },
-    [createFileOnServer, refresh],
+    [createFileOnServer, currentFolderId, refresh],
   );
-
-  const onRootDragEnter = (e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes("Files")) {
-      return;
-    }
-    e.preventDefault();
-    setDropOverlay(true);
-  };
-
-  const onRootDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    const next = e.relatedTarget as Node | null;
-    if (next && rootRef.current?.contains(next)) {
-      return;
-    }
-    setDropOverlay(false);
-  };
-
-  const onRootDragOver = (e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes("Files")) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "copy";
-    }
-  };
-
-  const onRootDrop = (e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes("Files")) {
-      return;
-    }
-    e.preventDefault();
-    setDropOverlay(false);
-    if (importing) {
-      return;
-    }
-    const file = e.dataTransfer.files?.[0];
-    if (!file) {
-      return;
-    }
-    window.setTimeout(() => {
-      void importExcalidrawToServer(file);
-    }, 0);
-  };
 
   const onSceneImportInputChange = (
     e: React.ChangeEvent<HTMLInputElement>,
   ) => {
-    const file = e.target.files?.[0];
+    const raw = e.target.files;
+    const picked = raw ? Array.from(raw) : [];
     e.target.value = "";
-    if (!file) {
+    if (picked.length === 0) {
       return;
     }
-    window.setTimeout(() => {
-      void importExcalidrawToServer(file);
-    }, 0);
+    void importExcalidrawFiles(picked);
   };
+
+  /** 覆盖左侧树 + 右侧主区；与文件夹内拖移区分 */
+  const onFileListImportDragOver = useCallback(
+    (e: React.DragEvent) => {
+      if (importing) {
+        return;
+      }
+      if (draggingFolderId || e.dataTransfer.types?.includes(FOLDER_DND_MIME)) {
+        return;
+      }
+      if (!e.dataTransfer.types?.includes("Files")) {
+        return;
+      }
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+    },
+    [importing, draggingFolderId],
+  );
+
+  const onFileListImportDrop = useCallback(
+    (e: React.DragEvent) => {
+      if (importing) {
+        return;
+      }
+      if (draggingFolderId || e.dataTransfer.types?.includes(FOLDER_DND_MIME)) {
+        return;
+      }
+      e.preventDefault();
+      const { files } = e.dataTransfer;
+      if (!files?.length) {
+        return;
+      }
+      const next = takeImportableFilesFromList(files);
+      if (next.length === 0) {
+        setError(
+          "未识别到可导入的 Excalidraw 相关文件（如 .excalidraw、.json、.png、.svg）。",
+        );
+        return;
+      }
+      void importExcalidrawFiles(next);
+    },
+    [importing, draggingFolderId, importExcalidrawFiles],
+  );
 
   const handleDelete = async (
     e: React.MouseEvent,
@@ -739,7 +833,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
     name: string,
   ) => {
     e.stopPropagation();
-    if (!window.confirm(`Delete "${name}"?`)) {
+    if (!window.confirm(`确定删除「${name}」？`)) {
       return;
     }
     try {
@@ -747,6 +841,20 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
       FileSyncState.clearLocalCache(id);
       FileSyncState.clearHashStateForFile(id);
       LocalThumbnailCache.clear(id);
+      setFetchedThumbs((prev) => {
+        const n = { ...prev };
+        delete n[id];
+        return n;
+      });
+      setDraftThumbs((prev) => {
+        const n = { ...prev };
+        delete n[id];
+        return n;
+      });
+      thumbFetchingRef.current.delete(id);
+      debugLog.thumbPipeline("delete: cleared thumb state + fetching ref", {
+        id8: id.slice(0, 8),
+      });
       await refresh({ silent: true });
     } catch (err: any) {
       setError(err.message);
@@ -785,11 +893,6 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
       }
     }
     setRenamingId(null);
-  };
-
-  const openDetail = (e: React.MouseEvent, f: ServerFile) => {
-    e.stopPropagation();
-    setDetailFile(f);
   };
 
   const selectFolder = (folderId: string | null) => {
@@ -858,282 +961,217 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
     }
   };
 
-  const saveCurrentOrder = useCallback(
-    async (nextItems: FileOrderItem[]) => {
-      try {
-        await ServerSync.saveOrder(currentFolderId, nextItems);
-        await refresh({ silent: true });
-      } catch (err: any) {
-        setError(err.message);
-      }
-    },
-    [currentFolderId, refresh],
+  // ── Sidebar folder drag: reorder siblings & reparent (nested) via POST /files/order ──
+
+  const getOrderedFolderChildIds = useCallback(
+    (parentId: string | null) =>
+      folders
+        .filter((f) => folderParentId(f) === parentId)
+        .sort(compareManual)
+        .map((f) => f.id),
+    [folders],
   );
 
-  const orderItems = useMemo<FileOrderItem[]>(
-    () => [
-      ...childFolders.map((folder) => ({ type: "folder" as const, id: folder.id })),
-      ...filteredFiles.map((file) => ({ type: "file" as const, id: file.id })),
+  const isValidFolderDrop = useCallback(
+    (
+      sourceId: string,
+      targetId: string | "__ROOT__",
+      mode: "before" | "after" | "into",
+    ): boolean => {
+      if (targetId === "__ROOT__") {
+        return mode === "into";
+      }
+      if (sourceId === targetId) {
+        return false;
+      }
+      const underSource = getDescendantFolderIds(sourceId, folders);
+      if (mode === "into") {
+        return !underSource.has(targetId);
+      }
+      const target = foldersById.get(targetId);
+      if (!target) {
+        return false;
+      }
+      const newParent = folderParentId(target);
+      if (newParent === sourceId) {
+        return false;
+      }
+      if (newParent != null && underSource.has(newParent)) {
+        return false;
+      }
+      return true;
+    },
+    [folders, foldersById],
+  );
+
+  const clearFolderDragState = useCallback(() => {
+    setDraggingFolderId(null);
+    setFolderDropInd(null);
+  }, [setFolderDropInd]);
+
+  const applyFolderDrop = useCallback(
+    async (
+      sourceId: string,
+      targetId: string | "__ROOT__",
+      mode: "before" | "after" | "into",
+    ) => {
+      if (!isValidFolderDrop(sourceId, targetId, mode)) {
+        return;
+      }
+      const toItems = (ids: string[]): FileOrderItem[] =>
+        ids.map((id) => ({ type: "folder" as const, id }));
+
+      try {
+        if (targetId === "__ROOT__") {
+          const ids = getOrderedFolderChildIds(ROOT_ID).filter((id) => id !== sourceId);
+          ids.push(sourceId);
+          await ServerSync.saveOrder(ROOT_ID, toItems(ids));
+        } else if (mode === "into") {
+          const parentId = targetId;
+          const ids = getOrderedFolderChildIds(parentId).filter((id) => id !== sourceId);
+          ids.push(sourceId);
+          await ServerSync.saveOrder(parentId, toItems(ids));
+          setExpandedFolders((prev) => ({ ...prev, [parentId]: true }));
+        } else {
+          const target = foldersById.get(targetId);
+          if (!target) {
+            return;
+          }
+          const parentId = folderParentId(target);
+          const ordered = getOrderedFolderChildIds(parentId).filter(
+            (id) => id !== sourceId,
+          );
+          const tIdx = ordered.indexOf(targetId);
+          if (tIdx < 0) {
+            return;
+          }
+          const insertAt = mode === "before" ? tIdx : tIdx + 1;
+          ordered.splice(insertAt, 0, sourceId);
+          await ServerSync.saveOrder(parentId, toItems(ordered));
+        }
+        await refresh({ silent: true });
+      } catch (err: any) {
+        setError(err.message ?? "文件夹移动失败");
+      }
+    },
+    [
+      foldersById,
+      getOrderedFolderChildIds,
+      isValidFolderDrop,
+      refresh,
     ],
-    [childFolders, filteredFiles],
   );
 
-  const reorderInsert = useCallback(
-    (source: DragItem, targetKey: string | null, edge: "left" | "right") => {
-      if (!canReorder) {
-        return;
-      }
-      const sourceKey = dragItemKey(source);
-      if (sourceKey === targetKey) {
-        return;
-      }
-      const withoutSource = orderItems.filter(
-        (item) => dragItemKey(item) !== sourceKey,
-      );
-      const next = [...withoutSource];
-      if (!targetKey) {
-        next.push(source);
-      } else {
-        const targetIndex = next.findIndex(
-          (item) => dragItemKey(item) === targetKey,
-        );
-        if (targetIndex < 0) {
-          next.push(source);
-        } else {
-          const insertAt = edge === "left" ? targetIndex : targetIndex + 1;
-          next.splice(insertAt, 0, source);
-        }
-      }
-      setFolders((prev) =>
-        prev.map((folder) => {
-          const index = next.findIndex(
-            (item) => item.type === "folder" && item.id === folder.id,
-          );
-          return index >= 0
-            ? { ...folder, parent_id: currentFolderId, sort_index: index }
-            : folder;
-        }),
-      );
-      setFiles((prev) =>
-        prev.map((file) => {
-          const index = next.findIndex(
-            (item) => item.type === "file" && item.id === file.id,
-          );
-          return index >= 0
-            ? { ...file, folder_id: currentFolderId, sort_index: index }
-            : file;
-        }),
-      );
-      void saveCurrentOrder(next);
-    },
-    [canReorder, currentFolderId, orderItems, saveCurrentOrder],
-  );
+  const isFolderListDrag = (e: React.DragEvent) =>
+    !!draggingFolderId || e.dataTransfer.types.includes(FOLDER_DND_MIME);
 
-  const moveDragItemToFolder = useCallback(
-    async (item: DragItem, folderId: string | null) => {
-      try {
-        if (item.type === "file") {
-          await ServerSync.moveFiles([item.id], folderId);
-        } else {
-          await ServerSync.moveFolder(item.id, folderId);
-        }
-        await refresh({ silent: true });
-      } catch (err: any) {
-        setError(err.message);
-      }
-    },
-    [refresh],
-  );
+  const readFolderDragSourceId = (e: React.DragEvent): string | null => {
+    if (draggingFolderId) {
+      return draggingFolderId;
+    }
+    try {
+      const raw = e.dataTransfer.getData(FOLDER_DND_MIME);
+      return raw || null;
+    } catch {
+      return null;
+    }
+  };
 
-  // ── Desktop native DnD handlers ──
-
-  const startNativeDrag = (e: React.DragEvent, item: DragItem) => {
-    if (!canReorder) {
-      e.preventDefault();
+  const updateFolderRowIndicator = (e: React.DragEvent, folderId: string) => {
+    const src = draggingFolderId;
+    if (!src) {
       return;
     }
-    setDragItem(item);
+    if (src === folderId) {
+      setFolderDropInd(null);
+      e.dataTransfer.dropEffect = "none";
+      return;
+    }
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const ratio = (e.clientY - r.top) / Math.max(r.height, 1);
+    const preferred: ("before" | "into" | "after")[] =
+      ratio < 0.33
+        ? ["before", "into", "after"]
+        : ratio < 0.66
+          ? ["into", "before", "after"]
+          : ["after", "into", "before"];
+    for (const mode of preferred) {
+      if (isValidFolderDrop(src, folderId, mode)) {
+        e.dataTransfer.dropEffect = "move";
+        setFolderDropInd({ targetId: folderId, mode });
+        return;
+      }
+    }
+    e.dataTransfer.dropEffect = "none";
+    setFolderDropInd(null);
+  };
+
+  const onFolderHandleDragStart = (e: React.DragEvent, folderId: string) => {
+    e.dataTransfer.setData(FOLDER_DND_MIME, folderId);
     e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData(INTERNAL_DRAG_MIME, JSON.stringify(item));
-    e.dataTransfer.setData("text/plain", dragItemKey(item));
+    setDraggingFolderId(folderId);
   };
 
-  const onGridCardDragOver = (
-    e: React.DragEvent,
-    item: DragItem,
-    isFolder: boolean,
-  ) => {
-    if (!dragItem || !canReorder) {
-      return;
-    }
-    const sourceKey = dragItemKey(dragItem);
-    const key = dragItemKey(item);
-    if (sourceKey === key) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
-      setDropIndicator(null);
-      setDropIntoFolder(null);
+  const onFolderRowDragOver = (e: React.DragEvent, folder: ServerFolder) => {
+    if (!isFolderListDrag(e)) {
       return;
     }
     e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    const el = e.currentTarget as HTMLElement;
-    const zone = computeDropZone(e.clientX, el, isFolder);
-    if (zone === "center" && isFolder) {
-      setDropIndicator(null);
-      setDropIntoFolder(item.id);
-    } else {
-      setDropIntoFolder(null);
-      setDropIndicator({ key, edge: zone as "left" | "right" });
-    }
+    updateFolderRowIndicator(e, folder.id);
   };
 
-  const onGridCardDrop = (e: React.DragEvent) => {
-    if (!dragItem || !canReorder) {
+  const onFolderRowDrop = (e: React.DragEvent, folder: ServerFolder) => {
+    if (!isFolderListDrag(e)) {
       return;
     }
     e.preventDefault();
     e.stopPropagation();
-
-    if (dropIntoFolder) {
-      void moveDragItemToFolder(dragItem, dropIntoFolder);
-      clearDragState();
+    const ind = folderDropIndicatorRef.current;
+    const sourceId = readFolderDragSourceId(e);
+    clearFolderDragState();
+    if (!ind || !sourceId || ind.targetId !== folder.id) {
       return;
     }
-
-    if (dropIndicator) {
-      reorderInsert(dragItem, dropIndicator.key, dropIndicator.edge);
-      clearDragState();
-      return;
-    }
-
-    const el = e.currentTarget as HTMLElement;
-    const key = el.dataset.filelistDrag;
-    if (key && key !== dragItemKey(dragItem)) {
-      const isFolder = key.startsWith("folder:");
-      const zone = computeDropZone(e.clientX, el, isFolder);
-      if (zone === "center" && isFolder) {
-        void moveDragItemToFolder(dragItem, key.split(":")[1]);
-      } else {
-        reorderInsert(dragItem, key, zone as "left" | "right");
-      }
-    }
-    clearDragState();
+    void applyFolderDrop(sourceId, folder.id, ind.mode);
   };
 
-  const onSidebarDragOver = (
-    e: React.DragEvent,
-    folderId: string | null,
-  ) => {
-    if (!dragItem || !canReorder) {
+  const onRootRowDragOver = (e: React.DragEvent) => {
+    if (!isFolderListDrag(e)) {
       return;
     }
     e.preventDefault();
-    setSidebarDropId(folderId === null ? SIDEBAR_ROOT : folderId);
+    const src = draggingFolderId;
+    if (!src) {
+      return;
+    }
+    e.dataTransfer.dropEffect = isValidFolderDrop(src, "__ROOT__", "into")
+      ? "move"
+      : "none";
+    if (e.dataTransfer.dropEffect === "move") {
+      setFolderDropInd({ targetId: "__ROOT__", mode: "into" });
+    } else {
+      setFolderDropInd(null);
+    }
   };
 
-  const onSidebarDrop = async (
-    e: React.DragEvent,
-    folderId: string | null,
-  ) => {
-    if (!dragItem || !canReorder) {
+  const onRootRowDrop = (e: React.DragEvent) => {
+    if (!isFolderListDrag(e)) {
       return;
     }
     e.preventDefault();
     e.stopPropagation();
-    if (folderId !== currentFolderId) {
-      await moveDragItemToFolder(dragItem, folderId);
-    }
-    clearDragState();
-  };
-
-  const onBreadcrumbDrop = (
-    e: React.DragEvent,
-    folderId: string | null,
-  ) => {
-    void onSidebarDrop(e, folderId);
-  };
-
-  // ── Mobile Pointer Events long-press drag ──
-
-  const onPointerDown = (e: React.PointerEvent, item: DragItem) => {
-    if (!canReorder || e.pointerType === "mouse") {
+    const ind = folderDropIndicatorRef.current;
+    const sourceId = readFolderDragSourceId(e);
+    clearFolderDragState();
+    if (!ind || ind.targetId !== "__ROOT__" || !sourceId) {
       return;
     }
-    longPressTimer.current = window.setTimeout(() => {
-      suppressNextClickRef.current = true;
-      setPointerDrag({
-        item,
-        pointerId: e.pointerId,
-        startX: e.clientX,
-        startY: e.clientY,
-        active: true,
-      });
-      setDragItem(item);
-    }, 260);
+    void applyFolderDrop(sourceId, "__ROOT__", "into");
   };
 
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!pointerDrag || pointerDrag.pointerId !== e.pointerId) {
-      return;
-    }
-    const targetEl = document.elementFromPoint(e.clientX, e.clientY);
-    const targetCard = targetEl?.closest<HTMLElement>("[data-filelist-drag]");
-    const targetSidebarFolder = targetEl?.closest<HTMLElement>("[data-sidebar-drop]");
-
-    if (targetCard?.dataset.filelistDrag) {
-      const key = targetCard.dataset.filelistDrag;
-      const sourceKey = dragItemKey(pointerDrag.item);
-      if (key === sourceKey) {
-        setDropIndicator(null);
-        setDropIntoFolder(null);
-        return;
-      }
-      const isFolder = key.startsWith("folder:");
-      const zone = computeDropZone(e.clientX, targetCard, isFolder);
-      if (zone === "center" && isFolder) {
-        setDropIndicator(null);
-        setDropIntoFolder(key.split(":")[1]);
-      } else {
-        setDropIntoFolder(null);
-        setDropIndicator({ key, edge: zone as "left" | "right" });
-      }
-      setSidebarDropId(null);
-    } else if (targetSidebarFolder) {
-      setDropIndicator(null);
-      setDropIntoFolder(null);
-      const folderId = targetSidebarFolder.dataset.sidebarDrop;
-      setSidebarDropId(folderId === "" ? SIDEBAR_ROOT : (folderId ?? null));
-    } else {
-      setDropIndicator(null);
-      setDropIntoFolder(null);
-      setSidebarDropId(null);
-    }
-  };
-
-  const onPointerUp = async (e: React.PointerEvent) => {
-    if (longPressTimer.current != null) {
-      window.clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-    if (!pointerDrag || pointerDrag.pointerId !== e.pointerId) {
-      return;
-    }
-    if (dropIntoFolder) {
-      await moveDragItemToFolder(pointerDrag.item, dropIntoFolder);
-    } else if (dropIndicator) {
-      const sourceKey = dragItemKey(pointerDrag.item);
-      if (dropIndicator.key !== sourceKey) {
-        reorderInsert(pointerDrag.item, dropIndicator.key, dropIndicator.edge);
-      }
-    } else if (sidebarDropId != null) {
-      const targetFolderId = sidebarDropId === SIDEBAR_ROOT ? null : sidebarDropId;
-      if (targetFolderId !== currentFolderId) {
-        await moveDragItemToFolder(pointerDrag.item, targetFolderId);
-      }
-    }
-    setPointerDrag(null);
-    clearDragState();
+  /** Set localStorage: excalidraw-web-debug-filelist-open = 1 — see debugLog.ts */
+  const logFileCardOpen = (msg: string, extra: Record<string, unknown> = {}) => {
+    debugLog.fileListOpen(msg, extra);
   };
 
   // ── Render helpers ──
@@ -1146,65 +1184,92 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
       const hasChildren = folders.some((f) => folderParentId(f) === folder.id);
       const expanded = expandedFolders[folder.id] ?? true;
       const active = currentFolderId === folder.id;
+      const isDragging = draggingFolderId === folder.id;
+      const ind = folderDropIndicator;
+      const showBefore =
+        ind?.targetId === folder.id && ind.mode === "before";
+      const showAfter = ind?.targetId === folder.id && ind.mode === "after";
+      const showInto = ind?.targetId === folder.id && ind.mode === "into";
       return (
         <div key={folder.id} className="filelist__tree-node">
+          {showBefore && <div className="filelist__tree-drop-line" aria-hidden />}
           <div
-            className={`filelist__tree-row ${
-              active ? "filelist__tree-row--active" : ""
-            } ${
-              sidebarDropId === folder.id ? "filelist__tree-row--drop" : ""
-            }`}
-            style={{ paddingLeft: `${0.75 + depth * 0.9}rem` }}
-            data-sidebar-drop={folder.id}
-            onDragOver={(e) => onSidebarDragOver(e, folder.id)}
-            onDrop={(e) => void onSidebarDrop(e, folder.id)}
+            className={[
+              "filelist__tree-row-wrap",
+              showInto ? "filelist__tree-row-wrap--into" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            onDragOver={(e) => onFolderRowDragOver(e, folder)}
+            onDrop={(e) => onFolderRowDrop(e, folder)}
           >
-            <button
-              type="button"
-              className="filelist__tree-toggle"
-              onClick={() =>
-                setExpandedFolders((prev) => ({
-                  ...prev,
-                  [folder.id]: !expanded,
-                }))
-              }
-              aria-label={expanded ? "折叠文件夹" : "展开文件夹"}
+            <div
+              className={[
+                "filelist__tree-row",
+                active ? "filelist__tree-row--active" : "",
+                isDragging ? "filelist__tree-row--dragging" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              style={{ paddingLeft: `${0.35 + depth * 0.75}rem` }}
             >
-              {hasChildren && (
-                <span
-                  className={`filelist__tree-chevron ${
-                    expanded ? "filelist__tree-chevron--open" : ""
-                  }`}
-                >
-                  <Icon type="chevron" size={14} />
-                </span>
-              )}
-            </button>
-            <button
-              type="button"
-              className="filelist__tree-name"
-              onClick={() => selectFolder(folder.id)}
-            >
-              <Icon type="folder" size={16} />
-              <span>{folder.name}</span>
-            </button>
-            <button
-              type="button"
-              className="filelist__tree-action"
-              title="重命名文件夹"
-              onClick={() => startRenameFolder(folder)}
-            >
-              <Icon type="edit" size={14} />
-            </button>
-            <button
-              type="button"
-              className="filelist__tree-action filelist__tree-action--danger"
-              title="删除文件夹"
-              onClick={() => void deleteFolder(folder)}
-            >
-              <Icon type="delete" size={14} />
-            </button>
+              <span
+                className="filelist__tree-drag-handle"
+                draggable
+                onDragStart={(e) => onFolderHandleDragStart(e, folder.id)}
+                onDragEnd={clearFolderDragState}
+                title="拖动以排序或嵌套"
+              >
+                <Icon type="drag" size={12} />
+              </span>
+              <button
+                type="button"
+                className="filelist__tree-toggle"
+                onClick={() =>
+                  setExpandedFolders((prev) => ({
+                    ...prev,
+                    [folder.id]: !expanded,
+                  }))
+                }
+                aria-label={expanded ? "折叠文件夹" : "展开文件夹"}
+              >
+                {hasChildren && (
+                  <span
+                    className={`filelist__tree-chevron ${
+                      expanded ? "filelist__tree-chevron--open" : ""
+                    }`}
+                  >
+                    <Icon type="chevron" size={14} />
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                className="filelist__tree-name"
+                onClick={() => selectFolder(folder.id)}
+              >
+                <Icon type="folder" size={16} />
+                <span>{folder.name}</span>
+              </button>
+              <button
+                type="button"
+                className="filelist__tree-action"
+                title="重命名文件夹"
+                onClick={() => startRenameFolder(folder)}
+              >
+                <Icon type="edit" size={14} />
+              </button>
+              <button
+                type="button"
+                className="filelist__tree-action filelist__tree-action--danger"
+                title="删除文件夹"
+                onClick={() => void deleteFolder(folder)}
+              >
+                <Icon type="delete" size={14} />
+              </button>
+            </div>
           </div>
+          {showAfter && <div className="filelist__tree-drop-line" aria-hidden />}
           {expanded && renderFolderTree(folder.id, depth + 1)}
         </div>
       );
@@ -1226,13 +1291,19 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
       </div>
       <button
         type="button"
-        className={`filelist__tree-root ${
-          currentFolderId === ROOT_ID ? "filelist__tree-root--active" : ""
-        } ${sidebarDropId === SIDEBAR_ROOT ? "filelist__tree-row--drop" : ""}`}
-        data-sidebar-drop=""
+        className={[
+          "filelist__tree-root",
+          currentFolderId === ROOT_ID ? "filelist__tree-root--active" : "",
+          folderDropIndicator?.targetId === "__ROOT__" &&
+          folderDropIndicator.mode === "into"
+            ? "filelist__tree-root--drop-into"
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
         onClick={() => selectFolder(ROOT_ID)}
-        onDragOver={(e) => onSidebarDragOver(e, ROOT_ID)}
-        onDrop={(e) => void onSidebarDrop(e, ROOT_ID)}
+        onDragOver={onRootRowDragOver}
+        onDrop={onRootRowDrop}
       >
         <Icon type="grid" size={16} />
         全部文件
@@ -1240,54 +1311,6 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
       <div className="filelist__tree">{renderFolderTree(ROOT_ID)}</div>
     </aside>
   );
-
-  const indicatorClassFor = (key: string): string => {
-    if (!dropIndicator || dropIndicator.key !== key) return "";
-    if (dragItem && dragItemKey(dragItem) === key) return "";
-    return `filelist__item--indicator-${dropIndicator.edge}`;
-  };
-
-  const renderFolderCard = (folder: ServerFolder) => {
-    const isDropInto = dropIntoFolder === folder.id;
-    return (
-      <button
-        key={folder.id}
-        type="button"
-        className={[
-          "filelist__folder-card",
-          isDropInto ? "filelist__folder-card--drop-into" : "",
-        ].filter(Boolean).join(" ")}
-        onClick={() => selectFolder(folder.id)}
-        onDragOver={(e) => {
-          if (dragItem && canReorder) {
-            e.preventDefault();
-            e.stopPropagation();
-            e.dataTransfer.dropEffect = "move";
-            setDropIntoFolder(folder.id);
-            setDropIndicator(null);
-          }
-        }}
-        onDragLeave={() => {
-          if (dropIntoFolder === folder.id) {
-            setDropIntoFolder(null);
-          }
-        }}
-        onDrop={(e) => {
-          if (dragItem && canReorder && dropIntoFolder === folder.id) {
-            e.preventDefault();
-            e.stopPropagation();
-            void moveDragItemToFolder(dragItem, folder.id);
-            clearDragState();
-          }
-        }}
-      >
-        <span className="filelist__folder-card-icon">
-          <Icon type="folder" size={18} />
-        </span>
-        <span className="filelist__folder-card-name">{folder.name}</span>
-      </button>
-    );
-  };
 
   const renderFileCard = (f: ServerFile, index: number) => {
     const state = draftStateById[f.id];
@@ -1304,40 +1327,36 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
         f.thumbnail_svg ||
         null;
     const q = searchQuery.trim();
-    const key = `file:${f.id}`;
-    const indicatorCls = indicatorClassFor(key);
-    const thumbLoading = !thumbSvg && f.has_thumbnail && visibleThumbIds.has(f.id);
+    const thumbLoading = !thumbSvg && f.has_thumbnail;
     return (
       <div
         key={f.id}
-        className={[
-          "filelist__card",
-          indicatorCls,
-          canReorder ? "filelist__card--draggable" : "",
-        ].filter(Boolean).join(" ")}
+        className="filelist__card"
         style={{ animationDelay: `${Math.min(index, 20) * 25}ms` }}
-        draggable={canReorder}
-        data-filelist-drag={key}
-        onClick={() => {
-          if (suppressNextClickRef.current) {
-            suppressNextClickRef.current = false;
+        onClick={(ev) => {
+          const t = ev.target as HTMLElement;
+          if (t.closest(".filelist__card-action")) {
             return;
           }
+          if (
+            t.closest(".filelist__card-name") ||
+            t.closest(".filelist__card-rename")
+          ) {
+            return;
+          }
+          logFileCardOpen("card click → onOpenFile", {
+            fileId8: f.id.slice(0, 8),
+            targetTag: t?.tagName,
+            targetClass: String(t?.className || "").slice(0, 100),
+          });
           onOpenFile(f.id);
         }}
-        onDragStart={(e) => startNativeDrag(e, { type: "file", id: f.id })}
-        onDragEnd={clearDragState}
-        onDragOver={(e) => onGridCardDragOver(e, { type: "file", id: f.id }, false)}
-        onDrop={onGridCardDrop}
-        onPointerDown={(e) => onPointerDown(e, { type: "file", id: f.id })}
-        onPointerMove={onPointerMove}
-        onPointerUp={(e) => void onPointerUp(e)}
-        onPointerCancel={onPointerUp}
       >
         <div
           className="filelist__card-thumb"
           data-thumb-file-id={f.id}
           ref={(node) => thumbRefCallback(node, f.id)}
+          style={thumbSvg ? { background: extractThumbBg(thumbSvg) } : undefined}
         >
           {syncState === "draft" && (
             <span
@@ -1364,27 +1383,17 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
           <div className="filelist__card-actions">
             <button
               className="filelist__card-action"
-              title="详情"
-              onClick={(e) => openDetail(e, f)}
-            >
-              <Icon type="info" size={16} />
-            </button>
-            <button
-              className="filelist__card-action"
-              title="打开"
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpenFile(f.id);
-              }}
-            >
-              <Icon type="open" size={16} />
-            </button>
-            <button
-              className="filelist__card-action"
               title="重命名"
               onClick={(e) => startRename(e, f.id, f.name)}
             >
               <Icon type="edit" size={16} />
+            </button>
+            <button
+              className="filelist__card-action"
+              title="移动到文件夹"
+              onClick={(e) => openMoveDialog(e, f)}
+            >
+              <Icon type="move" size={16} />
             </button>
             <button
               className="filelist__card-action"
@@ -1424,12 +1433,13 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
             ) : (
               <span
                 className="filelist__card-name"
-                title={f.name}
-                onClick={(e) => e.stopPropagation()}
-                onDoubleClick={(e) => {
+                title={`${f.name} — 点击重命名`}
+                onClick={(e) => {
                   e.stopPropagation();
-                  setRenamingId(f.id);
-                  setRenameValue(f.name);
+                  logFileCardOpen("card name click → startRename (same as rename button)", {
+                    fileId8: f.id.slice(0, 8),
+                  });
+                  startRename(e, f.id, f.name);
                 }}
               >
                 {highlightMatch(f.name, q)}
@@ -1449,32 +1459,67 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
 
   const empty = !loading && filteredFiles.length === 0;
 
-  return (
-    <div
-      ref={rootRef}
-      className={`filelist ${pointerDrag?.active ? "filelist--dragging" : ""}`}
-      onDragEnter={onRootDragEnter}
-      onDragLeave={onRootDragLeave}
-      onDragOver={onRootDragOver}
-      onDrop={onRootDrop}
-    >
-      {dropOverlay && (
-        <div className="filelist__drop-overlay" aria-hidden>
-          <div className="filelist__drop-card">
-            <Icon type="plus" size={40} />
-            <p className="filelist__drop-title">松手以导入</p>
-            <p className="filelist__drop-hint">
-              支持 .excalidraw / JSON 等，导入到服务器并加入当前文件夹
-            </p>
-          </div>
+  /** Same nesting as sidebar tree: children under `parentId`, indent by `depth`. */
+  const renderMoveTargetFolderTree = (
+    parentId: string | null,
+    depth: number,
+  ): React.ReactNode => {
+    if (!moveDialogFile) {
+      return null;
+    }
+    const currentF = moveDialogFile.folder_id ?? null;
+    const childFolders = folders
+      .filter((fo) => folderParentId(fo) === parentId)
+      .sort(compareManual);
+    return childFolders.map((folder) => {
+      const isCurrent = currentF === folder.id;
+      const isSelected = moveTargetFolderId === folder.id;
+      return (
+        <div key={folder.id} className="filelist__move-tree-node">
+          <button
+            type="button"
+            className={[
+              "filelist__move-option",
+              isSelected ? "filelist__move-option--active" : "",
+              isCurrent ? "filelist__move-option--current" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            style={{ paddingLeft: `${0.75 + depth * 0.9}rem` }}
+            disabled={isCurrent}
+            onClick={() => setMoveTargetFolderId(folder.id)}
+          >
+            <Icon type="folder" size={16} />
+            <span className="filelist__move-option-label">
+              {folder.name}
+              {isCurrent ? "（当前位置）" : ""}
+            </span>
+          </button>
+          {renderMoveTargetFolderTree(folder.id, depth + 1)}
         </div>
-      )}
+      );
+    });
+  };
+
+  const moveFileInAllFiles = moveDialogFile
+    ? (moveDialogFile.folder_id ?? null) === null
+    : false;
+  const moveTargetIsAllFiles = moveDialogFile
+    ? moveTargetFolderId === null
+    : false;
+
+  return (
+    <div className="filelist">
       {importing && (
         <div className="filelist__import-blocking" aria-busy>
           <span>正在导入…</span>
         </div>
       )}
-      <header className="filelist__header">
+      <header
+        className="filelist__header"
+        onDragOver={onFileListImportDragOver}
+        onDrop={onFileListImportDrop}
+      >
         <div className="filelist__header-left">
           <button
             type="button"
@@ -1511,7 +1556,6 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
                 <option value="updated_at">修改时间</option>
                 <option value="created_at">创建时间</option>
                 <option value="name">名称</option>
-                <option value="manual">自定义排序</option>
               </select>
             </label>
           </div>
@@ -1529,25 +1573,35 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
               />
               AI 设置
             </button>
-            <input
-              ref={sceneImportInputRef}
-              type="file"
-              accept=".excalidraw,.json,.png,.svg,application/vnd.excalidraw+json,application/json,image/png,image/svg+xml"
-              className="filelist__file-input"
-              aria-hidden
-              tabIndex={-1}
-              onChange={onSceneImportInputChange}
-            />
-            <button
-              type="button"
-              className="filelist__import-scene-btn"
-              disabled={importing}
-              onClick={() => sceneImportInputRef.current?.click()}
+            <label
+              className={[
+                "filelist__import-scene-btn",
+                "filelist__import-scene-btn--file",
+                importing ? "filelist__import-scene-btn--busy" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              aria-disabled={importing || undefined}
+              aria-busy={importing || undefined}
             >
-              <Icon type="upload" size={18} />
-              导入
-            </button>
-            <button className="filelist__new-btn" onClick={handleCreate}>
+              <span className="filelist__import-scene-facade">
+                <Icon type="upload" size={18} />
+                {importing ? "导入中…" : "导入"}
+              </span>
+              <input
+                id={FILELIST_SCENE_IMPORT_INPUT_ID}
+                ref={sceneImportInputRef}
+                type="file"
+                multiple
+                accept=".excalidraw,.json,.png,.svg,application/vnd.excalidraw+json,application/json,image/png,image/svg+xml"
+                className="filelist__file-input-overlay"
+                onChange={onSceneImportInputChange}
+                disabled={importing}
+                tabIndex={-1}
+                title="导入 Excalidraw 场景"
+              />
+            </label>
+            <button className="filelist__new-btn" onClick={openNewFileDialog}>
               <Icon type="plus" size={18} />
               新建
             </button>
@@ -1555,19 +1609,25 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
         </div>
       </header>
 
+      {importNotice && (
+        <div className="filelist__notice" role="status">
+          {importNotice}
+        </div>
+      )}
       {error && <div className="filelist__error">{error}</div>}
 
-      <div className="filelist__shell">
+      <div
+        className="filelist__shell"
+        onDragOver={onFileListImportDragOver}
+        onDrop={onFileListImportDrop}
+      >
         {renderTreePanel()}
         <main className="filelist__main">
           <div className="filelist__pathbar">
             <div className="filelist__breadcrumbs">
               <button
                 type="button"
-                data-sidebar-drop=""
                 onClick={() => selectFolder(ROOT_ID)}
-                onDragOver={(e) => onSidebarDragOver(e, ROOT_ID)}
-                onDrop={(e) => onBreadcrumbDrop(e, ROOT_ID)}
               >
                 全部文件
               </button>
@@ -1576,45 +1636,14 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
                   <span>/</span>
                   <button
                     type="button"
-                    data-sidebar-drop={folder.id}
                     onClick={() => selectFolder(folder.id)}
-                    onDragOver={(e) => onSidebarDragOver(e, folder.id)}
-                    onDrop={(e) => onBreadcrumbDrop(e, folder.id)}
                   >
                     {folder.name}
                   </button>
                 </React.Fragment>
               ))}
             </div>
-            <div className="filelist__path-actions">
-              {currentFolder && (
-                <button
-                  type="button"
-                  className="filelist__import-scene-btn"
-                  onClick={() => startRenameFolder(currentFolder)}
-                >
-                  <Icon type="edit" size={16} />
-                  重命名
-                </button>
-              )}
-              <button
-                type="button"
-                className="filelist__import-scene-btn"
-                onClick={() => startCreateFolder(currentFolderId)}
-              >
-                <Icon type="folder" size={16} />
-                新建文件夹
-              </button>
-            </div>
           </div>
-          {customSortEnabled && searchActive && (
-            <div className="filelist__hint">清空搜索后可拖拽调整顺序。</div>
-          )}
-          {!searchActive && !loading && childFolders.length > 0 && (
-            <div className="filelist__folder-row">
-              {childFolders.map(renderFolderCard)}
-            </div>
-          )}
           {loading ? (
             <div className="filelist__grid">
               {Array.from({ length: 6 }, (_, i) => (
@@ -1640,29 +1669,38 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
                 {searchQuery ? "没有匹配的文件" : "当前文件夹为空"}
               </p>
               {!searchQuery && (
-                <button className="filelist__new-btn" onClick={handleCreate}>
-                  <Icon type="plus" size={18} />
-                  创建第一个画布
-                </button>
+                <div className="filelist__empty-actions">
+                  {importing ? (
+                    <span
+                      className="filelist__import-scene-btn filelist__import-scene-btn--busy"
+                      aria-busy
+                      aria-disabled
+                    >
+                      <Icon type="upload" size={18} />
+                      导入中…
+                    </span>
+                  ) : (
+                    <label
+                      className="filelist__import-scene-btn"
+                      htmlFor={FILELIST_SCENE_IMPORT_INPUT_ID}
+                    >
+                      <Icon type="upload" size={18} />
+                      导入文件
+                    </label>
+                  )}
+                  <button
+                    type="button"
+                    className="filelist__new-btn"
+                    onClick={openNewFileDialog}
+                  >
+                    <Icon type="plus" size={18} />
+                    创建第一个画布
+                  </button>
+                </div>
               )}
             </div>
           ) : (
-            <div
-              className="filelist__grid"
-              onDragOver={(e) => {
-                if (dragItem && canReorder) {
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = "move";
-                }
-              }}
-              onDrop={(e) => {
-                if (dragItem && canReorder) {
-                  e.preventDefault();
-                  reorderInsert(dragItem, null, "right");
-                  clearDragState();
-                }
-              }}
-            >
+            <div className="filelist__grid">
               {filteredFiles.map((f, i) => renderFileCard(f, i))}
             </div>
           )}
@@ -1673,7 +1711,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
         <div className="filelist__mobile-sheet" role="dialog" aria-modal>
           <div
             className="filelist__mobile-sheet-backdrop"
-            onClick={() => setMobileTreeOpen(false)}
+            {...mobileTreeBackdropDismiss}
           />
           <div className="filelist__mobile-sheet-panel">
             <div className="filelist__mobile-sheet-head">
@@ -1696,11 +1734,11 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
           className="filelist__detail-overlay"
           role="dialog"
           aria-modal
-          onClick={() => setFolderDraft(null)}
+          {...folderDraftOverlayDismiss}
         >
           <div
             className="filelist__detail-card"
-            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
           >
             <h2 className="filelist__detail-title">
               {folderDraft.mode === "create" ? "新建文件夹" : "重命名文件夹"}
@@ -1741,62 +1779,111 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
 
       <AISettings open={showAISettings} onClose={() => setShowAISettings(false)} />
 
-      {detailFile && (
+      {newFileDialogOpen && (
         <div
           className="filelist__detail-overlay"
           role="dialog"
           aria-modal
-          onClick={() => setDetailFile(null)}
+          {...newFileOverlayDismiss}
         >
           <div
             className="filelist__detail-card"
-            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
           >
-            <h2 className="filelist__detail-title">文件详情</h2>
-            <dl className="filelist__detail-dl">
-              <dt>名称</dt>
-              <dd>{detailFile.name}</dd>
-              <dt>ID</dt>
-              <dd className="filelist__detail-mono">{detailFile.id}</dd>
-              <dt>文件夹</dt>
-              <dd>
-                {detailFile.folder_id
-                  ? foldersById.get(detailFile.folder_id)?.name ?? "未知"
-                  : "全部文件"}
-              </dd>
-              <dt>创建</dt>
-              <dd>{new Date(detailFile.created_at).toLocaleString()}</dd>
-              <dt>更新</dt>
-              <dd>{new Date(effectiveUpdatedAt(detailFile)).toLocaleString()}</dd>
-              <dt>存档数</dt>
-              <dd>{detailFile.archive_count ?? 0}</dd>
-              <dt>同步状态</dt>
-              <dd>
-                {
-                  {
-                    synced: "已同步",
-                    draft: "有未保存编辑",
-                  }[FileSyncState.getSyncState(detailFile.id)]
+            <h2 className="filelist__detail-title">新建画布</h2>
+            <p className="filelist__new-file-hint">
+              为画布起个名字，稍后在列表里也可以随时重命名
+            </p>
+            <input
+              className="filelist__folder-input"
+              value={newFileName}
+              autoFocus
+              onChange={(e) => setNewFileName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  void commitNewFile();
                 }
-              </dd>
-            </dl>
+                if (e.key === "Escape") {
+                  setNewFileDialogOpen(false);
+                }
+              }}
+            />
             <div className="filelist__detail-actions">
               <button
                 type="button"
                 className="filelist__new-btn"
-                onClick={() => {
-                  onOpenFile(detailFile.id);
-                  setDetailFile(null);
-                }}
+                onClick={() => void commitNewFile()}
               >
-                打开编辑
+                创建并打开
               </button>
               <button
                 type="button"
                 className="filelist__import-scene-btn"
-                onClick={() => setDetailFile(null)}
+                onClick={() => setNewFileDialogOpen(false)}
               >
-                关闭
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {moveDialogFile && (
+        <div
+          className="filelist__detail-overlay"
+          role="dialog"
+          aria-modal
+          {...moveDialogOverlayDismiss}
+        >
+          <div
+            className="filelist__detail-card filelist__move-dialog"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <h2 className="filelist__detail-title">
+              移动「{moveDialogFile.name}」
+            </h2>
+            <p className="filelist__new-file-hint">选择要移动到的文件夹</p>
+            <div className="filelist__move-list" role="list" aria-label="文件夹列表">
+              <div className="filelist__move-tree-node" role="listitem">
+                <button
+                  type="button"
+                  className={[
+                    "filelist__move-option",
+                    "filelist__move-option--root",
+                    moveTargetIsAllFiles ? "filelist__move-option--active" : "",
+                    moveFileInAllFiles ? "filelist__move-option--current" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  disabled={moveFileInAllFiles}
+                  onClick={() => setMoveTargetFolderId(null)}
+                >
+                  <Icon type="grid" size={16} />
+                  <span className="filelist__move-option-label">
+                    全部文件
+                    {moveFileInAllFiles ? "（当前位置）" : ""}
+                  </span>
+                </button>
+              </div>
+              {renderMoveTargetFolderTree(ROOT_ID, 0)}
+            </div>
+            <div className="filelist__detail-actions">
+              <button
+                type="button"
+                className="filelist__new-btn"
+                disabled={
+                  moveTargetFolderId === (moveDialogFile.folder_id ?? null)
+                }
+                onClick={() => void commitMove()}
+              >
+                移动
+              </button>
+              <button
+                type="button"
+                className="filelist__import-scene-btn"
+                onClick={() => setMoveDialogFile(null)}
+              >
+                取消
               </button>
             </div>
           </div>

@@ -2,10 +2,13 @@
 .excalidraw .nb-history-panel {
   position: fixed;
   top: 50%;
-  right: 24px;
+  right: var(--nb-space-12);
   transform: translateY(-50%);
-  width: min(280px, calc(100vw - 48px));
-  max-height: min(420px, 85vh);
+  width: min(
+    var(--nb-history-panel-max-w),
+    calc(100vw - var(--nb-space-24))
+  );
+  max-height: min(var(--nb-history-panel-max-h), 85vh);
   background: var(--island-bg-color);
   color: var(--text-primary-color);
   border-radius: var(--border-radius-lg);
@@ -23,25 +26,25 @@
   flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px 10px;
-  font-size: 0.875rem;
+  padding: var(--nb-space-7) var(--nb-space-8) var(--nb-space-5);
+  font-size: var(--nb-font-body);
   font-weight: 600;
   color: var(--text-primary-color);
-  border-bottom: 1px solid var(--default-border-color);
+  border-bottom: var(--nb-border-width) solid var(--default-border-color);
 }
 
 .excalidraw .nb-history-close {
-  width: 24px;
-  height: 24px;
+  width: var(--nb-space-12);
+  height: var(--nb-space-12);
   display: flex;
   align-items: center;
   justify-content: center;
   background: none;
   border: none;
-  border-radius: var(--border-radius-lg, 0.5rem);
+  border-radius: var(--border-radius-lg);
   cursor: pointer;
   color: var(--color-gray-50);
-  font-size: 16px;
+  font-size: var(--nb-font-title-sm);
   line-height: 1;
 
   &:hover {
@@ -64,9 +67,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--default-border-color);
+  gap: var(--nb-space-4);
+  padding: var(--nb-space-5) var(--nb-space-8);
+  border-bottom: var(--nb-border-width) solid var(--default-border-color);
 
   &:last-child {
     border-bottom: none;
@@ -76,7 +79,7 @@
 .excalidraw .nb-history-time {
   flex: 1;
   min-width: 0;
-  font-size: 0.8125rem;
+  font-size: var(--nb-font-body-sm);
   line-height: 1.4;
   color: var(--text-primary-color);
 }
@@ -87,32 +90,32 @@
 
 .excalidraw .nb-history-badge {
   flex-shrink: 0;
-  padding: 2px 8px;
-  font-size: 0.6875rem;
+  padding: var(--nb-space-1) var(--nb-space-4);
+  font-size: var(--nb-font-caption);
   font-weight: 600;
   line-height: 1.3;
-  border-radius: 4px;
+  border-radius: var(--nb-radius-xs);
   white-space: nowrap;
 }
 
 .excalidraw .nb-history-badge--synced {
-  background: rgba(34, 197, 94, 0.12);
-  color: #16a34a;
+  background: var(--nb-success-soft-bg);
+  color: var(--nb-success);
 }
 
 .excalidraw .nb-history-badge--unsaved {
-  background: rgba(245, 158, 11, 0.12);
-  color: #d97706;
+  background: var(--nb-warning-soft-bg);
+  color: var(--nb-warning);
 }
 
 .excalidraw.theme--dark .nb-history-badge--synced {
-  background: rgba(34, 197, 94, 0.18);
-  color: #4ade80;
+  background: var(--nb-success-soft-bg-dark);
+  color: var(--nb-success-text-dark);
 }
 
 .excalidraw.theme--dark .nb-history-badge--unsaved {
-  background: rgba(245, 158, 11, 0.18);
-  color: #fbbf24;
+  background: var(--nb-warning-soft-bg-dark);
+  color: var(--nb-warning-text-dark);
 }
 
 .excalidraw .nb-history-info {
@@ -120,27 +123,27 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: var(--nb-space-1);
 }
 
 .excalidraw .nb-history-sub {
-  font-size: 0.6875rem;
+  font-size: var(--nb-font-caption);
   color: var(--color-gray-50);
   line-height: 1.3;
 }
 
 .excalidraw .nb-history-restore {
   flex-shrink: 0;
-  padding: 4px 12px;
-  font-size: 0.8125rem;
+  padding: var(--nb-space-2) var(--nb-space-6);
+  font-size: var(--nb-font-body-sm);
   font-weight: 500;
   font-family: inherit;
   line-height: 1.2;
   border: none;
-  border-radius: var(--border-radius-lg, 6px);
+  border-radius: var(--border-radius-lg);
   background: var(--color-surface-low);
   color: var(--text-primary-color);
-  box-shadow: 0 0 0 1px var(--color-surface-lowest);
+  box-shadow: 0 0 0 var(--nb-border-width) var(--color-surface-lowest);
   cursor: pointer;
   transition: background-color 0.15s ease;
 
@@ -149,7 +152,7 @@
   }
 }
 
-/* Fork 顶栏：透明底、与 layer-ui__top-right 内素材库等控件垂直居中对齐；字体同 packages/excalidraw --ui-font（Assistant） */
+/* Fork 顶栏 */
 .excalidraw {
   .layer-ui__wrapper__top-right {
     align-items: center;
@@ -160,17 +163,43 @@
     flex-direction: column;
     align-items: flex-end;
     justify-content: center;
-    gap: 2px;
+    gap: var(--nb-space-1);
     align-self: center;
     background: transparent;
+  }
+
+  .excal-fork-toolbar-stack--phone {
+    .excal-fork-toolbar-wrap {
+      gap: var(--nb-space-4);
+      margin-inline-end: var(--nb-space-1);
+    }
+
+    .excal-action-btn {
+      min-height: var(--nb-space-18);
+      height: var(--nb-space-18);
+      padding: 0 var(--nb-space-4);
+      font-size: var(--nb-font-body-sm);
+      gap: var(--nb-space-4);
+    }
+
+    .excal-fork-save-hint {
+      max-width: min(var(--nb-filelist-search-width), 42vw);
+      font-size: var(--nb-font-micro);
+    }
+  }
+
+  @media (max-width: 23.75rem) {
+    .excal-fork-toolbar-stack--phone .excal-action-btn span {
+      display: none;
+    }
   }
 
   .excal-fork-toolbar-wrap {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--nb-space-3);
     margin-inline-start: auto;
-    margin-inline-end: 6px;
+    margin-inline-end: var(--nb-space-3);
     padding: 0;
     font-family: var(--ui-font);
     -webkit-font-smoothing: antialiased;
@@ -183,19 +212,19 @@
     display: flex;
     align-items: center;
     height: 100%;
-    margin-inline-end: 4px;
+    margin-inline-end: var(--nb-space-2);
   }
 
   .excal-custom-actions {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--nb-space-3);
     height: var(--lg-button-size);
     font-family: var(--ui-font);
   }
 
   .excal-action-bar {
-    gap: 6px;
+    gap: var(--nb-space-3);
     padding: 0;
     border-radius: 0;
     background: transparent;
@@ -204,21 +233,20 @@
   }
 
   .excal-btn-home {
-    padding-inline-start: 10px;
+    padding-inline-start: var(--nb-space-5);
   }
 
   .excal-action-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: var(--nb-space-3);
     box-sizing: border-box;
     min-height: var(--lg-button-size);
     height: var(--lg-button-size);
-    padding: 0 10px;
+    padding: 0 var(--nb-space-5);
     border-radius: var(--border-radius-lg);
-    /* 与画布 UI（ToolIcon 标签、缩放区）一致：Assistant + 14px */
-    font-size: 0.875rem;
+    font-size: var(--nb-font-body);
     font-weight: 500;
     font-family: var(--ui-font), Assistant, system-ui, sans-serif;
     line-height: 1.2;
@@ -226,7 +254,7 @@
     border: none;
     color: var(--text-primary-color);
     background-color: var(--color-surface-low);
-    box-shadow: 0 0 0 1px var(--color-surface-lowest);
+    box-shadow: 0 0 0 var(--nb-border-width) var(--color-surface-lowest);
     transition: background-color 0.15s ease, box-shadow 0.15s ease,
       color 0.15s ease, opacity 0.15s ease;
     white-space: nowrap;
@@ -246,22 +274,22 @@
 
     &:active:not(:disabled) {
       background-color: var(--button-hover-bg);
-      box-shadow: 0 0 0 1px var(--color-brand-active);
+      box-shadow: 0 0 0 var(--nb-border-width) var(--color-brand-active);
     }
 
     &:focus-visible {
       outline: none;
-      box-shadow: 0 0 0 2px var(--focus-highlight-color);
+      box-shadow: 0 0 0 var(--nb-border-width-thick) var(--focus-highlight-color);
     }
   }
 
   .excal-btn-save {
     background-color: var(--color-primary);
-    color: #fff;
-    box-shadow: 0 0 0 1px var(--color-surface-lowest);
+    color: var(--nb-on-primary);
+    box-shadow: 0 0 0 var(--nb-border-width) var(--color-surface-lowest);
 
     svg {
-      color: #fff;
+      color: var(--nb-on-primary);
     }
 
     &:hover:not(:disabled) {
@@ -270,7 +298,7 @@
 
     &:active:not(:disabled) {
       background-color: var(--color-brand-active);
-      box-shadow: 0 0 0 1px var(--color-brand-active);
+      box-shadow: 0 0 0 var(--nb-border-width) var(--color-brand-active);
     }
 
     &:disabled {
@@ -290,7 +318,7 @@
   .excal-btn-history.excal-btn-history--active {
     background: var(--color-surface-primary-container);
     color: var(--color-on-primary-container);
-    box-shadow: 0 0 0 1px var(--color-surface-lowest);
+    box-shadow: 0 0 0 var(--nb-border-width) var(--color-surface-lowest);
 
     svg {
       color: var(--color-on-primary-container);
@@ -304,8 +332,8 @@
 
   .excal-btn-danger-ghost {
     background-color: var(--color-surface-low);
-    color: var(--color-danger, #e11d48);
-    box-shadow: 0 0 0 1px var(--color-surface-lowest);
+    color: var(--color-danger);
+    box-shadow: 0 0 0 var(--nb-border-width) var(--color-surface-lowest);
 
     &:hover {
       background-color: var(--button-hover-bg);
@@ -313,17 +341,17 @@
   }
 
   &.theme--dark .excal-btn-danger-ghost {
-    color: #f87171;
+    color: var(--nb-danger-soft-text-dark);
   }
 
   .excal-fork-save-hint {
-    font-size: 0.6875rem;
+    font-size: var(--nb-font-caption);
     font-weight: 500;
     color: var(--color-gray-50);
     line-height: 1.35;
-    max-width: 320px;
+    max-width: var(--nb-toolbar-save-hint-max-w);
     text-align: right;
-    padding-inline-end: 6px;
+    padding-inline-end: var(--nb-space-3);
     font-family: var(--ui-font), Assistant, system-ui, sans-serif;
   }
 
@@ -332,115 +360,149 @@
   }
 }
 
-/* 主页：未保存时选择丢弃 / 本机暂存 / 上传 */
+/* 主页：未保存时选择保存 / 放弃 / 取消
+   所有变量均使用 :root 上的 --nb-* token，不依赖 .excalidraw 内部变量，
+   确保对话框在 .excalidraw-app 层级（.excalidraw 之外）也能正确渲染背景。 */
 .excalidraw-app .fork-home-dialog-overlay {
   position: fixed;
   inset: 0;
-  z-index: 200000;
-  background: rgba(0, 0, 0, 0.45);
+  z-index: var(--nb-z-fork-home);
+  background: rgba(0, 0, 0, 0.42);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px;
-  font-family: var(--ui-font), Assistant, system-ui, sans-serif;
+  padding: var(--nb-space-16);
+  font-family: Assistant, system-ui, -apple-system, sans-serif;
 }
 
 .excalidraw-app .fork-home-dialog {
-  max-width: 400px;
+  max-width: 22rem;
   width: 100%;
-  background: var(--dialog-bg-color, #fff);
-  color: var(--text-primary-color, #1b1b1f);
-  border-radius: 12px;
-  padding: 1.25rem 1.5rem 1rem;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  background: var(--nb-surface);  /* :root → #ffffff in light mode */
+  color: var(--nb-text);
+  border-radius: var(--nb-radius-lg);
+  padding: var(--nb-space-8) var(--nb-space-10);
+  box-shadow: var(--nb-shadow-modal-deep);
+  animation: forkHomeDialogIn 0.15s ease both;
 }
 
 .excalidraw-app .fork-home-dialog h3 {
-  margin: 0 0 0.5rem;
-  font-size: 1.05rem;
+  margin: 0 0 var(--nb-space-3);
+  font-size: var(--nb-font-body);
   font-weight: 600;
+  color: var(--nb-text);
 }
 
 .excalidraw-app .fork-home-dialog-desc {
-  margin: 0 0 1rem;
-  font-size: 0.875rem;
-  line-height: 1.45;
-  color: var(--color-gray-50, #6b7280);
+  margin: 0 0 var(--nb-space-7);
+  font-size: var(--nb-font-body-sm);
+  line-height: 1.5;
+  color: var(--nb-text-muted);
 }
 
 .excalidraw-app .fork-home-dialog-actions {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--nb-space-3);
 }
 
 .excalidraw-app .fork-home-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.5rem 0.75rem;
-  border-radius: 8px;
-  font-size: 0.875rem;
+  width: 100%;
+  min-height: 2.375rem;
+  padding: var(--nb-space-3) var(--nb-space-5);
+  border-radius: var(--nb-radius-md);
+  font-size: var(--nb-font-body-sm);
   font-weight: 500;
+  font-family: inherit;
   border: none;
   cursor: pointer;
-  font-family: inherit;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+  box-sizing: border-box;
 }
 
 .excalidraw-app .fork-home-btn:disabled {
-  opacity: 0.55;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
 .excalidraw-app .fork-home-btn--primary {
-  background: #6965db;
-  color: #fff;
+  background: var(--nb-primary);
+  color: var(--nb-on-primary);
+  box-shadow: var(--nb-shadow-btn-primary);
 
   &:hover:not(:disabled) {
-    background: #5753d0;
-  }
-}
-
-.excalidraw-app .fork-home-btn--secondary {
-  background: var(--color-surface-low, #f3f3f9);
-  color: var(--text-primary-color, #1b1b1f);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
-
-  &:hover:not(:disabled) {
-    filter: brightness(0.97);
+    background: var(--nb-primary-hover);
+    box-shadow: var(--nb-shadow-btn-primary-hover);
   }
 }
 
 .excalidraw-app .fork-home-btn--danger {
-  background: rgba(239, 68, 68, 0.12);
-  color: #b91c1c;
+  background: var(--nb-surface-muted);
+  color: var(--nb-danger-foreground);
+  box-shadow: 0 0 0 var(--nb-border-width) var(--nb-danger-border);
 
   &:hover:not(:disabled) {
-    background: rgba(239, 68, 68, 0.2);
+    background: var(--nb-danger-soft-bg);
+    box-shadow: 0 0 0 var(--nb-border-width) rgba(239, 68, 68, 0.25);
   }
 }
 
 .excalidraw-app .fork-home-dialog-cancel {
-  margin-top: 0.75rem;
-  width: 100%;
-  padding: 0.4rem;
+  display: block;
+  margin: var(--nb-space-5) auto 0;
+  padding: var(--nb-space-2) var(--nb-space-4);
   background: transparent;
   border: none;
-  font-size: 0.8125rem;
-  color: var(--color-gray-50, #6b7280);
+  font-size: var(--nb-font-caption);
+  color: var(--nb-text-muted);
   cursor: pointer;
   font-family: inherit;
+  border-radius: var(--nb-radius-md);
+  transition: color 0.15s ease, background-color 0.15s ease;
 }
 
 .excalidraw-app .fork-home-dialog-cancel:hover:not(:disabled) {
-  text-decoration: underline;
+  background: var(--nb-surface-secondary);
+  color: var(--nb-text);
 }
 
 .excalidraw-app.theme--dark .fork-home-dialog {
-  background: #2a2a32;
-  color: #ececec;
+  background: var(--nb-fork-home-surface);
+  color: var(--nb-fork-home-text);
+}
+
+.excalidraw-app.theme--dark .fork-home-dialog h3 {
+  color: var(--nb-fork-home-text);
 }
 
 .excalidraw-app.theme--dark .fork-home-dialog-desc {
-  color: #a3a3a3;
+  color: var(--nb-fork-home-muted);
+}
+
+.excalidraw-app.theme--dark .fork-home-btn--danger {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--nb-danger-soft-text-dark);
+  box-shadow: 0 0 0 var(--nb-border-width) rgba(248, 113, 113, 0.2);
+
+  &:hover:not(:disabled) {
+    background: rgba(248, 113, 113, 0.12);
+  }
+}
+
+.excalidraw-app.theme--dark .fork-home-dialog-cancel {
+  color: var(--nb-fork-home-muted);
+}
+
+@keyframes forkHomeDialogIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
