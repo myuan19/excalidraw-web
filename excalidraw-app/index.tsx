@@ -1,9 +1,9 @@
 import { createRoot } from "react-dom/client";
 
 import ExcalidrawApp from "./App";
-import { initClientRemoteLog } from "./data/clientRemoteLog";
+import { initGlobalErrorCapture } from "./lib/logger";
 
-initClientRemoteLog();
+initGlobalErrorCapture();
 
 window.__EXCALIDRAW_SHA__ = import.meta.env.VITE_APP_GIT_SHA;
 

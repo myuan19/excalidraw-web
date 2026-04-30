@@ -5,12 +5,15 @@ import type {
   SetStateAction,
 } from "react";
 
-import { debugLog } from "../data/debugLog";
+import { createLogger } from "../lib/logger";
 import { fetchThumbnailSvgForCard } from "../data/fetchThumbnailSvgForCard";
 import type { ForkLocalCacheRecord } from "../data/forkFileTypes";
 import type { ServerFile } from "../data/ServerSync";
 import { LocalThumbnailCache } from "../data/localThumbnailCache";
 import { buildSceneThumbnailSvg } from "../data/thumbnailSvg";
+
+const logPipe = createLogger({ module: "thumbPipeline" });
+const logThumb = createLogger({ module: "thumbnail" });
 
 export type ThumbPipelineDraftSlot = {
   syncState?: "synced" | "draft";
@@ -18,16 +21,13 @@ export type ThumbPipelineDraftSlot = {
   localRecord?: ForkLocalCacheRecord | null;
 };
 
-export type ThumbPipelineScopeFile = Pick<
-  ServerFile,
-  "id" | "content_sha256" | "has_thumbnail"
->;
-
 export type ThumbPipelineDeps = {
   thumbLoadScopeFiles: readonly ServerFile[];
   thumbFetchAllowIds: ReadonlySet<string>;
   draftStateById: Record<string, ThumbPipelineDraftSlot | undefined>;
   fetchedThumbSvgByIdRef: MutableRefObject<Record<string, string>>;
+  fetchedThumbHashByIdRef: MutableRefObject<Record<string, string | null>>;
+  fileThumbHashByIdRef: MutableRefObject<Record<string, string | null>>;
   setDraftThumbs: Dispatch<SetStateAction<Record<string, string>>>;
   setFetchedThumbs: Dispatch<SetStateAction<Record<string, string>>>;
 };
@@ -44,6 +44,8 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
     thumbFetchAllowIds,
     draftStateById,
     fetchedThumbSvgByIdRef,
+    fetchedThumbHashByIdRef,
+    fileThumbHashByIdRef,
     setDraftThumbs,
     setFetchedThumbs,
   } = deps;
@@ -67,7 +69,7 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
       alreadyInFetched: 0,
       inFlightRef: 0,
     };
-    const toFetch: { id: string; url: string }[] = [];
+    const toFetch: { id: string; url: string; contentSha: string | null }[] = [];
 
     for (const f of thumbLoadScopeFiles) {
       if (!thumbFetchAllowIds.has(f.id)) {
@@ -79,12 +81,11 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
       const localDraftThumb = state?.localDraftThumb ?? null;
       const localRecord = state?.localRecord ?? null;
 
-      if (localDraftThumb) {
-        skipped.localDraftThumb++;
-        continue;
-      }
       if (syncState === "draft") {
         if (!localRecord) {
+          if (localDraftThumb) {
+            skipped.localDraftThumb++;
+          }
           skipped.draftNoRecord++;
           continue;
         }
@@ -95,7 +96,7 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
         thumbFetchingRef.current.add(f.id);
         void (async () => {
           try {
-            debugLog.thumbPipeline("draft: buildSceneThumbnailSvg start", {
+            logPipe.debug("draft: buildSceneThumbnailSvg start", {
               id8: f.id.slice(0, 8),
               el: Array.isArray(localRecord.elements)
                 ? localRecord.elements.length
@@ -107,7 +108,7 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
               files: localRecord.files,
             });
             LocalThumbnailCache.set(f.id, thumbnail);
-            debugLog.thumbPipeline("draft: buildSceneThumbnailSvg OK", {
+            logPipe.debug("draft: buildSceneThumbnailSvg OK", {
               id8: f.id.slice(0, 8),
               svgLen: thumbnail.length,
             });
@@ -115,7 +116,7 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
               setDraftThumbs((prev) => ({ ...prev, [f.id]: thumbnail }));
             }
           } catch (err) {
-            debugLog.thumbPipeline("draft: buildSceneThumbnailSvg FAILED", {
+            logPipe.debug("draft: buildSceneThumbnailSvg FAILED", {
               id8: f.id.slice(0, 8),
               err: String(err),
             });
@@ -123,6 +124,10 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
             thumbFetchingRef.current.delete(f.id);
           }
         })();
+        continue;
+      }
+      if (localDraftThumb) {
+        skipped.localDraftThumb++;
         continue;
       }
       if (!f.has_thumbnail) {
@@ -133,19 +138,24 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
         skipped.inFlightRef++;
         continue;
       }
-      if (fetchedThumbSvgByIdRef.current[f.id]) {
+      const contentSha = f.content_sha256 ?? null;
+      if (
+        fetchedThumbSvgByIdRef.current[f.id] &&
+        fetchedThumbHashByIdRef.current[f.id] === contentSha
+      ) {
         skipped.alreadyInFetched++;
         continue;
       }
       toFetch.push({
         id: f.id,
+        contentSha,
         url: `/api/files/${f.id}/thumbnail${
           f.content_sha256 ? `?h=${encodeURIComponent(f.content_sha256)}` : ""
         }`,
       });
     }
 
-    debugLog.thumbPipeline("thumb effect tick", {
+    logPipe.debug("thumb effect tick", {
       scopeN: thumbLoadScopeFiles.length,
       allowN: thumbFetchAllowIds.size,
       skipped,
@@ -159,13 +169,21 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
       void fetchThumbnailSvgForCard(item.url, { id8 })
         .then(({ svg, status, errPreview }) => {
           if (!mountedRef.current) {
-            debugLog.thumbPipeline("GET thumb ignored (FileList unmounted)", {
+            logPipe.debug("GET thumb ignored (FileList unmounted)", {
               id8,
             });
             return;
           }
+          if (fileThumbHashByIdRef.current[item.id] !== item.contentSha) {
+            logPipe.debug("GET thumb ignored (stale content hash)", {
+              id8,
+              fetchedHash: item.contentSha,
+              currentHash: fileThumbHashByIdRef.current[item.id],
+            });
+            return;
+          }
           if (!svg) {
-            debugLog.thumbnail("GET /thumbnail failed or empty SVG", {
+            logThumb.debug("GET /thumbnail failed or empty SVG", {
               id8,
               status,
               errPreview,
@@ -173,14 +191,15 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
             });
             return;
           }
-          debugLog.thumbPipeline("setFetchedThumbs apply", {
+          logPipe.debug("setFetchedThumbs apply", {
             id8,
             svgLen: svg.length,
           });
+          fetchedThumbHashByIdRef.current[item.id] = item.contentSha;
           setFetchedThumbs((prev) => ({ ...prev, [item.id]: svg }));
         })
         .catch((err: unknown) => {
-          debugLog.thumbPipeline("GET thumb promise threw", { id8, err: String(err) });
+          logPipe.debug("GET thumb promise threw", { id8, err: String(err) });
         })
         .finally(() => {
           thumbFetchingRef.current.delete(item.id);
@@ -191,6 +210,8 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
     thumbLoadScopeFiles,
     thumbFetchAllowIds,
     fetchedThumbSvgByIdRef,
+    fetchedThumbHashByIdRef,
+    fileThumbHashByIdRef,
     setDraftThumbs,
     setFetchedThumbs,
   ]);

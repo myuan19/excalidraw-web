@@ -6,7 +6,7 @@ import React, {
   useState,
 } from "react";
 
-import { debugLog } from "../data/debugLog";
+import { createLogger, logFileListOpen } from "../lib/logger";
 import {
   readFileListTreeCache,
   writeFileListTreeCache,
@@ -35,10 +35,15 @@ import {
 } from "../data/aiConfig";
 import { computeThumbFetchAllowIds } from "../data/thumbCoverage";
 import { AISettings } from "./AISettings";
+import { EmbedTokenManager } from "./EmbedTokenManager";
 
 import { useThumbnailPipeline } from "../hooks/useThumbnailPipeline";
 
 import "./FileList.scss";
+
+const logList = createLogger({ module: "fileList" });
+const logThumb = createLogger({ module: "thumbnail" });
+const logPipe = createLogger({ module: "thumbPipeline" });
 
 interface FileListProps {
   onOpenFile: (id: string) => void;
@@ -141,7 +146,8 @@ function iconPath(
     | "menu"
     | "sort"
     | "move"
-    | "drag",
+    | "drag"
+    | "embed",
 ) {
   const paths = {
     folder:
@@ -163,6 +169,8 @@ function iconPath(
     drag: "M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z",
     move:
       "M4 12l4-4v3h3v2H8v3l-4-4zM12 7l2 2h7c1.1 0 2 .9 2 2v9H12V7z",
+    embed:
+      "M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0L19.2 12l-4.6-4.6L16 6l6 6-6 6-1.4-1.4z",
   };
   return paths[type];
 }
@@ -289,6 +297,8 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
   const [fetchedThumbs, setFetchedThumbs] = useState<Record<string, string>>({});
   const fetchedThumbsRef = useRef(fetchedThumbs);
   fetchedThumbsRef.current = fetchedThumbs;
+  const fetchedThumbHashByIdRef = useRef<Record<string, string | null>>({});
+  const fileThumbHashByIdRef = useRef<Record<string, string | null>>({});
   const [draftThumbs, setDraftThumbs] = useState<Record<string, string>>({});
   const [visibleThumbIds, setVisibleThumbIds] = useState<Set<string>>(
     () => new Set(),
@@ -322,6 +332,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
 
   const [moveDialogFile, setMoveDialogFile] = useState<ServerFile | null>(null);
   const [moveTargetFolderId, setMoveTargetFolderId] = useState<string | null>(null);
+  const [embedFile, setEmbedFile] = useState<ServerFile | null>(null);
 
   /** Sidebar: folder reorder / reparent via HTML5 drag (handle only). */
   const [draggingFolderId, setDraggingFolderId] = useState<string | null>(null);
@@ -353,6 +364,30 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
     ensureAIConfigLoaded().then(syncAiDot).catch(syncAiDot);
     return subscribeAIConfig(syncAiDot);
   }, []);
+
+  useEffect(() => {
+    const nextHashes: Record<string, string | null> = {};
+    for (const file of files) {
+      nextHashes[file.id] = file.content_sha256 ?? null;
+    }
+    fileThumbHashByIdRef.current = nextHashes;
+
+    setFetchedThumbs((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const id of Object.keys(next)) {
+        if (
+          !(id in nextHashes) ||
+          fetchedThumbHashByIdRef.current[id] !== nextHashes[id]
+        ) {
+          delete next[id];
+          delete fetchedThumbHashByIdRef.current[id];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [files]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -431,7 +466,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
         if (!options?.silent) {
           setLoading(true);
         }
-        debugLog.fileList("refresh start");
+        logList.debug("refresh start");
         const tree = await ServerSync.listFileTree({ signal: ac.signal });
         if (ac.signal.aborted) {
           return;
@@ -455,7 +490,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
             FileSyncState.getSyncState(f.id) === "draft" &&
             !FileSyncState.getLocalEditTime(f.id)
           ) {
-            debugLog.fileList(`clearing stale draft hash for ${f.id.slice(0, 8)}`);
+            logList.debug(`clearing stale draft hash for ${f.id.slice(0, 8)}`);
             FileSyncState.clearHashStateForFile(f.id);
           }
         }
@@ -466,11 +501,10 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
         if (fid && !tree.folders.some((f) => f.id === fid)) {
           setCurrentFolderId(ROOT_ID);
         }
-        debugLog.fileList("refresh done", {
+        logList.debug("refresh done", {
           folders: tree.folders.length,
           count: tree.files.length,
-          withThumb: tree.files.filter((x) => x.has_thumbnail || x.thumbnail_svg)
-            .length,
+          withThumb: tree.files.filter((x) => x.has_thumbnail).length,
           withSha: tree.files.filter((x) => x.content_sha256).length,
         });
         setError(null);
@@ -481,7 +515,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
         if (ac.signal.aborted) {
           return;
         }
-        debugLog.fileList("refresh error", e);
+        logList.debug("refresh error", e);
         if (options?.noErrorOnFailure) {
           onReady?.();
           throw e;
@@ -505,7 +539,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
 
   useEffect(() => {
     const onListRefresh = () => {
-      debugLog.fileList("excalidraw-file-list-refresh -> refresh(silent)");
+      logList.debug("excalidraw-file-list-refresh -> refresh(silent)");
       void refresh({ silent: true });
     };
     window.addEventListener("excalidraw-file-list-refresh", onListRefresh);
@@ -622,6 +656,8 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
     thumbFetchAllowIds,
     draftStateById,
     fetchedThumbSvgByIdRef: fetchedThumbsRef,
+    fetchedThumbHashByIdRef,
+    fileThumbHashByIdRef,
     setDraftThumbs,
     setFetchedThumbs,
   });
@@ -631,7 +667,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
       name: string,
       initialScene?: { elements: unknown[]; appState: unknown; files: unknown },
     ): Promise<string> => {
-      debugLog.fileList("createFileOnServer", {
+      logList.debug("createFileOnServer", {
         name,
         folderId: currentFolderId,
         hasScene: !!initialScene,
@@ -649,11 +685,11 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
             files: initialScene.files,
           });
           LocalThumbnailCache.set(id, thumbnail);
-          debugLog.thumbnail(
+          logThumb.debug(
             `createFileOnServer ${id.slice(0, 8)}, svgLen=${thumbnail.length}`,
           );
         } catch (err) {
-          debugLog.thumbnail(
+          logThumb.debug(
             `createFileOnServer ${id.slice(0, 8)} exportToSvg FAILED`,
             err,
           );
@@ -667,7 +703,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
           files: initialScene.files,
           deltas: [],
         });
-        debugLog.fileList(
+        logList.debug(
           `createFileOnServer ${id.slice(0, 8)} saved, thumb=${!!thumbnail}`,
         );
       }
@@ -729,7 +765,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
       const createdIds: string[] = [];
       try {
         for (const file of fileList) {
-          debugLog.fileList("import start", {
+          logList.debug("import start", {
             name: file.name,
             type: file.type,
             size: file.size,
@@ -737,7 +773,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
           });
           const { elements, appState, files: sceneFiles } =
             await loadExcalidrawFileAsServerSceneData(file);
-          debugLog.fileList("import parsed", {
+          logList.debug("import parsed", {
             elements: elements.length,
             files: Object.keys(sceneFiles).length,
           });
@@ -757,7 +793,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
           );
         }
       } catch (e: unknown) {
-        debugLog.fileList("import error", e);
+        logList.debug("import error", e);
         const failedDeletes = await rollbackCreatedImportFiles(createdIds);
         let msg = formatImportErrorMessage(e);
         if (failedDeletes.length > 0) {
@@ -852,7 +888,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
         return n;
       });
       thumbFetchingRef.current.delete(id);
-      debugLog.thumbPipeline("delete: cleared thumb state + fetching ref", {
+      logPipe.debug("delete: cleared thumb state + fetching ref", {
         id8: id.slice(0, 8),
       });
       await refresh({ silent: true });
@@ -1169,11 +1205,6 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
     void applyFolderDrop(sourceId, "__ROOT__", "into");
   };
 
-  /** Set localStorage: excalidraw-web-debug-filelist-open = 1 — see debugLog.ts */
-  const logFileCardOpen = (msg: string, extra: Record<string, unknown> = {}) => {
-    debugLog.fileListOpen(msg, extra);
-  };
-
   // ── Render helpers ──
 
   const renderFolderTree = (parentId: string | null, depth = 0) => {
@@ -1318,13 +1349,12 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
     const localDraftThumb = state?.localDraftThumb ?? null;
     const generatedDraftThumb =
       syncState === "draft" ? draftThumbs[f.id] : null;
-    const hasDraftLocalState = state?.hasDraftLocalState ?? false;
-    const thumbSvg = hasDraftLocalState
-      ? localDraftThumb || generatedDraftThumb || null
+    const shouldUseDraftPreview = syncState === "draft";
+    const thumbSvg = shouldUseDraftPreview
+      ? generatedDraftThumb || localDraftThumb || null
       : localDraftThumb ||
         generatedDraftThumb ||
         fetchedThumbs[f.id] ||
-        f.thumbnail_svg ||
         null;
     const q = searchQuery.trim();
     const thumbLoading = !thumbSvg && f.has_thumbnail;
@@ -1344,7 +1374,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
           ) {
             return;
           }
-          logFileCardOpen("card click → onOpenFile", {
+          logFileListOpen("card click → onOpenFile", {
             fileId8: f.id.slice(0, 8),
             targetTag: t?.tagName,
             targetClass: String(t?.className || "").slice(0, 100),
@@ -1397,6 +1427,16 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
             </button>
             <button
               className="filelist__card-action"
+              title="嵌入到网页"
+              onClick={(e) => {
+                e.stopPropagation();
+                setEmbedFile(f);
+              }}
+            >
+              <Icon type="embed" size={16} />
+            </button>
+            <button
+              className="filelist__card-action"
               title="下载"
               onClick={(e) => handleDownload(e, f.id, f.name)}
             >
@@ -1436,7 +1476,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
                 title={`${f.name} — 点击重命名`}
                 onClick={(e) => {
                   e.stopPropagation();
-                  logFileCardOpen("card name click → startRename (same as rename button)", {
+                  logFileListOpen("card name click → startRename (same as rename button)", {
                     fileId8: f.id.slice(0, 8),
                   });
                   startRename(e, f.id, f.name);
@@ -1737,7 +1777,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
           {...folderDraftOverlayDismiss}
         >
           <div
-            className="filelist__detail-card"
+            className="filelist__detail-card filelist__new-file-dialog"
             onPointerDown={(e) => e.stopPropagation()}
           >
             <h2 className="filelist__detail-title">
@@ -1787,7 +1827,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
           {...newFileOverlayDismiss}
         >
           <div
-            className="filelist__detail-card"
+            className="filelist__detail-card filelist__new-file-dialog"
             onPointerDown={(e) => e.stopPropagation()}
           >
             <h2 className="filelist__detail-title">新建画布</h2>
@@ -1795,7 +1835,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
               为画布起个名字，稍后在列表里也可以随时重命名
             </p>
             <input
-              className="filelist__folder-input"
+              className="filelist__folder-input filelist__new-file-input"
               value={newFileName}
               autoFocus
               onChange={(e) => setNewFileName(e.target.value)}
@@ -1808,7 +1848,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
                 }
               }}
             />
-            <div className="filelist__detail-actions">
+            <div className="filelist__detail-actions filelist__new-file-actions">
               <button
                 type="button"
                 className="filelist__new-btn"
@@ -1889,6 +1929,13 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
           </div>
         </div>
       )}
+
+      <EmbedTokenManager
+        fileId={embedFile?.id ?? ""}
+        fileName={embedFile?.name ?? ""}
+        open={!!embedFile}
+        onClose={() => setEmbedFile(null)}
+      />
     </div>
   );
 };

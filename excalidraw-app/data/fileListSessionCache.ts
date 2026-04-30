@@ -5,7 +5,7 @@ const CACHE_KEY = "excalidraw-filelist-tree-v1";
 /** 去掉可能很大的字段，避免撑满 sessionStorage */
 function stripFilesForCache(files: ServerFile[]): ServerFile[] {
   return files.map((f) => {
-    const { data: _d, thumbnail_svg: _t, ...rest } = f;
+    const { data: _d, ...rest } = f;
     return rest;
   });
 }

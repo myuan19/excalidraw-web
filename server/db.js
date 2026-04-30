@@ -75,6 +75,16 @@ db.exec(`
     id          INTEGER PRIMARY KEY CHECK (id = 1),
     config_json TEXT NOT NULL DEFAULT '{}'
   );
+
+  CREATE TABLE IF NOT EXISTS embed_tokens (
+    id              TEXT PRIMARY KEY,
+    token           TEXT NOT NULL UNIQUE,
+    file_id         TEXT NOT NULL,
+    allowed_domains TEXT DEFAULT '*',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    usage_count     INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
+  );
 `);
 
 try {
@@ -87,6 +97,24 @@ try {
   db.exec(`ALTER TABLE files ADD COLUMN content_sha256 TEXT`);
 } catch {
   // column exists
+}
+
+try {
+  db.exec(`ALTER TABLE embed_tokens ADD COLUMN usage_count INTEGER NOT NULL DEFAULT 0`);
+} catch {
+  // column exists
+}
+
+try {
+  db.exec(`ALTER TABLE embed_tokens DROP COLUMN permissions`);
+} catch {
+  // column not present or SQLite version doesn't support DROP COLUMN
+}
+
+try {
+  db.exec(`ALTER TABLE embed_tokens DROP COLUMN expires_at`);
+} catch {
+  // column not present or SQLite version doesn't support DROP COLUMN
 }
 
 try {

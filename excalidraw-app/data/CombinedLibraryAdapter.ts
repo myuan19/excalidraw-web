@@ -12,7 +12,7 @@
  *
  * Published-library groups + fold state: SQLite `library_groups` only (see /api/library/groups).
  */
-import { debugLog } from "./debugLog";
+import { createLogger } from "../lib/logger";
 
 import type {
   LibraryPersistenceAdapter,
@@ -27,6 +27,8 @@ import {
   hydrateLibraryGroupsFromServer,
 } from "../components/LibraryGroupEnhancer";
 import { queueLibrarySync } from "./librarySyncQueue";
+
+const logLibrary = createLogger({ module: "library" });
 
 function url(path: string): string {
   return `/api${path}`;
@@ -114,7 +116,7 @@ interface ServerLibraryGroup {
 
 export const CombinedLibraryAdapter: LibraryPersistenceAdapter = {
   async load(metadata?: { source?: string }) {
-    debugLog.library("load called", metadata);
+    logLibrary.debug("load called", { metadata });
     const isSaveSource = metadata?.source === "save";
 
     const canvasFileId = fileIdFromLocationHash() ?? _currentFileId;
@@ -155,7 +157,9 @@ export const CombinedLibraryAdapter: LibraryPersistenceAdapter = {
   },
 
   async save(libraryData: LibraryPersistedData) {
-    debugLog.library("save called, items:", libraryData.libraryItems.length);
+    logLibrary.debug("save called", {
+      itemCount: libraryData.libraryItems.length,
+    });
     const items = libraryData.libraryItems;
 
     const personalItems: Array<{

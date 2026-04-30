@@ -6,11 +6,13 @@ import {
 } from "./app-jotai";
 import { TopErrorBoundary } from "./components/TopErrorBoundary";
 import { FileList } from "./components/FileList";
-import { debugLog } from "./data/debugLog";
+import { logFileListOpen } from "./lib/logger";
+import { isEmbedMode } from "./EmbedViewer";
 
 import "./index.scss";
 
 const LazyEditorShell = lazy(() => import("./EditorShell"));
+const LazyEmbedViewer = lazy(() => import("./EmbedViewer"));
 
 const EditorFallback = () => (
   <div className="editor-loading-fallback">
@@ -53,14 +55,14 @@ const ForkRoot = () => {
   const [, bump] = useState(0);
   useEffect(() => {
     const h = () => {
-      debugLog.fileListOpen("App hashchange (ForkRoot)", {
+      logFileListOpen("App hashchange (ForkRoot)", {
         hash: window.location.hash,
         needsEditor: hashNeedsEditor(),
       });
       bump((n) => n + 1);
     };
     window.addEventListener("hashchange", h);
-    debugLog.fileListOpen("App ForkRoot mount", {
+    logFileListOpen("App ForkRoot mount", {
       hash: window.location.hash,
       needsEditor: hashNeedsEditor(),
     });
@@ -76,13 +78,13 @@ const ForkRoot = () => {
         <FileList
           onOpenFile={(id) => {
             const next = `#file=${id}`;
-            debugLog.fileListOpen("App onOpenFile → assign location.hash", {
+            logFileListOpen("App onOpenFile → assign location.hash", {
               id8: id.slice(0, 8),
               nextHash: next,
             });
             window.location.hash = next;
             queueMicrotask(() => {
-              debugLog.fileListOpen("App onOpenFile after microtask", {
+              logFileListOpen("App onOpenFile after microtask", {
                 hash: window.location.hash,
                 needsEditor: hashNeedsEditor(),
               });
@@ -101,7 +103,26 @@ const ForkRoot = () => {
   );
 };
 
+const EmbedFallback = () => (
+  <div style={{
+    display: "flex", alignItems: "center", justifyContent: "center",
+    height: "100%", fontFamily: "system-ui, sans-serif", color: "#868e96",
+  }}>
+    加载嵌入画布…
+  </div>
+);
+
 const ExcalidrawApp = () => {
+  if (isEmbedMode()) {
+    return (
+      <TopErrorBoundary>
+        <Suspense fallback={<EmbedFallback />}>
+          <LazyEmbedViewer />
+        </Suspense>
+      </TopErrorBoundary>
+    );
+  }
+
   return (
     <TopErrorBoundary>
       <Provider store={appJotaiStore}>

@@ -6,9 +6,10 @@ import cors from "cors";
 import filesRouter from "./routes/files.js";
 import libraryRouter from "./routes/library.js";
 import aiSettingsRouter from "./routes/ai-settings.js";
-import clientLogsRouter from "./routes/client-logs.js";
+import logsRouter from "./routes/logs.js";
+import { tokenRouter as embedTokenRouter, pageRouter as embedPageRouter } from "./routes/embed.js";
+import { createLogger } from "./lib/logger.js";
 import {
-  apiLog,
   isClientLogIngestEnabled,
   isHttpTraceEnabled,
   truncStr,
@@ -23,11 +24,12 @@ const PORT = process.env.PORT || 3033;
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 
-/** 导入/保存等大请求：记录方法与 Content-Length，便于对照 413、超时 */
+const httpLog = createLogger({ module: "http" });
+
 app.use("/api", (req, res, next) => {
   if (req.method === "POST" || req.method === "PUT" || req.method === "PATCH") {
     const cl = req.headers["content-length"];
-    apiLog("http", `${req.method} ${req.originalUrl}`, {
+    httpLog.info(`${req.method} ${req.originalUrl}`, {
       contentLength: cl ?? "(chunked/unknown)",
       ip: req.ip,
     });
@@ -35,19 +37,26 @@ app.use("/api", (req, res, next) => {
   const t0 = Date.now();
   res.on("finish", () => {
     const pathname = req.originalUrl.split("?")[0];
-    if (pathname === "/api/health") {
-      return;
-    }
+    if (pathname === "/api/health") return;
+
     const traceAll = isHttpTraceEnabled();
     const filesRoute = pathname.startsWith("/api/files");
     if (filesRoute || traceAll) {
-      apiLog("http", `${req.method} ${req.originalUrl} → ${res.statusCode}`, {
-        ms: Date.now() - t0,
+      const ms = Date.now() - t0;
+      const meta = {
+        ms,
         ...(traceAll && {
           ip: req.ip,
           ua: truncStr(req.headers["user-agent"] ?? "", 160),
         }),
-      });
+      };
+      if (res.statusCode >= 500) {
+        httpLog.error(`${req.method} ${req.originalUrl} → ${res.statusCode}`, meta);
+      } else if (res.statusCode >= 400) {
+        httpLog.warn(`${req.method} ${req.originalUrl} → ${res.statusCode}`, meta);
+      } else {
+        httpLog.info(`${req.method} ${req.originalUrl} → ${res.statusCode}`, meta);
+      }
     }
   });
   next();
@@ -55,11 +64,14 @@ app.use("/api", (req, res, next) => {
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
-app.use("/api/client-logs", clientLogsRouter);
+app.use("/api/logs", logsRouter);
 
 app.use("/api/files", filesRouter);
 app.use("/api/library", libraryRouter);
 app.use("/api/ai-settings", aiSettingsRouter);
+app.use("/api/embed-tokens", embedTokenRouter);
+
+app.use("/embed", embedPageRouter);
 
 /**
  * 与 API 同机部署时，同一端口托管 `excalidraw-app/build`（`./assets/*.js` 等），避免只起了 API 而静态资源 404。
@@ -87,20 +99,21 @@ app.use("/api/ai-settings", aiSettingsRouter);
   }
 }
 
-/** 须放在所有路由之后：JSON 解析失败、body 超限（导入大场景时常见） */
+const errLog = createLogger({ module: "error" });
+
 app.use((err, req, res, next) => {
   if (res.headersSent) {
     return next(err);
   }
   if (err instanceof SyntaxError && "body" in err) {
-    apiLog("json", "invalid JSON body", {
+    errLog.warn("invalid JSON body", {
       path: req.originalUrl,
       message: err.message,
     });
     return res.status(400).json({ error: "invalid_json", message: err.message });
   }
   if (err.type === "entity.too.large" || err.status === 413) {
-    apiLog("json", "payload too large", {
+    errLog.warn("payload too large", {
       path: req.originalUrl,
       limit: err.limit,
       message: err.message,
@@ -110,8 +123,9 @@ app.use((err, req, res, next) => {
       message: err.message,
     });
   }
-  apiLog("error", "unhandled", {
+  errLog.error("unhandled request error", {
     path: req.originalUrl,
+    method: req.method,
     message: err.message,
     stack: err.stack?.split("\n").slice(0, 5).join("\n"),
   });
@@ -119,22 +133,24 @@ app.use((err, req, res, next) => {
 });
 
 const HOST = process.env.LISTEN_HOST || "0.0.0.0";
+const bootLog = createLogger({ module: "boot" });
+
+process.on("uncaughtException", (err) => {
+  const pLog = createLogger({ module: "process" });
+  pLog.error("uncaught exception", { message: err.message, stack: err.stack });
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  const pLog = createLogger({ module: "process" });
+  pLog.error("unhandled rejection", { reason: String(reason) });
+});
 
 app.listen(PORT, HOST, () => {
-  console.log(`[excalidraw-server] listening on http://${HOST}:${PORT}`);
-  console.log(
-    "[excalidraw-server] [excalidraw-api] 行会进 stdout（docker logs 可见）；EXCALIDRAW_API_DEBUG=1 更细；EXCALIDRAW_HTTP_TRACE=1 时除 /api/health 外每条 API 都会打完成行（官方镜像默认开启，可设 0 关闭）",
-  );
-  if (isClientLogIngestEnabled()) {
-    console.log(
-      "[excalidraw-server] 前端日志 ingest 已启用（默认）：EXCALIDRAW_DATA_DIR/logs/client.log（[excalidraw-api] [client] 摘要）；关闭服务端：EXCALIDRAW_CLIENT_LOG=0；关闭浏览器上报：localStorage excalidraw-web-remote-log=0 或 VITE_APP_CLIENT_LOG_TO_SERVER=0",
-    );
-  } else {
-    console.log(
-      "[excalidraw-server] 前端日志 ingest 已关闭（EXCALIDRAW_CLIENT_LOG=0/false/off）",
-    );
-  }
-  console.log(
-    "[excalidraw-server] 缩略图审计：EXCALIDRAW_THUMB_AUDIT_LOG=1 时 [thumb-send] 带 SVG 字节数（docker logs 可见）；=0 关闭。官方镜像/entrypoint 默认 1。",
-  );
+  bootLog.info(`listening on http://${HOST}:${PORT}`);
+  bootLog.info("config", {
+    LOG_LEVEL: process.env.LOG_LEVEL || "info",
+    HTTP_TRACE: isHttpTraceEnabled(),
+    CLIENT_INGEST: isClientLogIngestEnabled(),
+  });
 });

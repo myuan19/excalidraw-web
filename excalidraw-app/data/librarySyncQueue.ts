@@ -8,7 +8,9 @@
 
 import { set } from "idb-keyval";
 
-import { debugLog } from "./debugLog";
+import { createLogger } from "../lib/logger";
+
+const logLibrary = createLogger({ module: "library" });
 
 const LIBRARY_IDB_KEY = "excalidraw-web-library-mirror";
 const SYNC_DEBOUNCE_MS = 400;
@@ -33,7 +35,9 @@ function stringifyInIdle(body: object, then: (json: string) => void): void {
 }
 
 async function postSyncJson(json: string): Promise<void> {
-  debugLog.library("POST /api/library/sync sending", json.length, "bytes");
+  logLibrary.debug("POST /api/library/sync sending", {
+    bytes: json.length,
+  });
   const res = await fetch("/api/library/sync", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -46,7 +50,7 @@ async function postSyncJson(json: string): Promise<void> {
     throw new Error(`Library sync ${res.status}`);
   }
   const result = await res.json().catch(() => ({}));
-  debugLog.library("POST success", result);
+  logLibrary.debug("POST success", { result });
 }
 
 function syncNow(): void {
@@ -88,7 +92,7 @@ export async function queueLibrarySync(
   mirrorData: unknown,
   syncBody: object,
 ): Promise<void> {
-  debugLog.library("queueLibrarySync called", syncBody);
+  logLibrary.debug("queueLibrarySync called", { syncBody });
   try {
     await set(LIBRARY_IDB_KEY, JSON.stringify(mirrorData));
   } catch {

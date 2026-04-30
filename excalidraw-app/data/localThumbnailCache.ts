@@ -1,9 +1,11 @@
 /**
- * Client-side SVG preview for the file list（与会话绑定，见 forkFileTypes 总览）。
- * 可与服务器 thumbnail_svg 组合显示导入/未保存预览。
+ * Client-side SVG preview for unsaved file-list cards.
+ * Session-scoped so it can override the server thumbnail while a local draft exists.
  */
 
-import { debugLog } from "./debugLog";
+import { createLogger } from "../lib/logger";
+
+const logThumb = createLogger({ module: "thumbnail" });
 
 const PREFIX = "excalidraw-web-local-thumb-";
 
@@ -21,7 +23,7 @@ export const LocalThumbnailCache = {
 
   set(fileId: string, svg: string | undefined): void {
     if (!svg) {
-      debugLog.thumbnail(`localThumb set skip ${fileId.slice(0, 8)}: empty`);
+      logThumb.debug(`localThumb set skip ${fileId.slice(0, 8)}: empty`);
       return;
     }
     if (svg.length > MAX_CHARS) {
@@ -30,18 +32,18 @@ export const LocalThumbnailCache = {
       } catch {
         // ignore
       }
-      debugLog.thumbnail(
+      logThumb.debug(
         `localThumb set skip ${fileId.slice(0, 8)}: oversize len=${svg.length} limit=${MAX_CHARS}`,
       );
       return;
     }
     try {
       sessionStorage.setItem(this.key(fileId), svg);
-      debugLog.thumbnail(
+      logThumb.debug(
         `localThumb set ${fileId.slice(0, 8)} len=${svg.length} truncated=false`,
       );
     } catch {
-      debugLog.thumbnail(`localThumb set FAILED ${fileId.slice(0, 8)}`);
+      logThumb.debug(`localThumb set FAILED ${fileId.slice(0, 8)}`);
       // quota / private mode
     }
   },
@@ -51,17 +53,17 @@ export const LocalThumbnailCache = {
       const value = sessionStorage.getItem(this.key(fileId));
       if (value && !looksLikeCompleteSvg(value)) {
         sessionStorage.removeItem(this.key(fileId));
-        debugLog.thumbnail(
+        logThumb.debug(
           `localThumb get ${fileId.slice(0, 8)} invalid=true len=${value.length}`,
         );
         return null;
       }
-      debugLog.thumbnail(
+      logThumb.debug(
         `localThumb get ${fileId.slice(0, 8)} hit=${!!value} len=${value?.length ?? 0}`,
       );
       return value;
     } catch {
-      debugLog.thumbnail(`localThumb get FAILED ${fileId.slice(0, 8)}`);
+      logThumb.debug(`localThumb get FAILED ${fileId.slice(0, 8)}`);
       return null;
     }
   },
@@ -69,9 +71,9 @@ export const LocalThumbnailCache = {
   clear(fileId: string): void {
     try {
       sessionStorage.removeItem(this.key(fileId));
-      debugLog.thumbnail(`localThumb clear ${fileId.slice(0, 8)}`);
+      logThumb.debug(`localThumb clear ${fileId.slice(0, 8)}`);
     } catch {
-      debugLog.thumbnail(`localThumb clear FAILED ${fileId.slice(0, 8)}`);
+      logThumb.debug(`localThumb clear FAILED ${fileId.slice(0, 8)}`);
       // ignore
     }
   },

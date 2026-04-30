@@ -1,58 +1,40 @@
 /**
- * API / 诊断：`apiLog` → `stdout`，`docker logs <容器>` 可见。
- * `apiLogDebug` 仅在 EXCALIDRAW_API_DEBUG=1 时出现（scene/appState 等更细）。
+ * Server logging helpers + scene summary (diagnostics).
+ * Use `createLogger` from `./lib/logger.js` in new code.
  */
-const DEBUG =
-  process.env.EXCALIDRAW_API_DEBUG === "1" ||
-  process.env.EXCALIDRAW_API_DEBUG === "true";
+import { createLogger } from "./lib/logger.js";
 
-function ts() {
-  return new Date().toISOString();
+const sceneLog = createLogger({ module: "scene" });
+
+export function isApiDebugEnabled() {
+  return (
+    process.env.EXCALIDRAW_API_DEBUG === "1" ||
+    process.env.EXCALIDRAW_API_DEBUG === "true"
+  );
 }
 
-export function apiLog(area, message, meta) {
-  if (meta !== undefined) {
-    console.log(`[excalidraw-api] ${ts()} [${area}] ${message}`, meta);
-  } else {
-    console.log(`[excalidraw-api] ${ts()} [${area}] ${message}`);
-  }
+function envLogOff(val) {
+  const v = (val ?? "").trim().toLowerCase();
+  return v === "0" || v === "false" || v === "off" || v === "no";
 }
 
-export function apiLogDebug(area, message, meta) {
-  if (!DEBUG) {
-    return;
-  }
-  apiLog(`${area}:debug`, message, meta);
-}
-
-/**
- * 前端诊断 POST /api/client-logs 是否写入 DATA_DIR/logs/client.log（默认开启）。
- * 关闭：EXCALIDRAW_CLIENT_LOG=0 | false | off | no
- */
+/** Frontend log ingest (POST /api/logs). Off if either env is explicitly disabled. */
 export function isClientLogIngestEnabled() {
-  const v = (process.env.EXCALIDRAW_CLIENT_LOG ?? "").trim().toLowerCase();
-  if (v === "0" || v === "false" || v === "off" || v === "no") {
-    return false;
-  }
+  if (envLogOff(process.env.LOG_CLIENT_INGEST)) return false;
+  if (envLogOff(process.env.EXCALIDRAW_CLIENT_LOG)) return false;
   return true;
 }
 
-/**
- * 开启后：所有 /api/* 请求结束时打 [http] 一行（含 ms、UA）。
- * 默认仍仅对路径以 /files 开头的请求打完成日志（见 index.js）。
- */
 export function isHttpTraceEnabled() {
   const v = (process.env.EXCALIDRAW_HTTP_TRACE ?? "").trim().toLowerCase();
   return v === "1" || v === "true" || v === "yes" || v === "on";
 }
 
-/** 对每个 GET thumbnail 打点（id + 字节）；docker 内设 EXCALIDRAW_THUMB_AUDIT_LOG=1（官方镜像默认开） */
 export function isThumbAuditLogEnabled() {
   const v = (process.env.EXCALIDRAW_THUMB_AUDIT_LOG ?? "").trim().toLowerCase();
   return v === "1" || v === "true" || v === "yes" || v === "on";
 }
 
-/** 避免把超大字符串打进日志 */
 export function truncStr(s, max = 200) {
   if (typeof s !== "string") {
     return s;
@@ -81,6 +63,8 @@ export function summarizeScenePayload(data) {
         ? Object.keys(appState).slice(0, 40)
         : null,
   };
-  apiLogDebug("scene", "scene summary", summary);
+  if (isApiDebugEnabled()) {
+    sceneLog.info("scene summary (EXCALIDRAW_API_DEBUG)", summary);
+  }
   return summary;
 }

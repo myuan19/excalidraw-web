@@ -1051,6 +1051,18 @@
   color: var(--nb-text-muted);
 }
 
+.filelist__new-file-dialog {
+  .filelist__new-file-input {
+    box-sizing: border-box;
+    display: block;
+    margin: 0;
+  }
+
+  .filelist__new-file-actions {
+    justify-content: flex-end;
+  }
+}
+
 .filelist__move-dialog {
   width: min(var(--nb-filelist-move-max-w), 100%);
   max-height: min(80vh, 40rem);

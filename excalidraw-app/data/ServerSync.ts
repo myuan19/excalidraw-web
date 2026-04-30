@@ -2,12 +2,16 @@
  * Handles synchronization between the browser and the local server API.
  */
 
-import { debugLog } from "./debugLog";
+import { createLogger } from "../lib/logger";
 import { FileSyncState } from "./FileSyncState";
 
 import { hashSceneSnapshot } from "./sceneHash";
 
 import type { ForkSceneSnapshot } from "./forkFileTypes";
+
+const logSync = createLogger({ module: "sync" });
+const logSave = createLogger({ module: "save" });
+const logHash = createLogger({ module: "hash" });
 
 function url(path: string): string {
   return `/api${path}`;
@@ -25,7 +29,7 @@ async function api<T = unknown>(
       (typeof performance !== "undefined" ? performance.now() : Date.now()) -
         t0,
     );
-  debugLog.sync(`api ${method}`, path);
+  logSync.debug(`api ${method}`, { path });
   const res = await fetch(url(path), {
     headers: { "Content-Type": "application/json" },
     ...opts,
@@ -41,28 +45,26 @@ async function api<T = unknown>(
         ? " Got HTML instead of JSON — the Vite dev server is serving the SPA for /api (API not reached). Run ./_scripts/run.sh dev so Express runs on :3033 with proxy, or start server/index.js and set VITE_DEV_API_PROXY_TARGET in .env.development, then restart Vite."
         : " Got HTML instead of JSON — /api is not hitting the Node API (nginx error page or SPA fallback). With Docker: rebuild/restart the image, then docker logs <container> and confirm Node listens (e.g. missing server/logger.js in image leaves nginx up without API)."
       : "";
-    debugLog.sync(
-      `api non-JSON ${res.status} ${elapsedMs()}ms`,
+    logSync.debug(`api non-JSON ${res.status} ${elapsedMs()}ms`, {
       path,
-      text.slice(0, 120),
-    );
+      preview: text.slice(0, 120),
+    });
     throw new Error(
       `API ${path} expected JSON but got ${ct || "unknown type"}.${hint}`,
     );
   }
   if (!res.ok) {
     const text = await res.text();
-    debugLog.sync(
-      `api error ${res.status} ${elapsedMs()}ms`,
+    logSync.debug(`api error ${res.status} ${elapsedMs()}ms`, {
       path,
-      text.slice(0, 200),
-    );
+      preview: text.slice(0, 200),
+    });
     throw new Error(`API ${res.status}: ${text}`);
   }
   const data = (await res.json()) as T;
-  debugLog.sync(`api ok ${elapsedMs()}ms`, path, method);
+  logSync.debug(`api ok ${elapsedMs()}ms`, { path, method });
   if (method === "PUT" && path.includes("/files/")) {
-    debugLog.sync("api PUT ok", path, data);
+    logSync.debug("api PUT ok", { path, data });
   }
   return data;
 }
@@ -79,8 +81,6 @@ export interface ServerFile {
   archive_count?: number;
   /** 服务器磁盘上有 thumbnail.svg（用 /api/files/:id/thumbnail 展示） */
   has_thumbnail?: boolean;
-  /** @deprecated 列表接口不再内联 SVG，仅兼容旧响应 */
-  thumbnail_svg?: string | null;
   /** SHA-256 of saved scene JSON on server (thumbnail.meta.json), when present */
   content_sha256?: string | null;
   /** 服务端场景 JSON，与 {@link ForkSceneSnapshot} 一致 */
@@ -146,7 +146,7 @@ export interface ServerFileHash {
 export const ServerSync = {
   async listFiles(opts?: { signal?: AbortSignal }): Promise<ServerFile[]> {
     const list = await api<ServerFile[]>("/files", { signal: opts?.signal });
-    debugLog.sync("listFiles", { count: list.length });
+    logSync.debug("listFiles", { count: list.length });
     return list;
   },
 
@@ -201,7 +201,7 @@ export const ServerSync = {
     thumbnail?: string,
     opts?: { suppressSavedEvent?: boolean },
   ): Promise<PutFileResult> {
-    debugLog.save("saveFileImmediate", {
+    logSave.debug("saveFileImmediate", {
       id,
       hasThumb: typeof thumbnail === "string" && thumbnail.length > 0,
     });
@@ -222,7 +222,7 @@ export const ServerSync = {
       FileSyncState.setServerHash(id, result.content_sha256);
     }
     if (result?.skipped) {
-      debugLog.hash("server-saved (immediate) skipped", { id });
+      logHash.debug("server-saved (immediate) skipped", { id });
       if (!opts?.suppressSavedEvent) {
         const hash = hashSceneSnapshot(data);
         window.dispatchEvent(
@@ -235,7 +235,7 @@ export const ServerSync = {
     }
     if (!opts?.suppressSavedEvent) {
       const hash = hashSceneSnapshot(data);
-      debugLog.hash("server-saved (immediate)", { id, hash });
+      logHash.debug("server-saved (immediate)", { id, hash });
       window.dispatchEvent(
         new CustomEvent("excalidraw-server-saved", {
           detail: { id, hash },

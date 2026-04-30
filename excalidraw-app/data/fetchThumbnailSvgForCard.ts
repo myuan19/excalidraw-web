@@ -1,8 +1,9 @@
-import { debugLog } from "./debugLog";
+import { createLogger } from "../lib/logger";
+
+const logPipe = createLogger({ module: "thumbPipeline" });
 
 /**
  * 拉取卡片缩略图 SVG。首个 200 但正文为空时再带 `_bust` 重试。
- * 全程打 thumbPipeline，便于对照 client.log / docker。
  */
 export async function fetchThumbnailSvgForCard(
   urlPath: string,
@@ -19,7 +20,7 @@ export async function fetchThumbnailSvgForCard(
   };
 
   async function attempt(url: string, label: "A" | "B") {
-    debugLog.thumbPipeline("GET thumb request", {
+    logPipe.debug("GET thumb request", {
       id8,
       step: label,
       urlLen: url.length,
@@ -27,14 +28,14 @@ export async function fetchThumbnailSvgForCard(
     });
     const res = await fetch(url, opts);
     const raw = await res.text().catch((e: unknown) => {
-      debugLog.thumbPipeline("GET thumb text() threw", {
+      logPipe.debug("GET thumb text() threw", {
         id8,
         step: label,
         err: String(e),
       });
       return "";
     });
-    debugLog.thumbPipeline("GET thumb response", {
+    logPipe.debug("GET thumb response", {
       id8,
       step: label,
       http: res.status,
@@ -52,7 +53,7 @@ export async function fetchThumbnailSvgForCard(
 
   let r = await attempt(urlPath, "A");
   if (r.ok && !r.body.trim() && typeof window !== "undefined") {
-    debugLog.thumbPipeline("GET thumb 200 but empty body → bust retry", {
+    logPipe.debug("GET thumb 200 but empty body → bust retry", {
       id8,
       hadQuery: urlPath.includes("?"),
     });
@@ -62,7 +63,7 @@ export async function fetchThumbnailSvgForCard(
     r = await attempt(alt, "B");
   }
   if (!r.ok) {
-    debugLog.thumbPipeline("GET thumb final fail", {
+    logPipe.debug("GET thumb final fail", {
       id8,
       status: r.status,
       errPreview: r.body.slice(0, 220),
@@ -75,12 +76,12 @@ export async function fetchThumbnailSvgForCard(
   }
   const t = r.body.trim();
   if (!t) {
-    debugLog.thumbPipeline("GET thumb final empty SVG after retries", {
+    logPipe.debug("GET thumb final empty SVG after retries", {
       id8,
       status: r.status,
     });
   } else {
-    debugLog.thumbPipeline("GET thumb OK", {
+    logPipe.debug("GET thumb OK", {
       id8,
       status: r.status,
       svgLen: r.body.length,

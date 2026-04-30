@@ -3,15 +3,13 @@ import { createHash, randomUUID } from "crypto";
 import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "fs";
 import { join } from "path";
 import db, { DATA_DIR } from "../db.js";
-import {
-  apiLog,
-  apiLogDebug,
-  isThumbAuditLogEnabled,
-  summarizeScenePayload,
-  truncStr,
-} from "../logger.js";
+import { createLogger } from "../lib/logger.js";
+import { isApiDebugEnabled, isThumbAuditLogEnabled, summarizeScenePayload, truncStr } from "../logger.js";
 
 const router = Router();
+
+const log = createLogger({ module: "files" });
+const thumbAuditLog = createLogger({ module: "thumb-send" });
 
 function fileDir(fileId) {
   return join(DATA_DIR, "files", fileId);
@@ -228,7 +226,7 @@ router.get("/tree", (_req, res) => {
     .all()
     .map(mapFileRow);
   const withThumb = files.filter((f) => f.has_thumbnail).length;
-  apiLog("files", "GET /tree", {
+  log.info("GET /tree", {
     ms: Date.now() - t0,
     folders: folders.length,
     files: files.length,
@@ -382,7 +380,7 @@ router.post("/order", (req, res) => {
 });
 
 router.get("/", (_req, res) => {
-  console.log("[excalidraw-web-server]", new Date().toISOString(), "GET /api/files list");
+  log.debug("GET /api/files list");
   const rows = db
     .prepare(
       `SELECT f.id, f.name, f.created_at, f.updated_at, f.content_sha256, f.folder_id, f.sort_index,
@@ -402,7 +400,7 @@ router.post("/", (req, res) => {
     return;
   }
   const now = new Date().toISOString();
-  apiLog("files", "POST / create file (随后导入会 PUT 场景)", {
+  log.info("POST / create file (随后导入会 PUT 场景)", {
     id: id.slice(0, 8),
     name: truncStr(String(name), 120),
     folder_id: folderId,
@@ -445,13 +443,13 @@ router.get("/:id", (req, res) => {
   const fid = req.params.id;
   const row = db.prepare("SELECT * FROM files WHERE id = ?").get(fid);
   if (!row) {
-    apiLog("files", "GET /:id not found", { id: fid.slice(0, 8) });
+    log.warn("GET /:id not found", { id: fid.slice(0, 8) });
     return res.status(404).json({ error: "not found" });
   }
 
   const fp = currentPath(fid);
   if (!existsSync(fp)) {
-    apiLog("files", "GET /:id disk missing", { id: fid.slice(0, 8), path: fp });
+    log.warn("GET /:id disk missing", { id: fid.slice(0, 8), path: fp });
     return res.status(404).json({ error: "file data missing" });
   }
 
@@ -459,7 +457,7 @@ router.get("/:id", (req, res) => {
   try {
     data = JSON.parse(readFileSync(fp, "utf-8"));
   } catch (e) {
-    apiLog("files", "GET /:id JSON.parse failed", {
+    log.error("GET /:id JSON.parse failed", {
       id: fid.slice(0, 8),
       message: e.message,
     });
@@ -479,7 +477,7 @@ router.put("/:id", (req, res) => {
   const elementCount = hasData && Array.isArray(req.body.data?.elements) ? req.body.data.elements.length : 0;
   const fileCount = hasData && req.body.data?.files ? Object.keys(req.body.data.files).length : 0;
   const sceneSummary = hasData ? summarizeScenePayload(req.body.data) : null;
-  apiLog("files", "PUT /:id (导入会走：创建 → archives 检查 → 本请求)", {
+  log.info("PUT /:id (导入会走：创建 → archives 检查 → 本请求)", {
     id: id.slice(0, 8),
     contentLength: req.headers["content-length"] ?? null,
     bodyKeys: Object.keys(req.body || {}),
@@ -511,7 +509,7 @@ router.put("/:id", (req, res) => {
 
   if (skipDataWrite && !req.body.name && !hasThumb) {
     const sha = hasData ? hashSceneDataJson(req.body.data) : undefined;
-    apiLog("files", "PUT /:id → SKIPPED (unchanged)", {
+    log.info("PUT /:id → SKIPPED (unchanged)", {
       id: id.slice(0, 8),
       sha: sha?.slice(0, 8),
     });
@@ -566,7 +564,7 @@ router.put("/:id", (req, res) => {
     );
   }
 
-  apiLog("files", "PUT /:id → SAVED", {
+  log.info("PUT /:id → SAVED", {
     id: id.slice(0, 8),
     skipDataWrite,
     wroteThumb: !!req.body.thumbnail,
@@ -584,35 +582,33 @@ router.get("/:id/thumbnail", (req, res) => {
   const fid = req.params.id;
   const tp = thumbnailPath(fid);
   if (!existsSync(tp)) {
-    apiLog("files", "GET /:id/thumbnail 404 (no file on disk)", {
+    log.warn("GET /:id/thumbnail 404 (no file on disk)", {
       id: fid.slice(0, 8),
     });
     return res.status(404).json({ error: "no thumbnail" });
   }
   const svg = readFileSync(tp, "utf-8");
   if (svg.trim().length < 80) {
-    apiLog("files", "WARN thumbnail file very small (check client export)", {
+    log.warn("thumbnail file very small (check client export)", {
       id: fid.slice(0, 8),
       bytes: svg.length,
       head: truncStr(svg.trim().slice(0, 160), 160),
     });
   }
   if (isThumbAuditLogEnabled()) {
-    apiLog(
-      "thumb-send",
-      `GET thumbnail → 200 bytes=${svg.length}`,
-      {
-        id: truncStr(fid, 48),
-        id8: fid.slice(0, 8),
-        immutableHit: !!req.query.h,
-      },
-    );
+    thumbAuditLog.info(`GET thumbnail → 200 bytes=${svg.length}`, {
+      id: truncStr(fid, 48),
+      id8: fid.slice(0, 8),
+      immutableHit: !!req.query.h,
+    });
   }
-  apiLogDebug("files", "GET /:id/thumbnail OK", {
-    id: fid.slice(0, 8),
-    bytes: svg.length,
-    cacheHit: !!req.query.h,
-  });
+  if (isApiDebugEnabled()) {
+    log.info("GET /:id/thumbnail OK (debug)", {
+      id: fid.slice(0, 8),
+      bytes: svg.length,
+      cacheHit: !!req.query.h,
+    });
+  }
   res.setHeader("Content-Type", "image/svg+xml");
   if (req.query.h) {
     res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
@@ -708,7 +704,7 @@ router.get("/:id/archives", (req, res) => {
       `SELECT id, label, created_at, content_sha256 FROM archives WHERE file_id = ? ORDER BY created_at DESC LIMIT ?`,
     )
     .all(req.params.id, MAX_ARCHIVES_PER_FILE);
-  apiLog("files", "GET /:id/archives (导入保存前会调)", {
+  log.info("GET /:id/archives (导入保存前会调)", {
     fileId: req.params.id.slice(0, 8),
     count: rows.length,
     max: MAX_ARCHIVES_PER_FILE,
@@ -775,14 +771,14 @@ router.delete("/:id/archives/:archiveId", (req, res) => {
     .prepare("SELECT * FROM archives WHERE id = ? AND file_id = ?")
     .get(req.params.archiveId, req.params.id);
   if (!archive) {
-    apiLog("files", "DELETE archive 404", {
+    log.warn("DELETE archive 404", {
       fileId: req.params.id.slice(0, 8),
       archiveId: req.params.archiveId.slice(0, 8),
     });
     return res.status(404).json({ error: "archive not found" });
   }
 
-  apiLog("files", "DELETE archive (为保存腾快照位，导入亦可能触发)", {
+  log.info("DELETE archive (为保存腾快照位，导入亦可能触发)", {
     fileId: req.params.id.slice(0, 8),
     archiveId: req.params.archiveId.slice(0, 8),
   });

@@ -6,7 +6,7 @@ import {
   useExcalidrawAPI,
 } from "@excalidraw/excalidraw";
 import { trackEvent } from "@excalidraw/excalidraw/analytics";
-import { debugLog } from "./data/debugLog";
+import { createLogger } from "./lib/logger";
 import { cleanAppStateForExport } from "@excalidraw/excalidraw/appState";
 import {
   CommandPalette,
@@ -105,6 +105,12 @@ import {
   getFileIdFromUrl,
 } from "./data/fileIdFromHash";
 
+const logInit = createLogger({ module: "init" });
+const logStash = createLogger({ module: "stash" });
+const logHash = createLogger({ module: "hash" });
+const logSave = createLogger({ module: "save" });
+const logThumb = createLogger({ module: "thumbnail" });
+
 // ---------------------------------------------------------------------------
 // Module-level side effects (run once when chunk is loaded)
 // ---------------------------------------------------------------------------
@@ -177,14 +183,14 @@ const initializeScene = async (opts: {
   const fileIdFromHash = getFileIdFromHash();
   if (fileIdFromHash) {
     const fid8 = fileIdFromHash.slice(0, 8);
-    debugLog.init(`initializeScene file=${fid8}`);
+    logInit.debug(`initializeScene file=${fid8}`);
     await DeltaStorage.setFileId(fileIdFromHash);
     const localRecord = FileSyncState.getLocalCache(fileIdFromHash);
     const localElements = Array.isArray((localRecord as any)?.elements)
       ? ((localRecord as any).elements as unknown[])
       : [];
     const localHasContent = localElements.length > 0;
-    debugLog.init(`file=${fid8} localHasContent=${localHasContent}, localElements=${localElements.length}`);
+    logInit.debug(`file=${fid8} localHasContent=${localHasContent}, localElements=${localElements.length}`);
 
     const forkBrowserOverlay = readForkBrowserAppStateOverlay(fileIdFromHash);
 
@@ -197,12 +203,12 @@ const initializeScene = async (opts: {
           fileIdFromHash,
           entry.content_sha256,
         );
-        debugLog.init(`file=${fid8} serverSha=${entry.content_sha256.slice(0, 8)}, serverNewer=${serverNewerThanLocal}`);
+        logInit.debug(`file=${fid8} serverSha=${entry.content_sha256.slice(0, 8)}, serverNewer=${serverNewerThanLocal}`);
       } else {
-        debugLog.init(`file=${fid8} no server sha256 found`);
+        logInit.debug(`file=${fid8} no server sha256 found`);
       }
     } catch {
-      debugLog.init(`file=${fid8} hash fetch failed (offline?)`);
+      logInit.debug(`file=${fid8} hash fetch failed (offline?)`);
     }
 
     if (localHasContent && !serverNewerThanLocal) {
@@ -217,7 +223,7 @@ const initializeScene = async (opts: {
         FileSyncState.setBaselineHash(fileIdFromHash, draftH);
       }
       FileSyncState.setDraftHash(fileIdFromHash, draftH);
-      debugLog.init(`file=${fid8} → use LOCAL cache, hash=${draftH.slice(0, 8)}, existingBaseline=${existingBaseline?.slice(0, 8) ?? "none"}`);
+      logInit.debug(`file=${fid8} → use LOCAL cache, hash=${draftH.slice(0, 8)}, existingBaseline=${existingBaseline?.slice(0, 8) ?? "none"}`);
       await DeltaStorage.restoreSnapshot(data.deltas);
       const restoredLocal1 = restoreAppState(sanitizePersistedAppState(data.appState as any) as any, null);
       return {
@@ -243,9 +249,9 @@ const initializeScene = async (opts: {
       if (serverRecord.data && typeof serverRecord.data === "object") {
         serverData = serverRecord.data as ForkSceneSnapshot;
       }
-      debugLog.init(`file=${fid8} server fetch ok, hasData=${!!serverData}, elements=${Array.isArray(serverData?.elements) ? serverData.elements.length : 0}`);
+      logInit.debug(`file=${fid8} server fetch ok, hasData=${!!serverData}, elements=${Array.isArray(serverData?.elements) ? serverData.elements.length : 0}`);
     } catch (err) {
-      debugLog.init(`file=${fid8} server fetch failed`, err);
+      logInit.debug(`file=${fid8} server fetch failed`, err);
     }
 
     if (localHasContent && !serverData) {
@@ -257,7 +263,7 @@ const initializeScene = async (opts: {
       });
       FileSyncState.setBaselineHash(fileIdFromHash, draftH);
       FileSyncState.setDraftHash(fileIdFromHash, draftH);
-      debugLog.init(`file=${fid8} → use LOCAL (no server data), hash=${draftH.slice(0, 8)}`);
+      logInit.debug(`file=${fid8} → use LOCAL (no server data), hash=${draftH.slice(0, 8)}`);
       await DeltaStorage.restoreSnapshot(data.deltas);
       const restoredLocal2 = restoreAppState(sanitizePersistedAppState(data.appState as any) as any, null);
       return {
@@ -293,7 +299,7 @@ const initializeScene = async (opts: {
         files: data.files,
         deltas: [],
       });
-      debugLog.init(`file=${fid8} → use SERVER data, hash=${h.slice(0, 8)}, baseline=draft=${h.slice(0, 8)}`);
+      logInit.debug(`file=${fid8} → use SERVER data, hash=${h.slice(0, 8)}, baseline=draft=${h.slice(0, 8)}`);
       await DeltaStorage.restoreSnapshot([]);
       const restoredServer = restoreAppState(sanitizePersistedAppState(mergedAppState as any) as any, null);
       return {
@@ -311,7 +317,7 @@ const initializeScene = async (opts: {
       };
     }
 
-    debugLog.init(`file=${fid8} → EMPTY scene (no local, no server)`);
+    logInit.debug(`file=${fid8} → EMPTY scene (no local, no server)`);
     return {
       scene: {
         elements: [],
@@ -647,7 +653,7 @@ const ExcalidrawWrapper = () => {
             files: scene.files,
             deltas: existing?.deltas ?? [],
           });
-          debugLog.hash(`normalize file=${fid.slice(0, 8)}, hash=${h.slice(0, 8)}`);
+          logHash.debug(`normalize file=${fid.slice(0, 8)}, hash=${h.slice(0, 8)}`);
         }
       }, 100);
     });
@@ -888,22 +894,22 @@ const ExcalidrawWrapper = () => {
     updateDraftHashDebouncedRef.current.flush();
     localPersistGenRef.current += 1;
     if (!fid) {
-      debugLog.stash("persistLocalDraft skip: no file id");
+      logStash.debug("persistLocalDraft skip: no file id");
       return false;
     }
     if (!excalidrawAPI) {
-      debugLog.stash(`persistLocalDraft skip ${fid.slice(0, 8)}: no api`);
+      logStash.debug(`persistLocalDraft skip ${fid.slice(0, 8)}: no api`);
       return false;
     }
     const hasUnsaved = FileSyncState.hasUnsavedChanges(fid);
-    debugLog.stash(`persistLocalDraft enter ${fid.slice(0, 8)} unsaved=${hasUnsaved}`);
+    logStash.debug(`persistLocalDraft enter ${fid.slice(0, 8)} unsaved=${hasUnsaved}`);
     if (!hasUnsaved) {
-      debugLog.stash(`persistLocalDraft skip ${fid.slice(0, 8)}: no unsaved changes`);
+      logStash.debug(`persistLocalDraft skip ${fid.slice(0, 8)}: no unsaved changes`);
       return false;
     }
     const sceneData = getSceneData();
     if (!sceneData) {
-      debugLog.stash(`persistLocalDraft skip ${fid.slice(0, 8)}: no sceneData`);
+      logStash.debug(`persistLocalDraft skip ${fid.slice(0, 8)}: no sceneData`);
       return false;
     }
     const deltas = await DeltaStorage.getAllPersistedDtos();
@@ -919,7 +925,7 @@ const ExcalidrawWrapper = () => {
       : 0;
     const dh = hashSceneSnapshot(sceneData);
     FileSyncState.setDraftHash(fid, dh);
-    debugLog.save(
+    logSave.debug(
       `persistLocalDraft file=${fid.slice(0, 8)}, draftHash=${dh.slice(0, 8)}, elements=${sceneData.elements.length}, localCacheElements=${localAfterWriteElements}`,
     );
     try {
@@ -930,11 +936,11 @@ const ExcalidrawWrapper = () => {
       });
       LocalThumbnailCache.set(fid, thumbnail);
       const thumbAfterWrite = LocalThumbnailCache.get(fid);
-      debugLog.thumbnail(
+      logThumb.debug(
         `persistLocalDraft file=${fid.slice(0, 8)}, svgLen=${thumbnail.length}, cacheHit=${!!thumbAfterWrite}, cacheLen=${thumbAfterWrite?.length ?? 0}`,
       );
     } catch (err) {
-      debugLog.thumbnail(`persistLocalDraft file=${fid.slice(0, 8)}, exportToSvg FAILED`, err);
+      logThumb.debug(`persistLocalDraft file=${fid.slice(0, 8)}, exportToSvg FAILED`, err);
     }
     return true;
   }, [excalidrawAPI, getSceneData]);
@@ -996,11 +1002,11 @@ const ExcalidrawWrapper = () => {
             files: sceneData.files,
           });
           LocalThumbnailCache.set(fid, thumbnail);
-          debugLog.thumbnail(`saveToServer file=${fid.slice(0, 8)}, svgLen=${thumbnail.length}`);
+          logThumb.debug(`saveToServer file=${fid.slice(0, 8)}, svgLen=${thumbnail.length}`);
         } catch (err) {
-          debugLog.thumbnail(`saveToServer file=${fid.slice(0, 8)}, exportToSvg FAILED`, err);
+          logThumb.debug(`saveToServer file=${fid.slice(0, 8)}, exportToSvg FAILED`, err);
         }
-        debugLog.save(
+        logSave.debug(
           `saveToServer file=${fid.slice(0, 8)}, name=${nameForPut}, hasThumb=${!!thumbnail}, elements=${sceneData.elements.length}, source=${source}`,
         );
         const result = await ServerSync.saveFileImmediate(
@@ -1010,7 +1016,7 @@ const ExcalidrawWrapper = () => {
           thumbnail,
           { suppressSavedEvent: true },
         );
-        debugLog.save(`saveToServer file=${fid.slice(0, 8)}, result`, result);
+        logSave.debug(`saveToServer file=${fid.slice(0, 8)}, result`, result);
         const deltasAfterSave = await DeltaStorage.getAllPersistedDtos();
         FileSyncState.setLocalCache(fid, {
           elements: sceneData.elements,
@@ -1028,7 +1034,7 @@ const ExcalidrawWrapper = () => {
         FileSyncState.setBaselineHash(fid, hAfter);
         FileSyncState.setDraftHash(fid, hAfter);
         FileSyncState.clearLocalEditTime(fid);
-        debugLog.hash(
+        logHash.debug(
           `saveToServer done file=${fid.slice(0, 8)}, baseline=draft=${hAfter.slice(0, 8)}, serverSha=${result?.content_sha256?.slice(0, 8) ?? "none"}`,
         );
 
@@ -1281,10 +1287,10 @@ const ExcalidrawWrapper = () => {
       }
       if (skipLeaveStashOnceRef.current) {
         skipLeaveStashOnceRef.current = false;
-        debugLog.stash(`hashLeave skip ${forkFileId.slice(0, 8)}: already handled`);
+        logStash.debug(`hashLeave skip ${forkFileId.slice(0, 8)}: already handled`);
         return;
       }
-      debugLog.stash(
+      logStash.debug(
         `hashLeave auto-stash ${forkFileId.slice(0, 8)} -> ${nextFileId?.slice(0, 8) ?? "home"}`,
       );
       void persistLocalDraftToCache(forkFileId);
