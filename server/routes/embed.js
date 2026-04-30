@@ -56,8 +56,7 @@ function parseAllowedDomainsInput(value) {
 }
 
 function getRequestHost(req) {
-  const forwardedHost = req.get("x-forwarded-host");
-  const rawHost = forwardedHost || req.get("host") || "";
+  const rawHost = req.get("host") || "";
   return normalizeHost(rawHost.split(",")[0].split(":")[0]);
 }
 
@@ -499,8 +498,8 @@ pageRouter.get("/:fileId", (req, res) => {
 
   const embedScript = `<script>
 window.__EXCALIDRAW_EMBED_MODE__ = true;
-window.__EXCALIDRAW_EMBED_FILE_ID__ = ${JSON.stringify(fileId)};
-window.__EXCALIDRAW_EMBED_FILE_NAME__ = ${JSON.stringify(fileRow.name)};
+window.__EXCALIDRAW_EMBED_FILE_ID__ = ${escapeForScript(JSON.stringify(fileId))};
+window.__EXCALIDRAW_EMBED_FILE_NAME__ = ${escapeForScript(JSON.stringify(fileRow.name))};
 window.__EXCALIDRAW_EMBED_DATA__ = ${escapeForScript(sceneJson)};
 </script>`;
 
