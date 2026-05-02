@@ -39,7 +39,6 @@ import { SAVE_TO_LOCAL_STORAGE_TIMEOUT, STORAGE_KEYS } from "../app_constants";
 import { FileManager } from "./FileManager";
 import { FileStatusStore } from "./fileStatusStore";
 import { saveForkBrowserScene } from "./forkBrowserSceneStorage";
-import { Locker } from "./Locker";
 
 const filesStore = createStore("files-db", "files-store");
 
@@ -65,8 +64,6 @@ class LocalFileManager extends FileManager {
   };
 }
 
-type SavingLockTypes = "collaboration";
-
 export class LocalData {
   private static _save = debounce(
     async (
@@ -88,7 +85,7 @@ export class LocalData {
     SAVE_TO_LOCAL_STORAGE_TIMEOUT,
   );
 
-  /** Saves embedded image blobs to IndexedDB. Bails if saving is paused */
+  /** Saves embedded image blobs to IndexedDB. */
   static save = (
     elements: readonly ExcalidrawElement[],
     appState: AppState,
@@ -97,28 +94,11 @@ export class LocalData {
     /** When set (fork mode with #file=…), mirrors upstream: persist elements + browser appState slice to localStorage. */
     fileId?: string | null,
   ) => {
-    // we need to make the `isSavePaused` check synchronously (undebounced)
-    if (!this.isSavePaused()) {
-      this._save(elements, appState, files, onFilesSaved, fileId ?? null);
-    }
+    this._save(elements, appState, files, onFilesSaved, fileId ?? null);
   };
 
   static flushSave = () => {
     this._save.flush();
-  };
-
-  private static locker = new Locker<SavingLockTypes>();
-
-  static pauseSave = (lockType: SavingLockTypes) => {
-    this.locker.lock(lockType);
-  };
-
-  static resumeSave = (lockType: SavingLockTypes) => {
-    this.locker.unlock(lockType);
-  };
-
-  static isSavePaused = () => {
-    return document.hidden || this.locker.isLocked();
   };
 
   // ---------------------------------------------------------------------------

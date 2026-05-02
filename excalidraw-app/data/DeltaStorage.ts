@@ -125,8 +125,4 @@ export class DeltaStorage {
     }
   }
 
-  static async getFileId(): Promise<string | null> {
-    const meta = await getMeta();
-    return meta.fileId;
-  }
 }

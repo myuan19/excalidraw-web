@@ -126,13 +126,15 @@ export const FileSyncState = {
     return "synced";
   },
 
+  /** Set both baseline and draft to the same hash (common after save / init). */
+  alignHashes(fileId: string, hash: string): void {
+    localStorage.setItem(this.baselineHashKey(fileId), hash);
+    localStorage.setItem(this.draftHashKey(fileId), hash);
+    emitSyncState();
+  },
+
   hasUnsavedChanges(fileId: string): boolean {
-    const draft = this.getDraftHash(fileId);
-    const baseline = this.getBaselineHash(fileId);
-    if (!draft || !baseline) {
-      return false;
-    }
-    return draft !== baseline;
+    return this.getSyncState(fileId) === "draft";
   },
 
   serverHashKey(fileId: string): string {
@@ -145,10 +147,6 @@ export const FileSyncState = {
 
   getServerHash(fileId: string): string | null {
     return localStorage.getItem(this.serverHashKey(fileId));
-  },
-
-  clearServerHash(fileId: string): void {
-    localStorage.removeItem(this.serverHashKey(fileId));
   },
 
   isServerChanged(fileId: string, remoteSha256: string | null): boolean {
