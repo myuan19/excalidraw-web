@@ -32,12 +32,34 @@ export const savedChatsAtom = atom<SavedChats>([]);
 export const isLoadingChatsAtom = atom<boolean>(false);
 export const chatsLoadedAtom = atom<boolean>(false);
 
+// Module-level dedup: ensures only one loadChats flight regardless of how many
+// hook instances call it in the same render cycle.
+let loadInflight: Promise<void> | null = null;
+
+// Module-level dedup for save: collapses multiple saveChats calls within the
+// same microtask into a single persistence write.
+let saveScheduled = false;
+let saveCallback: (() => Promise<void>) | null = null;
+
+function scheduleSave(fn: () => Promise<void>): void {
+  saveCallback = fn;
+  if (!saveScheduled) {
+    saveScheduled = true;
+    Promise.resolve().then(async () => {
+      saveScheduled = false;
+      const cb = saveCallback;
+      saveCallback = null;
+      await cb?.();
+    });
+  }
+}
+
 export const useTTDChatStorage = ({
   persistenceAdapter,
 }: UseTTDChatStorageProps): UseTTDChatStorageReturn => {
   const [chatHistory] = useAtom(chatHistoryAtom);
   const [savedChats, setSavedChats] = useAtom(savedChatsAtom);
-  const [isLoading, setIsLoading] = useAtom(isLoadingChatsAtom);
+  const [, setIsLoading] = useAtom(isLoadingChatsAtom);
   const [chatsLoaded, setChatsLoaded] = useAtom(chatsLoadedAtom);
 
   // Ref to track latest savedChats for async operations
@@ -47,27 +69,33 @@ export const useTTDChatStorage = ({
   const lastMessageInHistory =
     chatHistory?.messages[chatHistory?.messages.length - 1];
 
-  // Load chats on-demand
   const loadChats = useCallback(async () => {
-    if (chatsLoaded || isLoading) {
+    if (chatsLoaded) {
+      return;
+    }
+    if (loadInflight) {
+      await loadInflight;
       return;
     }
 
     setIsLoading(true);
-    try {
-      const chats = await persistenceAdapter.loadChats();
-      setSavedChats(chats);
-      setChatsLoaded(true);
-    } catch (error) {
-      console.warn("Failed to load chats:", error);
-      setSavedChats([]);
-      setChatsLoaded(true);
-    } finally {
-      setIsLoading(false);
-    }
+    loadInflight = (async () => {
+      try {
+        const chats = await persistenceAdapter.loadChats();
+        setSavedChats(chats);
+        setChatsLoaded(true);
+      } catch (error) {
+        console.warn("Failed to load chats:", error);
+        setSavedChats([]);
+        setChatsLoaded(true);
+      } finally {
+        setIsLoading(false);
+        loadInflight = null;
+      }
+    })();
+    await loadInflight;
   }, [
     chatsLoaded,
-    isLoading,
     setSavedChats,
     setIsLoading,
     setChatsLoaded,
@@ -142,10 +170,10 @@ export const useTTDChatStorage = ({
     }
   }, [chatHistory, setSavedChats, persistenceAdapter]);
 
-  // Auto-save when generation completes
+  // Auto-save when generation completes (deduped across hook instances)
   useEffect(() => {
     if (!lastMessageInHistory?.isGenerating) {
-      saveCurrentChat();
+      scheduleSave(saveCurrentChat);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
