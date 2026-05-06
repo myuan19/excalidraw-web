@@ -6,6 +6,7 @@ import cors from "cors";
 import filesRouter from "./routes/files.js";
 import libraryRouter from "./routes/library.js";
 import aiSettingsRouter from "./routes/ai-settings.js";
+import ttdChatsRouter from "./routes/ttd-chats.js";
 import logsRouter from "./routes/logs.js";
 import { tokenRouter as embedTokenRouter, pageRouter as embedPageRouter } from "./routes/embed.js";
 import { createLogger } from "./lib/logger.js";
@@ -69,6 +70,7 @@ app.use("/api/logs", logsRouter);
 app.use("/api/files", filesRouter);
 app.use("/api/library", libraryRouter);
 app.use("/api/ai-settings", aiSettingsRouter);
+app.use("/api/ttd-chats", ttdChatsRouter);
 app.use("/api/embed-tokens", embedTokenRouter);
 
 app.use("/embed", embedPageRouter);

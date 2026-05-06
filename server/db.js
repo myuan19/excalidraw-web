@@ -85,6 +85,12 @@ db.exec(`
     usage_count     INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS ttd_chats (
+    id          INTEGER PRIMARY KEY CHECK (id = 1),
+    chats_json  TEXT NOT NULL DEFAULT '[]',
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
 
 try {

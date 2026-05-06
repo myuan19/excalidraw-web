@@ -4,48 +4,61 @@ import type { SavedChats } from "@excalidraw/excalidraw/components/TTDDialog/typ
 
 import { STORAGE_KEYS } from "../app_constants";
 
+const IDB_NAME = STORAGE_KEYS.IDB_TTD_CHATS;
+const IDB_KEY = "ttdChats";
+const idbStore = createStore(`${IDB_NAME}-db`, `${IDB_NAME}-store`);
+
+async function idbLoad(): Promise<SavedChats> {
+  try {
+    return (await get<SavedChats>(IDB_KEY, idbStore)) || [];
+  } catch {
+    return [];
+  }
+}
+
+async function idbSave(chats: SavedChats): Promise<void> {
+  try {
+    await set(IDB_KEY, chats, idbStore);
+  } catch {
+    // quota / private mode
+  }
+}
+
 /**
- * IndexedDB adapter for TTD chat storage.
- * Implements TTDPersistenceAdapter interface.
+ * TTD chat persistence adapter.
+ * Primary: server /api/ttd-chats (SQLite).
+ * Fallback: browser IndexedDB (offline / network failure).
  */
 export class TTDIndexedDBAdapter {
-  /** IndexedDB database name */
-  private static idb_name = STORAGE_KEYS.IDB_TTD_CHATS;
-  /** Store key for chat data */
-  private static key = "ttdChats";
-
-  private static store = createStore(
-    `${TTDIndexedDBAdapter.idb_name}-db`,
-    `${TTDIndexedDBAdapter.idb_name}-store`,
-  );
-
-  /**
-   * Load saved chats from IndexedDB.
-   * @returns Promise resolving to saved chats array (empty if none found)
-   */
   static async loadChats(): Promise<SavedChats> {
     try {
-      const data = await get<SavedChats>(
-        TTDIndexedDBAdapter.key,
-        TTDIndexedDBAdapter.store,
-      );
-      return data || [];
-    } catch (error) {
-      console.warn("Failed to load TTD chats from IndexedDB:", error);
-      return [];
+      const res = await fetch("/api/ttd-chats");
+      if (res.ok) {
+        const data: SavedChats = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          void idbSave(data);
+          return data;
+        }
+      }
+    } catch {
+      // network error — fall through to IndexedDB
     }
+    return idbLoad();
   }
 
-  /**
-   * Save chats to IndexedDB.
-   * @param chats - The chats array to persist
-   */
   static async saveChats(chats: SavedChats): Promise<void> {
+    void idbSave(chats);
     try {
-      await set(TTDIndexedDBAdapter.key, chats, TTDIndexedDBAdapter.store);
-    } catch (error) {
-      console.warn("Failed to save TTD chats to IndexedDB:", error);
-      throw error;
+      const res = await fetch("/api/ttd-chats", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(chats),
+      });
+      if (!res.ok) {
+        console.warn("[TTDStorage] server save failed:", res.status);
+      }
+    } catch (err) {
+      console.warn("[TTDStorage] server save failed:", err);
     }
   }
 }
