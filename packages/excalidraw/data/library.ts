@@ -7,7 +7,6 @@ import {
   EVENT,
   DEFAULT_SIDEBAR,
   LIBRARY_SIDEBAR_TAB,
-  arrayToMap,
   cloneJSON,
   preventUnload,
   promiseTry,
@@ -75,40 +74,21 @@ function logLibUrlImport(
   }
 }
 
-type LibraryUpdate = {
-  /** deleted library items since last onLibraryChange event */
-  deletedItems: Map<LibraryItem["id"], LibraryItem>;
-  /** newly added items in the library */
-  addedItems: Map<LibraryItem["id"], LibraryItem>;
-  updatedItems: Map<LibraryItem["id"], LibraryItem>;
-};
-
 // an object so that we can later add more properties to it without breaking,
 // such as schema version
 export type LibraryPersistedData = { libraryItems: LibraryItems };
 
-const onLibraryUpdateEmitter = new Emitter<
-  [update: LibraryUpdate, libraryItems: LibraryItems]
->();
-
-export type LibraryAdatapterSource = "load" | "save";
+const onLibraryUpdateEmitter = new Emitter<[libraryItems: LibraryItems]>();
 
 export interface LibraryPersistenceAdapter {
   /**
    * Should load data that were previously saved into the database using the
-   * `save` method. Should throw if saving fails.
-   *
-   * Will be used internally in multiple places, such as during save to
-   * in order to reconcile changes with latest store data.
+   * `save` method. Should throw if loading fails.
    */
   load(metadata: {
-    /**
-     * Indicates whether we're loading data for save purposes, or reading
-     * purposes, in which case host app can implement more aggressive caching.
-     */
-    source: LibraryAdatapterSource;
+    source: "load";
   }): MaybePromise<{ libraryItems: LibraryItems_anyVersion } | null>;
-  /** Should persist to the database as is (do no change the data structure). */
+  /** Should persist to the database as is (do not change the data structure). */
   save(libraryData: LibraryPersistedData): MaybePromise<void>;
 }
 
@@ -159,50 +139,9 @@ export const mergeLibraryItems = (
   return [...newItems, ...localItems];
 };
 
-/**
- * Returns { deletedItems, addedItems } maps of all added and deleted items
- * since last onLibraryChange event.
- *
- * Host apps are recommended to diff with the latest state they have.
- */
-const createLibraryUpdate = (
-  prevLibraryItems: LibraryItems,
-  nextLibraryItems: LibraryItems,
-): LibraryUpdate => {
-  const nextItemsMap = arrayToMap(nextLibraryItems);
-
-  const update: LibraryUpdate = {
-    deletedItems: new Map<LibraryItem["id"], LibraryItem>(),
-    addedItems: new Map<LibraryItem["id"], LibraryItem>(),
-    updatedItems: new Map<LibraryItem["id"], LibraryItem>(),
-  };
-
-  for (const item of prevLibraryItems) {
-    if (!nextItemsMap.has(item.id)) {
-      update.deletedItems.set(item.id, item);
-    }
-  }
-
-  const prevItemsMap = arrayToMap(prevLibraryItems);
-
-  for (const item of nextLibraryItems) {
-    const prevItem = prevItemsMap.get(item.id);
-    if (!prevItem) {
-      update.addedItems.set(item.id, item);
-    } else if (getLibraryItemHash(prevItem) !== getLibraryItemHash(item)) {
-      update.updatedItems.set(item.id, item);
-    }
-  }
-
-  return update;
-};
-
 class Library {
   /** latest libraryItems */
   private currLibraryItems: LibraryItems = [];
-
-  /** snapshot of library items since last onLibraryChange call */
-  private prevLibraryItems = cloneLibraryItems(this.currLibraryItems);
 
   private app: App;
 
@@ -230,18 +169,11 @@ class Library {
         isInitialized: true,
       });
       try {
-        const prevLibraryItems = this.prevLibraryItems;
-        this.prevLibraryItems = cloneLibraryItems(this.currLibraryItems);
-
         const nextLibraryItems = cloneLibraryItems(this.currLibraryItems);
 
         this.app.props.onLibraryChange?.(nextLibraryItems);
 
-        // for internal use in `useHandleLibrary` hook
-        onLibraryUpdateEmitter.trigger(
-          createLibraryUpdate(prevLibraryItems, nextLibraryItems),
-          nextLibraryItems,
-        );
+        onLibraryUpdateEmitter.trigger(nextLibraryItems);
       } catch (error) {
         console.error(error);
       }
@@ -318,6 +250,10 @@ class Library {
 
           if (source instanceof Blob) {
             nextItems = await loadLibraryFromBlob(source, defaultStatus);
+            nextItems = nextItems.map((item) => ({
+              ...item,
+              status: defaultStatus,
+            }));
           } else {
             nextItems = restoreLibraryItems(source, defaultStatus);
           }
@@ -560,45 +496,22 @@ class AdapterTransaction {
 
   static async getLibraryItems(
     adapter: LibraryPersistenceAdapter,
-    source: LibraryAdatapterSource,
-    _queue = true,
   ): Promise<LibraryItems> {
-    const task = () =>
+    return AdapterTransaction.queue.push(() =>
       new Promise<LibraryItems>(async (resolve, reject) => {
         try {
-          const data = await adapter.load({ source });
+          const data = await adapter.load({ source: "load" });
           resolve(restoreLibraryItems(data?.libraryItems || [], "published"));
         } catch (error: any) {
           reject(error);
         }
-      });
-
-    if (_queue) {
-      return AdapterTransaction.queue.push(task);
-    }
-
-    return task();
+      }),
+    );
   }
 
-  static run = async <T>(
-    adapter: LibraryPersistenceAdapter,
-    fn: (transaction: AdapterTransaction) => Promise<T>,
-  ) => {
-    const transaction = new AdapterTransaction(adapter);
-    return AdapterTransaction.queue.push(() => fn(transaction));
+  static run = async <T>(fn: () => Promise<T>) => {
+    return AdapterTransaction.queue.push(fn);
   };
-
-  // ------------------
-
-  private adapter: LibraryPersistenceAdapter;
-
-  constructor(adapter: LibraryPersistenceAdapter) {
-    this.adapter = adapter;
-  }
-
-  getLibraryItems(source: LibraryAdatapterSource) {
-    return AdapterTransaction.getLibraryItems(this.adapter, source, false);
-  }
 }
 
 let lastSavedLibraryItemsHash = 0;
@@ -619,68 +532,20 @@ export const getLibraryItemsHash = (items: LibraryItems) => {
 
 const persistLibraryUpdate = async (
   adapter: LibraryPersistenceAdapter,
-  update: LibraryUpdate,
+  libraryItems: LibraryItems,
 ): Promise<LibraryItems> => {
   try {
     librarySaveCounter++;
 
-    return await AdapterTransaction.run(adapter, async (transaction) => {
-      const nextLibraryItemsMap = arrayToMap(
-        await transaction.getLibraryItems("save"),
-      );
-
-      for (const [id] of update.deletedItems) {
-        nextLibraryItemsMap.delete(id);
-      }
-
-      const addedItems: LibraryItem[] = [];
-
-      // we want to merge current library items with the ones stored in the
-      // DB so that we don't lose any elements that for some reason aren't
-      // in the current editor library, which could happen when:
-      //
-      // 1. we haven't received an update deleting some elements
-      //    (in which case it's still better to keep them in the DB lest
-      //     it was due to a different reason)
-      // 2. we keep a single DB for all active editors, but the editors'
-      //    libraries aren't synced or there's a race conditions during
-      //    syncing
-      // 3. some other race condition, e.g. during init where emit updates
-      //    for partial updates (e.g. you install a 3rd party library and
-      //    init from DB only after — we emit events for both updates)
-      for (const [id, item] of update.addedItems) {
-        if (nextLibraryItemsMap.has(id)) {
-          // replace item with latest version
-          // TODO we could prefer the newer item instead
-          nextLibraryItemsMap.set(id, item);
-        } else {
-          // we want to prepend the new items with the ones that are already
-          // in DB to preserve the ordering we do in editor (newly added
-          // items are added to the beginning)
-          addedItems.push(item);
-        }
-      }
-
-      // replace existing items with their updated versions
-      if (update.updatedItems) {
-        for (const [id, item] of update.updatedItems) {
-          nextLibraryItemsMap.set(id, item);
-        }
-      }
-
-      const nextLibraryItems = addedItems.concat(
-        Array.from(nextLibraryItemsMap.values()),
-      );
-
-      const version = getLibraryItemsHash(nextLibraryItems);
-
+    return await AdapterTransaction.run(async () => {
+      const version = getLibraryItemsHash(libraryItems);
       if (version !== lastSavedLibraryItemsHash) {
-        await adapter.save({ libraryItems: nextLibraryItems });
+        await adapter.save({ libraryItems });
       }
 
       lastSavedLibraryItemsHash = version;
 
-      return nextLibraryItems;
+      return libraryItems;
     });
   } finally {
     librarySaveCounter--;
@@ -926,7 +791,7 @@ export const useHandleLibrary = (
                 // and skip persisting to new data store, as well as well
                 // clearing the old store via `migrationAdapter.clear()`
                 if (!libraryData) {
-                  return AdapterTransaction.getLibraryItems(adapter, "load");
+                  return AdapterTransaction.getLibraryItems(adapter);
                 }
 
                 restoredData = restoreLibraryItems(
@@ -938,7 +803,7 @@ export const useHandleLibrary = (
                 // a promise that's running inside Library update queue itself
                 const nextItems = await persistLibraryUpdate(
                   adapter,
-                  createLibraryUpdate([], restoredData),
+                  restoredData,
                 );
                 try {
                   await migrationAdapter.clear();
@@ -961,12 +826,12 @@ export const useHandleLibrary = (
             .catch((error: any) => {
               console.error(`error during library migration: ${error.message}`);
               // as a default, load latest library from current data source
-              return AdapterTransaction.getLibraryItems(adapter, "load");
+              return AdapterTransaction.getLibraryItems(adapter);
             }),
         );
       } else {
         initDataPromise.resolve(
-          promiseTry(AdapterTransaction.getLibraryItems, adapter, "load"),
+          promiseTry(AdapterTransaction.getLibraryItems, adapter),
         );
       }
 
@@ -1011,30 +876,22 @@ export const useHandleLibrary = (
       // on update, merge with current library items and persist
       // -----------------------------------------------------------------------
       const unsubOnLibraryUpdate = onLibraryUpdateEmitter.on(
-        async (update, nextLibraryItems) => {
+        async (nextLibraryItems) => {
           const isLoaded = isLibraryLoadedRef.current;
-          // we want to operate with the latest adapter, but we don't want this
-          // effect to rerun on every adapter change in case host apps' adapter
-          // isn't stable
           const adapter =
             ("adapter" in optsRef.current && optsRef.current.adapter) || null;
           try {
             if (adapter) {
               if (
-                // if nextLibraryItems hash identical to previously saved hash,
-                // exit early, even if actual upstream state ends up being
-                // different (e.g. has more data than we have locally), as it'd
-                // be low-impact scenario.
                 lastSavedLibraryItemsHash !==
                 getLibraryItemsHash(nextLibraryItems)
               ) {
-                await persistLibraryUpdate(adapter, update);
+                await persistLibraryUpdate(adapter, nextLibraryItems);
               }
             }
           } catch (error: any) {
             console.error(
               `couldn't persist library update: ${error.message}`,
-              update,
             );
 
             // currently we only show error if an editor is loaded

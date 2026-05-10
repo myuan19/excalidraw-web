@@ -41,15 +41,9 @@ import { TextField } from "./TextField";
 import { useApp, useEditorInterface } from "./App";
 
 import { Button } from "./Button";
-import { useAtomValue } from "../editor-jotai";
-import {
-  libraryGroupsAtom,
-  libraryCollapsedAtom,
-} from "../data/libraryGroupsAtom";
 import { getLibraryGroupActions } from "../data/libraryGroupActions";
 import { getLibraryAIActions } from "../data/libraryAIActions";
 
-import type { LibraryGroup } from "../data/libraryGroupsAtom";
 import type { ExcalidrawLibraryIds } from "../data/types";
 
 import type {
@@ -306,265 +300,7 @@ function LibraryItemDetailPanel({
   );
 }
 
-// ---------------------------------------------------------------------------
-// GroupDividerRow
-// ---------------------------------------------------------------------------
-
-const CHEVRON_ICON = (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="6 9 12 15 18 9" />
-  </svg>
-);
-
-const DRAG_HANDLE_ICON = (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" opacity="0.45">
-    <circle cx="9" cy="6" r="1.8" />
-    <circle cx="15" cy="6" r="1.8" />
-    <circle cx="9" cy="12" r="1.8" />
-    <circle cx="15" cy="12" r="1.8" />
-    <circle cx="9" cy="18" r="1.8" />
-    <circle cx="15" cy="18" r="1.8" />
-  </svg>
-);
-
-const TRASH_SMALL_ICON = (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="3 6 5 6 21 6" />
-    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-  </svg>
-);
-
-interface GroupDividerProps {
-  groupId: string;
-  name: string;
-  collapsed: boolean;
-  itemCount: number;
-  allSelected: boolean;
-  isDragging: boolean;
-  onToggleCollapse: (groupId: string) => void;
-  onRename: (groupId: string, newName: string) => void;
-  onDelete: (groupId: string) => void;
-  onSelectGroup: (groupId: string) => void;
-  onGroupDragStart: (groupId: string, e: React.DragEvent) => void;
-  onGroupDragOver: (groupId: string, e: React.DragEvent) => void;
-  onGroupDrop: (groupId: string, e: React.DragEvent) => void;
-  onItemDropOnGroup: (groupId: string, e: React.DragEvent) => void;
-  dragOverGroupId: string | null;
-}
-
-function GroupDividerRow({
-  groupId,
-  name,
-  collapsed,
-  itemCount,
-  allSelected,
-  isDragging,
-  onToggleCollapse,
-  onRename,
-  onDelete,
-  onSelectGroup,
-  onGroupDragStart,
-  onGroupDragOver,
-  onGroupDrop,
-  onItemDropOnGroup,
-  dragOverGroupId,
-}: GroupDividerProps) {
-  const [renaming, setRenaming] = useState(false);
-  const [renameValue, setRenameValue] = useState(name);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (renaming) {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }
-  }, [renaming]);
-
-  const finishRename = (save: boolean) => {
-    setRenaming(false);
-    if (save) {
-      const trimmed = renameValue.trim();
-      if (trimmed && trimmed !== name) {
-        onRename(groupId, trimmed);
-      }
-    }
-    setRenameValue(name);
-  };
-
-  const isDragOver = dragOverGroupId === groupId;
-
-  return (
-    <div
-      className={clsx("lib-group", {
-        "lib-group--drag-over": isDragOver,
-        "lib-group--collapsed": collapsed,
-        "lib-group--renaming": renaming,
-        "lib-group--dragging": isDragging,
-        "lib-group--all-selected": allSelected && itemCount > 0,
-      })}
-      draggable
-      onDragStart={(e) => {
-        onGroupDragStart(groupId, e);
-      }}
-      onClick={(e) => {
-        if (renaming) {
-          return;
-        }
-        const target = e.target as Element;
-        if (
-          target.closest(
-            ".lib-group__delete, .lib-group__rename-input, .lib-group__name",
-          )
-        ) {
-          return;
-        }
-        onToggleCollapse(groupId);
-      }}
-      onDragOver={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        onGroupDragOver(groupId, e);
-      }}
-      onDrop={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        onGroupDrop(groupId, e);
-        onItemDropOnGroup(groupId, e);
-      }}
-    >
-      <span className="lib-group__handle" aria-hidden>
-        {DRAG_HANDLE_ICON}
-      </span>
-      <span
-        className={clsx("lib-group__chevron", {
-          "lib-group__chevron--collapsed": collapsed,
-        })}
-      >
-        {CHEVRON_ICON}
-      </span>
-      {renaming ? (
-        <input
-          ref={inputRef}
-          type="text"
-          className="lib-group__rename-input"
-          value={renameValue}
-          onChange={(e) => setRenameValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              finishRename(true);
-            }
-            if (e.key === "Escape") {
-              e.preventDefault();
-              finishRename(false);
-            }
-          }}
-          onClick={(e) => e.stopPropagation()}
-          onPointerDown={(e) => e.stopPropagation()}
-          onBlur={() => finishRename(true)}
-        />
-      ) : (
-        <span
-          className="lib-group__name"
-          onDoubleClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setRenameValue(name);
-            setRenaming(true);
-          }}
-          title={name}
-        >
-          {name}
-        </span>
-      )}
-      {itemCount > 0 && (
-        <button
-          type="button"
-          className={clsx("lib-group__badge", {
-            "lib-group__badge--all-selected": allSelected,
-          })}
-          title={allSelected ? "取消选中该分组" : "选中该分组所有素材"}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onSelectGroup(groupId);
-          }}
-        >
-          {itemCount}
-        </button>
-      )}
-      {confirmDelete ? (
-        <span className="lib-group__confirm-delete" onClick={(e) => e.stopPropagation()}>
-          <button
-            type="button"
-            className="lib-group__confirm-btn lib-group__confirm-btn--yes"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(groupId);
-              setConfirmDelete(false);
-            }}
-          >
-            确认
-          </button>
-          <button
-            type="button"
-            className="lib-group__confirm-btn"
-            onClick={(e) => {
-              e.stopPropagation();
-              setConfirmDelete(false);
-            }}
-          >
-            取消
-          </button>
-        </span>
-      ) : (
-        <button
-          type="button"
-          className="lib-group__delete"
-          title={t("buttons.remove")}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setConfirmDelete(true);
-          }}
-        >
-          {TRASH_SMALL_ICON}
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// GroupGapRow
-// ---------------------------------------------------------------------------
-
-function GroupGapRow({
-  gapIndex,
-  dragOverGapIndex,
-  draggingGroupId,
-  onGapDragOver,
-  onGapDrop,
-  onGapDragLeave,
-}: {
-  gapIndex: number;
-  dragOverGapIndex: number | null;
-  draggingGroupId: string | null;
-  onGapDragOver: (gapIndex: number, e: React.DragEvent) => void;
-  onGapDrop: (gapIndex: number, e: React.DragEvent) => void;
-  onGapDragLeave: (e: React.DragEvent) => void;
-}) {
-  const active = draggingGroupId != null && dragOverGapIndex === gapIndex;
-  return (
-    <div
-      className={clsx("lib-group-gap", { "lib-group-gap--active": active })}
-      onDragOver={(e) => onGapDragOver(gapIndex, e)}
-      onDrop={(e) => onGapDrop(gapIndex, e)}
-      onDragLeave={onGapDragLeave}
-    />
-  );
-}
+// (GroupDividerRow / GroupGapRow removed — public tab is now flat list)
 
 // ---------------------------------------------------------------------------
 // SelectionBar (shown when items are selected, replaces tabs)
@@ -582,8 +318,8 @@ function SelectionBar({
   onSelectAll,
   onSelectUnnamed,
   hasUnnamed,
-  showNewGroup,
-  onNewGroup,
+  showInsert,
+  onInsertSelectedItems,
 }: {
   count: number;
   onDeselectAll: () => void;
@@ -596,8 +332,8 @@ function SelectionBar({
   onSelectAll: () => void;
   onSelectUnnamed: () => void;
   hasUnnamed: boolean;
-  showNewGroup?: boolean;
-  onNewGroup?: () => void;
+  showInsert?: boolean;
+  onInsertSelectedItems?: () => void;
 }) {
   const hasItems = count > 0;
   const progressLabel = aiProgress
@@ -609,6 +345,17 @@ function SelectionBar({
         {count} {t("stats.selected").toLowerCase()}
       </span>
       <div className="lib-selection-bar__actions">
+        {showInsert && onInsertSelectedItems && (
+          <button
+            type="button"
+            className="lib-selection-bar__btn lib-selection-bar__btn--insert"
+            onClick={onInsertSelectedItems}
+            disabled={!hasItems}
+            title="插入选中素材"
+          >
+            插入
+          </button>
+        )}
         <button
           type="button"
           className="lib-selection-bar__btn lib-selection-bar__btn--ai"
@@ -651,16 +398,6 @@ function SelectionBar({
             onClick={onDeselectAll}
           >
             {t("buttons.cancel")}
-          </button>
-        )}
-        {showNewGroup && onNewGroup && (
-          <button
-            type="button"
-            className="lib-selection-bar__new-group"
-            onClick={onNewGroup}
-            title="New group"
-          >
-            +
           </button>
         )}
       </div>
@@ -780,76 +517,6 @@ export default function LibraryMenuItems({
     [libraryItems],
   );
 
-  // ---------------------------------------------------------------------------
-  // Group state from Jotai atoms
-  // ---------------------------------------------------------------------------
-
-  const groups: LibraryGroup[] = useAtomValue(libraryGroupsAtom);
-  const collapsedMap: Record<string, boolean> =
-    useAtomValue(libraryCollapsedAtom);
-
-  // ---------------------------------------------------------------------------
-  // Group action callbacks
-  // ---------------------------------------------------------------------------
-
-  const handleToggleCollapse = useCallback((groupId: string) => {
-    getLibraryGroupActions().toggleGroupCollapsed(groupId);
-  }, []);
-
-  const handleSelectGroup = useCallback(
-    (groupId: string) => {
-      const group = groups.find((g) => g.id === groupId);
-      if (!group) {
-        return;
-      }
-      const publishedSet = new Set(publishedItems.map((i) => i.id));
-      const groupItemIds = group.itemIds.filter((id) => publishedSet.has(id));
-      if (!groupItemIds.length) {
-        return;
-      }
-      const selectedSet = new Set(selectedItems);
-      const allSelected = groupItemIds.every((id) => selectedSet.has(id));
-      if (allSelected) {
-        onSelectItems(
-          selectedItems.filter((id) => !groupItemIds.includes(id)),
-        );
-      } else {
-        const merged = new Set(selectedItems);
-        for (const id of groupItemIds) {
-          merged.add(id);
-        }
-        onSelectItems([...merged]);
-      }
-    },
-    [groups, publishedItems, selectedItems, onSelectItems],
-  );
-
-  const handleRenameGroup = useCallback(
-    (groupId: string, newName: string) => {
-      getLibraryGroupActions().renameGroup(groupId, newName);
-    },
-    [],
-  );
-
-  const handleDeleteGroup = useCallback((groupId: string) => {
-    getLibraryGroupActions().deleteGroup(groupId);
-  }, []);
-
-  const handleNewGroup = useCallback(() => {
-    const name = prompt("Group name", "New group");
-    if (name?.trim()) {
-      const pubSelected =
-        libraryTab === "public"
-          ? selectedItems.filter((sid) =>
-              publishedItems.some((item) => item.id === sid),
-            )
-          : [];
-      getLibraryGroupActions().createGroup(name.trim(), pubSelected);
-      if (pubSelected.length) {
-        onSelectItems([]);
-      }
-    }
-  }, [libraryTab, selectedItems, publishedItems, onSelectItems]);
 
   // ---------------------------------------------------------------------------
   // Cross-tab drag
@@ -917,8 +584,6 @@ export default function LibraryMenuItems({
 
   const handleLibraryPanelDrop = useCallback(
     (e: React.DragEvent) => {
-      setDragOverGroupId(null);
-
       const itemId = getDraggedLibraryItemId(e.dataTransfer);
       const hasLibIds = [...e.dataTransfer.types].some(
         (tp) => tp.toLowerCase() === MIME_TYPES.excalidrawlibIds.toLowerCase(),
@@ -979,172 +644,8 @@ export default function LibraryMenuItems({
     }
   }, []);
 
-  // ---------------------------------------------------------------------------
-  // Group drag reorder
-  // ---------------------------------------------------------------------------
-
-  const [draggingGroupId, setDraggingGroupId] = useState<string | null>(null);
-  const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null);
-  const [dragOverGapIndex, setDragOverGapIndex] = useState<number | null>(null);
-  const [dragGroupOrder, setDragGroupOrder] = useState<string[] | null>(null);
-  const lastSwapTimeRef = useRef(0);
-
-  const handleGroupDragStart = useCallback(
-    (groupId: string, e: React.DragEvent) => {
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/x-library-group-id", groupId);
-      setDraggingGroupId(groupId);
-      setDragGroupOrder(groups.map((g) => g.id));
-    },
-    [groups],
-  );
-
-  const handleGroupDragOver = useCallback(
-    (groupId: string, e: React.DragEvent) => {
-      const isGroupDrag = [...e.dataTransfer.types].includes(
-        "text/x-library-group-id",
-      );
-      if (isLibraryItemDragOver(e) || isGroupDrag) {
-        e.preventDefault();
-        e.stopPropagation();
-        e.dataTransfer.dropEffect = "move";
-
-        if (isGroupDrag) {
-          setDragOverGroupId(groupId);
-        }
-
-        if (isGroupDrag && draggingGroupId && draggingGroupId !== groupId) {
-          const now = Date.now();
-          if (now - lastSwapTimeRef.current < 150) {
-            return;
-          }
-          lastSwapTimeRef.current = now;
-          setDragGroupOrder((prev) => {
-            if (!prev) {
-              return prev;
-            }
-            const srcIdx = prev.indexOf(draggingGroupId);
-            const tgtIdx = prev.indexOf(groupId);
-            if (srcIdx === -1 || tgtIdx === -1 || srcIdx === tgtIdx) {
-              return prev;
-            }
-            const next = [...prev];
-            next.splice(srcIdx, 1);
-            next.splice(tgtIdx, 0, draggingGroupId);
-            return next;
-          });
-        }
-      }
-    },
-    [draggingGroupId],
-  );
-
-  const commitDragGroupOrder = useCallback(() => {
-    if (!dragGroupOrder || !draggingGroupId) {
-      return;
-    }
-    const targetIdx = dragGroupOrder.indexOf(draggingGroupId);
-    if (targetIdx === -1) {
-      return;
-    }
-    const srcIdx = groups.findIndex((g) => g.id === draggingGroupId);
-    if (srcIdx === -1) {
-      return;
-    }
-    const gapIndex = targetIdx >= srcIdx ? targetIdx + 1 : targetIdx;
-    getLibraryGroupActions().reorderGroupToGap(draggingGroupId, gapIndex);
-  }, [dragGroupOrder, draggingGroupId, groups]);
-
-  const handleGroupDrop = useCallback(
-    (_targetGroupId: string, e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      commitDragGroupOrder();
-      setDraggingGroupId(null);
-      setDragOverGroupId(null);
-      setDragOverGapIndex(null);
-      setDragGroupOrder(null);
-    },
-    [commitDragGroupOrder],
-  );
-
-  const handleGroupGapDragOver = useCallback(
-    (gapIndex: number, e: React.DragEvent) => {
-      if (!draggingGroupId) {
-        return;
-      }
-      e.preventDefault();
-      e.stopPropagation();
-      e.dataTransfer.dropEffect = "move";
-      setDragOverGapIndex(gapIndex);
-      setDragOverGroupId(null);
-
-      const now = Date.now();
-      if (now - lastSwapTimeRef.current < 150) {
-        return;
-      }
-      lastSwapTimeRef.current = now;
-      setDragGroupOrder((prev) => {
-        if (!prev) {
-          return prev;
-        }
-        const srcIdx = prev.indexOf(draggingGroupId);
-        if (srcIdx === -1) {
-          return prev;
-        }
-        const next = [...prev];
-        next.splice(srcIdx, 1);
-        const insertAt = Math.min(gapIndex, next.length);
-        next.splice(insertAt, 0, draggingGroupId);
-        return next;
-      });
-    },
-    [draggingGroupId],
-  );
-
-  const handleGroupGapDrop = useCallback(
-    (_gapIndex: number, e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      commitDragGroupOrder();
-      setDraggingGroupId(null);
-      setDragOverGapIndex(null);
-      setDragOverGroupId(null);
-      setDragGroupOrder(null);
-    },
-    [commitDragGroupOrder],
-  );
-
-  const handleGroupGapDragLeave = useCallback((e: React.DragEvent) => {
-    const el = e.currentTarget as HTMLElement;
-    if (el.contains(e.relatedTarget as Node)) {
-      return;
-    }
-    setDragOverGapIndex(null);
-  }, []);
-
-  const handleItemDropOnGroup = useCallback(
-    (groupId: string, e: React.DragEvent) => {
-      const itemId = e.dataTransfer.getData("text/x-library-item-id");
-      if (!itemId) return;
-      getLibraryGroupActions().moveItem(itemId, {
-        status: "published",
-        groupId,
-      });
-    },
-    [],
-  );
-
-  const commitDragGroupOrderRef = useRef(commitDragGroupOrder);
-  commitDragGroupOrderRef.current = commitDragGroupOrder;
-
   useEffect(() => {
     const onDragEnd = () => {
-      commitDragGroupOrderRef.current();
-      setDraggingGroupId(null);
-      setDragOverGroupId(null);
-      setDragOverGapIndex(null);
-      setDragGroupOrder(null);
       clearTabSwitchTimer();
       dragOriginTabRef.current = null;
       setReorderDropIndicator(null);
@@ -1180,15 +681,11 @@ export default function LibraryMenuItems({
       if (isCrossTab) {
         const targetStatus =
           libraryTab === "personal" ? "unpublished" : "published";
-        const targetGroupId =
-          libraryTab === "public"
-            ? (groups.find((g) => g.itemIds.includes(targetId))?.id ?? undefined)
-            : undefined;
         getLibraryGroupActions().moveItem(draggedId, {
           status: targetStatus,
-          targetItemId: targetId,
-          groupId: targetGroupId,
-          placeAfter,
+          ...(libraryTab === "personal"
+            ? { targetItemId: targetId, placeAfter }
+            : {}),
         });
         dragOriginTabRef.current = null;
         return;
@@ -1209,7 +706,7 @@ export default function LibraryMenuItems({
         library.setLibrary(next);
       }
     },
-    [libraryTab, libraryItems, library, groups],
+    [libraryTab, libraryItems, library],
   );
   onLibraryReorderRef.current = onLibraryReorder;
 
@@ -1327,14 +824,31 @@ export default function LibraryMenuItems({
       if (!clickedId) {
         return;
       }
+      if (editorInterface.formFactor === "phone") {
+        onItemSelectToggle(clickedId, event);
+        return;
+      }
       if (event.ctrlKey || event.metaKey) {
         setDetailItemId(clickedId);
         return;
       }
       onInsertLibraryItems(getInsertedElements(clickedId));
     },
-    [getInsertedElements, onInsertLibraryItems],
+    [
+      editorInterface.formFactor,
+      getInsertedElements,
+      onInsertLibraryItems,
+      onItemSelectToggle,
+    ],
   );
+
+  const onInsertSelectedItems = useCallback(() => {
+    if (!selectedItems.length) {
+      return;
+    }
+    onInsertLibraryItems(getInsertedElements(selectedItems[0]));
+    onSelectItems([]);
+  }, [getInsertedElements, onInsertLibraryItems, onSelectItems, selectedItems]);
 
   const detailItem = useMemo(
     () =>
@@ -1516,19 +1030,8 @@ export default function LibraryMenuItems({
   const handleReorderHoverChange = useCallback(
     (ind: LibraryReorderDropIndicator | null) => {
       setReorderDropIndicator(ind);
-      if (!ind) {
-        setDragOverGroupId(null);
-        return;
-      }
-      if (libraryTab !== "public") {
-        setDragOverGroupId(null);
-        return;
-      }
-      const gid =
-        groups.find((g) => g.itemIds.includes(ind.targetId))?.id ?? null;
-      setDragOverGroupId(gid);
     },
-    [libraryTab, groups],
+    [],
   );
 
   const libraryGridReorderProps = useMemo(
@@ -1539,48 +1042,6 @@ export default function LibraryMenuItems({
     }),
     [enableReorder, handleReorderHoverChange, reorderDragSourceId],
   );
-
-  const selectedItemsSet = useMemo(
-    () => new Set(selectedItems),
-    [selectedItems],
-  );
-
-  // ---------------------------------------------------------------------------
-  // Grouped published items for Public tab
-  // ---------------------------------------------------------------------------
-
-  const groupedSections = useMemo(() => {
-    if (!groups.length) {
-      return [] as {
-        group: { id: string; name: string };
-        items: LibraryItem[];
-      }[];
-    }
-    const publishedMap = new Map(publishedItems.map((i) => [i.id, i]));
-    const groupMap = new Map(groups.map((g) => [g.id, g]));
-
-    const orderedGroupIds = dragGroupOrder ?? groups.map((g) => g.id);
-
-    const sections: {
-      group: { id: string; name: string };
-      items: LibraryItem[];
-    }[] = [];
-    for (const gId of orderedGroupIds) {
-      const g = groupMap.get(gId);
-      if (!g) {
-        continue;
-      }
-      const items: LibraryItem[] = [];
-      for (const itemId of g.itemIds) {
-        const item = publishedMap.get(itemId);
-        if (item) {
-          items.push(item);
-        }
-      }
-      sections.push({ group: { id: g.id, name: g.name }, items });
-    }
-    return sections;
-  }, [groups, publishedItems, dragGroupOrder]);
 
   const currentTabItems =
     libraryTab === "public" ? publishedItems : unpublishedItems;
@@ -1657,7 +1118,7 @@ export default function LibraryMenuItems({
   // ---------------------------------------------------------------------------
 
   const renderPublicContent = () => {
-    if (publishedItems.length === 0 && groupedSections.length === 0) {
+    if (publishedItems.length === 0) {
       return (
         <div className="lib-empty">
           <div className="lib-empty__hint">
@@ -1668,83 +1129,20 @@ export default function LibraryMenuItems({
     }
     return (
       <LibraryMenuSectionGrid {...libraryGridReorderProps}>
-        {groupedSections.length === 0 ? (
-          <LibraryMenuSection
-            itemsRenderedPerBatch={itemsRenderedPerBatch}
-            items={publishedItems}
-            onItemSelectToggle={onItemSelectToggle}
-            onItemDrag={onItemDrag}
-            onClick={onItemClick}
-            onOpenDetail={handleOpenLibraryDetail}
-            isItemSelected={isItemSelected}
-            svgCache={svgCache}
-            enableLibraryReorder={enableReorder}
-            onLibraryReorder={onLibraryReorder}
-            reorderDropIndicator={reorderDropIndicator}
-            onReorderDragSourceId={setReorderDragSourceId}
-          />
-        ) : (
-          <>
-            {groupedSections.map((section, i) => (
-              <React.Fragment key={section.group.id}>
-                <GroupGapRow
-                  gapIndex={i}
-                  dragOverGapIndex={dragOverGapIndex}
-                  draggingGroupId={draggingGroupId}
-                  onGapDragOver={handleGroupGapDragOver}
-                  onGapDrop={handleGroupGapDrop}
-                  onGapDragLeave={handleGroupGapDragLeave}
-                />
-                <GroupDividerRow
-                  groupId={section.group.id}
-                  name={section.group.name}
-                  collapsed={!!collapsedMap[section.group.id]}
-                  itemCount={section.items.length}
-                  allSelected={
-                    section.items.length > 0 &&
-                    section.items.every((item) =>
-                      selectedItemsSet.has(item.id),
-                    )
-                  }
-                  isDragging={draggingGroupId === section.group.id}
-                  onToggleCollapse={handleToggleCollapse}
-                  onRename={handleRenameGroup}
-                  onDelete={handleDeleteGroup}
-                  onSelectGroup={handleSelectGroup}
-                  onGroupDragStart={handleGroupDragStart}
-                  onGroupDragOver={handleGroupDragOver}
-                  onGroupDrop={handleGroupDrop}
-                  onItemDropOnGroup={handleItemDropOnGroup}
-                  dragOverGroupId={dragOverGroupId}
-                />
-                {!collapsedMap[section.group.id] && (
-                  <LibraryMenuSection
-                    itemsRenderedPerBatch={itemsRenderedPerBatch}
-                    items={section.items}
-                    onItemSelectToggle={onItemSelectToggle}
-                    onItemDrag={onItemDrag}
-                    onClick={onItemClick}
-                    onOpenDetail={handleOpenLibraryDetail}
-                    isItemSelected={isItemSelected}
-                    svgCache={svgCache}
-                    enableLibraryReorder={enableReorder}
-                    onLibraryReorder={onLibraryReorder}
-                    reorderDropIndicator={reorderDropIndicator}
-                    onReorderDragSourceId={setReorderDragSourceId}
-                  />
-                )}
-              </React.Fragment>
-            ))}
-            <GroupGapRow
-              gapIndex={groupedSections.length}
-              dragOverGapIndex={dragOverGapIndex}
-              draggingGroupId={draggingGroupId}
-              onGapDragOver={handleGroupGapDragOver}
-              onGapDrop={handleGroupGapDrop}
-              onGapDragLeave={handleGroupGapDragLeave}
-            />
-          </>
-        )}
+        <LibraryMenuSection
+          itemsRenderedPerBatch={itemsRenderedPerBatch}
+          items={publishedItems}
+          onItemSelectToggle={onItemSelectToggle}
+          onItemDrag={onItemDrag}
+          onClick={onItemClick}
+          onOpenDetail={handleOpenLibraryDetail}
+          isItemSelected={isItemSelected}
+          svgCache={svgCache}
+          enableLibraryReorder={enableReorder}
+          onLibraryReorder={onLibraryReorder}
+          reorderDropIndicator={reorderDropIndicator}
+          onReorderDragSourceId={setReorderDragSourceId}
+        />
       </LibraryMenuSectionGrid>
     );
   };
@@ -1817,26 +1215,9 @@ export default function LibraryMenuItems({
       onDragOverCapture={handleLibraryPanelDragOver}
       onDrop={handleLibraryPanelDrop}
     >
-      {/* ZONE A: Search */}
+      {/* ZONE A: Header (search → selection bar → tabs) */}
       {!IS_LIBRARY_EMPTY && (
         <div className="lib-header">
-          {/* ZONE B: Selection / action bar (always visible, above search) */}
-          <SelectionBar
-            count={selectedItems.length}
-            onDeselectAll={() => onSelectItems([])}
-            onDeleteSelected={handleDeleteSelected}
-            onAiTag={handleAiTag}
-            aiTagging={aiTagging}
-            aiProgress={aiProgress}
-            aiError={aiTagError}
-            onDismissAiError={() => setAiTagError(null)}
-            onSelectAll={handleSelectAll}
-            onSelectUnnamed={handleSelectUnnamed}
-            hasUnnamed={currentTabItems.some((item) => !item.name?.trim())}
-            showNewGroup={libraryTab === "public"}
-            onNewGroup={handleNewGroup}
-          />
-
           <TextField
             ref={searchInputRef}
             type="search"
@@ -1849,7 +1230,24 @@ export default function LibraryMenuItems({
             onChange={(value) => setSearchInputValue(value)}
           />
 
-          {/* ZONE B2: Tabs */}
+          <SelectionBar
+            count={selectedItems.length}
+            onDeselectAll={() => onSelectItems([])}
+            onDeleteSelected={handleDeleteSelected}
+            onAiTag={handleAiTag}
+            aiTagging={aiTagging}
+            aiProgress={aiProgress}
+            aiError={aiTagError}
+            onDismissAiError={() => setAiTagError(null)}
+            onSelectAll={handleSelectAll}
+            onSelectUnnamed={handleSelectUnnamed}
+            hasUnnamed={currentTabItems.some((item) => !item.name?.trim())}
+            showInsert={
+              editorInterface.formFactor === "phone" && selectedItems.length > 0
+            }
+            onInsertSelectedItems={onInsertSelectedItems}
+          />
+
           <div className="lib-tab-row">
             <div className="lib-tabs" role="tablist">
               <button

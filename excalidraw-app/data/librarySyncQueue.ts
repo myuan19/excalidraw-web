@@ -12,7 +12,7 @@ import { createLogger } from "../lib/logger";
 
 const logLibrary = createLogger({ module: "library" });
 
-const LIBRARY_IDB_KEY = "excalidraw-web-library-mirror";
+export const LIBRARY_IDB_KEY = "excalidraw-web-library-mirror";
 const SYNC_DEBOUNCE_MS = 400;
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -35,6 +35,9 @@ function stringifyInIdle(body: object, then: (json: string) => void): void {
 }
 
 async function postSyncJson(json: string): Promise<void> {
+  logLibrary.debug("POST /api/library/sync sending", {
+    bytes: json.length,
+  });
   logLibrary.debug("POST /api/library/sync sending", {
     bytes: json.length,
   });

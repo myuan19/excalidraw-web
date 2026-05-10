@@ -27,7 +27,7 @@
     flex-shrink: 0;
   }
 
-  // Search field
+  // Search field — aligned with FileList search style
   .lib-search {
     flex: 1 1 auto;
     margin: 0;
@@ -36,15 +36,21 @@
       height: 2rem;
       border-radius: 8px;
       background: var(--color-surface-low);
-      border: 1px solid transparent;
-      transition: border-color 0.12s;
+      border: 1px solid var(--color-border-outline-variant);
+      transition: border-color 80ms ease-in, box-shadow 0.15s;
 
       &:focus-within {
         border-color: var(--color-primary);
+        box-shadow: 0 0 0 2px var(--color-primary-light);
+        background: var(--island-bg-color);
       }
 
       input {
         font-size: 0.8125rem;
+
+        &::placeholder {
+          color: var(--color-gray-40);
+        }
       }
     }
 
@@ -69,28 +75,6 @@
     display: flex;
     align-items: center;
     gap: 0.25rem;
-
-    &__new-group {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 1.5rem;
-      height: 1.5rem;
-      min-width: 1.5rem;
-      border: none;
-      border-radius: var(--border-radius-md);
-      background: transparent;
-      color: var(--color-primary);
-      font-size: 1rem;
-      font-weight: 600;
-      cursor: pointer;
-      line-height: 1;
-      transition: background 0.12s;
-
-      &:hover {
-        background: var(--color-primary-light);
-      }
-    }
   }
 
   // Pill-shaped segmented tabs
@@ -305,31 +289,17 @@
           cursor: default;
         }
       }
-    }
 
-    &__new-group {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 1.5rem;
-      height: 1.5rem;
-      min-width: 1.5rem;
-      margin-left: 0.125rem;
-      border: none;
-      border-radius: var(--border-radius-md);
-      background: transparent;
-      color: var(--color-primary);
-      font-size: 1rem;
-      font-weight: 600;
-      cursor: pointer;
-      line-height: 1;
-      flex-shrink: 0;
-      transition: background 0.12s;
+      &--insert {
+        background: var(--color-primary);
+        color: var(--color-icon-white);
 
-      &:hover {
-        background: rgba(0, 0, 0, 0.05);
+        &:hover {
+          background: var(--color-primary-darker);
+        }
       }
     }
+
   }
 
   .lib-selection-bar__error {
@@ -483,252 +453,6 @@
         border-radius: 3px;
         padding: 0px 3px;
         font-size: 0.625rem;
-      }
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Group divider
-  // ---------------------------------------------------------------------------
-  .lib-group {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.5rem;
-    margin: 0.125rem 0;
-    border-radius: var(--border-radius-lg);
-    cursor: pointer;
-    user-select: none;
-    grid-column: 1 / -1;
-    width: 100%;
-    box-sizing: border-box;
-    transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
-    border: 1px solid transparent;
-    position: relative;
-
-    &:hover {
-      background: var(--color-surface-low);
-
-      .lib-group__handle {
-        opacity: 1;
-      }
-
-      .lib-group__delete {
-        opacity: 0.6;
-      }
-    }
-
-    &--all-selected {
-      background: rgba(124, 58, 237, 0.04);
-
-      &:hover {
-        background: rgba(124, 58, 237, 0.07);
-      }
-    }
-
-    &--drag-over {
-      background: var(--color-primary-light);
-      border-color: var(--color-primary);
-      box-shadow: 0 0 0 1px var(--color-primary-light);
-    }
-
-    &--collapsed {
-      margin-bottom: 0.25rem;
-    }
-
-    &--dragging {
-      opacity: 0.5;
-      background: var(--color-surface-mid);
-      border-style: dashed;
-      border-color: var(--color-gray-30);
-    }
-
-    &__handle {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 1rem;
-      height: 1.25rem;
-      flex-shrink: 0;
-      cursor: grab;
-      opacity: 0;
-      transition: opacity 0.15s;
-
-      &:active {
-        cursor: grabbing;
-      }
-    }
-
-    &__chevron {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 1rem;
-      height: 1rem;
-      flex-shrink: 0;
-      color: var(--color-gray-50);
-      transition: transform 0.2s ease;
-
-      &--collapsed {
-        transform: rotate(-90deg);
-      }
-    }
-
-    &__name {
-      flex: 1;
-      min-width: 0;
-      font-size: 0.75rem;
-      font-weight: 600;
-      letter-spacing: 0.01em;
-      color: var(--text-primary-color);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      line-height: 1.4;
-    }
-
-    &__badge {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-width: 1.125rem;
-      height: 1.125rem;
-      padding: 0 0.3rem;
-      border-radius: 999px;
-      background: var(--color-surface-mid);
-      color: var(--color-gray-60);
-      font-size: 0.625rem;
-      font-weight: 600;
-      flex-shrink: 0;
-      line-height: 1;
-      border: none;
-      cursor: pointer;
-      transition: background 0.12s, color 0.12s;
-      font-family: inherit;
-
-      &:hover {
-        background: var(--color-primary);
-        color: #fff;
-      }
-
-      &--all-selected {
-        background: var(--color-primary-light);
-        color: var(--color-primary);
-
-        &:hover {
-          background: var(--color-primary);
-          color: #fff;
-        }
-      }
-    }
-
-    &__confirm-delete {
-      display: inline-flex;
-      gap: 0.25rem;
-      flex-shrink: 0;
-    }
-
-    &__confirm-btn {
-      border: none;
-      border-radius: var(--border-radius-md);
-      padding: 0.125rem 0.375rem;
-      font-size: 0.625rem;
-      font-family: inherit;
-      font-weight: 600;
-      cursor: pointer;
-      background: var(--color-surface-mid);
-      color: var(--text-primary-color);
-      transition: background 0.1s;
-
-      &:hover {
-        background: var(--color-surface-high);
-      }
-
-      &--yes {
-        background: var(--color-danger);
-        color: #fff;
-
-        &:hover {
-          background: #c0392b;
-        }
-      }
-    }
-
-    &__rename-input {
-      flex: 1;
-      min-width: 0;
-      min-height: 0;
-      max-height: 1.5rem;
-      height: 1.5rem;
-      box-sizing: border-box;
-      line-height: 1.25rem;
-      font-size: 0.75rem;
-      font-weight: 600;
-      font-family: inherit;
-      border: 1.5px solid var(--color-primary);
-      border-radius: var(--border-radius-md);
-      padding: 0 0.375rem;
-      background: var(--island-bg-color);
-      color: var(--text-primary-color);
-      outline: none;
-      box-shadow: 0 0 0 2px var(--color-primary-light);
-      align-self: center;
-    }
-
-    &--renaming {
-      align-items: center;
-      min-height: 0;
-    }
-
-    &__delete {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 1.25rem;
-      height: 1.25rem;
-      border: none;
-      background: none;
-      color: var(--color-gray-40);
-      cursor: pointer;
-      padding: 0;
-      flex-shrink: 0;
-      opacity: 0;
-      border-radius: var(--border-radius-md);
-      transition: opacity 0.15s, color 0.15s, background 0.15s;
-
-      &:hover {
-        opacity: 1 !important;
-        color: var(--color-danger);
-        background: rgba(255, 0, 0, 0.08);
-      }
-    }
-  }
-
-  // Group gap drop zone
-  .lib-group-gap {
-    grid-column: 1 / -1;
-    height: 0;
-    position: relative;
-    transition: height 0.15s ease;
-
-    &::after {
-      content: "";
-      position: absolute;
-      left: 1rem;
-      right: 1rem;
-      top: 50%;
-      height: 2px;
-      border-radius: 1px;
-      background: transparent;
-      transform: translateY(-50%);
-      transition: background 0.15s;
-    }
-
-    &--active {
-      height: 6px;
-
-      &::after {
-        background: var(--color-primary);
       }
     }
   }

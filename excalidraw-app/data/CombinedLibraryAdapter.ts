@@ -12,6 +12,8 @@
  *
  * Published-library groups + fold state: SQLite `library_groups` only (see /api/library/groups).
  */
+import { get } from "idb-keyval";
+
 import { createLogger } from "../lib/logger";
 
 import type {
@@ -26,7 +28,7 @@ import {
   getLibraryCollapsedMap,
   hydrateLibraryGroupsFromServer,
 } from "../components/LibraryGroupEnhancer";
-import { queueLibrarySync } from "./librarySyncQueue";
+import { LIBRARY_IDB_KEY, queueLibrarySync } from "./librarySyncQueue";
 
 const logLibrary = createLogger({ module: "library" });
 
@@ -115,13 +117,12 @@ interface ServerLibraryGroup {
 }
 
 export const CombinedLibraryAdapter: LibraryPersistenceAdapter = {
-  async load(metadata?: { source?: string }) {
-    logLibrary.debug("load called", { metadata });
-    const isSaveSource = metadata?.source === "save";
+  async load() {
+    logLibrary.debug("load called");
 
     const canvasFileId = fileIdFromLocationHash() ?? _currentFileId;
 
-    const [publicItems, canvasItems, personalRows, serverGroups] =
+    const [publicItems, canvasItems, personalRows, serverGroups, idbMirror] =
       await Promise.all([
         apiJson<ServerLibraryItem[]>("/library").catch(() => []),
         canvasFileId
@@ -130,16 +131,25 @@ export const CombinedLibraryAdapter: LibraryPersistenceAdapter = {
             ).catch(() => [])
           : Promise.resolve([]),
         apiJson<ServerLibraryItem[]>("/library/personal").catch(() => []),
-        isSaveSource
-          ? Promise.resolve([] as ServerLibraryGroup[])
-          : apiJson<ServerLibraryGroup[]>("/library/groups").catch(
-              () => [] as ServerLibraryGroup[],
-            ),
+        apiJson<ServerLibraryGroup[]>("/library/groups").catch(
+          () => [] as ServerLibraryGroup[],
+        ),
+        get(LIBRARY_IDB_KEY)
+          .then((raw: unknown) => {
+            if (!raw || typeof raw !== "string") {
+              return [] as LibraryItem[];
+            }
+            try {
+              const parsed = JSON.parse(raw);
+              return (parsed?.libraryItems ?? []) as LibraryItem[];
+            } catch {
+              return [] as LibraryItem[];
+            }
+          })
+          .catch(() => [] as LibraryItem[]),
       ]);
 
-    if (!isSaveSource) {
-      hydrateLibraryGroupsFromServer(serverGroups);
-    }
+    hydrateLibraryGroupsFromServer(serverGroups);
 
     const personal: CombinedLibraryItem[] = personalRows.map(
       serverToLibraryItem,
@@ -152,6 +162,13 @@ export const CombinedLibraryAdapter: LibraryPersistenceAdapter = {
       ...personal,
       ...publicConverted,
     ];
+
+    const serverIds = new Set(merged.map((item) => item.id));
+    for (const item of idbMirror) {
+      if (!serverIds.has(item.id)) {
+        merged.push(item);
+      }
+    }
 
     return { libraryItems: merged };
   },
