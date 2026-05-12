@@ -55,6 +55,20 @@ describe("FileList layout source contract", () => {
     expect(rootRule?.[1]).toContain("box-sizing: border-box;");
   });
 
+  it("resets sidebar tree button boxes so refresh cannot change icon spacing", () => {
+    const styles = fs.readFileSync(path.join(__dirname, "FileList.scss"), "utf8");
+    const buttonRule = styles.match(
+      /\.filelist__tree-toggle,\n\.filelist__tree-name,\n\.filelist__tree-action \{([\s\S]*?)\n\}/,
+    );
+    const ruleBody = buttonRule?.[1] ?? "";
+
+    expect(ruleBody).toContain("appearance: none;");
+    expect(ruleBody).toContain("box-sizing: border-box;");
+    expect(ruleBody).toContain("margin: 0;");
+    expect(ruleBody).toContain("padding: 0;");
+    expect(ruleBody).toContain("font: inherit;");
+  });
+
   it("keeps sidebar and thumbnail layout debug logging behind a separate opt-in flag", () => {
     const source = fs.readFileSync(path.join(__dirname, "FileList.tsx"), "utf8");
     const debugHelper = source.match(

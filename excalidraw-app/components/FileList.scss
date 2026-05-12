@@ -426,15 +426,21 @@
 }
 
 .filelist__tree-toggle,
+.filelist__tree-name,
 .filelist__tree-action {
+  appearance: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
   border: none;
   background: transparent;
   color: var(--nb-text-muted);
   border-radius: var(--nb-radius-sm);
   cursor: pointer;
+  font: inherit;
 }
 
 .filelist__tree-toggle {
@@ -454,13 +460,10 @@
 
 .filelist__tree-name {
   flex: 1;
+  justify-content: flex-start;
   gap: var(--nb-space-3);
-  border: none;
-  background: transparent;
   min-height: calc(var(--nb-unit) * 15);
-  cursor: pointer;
   color: inherit;
-  font: inherit;
   font-size: var(--nb-font-folder-name);
   text-align: left;
   min-width: 0;
