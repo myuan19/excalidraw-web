@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -32,7 +33,6 @@ import {
 import {
   buildSceneThumbnailSvg,
   extractThumbBg,
-  isMindMapThumbnailDebugEnabled,
   patchThumbnailSvgForCard,
 } from "../data/thumbnailSvg";
 import {
@@ -53,7 +53,10 @@ const logList = createLogger({ module: "fileList" });
 const logThumb = createLogger({ module: "thumbnail" });
 const logPipe = createLogger({ module: "thumbPipeline" });
 
-const HOME_APP_TITLE = "可视化文档私有部署";
+const HOME_APP_TITLE = "绘图空间";
+const DRAWING_SPACE_ICON = "/icons/drawing-space.svg";
+const EXCALIDRAW_EDITOR_ICON = "/icons/excalidraw.svg";
+const MINDMAP_EDITOR_ICON = "/icons/mindmap.ico";
 
 function getDebugSvgAttr(svgMarkup: string | null, name: string): string | null {
   if (!svgMarkup) {
@@ -66,16 +69,104 @@ function getDebugSvgAttr(svgMarkup: string | null, name: string): string | null 
   );
 }
 
+function isFileListThumbnailDebugEnabled(): boolean {
+  try {
+    return localStorage.getItem("excalidraw-filelist-thumbnail-debug") === "1";
+  } catch {
+    return false;
+  }
+}
+
+function isFileListLayoutDebugEnabled(): boolean {
+  try {
+    return localStorage.getItem("excalidraw-filelist-layout-debug") === "1";
+  } catch {
+    return false;
+  }
+}
+
 function debugFileListThumbnail(
   label: string,
   data: Record<string, unknown>,
 ): void {
-  if (!isMindMapThumbnailDebugEnabled()) {
+  if (!isFileListThumbnailDebugEnabled()) {
     return;
   }
   console.log(
     `[DEBUG] FileList.renderFileCard | ${label}`,
     JSON.stringify(data, null, 2),
+  );
+}
+
+function roundedNumber(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function layoutRect(el: Element | null): Record<string, unknown> | null {
+  if (!el) {
+    return null;
+  }
+  const rect = el.getBoundingClientRect();
+  const htmlEl = el as HTMLElement;
+  return {
+    x: roundedNumber(rect.x),
+    y: roundedNumber(rect.y),
+    width: roundedNumber(rect.width),
+    height: roundedNumber(rect.height),
+    clientWidth: roundedNumber(htmlEl.clientWidth),
+    scrollWidth: roundedNumber(htmlEl.scrollWidth),
+    offsetWidth: roundedNumber(htmlEl.offsetWidth),
+    clientHeight: roundedNumber(htmlEl.clientHeight),
+    scrollHeight: roundedNumber(htmlEl.scrollHeight),
+    hasVerticalScrollbar: htmlEl.scrollHeight > htmlEl.clientHeight,
+  };
+}
+
+function computedLayoutInfo(el: Element | null): Record<string, unknown> | null {
+  if (!el) {
+    return null;
+  }
+  const style = window.getComputedStyle(el);
+  return {
+    ...layoutRect(el),
+    cssWidth: style.width,
+    minWidth: style.minWidth,
+    maxWidth: style.maxWidth,
+    paddingLeft: style.paddingLeft,
+    paddingRight: style.paddingRight,
+    overflowY: style.overflowY,
+    scrollbarGutter: style.scrollbarGutter,
+  };
+}
+
+function findThumbNode(root: HTMLElement | null, fileId: string | null): HTMLElement | null {
+  if (!root || !fileId) {
+    return null;
+  }
+  return (
+    Array.from(root.querySelectorAll<HTMLElement>("[data-thumb-file-id]")).find(
+      (node) => node.dataset.thumbFileId === fileId,
+    ) ?? null
+  );
+}
+
+function debugFileListLayout(
+  label: string,
+  data: Record<string, unknown>,
+): void {
+  if (!isFileListLayoutDebugEnabled()) {
+    return;
+  }
+  const payload = {
+    t:
+      typeof performance === "undefined"
+        ? null
+        : Math.round(performance.now()),
+    ...data,
+  };
+  console.log(
+    `[DEBUG] FileList.layout | ${label}`,
+    JSON.stringify(payload, null, 2),
   );
 }
 
@@ -235,6 +326,31 @@ function Icon({
   );
 }
 
+function ImageIcon({
+  src,
+  alt,
+  size = 18,
+}: {
+  src: string;
+  alt: string;
+  size?: number;
+}) {
+  return (
+    <img
+      className="filelist__image-icon"
+      src={src}
+      alt={alt}
+      width={size}
+      height={size}
+      draggable={false}
+    />
+  );
+}
+
+function editorIconSrc(kind: string): string {
+  return kind === "mindmap" ? MINDMAP_EDITOR_ICON : EXCALIDRAW_EDITOR_ICON;
+}
+
 /**
  * 仅在「按下」和「松手」都点在同一层遮罩上时才关闭，避免在弹层内选区/复制时松手落在外侧误关。
  */
@@ -356,6 +472,14 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
   const sceneImportInputRef = useRef<HTMLInputElement>(null);
   const thumbObserverRef = useRef<IntersectionObserver | null>(null);
   const thumbNodeMap = useRef<Map<string, HTMLElement>>(new Map());
+  const sidebarRef = useRef<HTMLElement | null>(null);
+  const mainRef = useRef<HTMLElement | null>(null);
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const pendingLayoutDebugRef = useRef<{
+    label: string;
+    data: Record<string, unknown>;
+  } | null>(null);
+  const previousFetchedThumbIdsRef = useRef<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -689,6 +813,121 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
     return sorted;
   }, [currentFolderId, descendantFolderIds, effectiveUpdatedAt, files, searchQuery, sortKey]);
 
+  const collectLayoutDebugData = useCallback(
+    (data: Record<string, unknown> = {}) => {
+      const sidebar = sidebarRef.current;
+      const main = mainRef.current;
+      const grid = gridRef.current;
+      const rootRow = sidebar?.querySelector(".filelist__tree-root") ?? null;
+      const activeRow =
+        sidebar?.querySelector(
+          ".filelist__tree-root--active, .filelist__tree-row--active",
+        ) ?? null;
+      const firstCard = grid?.querySelector(".filelist__card") ?? null;
+      const firstThumbId =
+        typeof data.firstThumbId === "string" ? data.firstThumbId : null;
+      const firstThumb = findThumbNode(grid, firstThumbId);
+
+      return {
+        currentFolderId: currentFolderIdRef.current ?? "__ROOT__",
+        currentFolderName: currentFolderIdRef.current
+          ? foldersById.get(currentFolderIdRef.current)?.name ?? null
+          : "全部文件",
+        files: files.length,
+        filteredFiles: filteredFiles.length,
+        fetchedThumbs: Object.keys(fetchedThumbsRef.current).length,
+        sidebar: computedLayoutInfo(sidebar),
+        main: computedLayoutInfo(main),
+        grid: computedLayoutInfo(grid),
+        rootRow: computedLayoutInfo(rootRow),
+        activeRow: computedLayoutInfo(activeRow),
+        firstCard: computedLayoutInfo(firstCard),
+        firstThumb: computedLayoutInfo(firstThumb),
+        ...data,
+      };
+    },
+    [files.length, filteredFiles.length, foldersById],
+  );
+
+  useLayoutEffect(() => {
+    const pending = pendingLayoutDebugRef.current;
+    if (!pending) {
+      return;
+    }
+    pendingLayoutDebugRef.current = null;
+    debugFileListLayout(pending.label, collectLayoutDebugData(pending.data));
+    const raf = window.requestAnimationFrame(() => {
+      debugFileListLayout(
+        `${pending.label} next frame`,
+        collectLayoutDebugData(pending.data),
+      );
+    });
+    return () => window.cancelAnimationFrame(raf);
+  });
+
+  useLayoutEffect(() => {
+    const currentIds = Object.keys(fetchedThumbs);
+    const previousIds = previousFetchedThumbIdsRef.current;
+    const newThumbIds = currentIds.filter((id) => !previousIds.has(id));
+    previousFetchedThumbIdsRef.current = new Set(currentIds);
+
+    if (!isFileListLayoutDebugEnabled() || newThumbIds.length === 0) {
+      return;
+    }
+
+    const data = {
+      firstThumbId: newThumbIds[0],
+      newThumbCount: newThumbIds.length,
+      newThumbIds: newThumbIds.slice(0, 8).map((id) => id.slice(0, 8)),
+    };
+    debugFileListLayout(
+      "thumbnail committed layout",
+      collectLayoutDebugData(data),
+    );
+    const raf = window.requestAnimationFrame(() => {
+      debugFileListLayout(
+        "thumbnail next frame layout",
+        collectLayoutDebugData(data),
+      );
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [collectLayoutDebugData, fetchedThumbs]);
+
+  const setFetchedThumbsWithLayoutDebug = useCallback(
+    (nextState: React.SetStateAction<Record<string, string>>) => {
+      if (!isFileListLayoutDebugEnabled()) {
+        setFetchedThumbs(nextState);
+        return;
+      }
+
+      setFetchedThumbs((prev) => {
+        const next =
+          typeof nextState === "function"
+            ? nextState(prev)
+            : nextState;
+        const prevIds = new Set(Object.keys(prev));
+        const nextIds = Object.keys(next);
+        const newThumbIds = nextIds.filter((id) => !prevIds.has(id));
+
+        if (newThumbIds.length > 0) {
+          debugFileListLayout(
+            "before thumbnail state update",
+            collectLayoutDebugData({
+              firstThumbId: newThumbIds[0],
+              newThumbCount: newThumbIds.length,
+              newThumbIds: newThumbIds.slice(0, 8).map((id) => id.slice(0, 8)),
+              previousFetchedThumbs: Object.keys(prev).length,
+              nextFetchedThumbs: nextIds.length,
+            }),
+          );
+        }
+
+        return next;
+      });
+    },
+    [collectLayoutDebugData],
+  );
+
   /**
    * 当前视图所有文件均参与缩略图拉取/生成，包括嵌套子文件夹中的文件。
    * thumbCoverage 机制（visibleIds ∪ 前 N 条）已通过 IntersectionObserver 控制优先级。
@@ -711,7 +950,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
     fetchedThumbHashByIdRef,
     fileThumbHashByIdRef,
     setDraftThumbs,
-    setFetchedThumbs,
+    setFetchedThumbs: setFetchedThumbsWithLayoutDebug,
   });
 
   const createFileOnServer = useCallback(
@@ -857,7 +1096,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
             const adapter = getDocumentFormatAdapter(detected.kind);
             if (!adapter || detected.kind === "unknown") {
               throw new Error(
-                `无法识别「${file.name}」的文档格式，请确认它是 Excalidraw 或 MindMap 文件。`,
+                `无法识别「${file.name}」的文档格式，请确认它是 excalidraw 或 mindmap 文件。`,
               );
             }
             const data = await adapter.parse(file);
@@ -1035,6 +1274,25 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
   };
 
   const selectFolder = (folderId: string | null) => {
+    if (isFileListLayoutDebugEnabled()) {
+      const data = {
+        fromFolderId: currentFolderId ?? "__ROOT__",
+        fromFolderName: currentFolderId
+          ? foldersById.get(currentFolderId)?.name ?? null
+          : "全部文件",
+        toFolderId: folderId ?? "__ROOT__",
+        toFolderName: folderId ? foldersById.get(folderId)?.name ?? null : "全部文件",
+        visibleThumbs: visibleThumbIds.size,
+      };
+      pendingLayoutDebugRef.current = {
+        label: "after selectFolder layout",
+        data,
+      };
+      debugFileListLayout(
+        "before selectFolder setState",
+        collectLayoutDebugData(data),
+      );
+    }
     setCurrentFolderId(folderId);
     setMobileTreeOpen(false);
   };
@@ -1326,11 +1584,12 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
       const showInto = ind?.targetId === folder.id && ind.mode === "into";
       return (
         <div key={folder.id} className="filelist__tree-node">
-          {showBefore && <div className="filelist__tree-drop-line" aria-hidden />}
           <div
             className={[
               "filelist__tree-row-wrap",
               showInto ? "filelist__tree-row-wrap--into" : "",
+              showBefore ? "filelist__tree-row-wrap--drop-before" : "",
+              showAfter ? "filelist__tree-row-wrap--drop-after" : "",
             ]
               .filter(Boolean)
               .join(" ")}
@@ -1403,7 +1662,6 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
               </button>
             </div>
           </div>
-          {showAfter && <div className="filelist__tree-drop-line" aria-hidden />}
           {expanded && renderFolderTree(folder.id, depth + 1)}
         </div>
       );
@@ -1411,7 +1669,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
   };
 
   const renderTreePanel = () => (
-    <aside className="filelist__sidebar">
+    <aside className="filelist__sidebar" ref={sidebarRef}>
       <div className="filelist__sidebar-head">
         <span>文件夹</span>
         <button
@@ -1477,7 +1735,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
         finalSource: thumbnailChoice.finalSource,
       });
     }
-    if (kind === "mindmap" && cardThumbSvg && isMindMapThumbnailDebugEnabled()) {
+    if (kind === "mindmap" && cardThumbSvg && isFileListThumbnailDebugEnabled()) {
       debugFileListThumbnail("mindmap thumbnail svg", {
         id: f.id,
         id8: f.id.slice(0, 8),
@@ -1562,7 +1820,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
             <div className="filelist__card-thumb-loading" />
           ) : (
             <div className="filelist__card-thumb-placeholder">
-              <Icon type={kind === "mindmap" ? "mindmap" : "excalidraw"} size={40} />
+              <ImageIcon src={editorIconSrc(kind)} alt="" size={40} />
             </div>
           )}
           <div className="filelist__card-actions">
@@ -1724,7 +1982,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
           >
             <Icon type="menu" size={20} />
           </button>
-          <Icon type="home" size={22} />
+          <ImageIcon src={DRAWING_SPACE_ICON} alt="" size={22} />
           <h1 className="filelist__title">{HOME_APP_TITLE}</h1>
         </div>
         <div className="filelist__header-right">
@@ -1793,7 +2051,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
                 onChange={onSceneImportInputChange}
                 disabled={importing}
                 tabIndex={-1}
-                title="导入 Excalidraw 或 MindMap 文档"
+                title="导入 excalidraw 或 mindmap 文档"
               />
             </label>
             <button className="filelist__new-btn" onClick={openNewFileDialog}>
@@ -1817,7 +2075,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
         onDrop={onFileListImportDrop}
       >
         {renderTreePanel()}
-        <main className="filelist__main">
+        <main className="filelist__main" ref={mainRef}>
           <div className="filelist__pathbar">
             <div className="filelist__breadcrumbs">
               <button
@@ -1840,7 +2098,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
             </div>
           </div>
           {loading ? (
-            <div className="filelist__grid">
+            <div className="filelist__grid" ref={gridRef}>
               {Array.from({ length: 6 }, (_, i) => (
                 <div
                   key={i}
@@ -1889,13 +2147,17 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
                     onClick={openNewFileDialog}
                   >
                     <Icon type="plus" size={18} />
-                    创建第一个画布
+                    创建第一个文件
                   </button>
                 </div>
               )}
             </div>
           ) : (
-            <div className="filelist__grid">
+            <div
+              className="filelist__grid"
+              ref={gridRef}
+              key={`${currentFolderId ?? "root"}:${sortKey}:${searchQuery.trim()}`}
+            >
               {filteredFiles.map((f, i) => renderFileCard(f, i))}
             </div>
           )}
@@ -1985,7 +2247,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
             className="filelist__detail-card filelist__new-file-dialog"
             onPointerDown={(e) => e.stopPropagation()}
           >
-            <h2 className="filelist__detail-title">新建画布</h2>
+            <h2 className="filelist__detail-title">新建文件</h2>
             <p className="filelist__new-file-hint">
               选择文件类型并起个名字，稍后在列表里也可以随时重命名
             </p>
@@ -2002,8 +2264,8 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
                   .join(" ")}
                 onClick={() => setNewDocumentKind("excalidraw")}
               >
-                <Icon type="excalidraw" size={18} />
-                <span>Excalidraw 画布</span>
+                <ImageIcon src={EXCALIDRAW_EDITOR_ICON} alt="" size={18} />
+                <span>excalidraw</span>
               </button>
               <button
                 type="button"
@@ -2017,8 +2279,8 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
                   .join(" ")}
                 onClick={() => setNewDocumentKind("mindmap")}
               >
-                <Icon type="mindmap" size={18} />
-                <span>MindMap 思维导图</span>
+                <ImageIcon src={MINDMAP_EDITOR_ICON} alt="" size={18} />
+                <span>mindmap</span>
               </button>
             </div>
             <input

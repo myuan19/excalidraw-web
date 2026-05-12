@@ -250,10 +250,10 @@ export default defineConfig(({ mode }) => {
                 maximumFileSizeToCacheInBytes: 2.3 * 1024 ** 2,
               },
               manifest: {
-                short_name: "可视化文档私有部署",
-                name: "可视化文档私有部署",
+                short_name: "绘图空间",
+                name: "绘图空间",
                 description:
-                  "统一管理 Excalidraw 画布与 MindMap 思维导图。",
+                  "统一管理 excalidraw 与 mindmap。",
                 icons: [
                   {
                     src: "android-chrome-192x192.png",

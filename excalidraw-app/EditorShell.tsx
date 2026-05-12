@@ -283,7 +283,7 @@ const ExcalidrawWrapper = () => {
   );
 
   useEffect(() => {
-    document.title = "Excalidraw 画布";
+    document.title = "excalidraw";
   }, []);
 
   useEffect(() => {

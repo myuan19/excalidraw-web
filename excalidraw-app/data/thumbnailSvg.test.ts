@@ -434,7 +434,7 @@ describe("MindMap SVG thumbnails", () => {
     );
   });
 
-  it("logs focused thumbnail geometry as expanded JSON with root screen position", () => {
+  it("does not log MindMap thumbnail geometry from stale browser flags", () => {
     window.localStorage.setItem("excalidraw-web-debug-mindmap-thumbnail", "1");
     const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
     const svg =
@@ -450,10 +450,27 @@ describe("MindMap SVG thumbnails", () => {
 
     normalizeMindMapThumbnailSvg(svg);
 
-    expect(consoleLog).toHaveBeenCalledWith(
-      expect.stringContaining("[DEBUG] mindmap-thumbnail | focused viewBox computed"),
-      expect.stringContaining('"rootScreen"'),
-    );
+    expect(consoleLog).not.toHaveBeenCalled();
+  });
+
+  it("does not enable MindMap thumbnail logs from broad debug flags", () => {
+    window.localStorage.setItem("excalidraw-web-debug", "1");
+    window.localStorage.setItem("excalidraw-web-debug-thumbnail", "1");
+    const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
+    const svg =
+      '<svg width="3200" height="900">' +
+      '<g class="smm-container" transform="matrix(1,0,0,1,0,0)">' +
+      '<g class="smm-node" transform="matrix(1,0,0,1,600,420)">' +
+      '<rect width="154" height="45"></rect>' +
+      "</g>" +
+      '<g class="smm-node" transform="matrix(1,0,0,1,1700,420)">' +
+      '<rect width="120" height="38"></rect>' +
+      "</g>" +
+      "</g></svg>";
+
+    normalizeMindMapThumbnailSvg(svg);
+
+    expect(consoleLog).not.toHaveBeenCalled();
   });
 
   it("removes MindMap edit overlays from exported thumbnails", () => {

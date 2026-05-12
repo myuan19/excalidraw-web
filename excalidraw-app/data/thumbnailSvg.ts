@@ -33,20 +33,7 @@ function getSvgAttr(svgMarkup: string, name: string): string {
 }
 
 export function isMindMapThumbnailDebugEnabled(): boolean {
-  if (typeof window === "undefined") {
-    return false;
-  }
-  try {
-    return (
-      window.localStorage.getItem(
-        "excalidraw-web-debug-mindmap-thumbnail",
-      ) === "1" ||
-      window.localStorage.getItem("excalidraw-web-debug-thumbnail") === "1" ||
-      window.localStorage.getItem("excalidraw-web-debug") === "1"
-    );
-  } catch {
-    return false;
-  }
+  return false;
 }
 
 function roundDebugNumber(value: number): number {

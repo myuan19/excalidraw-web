@@ -248,7 +248,7 @@ const MindMapEditorShell = () => {
   const [status, setStatus] = useState("加载中…");
   const [isNativeReady, setIsNativeReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [fileName, setFileName] = useState("未命名思维导图");
+  const [fileName, setFileName] = useState("未命名 mindmap");
   const [showAISettings, setShowAISettings] = useState(false);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
   const [, setNativeScale] = useState<number | null>(null);
@@ -270,7 +270,7 @@ const MindMapEditorShell = () => {
   const initStartRef = useRef<number | null>(null);
 
   useEffect(() => {
-    document.title = "MindMap 思维导图";
+    document.title = "mindmap";
   }, []);
 
   useEffect(() => {
@@ -447,7 +447,7 @@ const MindMapEditorShell = () => {
         saveResolveRef.current = null;
         savePromiseRef.current = null;
         saveTimeoutRef.current = null;
-        setError("MindMap 原生界面未响应保存请求");
+        setError("mindmap 原生界面未响应保存请求");
         resolve(null);
       }, MINDMAP_SAVE_TIMEOUT_MS);
       postToNative("requestMindMapSave", { requestId });
@@ -536,7 +536,7 @@ const MindMapEditorShell = () => {
       setIsNativeReady(false);
       setStatus("加载中…");
       if (!fileId) {
-        setError("缺少 MindMap 文件");
+        setError("缺少 mindmap 文件");
         return;
       }
 
@@ -567,7 +567,7 @@ const MindMapEditorShell = () => {
             return;
           }
 
-          setFileName(serverFile.name || "未命名思维导图");
+          setFileName(serverFile.name || "未命名 mindmap");
           needsInitialThumbnailRef.current = !serverFile.has_thumbnail;
           const parseStart = performance.now();
           const data = serverFile.data
@@ -595,7 +595,7 @@ const MindMapEditorShell = () => {
             ),
             reason,
           });
-          setStatus("等待 MindMap 原生界面加载…");
+          setStatus("等待 mindmap 原生界面加载…");
           publishMindMapDataToNative(data);
         };
 
@@ -603,7 +603,7 @@ const MindMapEditorShell = () => {
           shouldOpenCachedMindMapFirst({ hasCachedDocument: !!cached }) &&
           cached
         ) {
-          setFileName(getCachedFileListName(fileId) || "未命名思维导图");
+          setFileName(getCachedFileListName(fileId) || "未命名 mindmap");
           latestDocumentRef.current = cached;
           debugMindMapOpen("cache payload prepared", {
             fileId8: fileId.slice(0, 8),
@@ -649,7 +649,7 @@ const MindMapEditorShell = () => {
               FileSyncState.setServerHash(fileId, remoteHash);
             }
             if (!hasUnsavedChanges) {
-              setStatus("等待 MindMap 原生界面加载…");
+              setStatus("等待 mindmap 原生界面加载…");
             }
             return;
           } catch (err: any) {
@@ -657,7 +657,7 @@ const MindMapEditorShell = () => {
               message: err?.message || String(err),
             });
             if (!hasUnsavedChanges) {
-              setStatus("等待 MindMap 原生界面加载…");
+              setStatus("等待 mindmap 原生界面加载…");
             }
             return;
           }
@@ -669,7 +669,7 @@ const MindMapEditorShell = () => {
           message: err?.message || String(err),
           stack: err?.stack,
         });
-        setError(err?.message || "MindMap 打开失败");
+        setError(err?.message || "mindmap 打开失败");
       }
     }
 
@@ -723,7 +723,7 @@ const MindMapEditorShell = () => {
             : null,
           needsInitialThumbnail: needsInitialThumbnailRef.current,
         });
-        setStatus("已打开 MindMap 原生界面");
+        setStatus("已打开 mindmap 原生界面");
         ensureAIConfigLoaded()
           .then(() => postMindMapAIConfig("appInited"))
           .catch((error) => {
@@ -847,7 +847,7 @@ const MindMapEditorShell = () => {
               stack: err?.stack,
             });
             if (isCurrentSaveResponse) {
-              setError(err?.message || "MindMap 数据保存失败");
+              setError(err?.message || "mindmap 数据保存失败");
             }
           });
         return;
@@ -907,7 +907,7 @@ const MindMapEditorShell = () => {
           });
           markDocumentChanged(latestDocumentRef.current!);
         } catch (err: any) {
-          setError(err?.message || "MindMap 数据保存失败");
+          setError(err?.message || "mindmap 数据保存失败");
         }
       }
     };
@@ -941,7 +941,7 @@ const MindMapEditorShell = () => {
     FileSyncState.alignHashes(fileId, hashDocumentSnapshot(document));
     FileSyncState.clearLocalEditTime(fileId);
     FileSyncState.clearLocalCache(fileId);
-    setFileName(serverFile.name || "未命名思维导图");
+    setFileName(serverFile.name || "未命名 mindmap");
     needsInitialThumbnailRef.current = !serverFile.has_thumbnail;
     setStatus("已恢复历史版本");
     setError(null);
@@ -1045,7 +1045,7 @@ const MindMapEditorShell = () => {
     <main className="mindmap-editor">
       {error ? (
         <section className="mindmap-editor__error">
-          <strong>MindMap 打开失败</strong>
+          <strong>mindmap 打开失败</strong>
           <span>{error}</span>
         </section>
       ) : null}
@@ -1057,7 +1057,7 @@ const MindMapEditorShell = () => {
       ) : null}
       <iframe
         ref={iframeRef}
-        title="MindMap 思维导图"
+        title="mindmap"
         className="mindmap-editor__native-frame"
         src={NATIVE_MINDMAP_URL}
         allow="clipboard-read; clipboard-write"
@@ -1094,7 +1094,7 @@ const MindMapEditorShell = () => {
           >
             <h3 id="mindmap-home-nav-title">主页</h3>
             <p className="fork-home-dialog-desc">
-              当前 MindMap 有未保存的修改，是否先保存？
+              当前 mindmap 有未保存的修改，是否先保存？
             </p>
             <div className="fork-home-dialog-actions">
               <button
