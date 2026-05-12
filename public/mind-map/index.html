@@ -1,0 +1,410 @@
+<!DOCTYPE html><html lang=""><head><meta charset="utf-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width,user-scalable=no,initial-scale=1,maximum-scale=1,minimum-scale=1"><link rel="icon" href="dist/logo.ico"><link rel="preload" href="dist/js/chunk-vendors.js" as="script"><link rel="preload" href="dist/js/chunk-552c98a7.js" as="script"><title>思绪思维导图</title><script>// 自定义静态资源的路径
+      window.externalPublicPath = './dist/'
+      // 接管应用
+      window.takeOverApp = true</script><link href="dist/css/chunk-vendors.css?0df10968f505abc293dd" rel="stylesheet"><link href="dist/css/app.css?0df10968f505abc293dd" rel="stylesheet"></head><body><noscript><strong>We're sorry but thoughts doesn't work properly without JavaScript enabled. Please enable it to continue.</strong></noscript><div id="app"></div><script>const bridgeSource = 'simple-mind-map-native'
+      const hostSource = 'excalidraw-web'
+      const bridgeStartedAt = performance.now()
+      const debugMindMapOpen = (label, data) => {
+        console.log('[DEBUG] mindmap-open | iframe bridge ' + label, {
+          t: Math.round(performance.now()),
+          sinceBridgeStart: Math.round(performance.now() - bridgeStartedAt),
+          ...(data || {})
+        })
+      }
+      const defaultBridgeState = {
+        mindMapData: {
+          root: {
+            data: {
+              text: '<p>根节点</p>',
+              richText: true,
+              expand: true
+            },
+            children: []
+          },
+          theme: {
+            template: 'classic4',
+            config: {}
+          },
+          layout: 'logicalStructure',
+          config: {},
+          view: null
+        },
+        mindMapConfig: {},
+        lang: 'zh',
+        localConfig: null,
+        embedMode: false,
+        readOnly: false
+      }
+      let bridgeState = {
+        ...defaultBridgeState
+      }
+      let appStarted = false
+      let nativeMindMap = null
+      let bridgeRequestSeq = 0
+      let mindMapDataRevision = 0
+      const bridgeRequests = new Map()
+      const postToHost = (type, payload) => {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage(
+            {
+              source: bridgeSource,
+              type,
+              payload
+            },
+            '*'
+          )
+        }
+      }
+      const requestHost = (type, payload, timeout = 8000) => {
+        return new Promise((resolve, reject) => {
+          const requestId = String(Date.now()) + '-' + ++bridgeRequestSeq
+          const timer = window.setTimeout(() => {
+            bridgeRequests.delete(requestId)
+            reject(new Error('Host request timeout'))
+          }, timeout)
+          bridgeRequests.set(requestId, { resolve, reject, timer })
+          postToHost(type, {
+            requestId,
+            ...(payload || {})
+          })
+        })
+      }
+      const getMindMapThumbnail = async () => {
+        if (!nativeMindMap || typeof nativeMindMap.export !== 'function') {
+          return null
+        }
+        try {
+          return await nativeMindMap.export('svg', false, 'MindMap')
+        } catch (error) {
+          console.warn('Failed to export MindMap thumbnail', error)
+          return null
+        }
+      }
+      const postMindMapDataToHost = async (data, requestId) => {
+        const revision = ++mindMapDataRevision
+        const exportStart = performance.now()
+        debugMindMapOpen('postMindMapDataToHost before thumbnail export', {
+          requestId: requestId || null,
+          revision,
+          rootChildren:
+            data && data.root && data.root.children
+              ? data.root.children.length
+              : 0
+        })
+        const thumbnail = await getMindMapThumbnail()
+        debugMindMapOpen('postMindMapDataToHost after thumbnail export', {
+          requestId: requestId || null,
+          revision,
+          elapsed: Math.round(performance.now() - exportStart),
+          hasThumbnail: !!thumbnail,
+          thumbnailLength: thumbnail ? thumbnail.length : 0
+        })
+        postToHost('saveMindMapData', {
+          requestId,
+          revision,
+          data,
+          thumbnail
+        })
+      }
+      const resolveHostRequest = message => {
+        const payload = message.payload || {}
+        const requestId = payload.requestId
+        if (!requestId || !bridgeRequests.has(requestId)) return false
+        const pending = bridgeRequests.get(requestId)
+        bridgeRequests.delete(requestId)
+        window.clearTimeout(pending.timer)
+        if (payload.ok === false) {
+          pending.reject(new Error(payload.error || 'Host request failed'))
+        } else {
+          pending.resolve(payload)
+        }
+        return true
+      }
+      const setTakeOverAppMethods = data => {
+        bridgeState = {
+          ...defaultBridgeState,
+          ...(data || {})
+        }
+        window.takeOverAppEmbedMode = bridgeState.embedMode === true
+        window.takeOverAppReadOnly = bridgeState.readOnly === true
+        window.takeOverAppMethods = {}
+        // 获取思维导图数据的函数
+        window.takeOverAppMethods.getMindMapData = () => {
+          return bridgeState.mindMapData
+        }
+        // 保存思维导图数据的函数
+        window.takeOverAppMethods.saveMindMapData = data => {
+          bridgeState.mindMapData = data
+          postMindMapDataToHost(data)
+        }
+        // 获取思维导图配置，也就是实例化时会传入的选项
+        window.takeOverAppMethods.getMindMapConfig = () => {
+          return bridgeState.mindMapConfig
+        }
+        // 保存思维导图配置
+        window.takeOverAppMethods.saveMindMapConfig = config => {
+          bridgeState.mindMapConfig = config
+          postToHost('saveMindMapConfig', config)
+        }
+        // 获取语言的函数
+        window.takeOverAppMethods.getLanguage = () => {
+          return bridgeState.lang
+        }
+        // 保存语言的函数
+        window.takeOverAppMethods.saveLanguage = lang => {
+          bridgeState.lang = lang
+          postToHost('saveLanguage', lang)
+        }
+        // 获取本地配置的函数
+        window.takeOverAppMethods.getLocalConfig = () => {
+          return bridgeState.localConfig
+        }
+        // 保存本地配置的函数
+        window.takeOverAppMethods.saveLocalConfig = config => {
+          bridgeState.localConfig = config
+          postToHost('saveLocalConfig', config)
+        }
+        window.takeOverAppMethods.writeClipboardText = text => {
+          return requestHost('CLIPBOARD_WRITE_TEXT', { text })
+        }
+        window.takeOverAppMethods.readClipboardText = () => {
+          return requestHost('CLIPBOARD_READ_TEXT')
+        }
+        window.takeOverAppMethods.readClipboardItems = () => {
+          return requestHost('CLIPBOARD_READ')
+        }
+        window.takeOverAppMethods.writeClipboardImage = (dataUrl, type) => {
+          return requestHost('CLIPBOARD_WRITE_IMAGE', {
+            dataUrl,
+            type: type || 'image/png'
+          })
+        }
+      }
+
+      const startTakeOverApp = data => {
+        if (appStarted) {
+          debugMindMapOpen('startTakeOverApp skipped: already started')
+          return
+        }
+        appStarted = true
+        debugMindMapOpen('startTakeOverApp before setTakeOverAppMethods', {
+          hasData: !!(data && data.mindMapData),
+          rootChildren:
+            data &&
+            data.mindMapData &&
+            data.mindMapData.root &&
+            data.mindMapData.root.children
+              ? data.mindMapData.root.children.length
+              : 0
+        })
+        setTakeOverAppMethods(data)
+        if (window.takeOverAppEmbedMode || window.takeOverAppReadOnly) {
+          window.__mindMapSyncLayout = true
+        }
+        debugMindMapOpen('syncLayout flag', {
+          embedMode: !!window.takeOverAppEmbedMode,
+          readOnly: !!window.takeOverAppReadOnly,
+          syncLayout: !!window.__mindMapSyncLayout
+        })
+        window.$bus.$on('data_change', () => {
+          postToHost('mindMapDirtyState', { dirty: true })
+        })
+        window.$bus.$on('view_data_change', () => {
+          postToHost('mindMapDirtyState', { dirty: true })
+          if (nativeMindMap?.view) {
+            postToHost('mindMapViewState', {
+              scale: nativeMindMap.view.scale,
+              x: nativeMindMap.view.x,
+              y: nativeMindMap.view.y
+            })
+          }
+        })
+        window.$bus.$on('scale', scale => {
+          postToHost('mindMapScaleState', { scale })
+        })
+        // 思维导图实例创建完成事件
+        // MindMap.render() uses setTimeout(0) and doLayout uses asyncRun
+        // (which chains multiple setTimeout(0) calls). The tree is NOT fully
+        // rendered when the constructor returns. Defer appInited to the host
+        // until node_tree_render_end fires so that SVG export produces a
+        // complete snapshot.
+        let appInitedSentToHost = false
+        let renderEnded = false
+        const notifyHostAppInited = (caller) => {
+          debugMindMapOpen('notifyHostAppInited called', {
+            caller,
+            appInitedSentToHost,
+            hasNativeMindMap: !!nativeMindMap,
+            renderEnded,
+            willFire: !appInitedSentToHost && !!nativeMindMap && renderEnded
+          })
+          if (appInitedSentToHost) return
+          if (!nativeMindMap || !renderEnded) return
+          appInitedSentToHost = true
+          debugMindMapOpen('notifyHostAppInited (after render)', {
+            totalElapsed: Math.round(performance.now() - bridgeStartedAt),
+            hasExport: typeof nativeMindMap?.export === 'function',
+            scale: nativeMindMap?.view?.scale || null
+          })
+          postToHost('appInited')
+          if (nativeMindMap?.view?.scale) {
+            postToHost('mindMapScaleState', { scale: nativeMindMap.view.scale })
+          }
+        }
+        window.$bus.$on('app_inited', mindMap => {
+          nativeMindMap = mindMap
+          if (
+            bridgeState.readOnly &&
+            typeof nativeMindMap.setMode === 'function'
+          ) {
+            nativeMindMap.setMode('readonly')
+            window.$bus.$emit('host_readonly_mode', true)
+          }
+          debugMindMapOpen('app_inited from Vue', {
+            totalElapsed: Math.round(performance.now() - bridgeStartedAt),
+            renderEnded
+          })
+          notifyHostAppInited('app_inited')
+        })
+        window.$bus.$on('node_tree_render_end', () => {
+          renderEnded = true
+          debugMindMapOpen('node_tree_render_end', {
+            hasNativeMindMap: !!nativeMindMap,
+            appInitedSentToHost
+          })
+          notifyHostAppInited('node_tree_render_end')
+        })
+        // 实例化页面
+        debugMindMapOpen('before window.initApp')
+        window.initApp()
+        debugMindMapOpen('after window.initApp call')
+      }
+
+      window.addEventListener('message', event => {
+        const message = event.data
+        if (!message) return
+        const isHostMessage = message.source === hostSource
+        const isPreviewControlMessage =
+          message.type === 'MINDMAP_PREVIEW_LOCATE' ||
+          message.type === 'MINDMAP_PREVIEW_RESIZE'
+        if (!isHostMessage && !isPreviewControlMessage) return
+        if (
+          message.type === 'CLIPBOARD_RESULT' ||
+          message.type === 'CLIPBOARD_READ_RESULT' ||
+          message.type === 'CLIPBOARD_READ_ITEMS_RESULT'
+        ) {
+          resolveHostRequest(message)
+          return
+        }
+        if (message.type === 'initMindMap') {
+          debugMindMapOpen('received initMindMap message')
+          startTakeOverApp(message.payload)
+        }
+        if (message.type === 'setMindMapData') {
+          debugMindMapOpen('received setMindMapData message')
+          setTakeOverAppMethods(message.payload)
+          if (
+            nativeMindMap &&
+            typeof nativeMindMap.setFullData === 'function'
+          ) {
+            nativeMindMap.setFullData(bridgeState.mindMapData)
+            if (nativeMindMap?.view?.scale) {
+              postToHost('mindMapScaleState', {
+                scale: nativeMindMap.view.scale
+              })
+            }
+          }
+        }
+        if (message.type === 'mindMapAiConfig') {
+          window.$bus.$emit('host_ai_config', message.payload)
+        }
+        if (message.type === 'mindMapHostSaveStatus') {
+          window.$bus.$emit('host_save_status', message.payload)
+        }
+        if (message.type === 'requestMindMapSave') {
+          const requestId = message.payload && message.payload.requestId
+          debugMindMapOpen('received requestMindMapSave', {
+            requestId: requestId || null,
+            hasNativeMindMap: !!nativeMindMap
+          })
+          if (nativeMindMap && typeof nativeMindMap.getData === 'function') {
+            bridgeState.mindMapData = nativeMindMap.getData(true)
+          }
+          postMindMapDataToHost(bridgeState.mindMapData, requestId)
+        }
+        if (
+          message.type === 'restoreMindMapView' ||
+          message.type === 'MINDMAP_PREVIEW_LOCATE'
+        ) {
+          const requestId = message.payload && message.payload.requestId
+          debugMindMapOpen('received locate request', {
+            type: message.type,
+            requestId: requestId || null,
+            reason: (message.payload && message.payload.reason) || null,
+            hasNativeMindMap: !!nativeMindMap,
+            hasFit: typeof nativeMindMap?.view?.fit === 'function',
+            scaleBefore: nativeMindMap?.view?.scale || null,
+            innerSize: {
+              w: window.innerWidth,
+              h: window.innerHeight
+            }
+          })
+          if (nativeMindMap?.view && typeof nativeMindMap.view.fit === 'function') {
+            if (typeof nativeMindMap.__nbApplyEmbedPreviewViewport === 'function') {
+              nativeMindMap.__nbApplyEmbedPreviewViewport(
+                (message.payload && message.payload.reason) || message.type
+              )
+            } else {
+              if (typeof nativeMindMap.resize === 'function') {
+                nativeMindMap.resize()
+              }
+              nativeMindMap.view.fit()
+            }
+            window.setTimeout(() => {
+              debugMindMapOpen('locate request fit done', {
+                type: message.type,
+                requestId: requestId || null,
+                scaleAfter: nativeMindMap?.view?.scale || null
+              })
+              postToHost('mindMapViewRestoreDone', {
+                requestId: requestId || null,
+                reason: (message.payload && message.payload.reason) || message.type,
+                scale: nativeMindMap?.view?.scale || null
+              })
+              if (nativeMindMap?.view) {
+                postToHost('mindMapScaleState', { scale: nativeMindMap.view.scale })
+                postToHost('mindMapViewState', {
+                  scale: nativeMindMap.view.scale,
+                  x: nativeMindMap.view.x,
+                  y: nativeMindMap.view.y
+                })
+              }
+            }, 0)
+          }
+        }
+        if (message.type === 'MINDMAP_PREVIEW_RESIZE') {
+          debugMindMapOpen('received preview resize', {
+            hasNativeMindMap: !!nativeMindMap,
+            hasResize: typeof nativeMindMap?.resize === 'function',
+            hasFit: typeof nativeMindMap?.view?.fit === 'function',
+            innerSize: {
+              w: window.innerWidth,
+              h: window.innerHeight
+            }
+          })
+          if (typeof nativeMindMap?.__nbApplyEmbedPreviewViewport === 'function') {
+            nativeMindMap.__nbApplyEmbedPreviewViewport('preview-resize')
+          } else if (typeof nativeMindMap?.view?.fit === 'function') {
+            if (typeof nativeMindMap.resize === 'function') {
+              nativeMindMap.resize()
+            }
+            nativeMindMap.view.fit()
+          }
+        }
+      })
+
+      window.onload = () => {
+        if (!window.takeOverApp) return
+        debugMindMapOpen('window.onload post ready')
+        postToHost('ready')
+      }</script><script src="dist/js/chunk-vendors.js?0df10968f505abc293dd"></script><script src="dist/js/app.js?0df10968f505abc293dd"></script></body></html>

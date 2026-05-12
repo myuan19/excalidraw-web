@@ -1,0 +1,180 @@
+<svg viewBox="2.533129770992389 694.4358778625955 787.2137404580152 472.3282442748091" style="background-color:#f1f1f1;" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet" width="100%" height="100%">
+<title>同级节点很多</title>
+<rect x="0" y="0" width="1600" height="1900" fill="#f1f1f1"></rect>
+<g class="smm-container" transform="matrix(1,0,0,1,0,0)">
+<g class="smm-line-container"><path d="M 414,922.5L 479.7,922.5L 479.7,99L 560,99" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,163L 560,163" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,227L 560,227" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,291L 560,291" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,355L 560,355" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,419L 560,419" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,483L 560,483" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,547L 560,547" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,611L 560,611" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,675L 560,675" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,739L 560,739" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,803L 560,803" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,867L 560,867" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,931L 560,931" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,995L 560,995" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,1059L 560,1059" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,1123L 560,1123" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,1187L 560,1187" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,1251L 560,1251" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,1315L 560,1315" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,1379L 560,1379" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,1443L 560,1443" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,1507L 560,1507" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,1571L 560,1571" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,1635L 560,1635" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,1699L 560,1699" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,1763L 560,1763" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,922.5L 479.7,922.5L 479.7,1827L 560,1827" stroke="#1e3556" stroke-width="2" fill="none"></path></g>
+<g class="smm-node-container"><g class="smm-node smm-root-node" transform="matrix(1,0,0,1,260,900)">
+<rect width="154" height="45" rx="10" ry="10" class="smm-node-shape" fill="#1e3556" stroke="#1e3556" stroke-width="2"></rect>
+<text x="77" y="30.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="24" fill="#fff" font-weight="700">中心主题</text>
+<rect width="158" height="49" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,80)">
+<rect width="129.2" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="64.6" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 1</text>
+<rect width="133.2" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,144)">
+<rect width="129.2" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="64.6" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 2</text>
+<rect width="133.2" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,208)">
+<rect width="129.2" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="64.6" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 3</text>
+<rect width="133.2" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,272)">
+<rect width="129.2" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="64.6" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 4</text>
+<rect width="133.2" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,336)">
+<rect width="129.2" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="64.6" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 5</text>
+<rect width="133.2" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,400)">
+<rect width="129.2" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="64.6" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 6</text>
+<rect width="133.2" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,464)">
+<rect width="129.2" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="64.6" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 7</text>
+<rect width="133.2" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,528)">
+<rect width="129.2" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="64.6" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 8</text>
+<rect width="133.2" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,592)">
+<rect width="129.2" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="64.6" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 9</text>
+<rect width="133.2" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,656)">
+<rect width="145.4" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="72.7" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 10</text>
+<rect width="149.4" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,720)">
+<rect width="145.4" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="72.7" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 11</text>
+<rect width="149.4" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,784)">
+<rect width="145.4" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="72.7" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 12</text>
+<rect width="149.4" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,848)">
+<rect width="145.4" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="72.7" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 13</text>
+<rect width="149.4" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,912)">
+<rect width="145.4" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="72.7" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 14</text>
+<rect width="149.4" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,976)">
+<rect width="145.4" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="72.7" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 15</text>
+<rect width="149.4" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,1040)">
+<rect width="145.4" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="72.7" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 16</text>
+<rect width="149.4" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,1104)">
+<rect width="145.4" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="72.7" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 17</text>
+<rect width="149.4" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,1168)">
+<rect width="145.4" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="72.7" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 18</text>
+<rect width="149.4" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,1232)">
+<rect width="145.4" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="72.7" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 19</text>
+<rect width="149.4" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,1296)">
+<rect width="145.4" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="72.7" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 20</text>
+<rect width="149.4" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,1360)">
+<rect width="145.4" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="72.7" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 21</text>
+<rect width="149.4" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,1424)">
+<rect width="145.4" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="72.7" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 22</text>
+<rect width="149.4" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,1488)">
+<rect width="145.4" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="72.7" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 23</text>
+<rect width="149.4" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,1552)">
+<rect width="145.4" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="72.7" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 24</text>
+<rect width="149.4" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,1616)">
+<rect width="145.4" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="72.7" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 25</text>
+<rect width="149.4" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,1680)">
+<rect width="145.4" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="72.7" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 26</text>
+<rect width="149.4" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,1744)">
+<rect width="145.4" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="72.7" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 27</text>
+<rect width="149.4" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,1808)">
+<rect width="145.4" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="72.7" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">同级节点 28</text>
+<rect width="149.4" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g></g>
+
+</g>
+</svg>

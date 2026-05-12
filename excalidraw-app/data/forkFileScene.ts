@@ -3,6 +3,7 @@
  */
 
 import type { ForkSceneSnapshot } from "./forkFileTypes";
+import { ExcalidrawAdapter } from "./formats/ExcalidrawAdapter";
 
 /** 将服务器文件列表中的 `name` 写入 appState.name（画布标题与列表一致）。 */
 export function mergeAppStateWithServerFileName(
@@ -27,5 +28,21 @@ export function forkSceneSnapshotWithServerName(
   return {
     ...scene,
     appState: mergeAppStateWithServerFileName(scene.appState, serverName),
+  };
+}
+
+export function createBlankExcalidrawInitialScene(name: string): {
+  elements: unknown[];
+  appState: Record<string, unknown>;
+  files: Record<string, unknown>;
+} {
+  const scene = ExcalidrawAdapter.createEmpty();
+  return {
+    elements: Array.isArray(scene.elements) ? scene.elements : [],
+    appState: mergeAppStateWithServerFileName(scene.appState, name),
+    files:
+      scene.files && typeof scene.files === "object" && !Array.isArray(scene.files)
+        ? (scene.files as Record<string, unknown>)
+        : {},
   };
 }

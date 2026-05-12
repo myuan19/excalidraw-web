@@ -14,8 +14,9 @@ export async function fetchThumbnailSvgForCard(
   errPreview?: string;
 }> {
   const { id8 } = ctx;
+  const hasImmutableHash = /[?&]h=/.test(urlPath);
   const opts: RequestInit = {
-    cache: "no-store",
+    cache: hasImmutableHash ? "force-cache" : "no-store",
     headers: { Accept: "image/svg+xml,text/plain,*/*;q=0.8,*/*;q=0.1" },
   };
 

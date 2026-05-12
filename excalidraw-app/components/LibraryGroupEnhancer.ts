@@ -456,6 +456,9 @@ export function moveItem(
     const tIdx = items.findIndex((i) => i.id === opts.targetItemId);
     insertIdx =
       tIdx !== -1 ? (opts.placeAfter ? tIdx + 1 : tIdx) : items.length;
+  } else if (item.status === "published") {
+    const lastPublished = items.findLastIndex((i) => i.status === "published");
+    insertIdx = lastPublished !== -1 ? lastPublished + 1 : items.length;
   } else {
     const firstOfStatus = items.findIndex((i) => i.status === item.status);
     insertIdx = firstOfStatus !== -1 ? firstOfStatus : 0;

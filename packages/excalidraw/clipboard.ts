@@ -136,6 +136,13 @@ export const createPasteEvent = ({
     }
   }
 
+  console.log("[DEBUG] createPasteEvent | synthetic clipboard payload", {
+    typeKeys: Object.keys(types || {}),
+    inputFileCount: files?.length ?? 0,
+    dataTransferFileCount: event.clipboardData?.files.length ?? 0,
+    dataTransferItemCount: event.clipboardData?.items.length ?? 0,
+  });
+
   return event;
 };
 
@@ -259,8 +266,26 @@ export const readSystemClipboard = async () => {
   let clipboardItems: ClipboardItems;
 
   try {
+    console.log("[DEBUG] readSystemClipboard | before navigator.clipboard.read", {
+      hasClipboard: !!navigator.clipboard,
+      hasRead: !!navigator.clipboard?.read,
+      hasReadText: !!navigator.clipboard?.readText,
+      isSecureContext:
+        typeof window !== "undefined" ? window.isSecureContext : undefined,
+      documentHasFocus:
+        typeof document !== "undefined" ? document.hasFocus() : undefined,
+    });
     clipboardItems = await navigator.clipboard?.read();
+    console.log("[DEBUG] readSystemClipboard | read OK", {
+      itemCount: clipboardItems?.length ?? 0,
+      itemTypes: Array.from(clipboardItems || []).map((item) => item.types),
+    });
   } catch (error: any) {
+    console.log("[DEBUG] readSystemClipboard | read FAILED", {
+      name: error?.name,
+      message: error?.message,
+      stack: error?.stack,
+    });
     try {
       if (navigator.clipboard?.readText) {
         console.warn(
@@ -268,10 +293,18 @@ export const readSystemClipboard = async () => {
         );
         const readText = await navigator.clipboard?.readText();
         if (readText) {
+          console.log("[DEBUG] readSystemClipboard | readText fallback OK", {
+            textLength: readText.length,
+          });
           return { [MIME_TYPES.text]: readText };
         }
       }
     } catch (error: any) {
+      console.log("[DEBUG] readSystemClipboard | readText fallback FAILED", {
+        name: error?.name,
+        message: error?.message,
+        stack: error?.stack,
+      });
       // @ts-ignore
       if (navigator.clipboard?.read) {
         console.warn(
@@ -292,21 +325,45 @@ export const readSystemClipboard = async () => {
   }
 
   for (const item of clipboardItems) {
+    console.log("[DEBUG] readSystemClipboard | clipboard item", {
+      itemTypes: item.types,
+    });
     for (const type of item.types) {
       if (!isMemberOf(ALLOWED_PASTE_MIME_TYPES, type)) {
+        console.log("[DEBUG] readSystemClipboard | skip unsupported type", {
+          type,
+        });
         continue;
       }
       try {
         if (type === MIME_TYPES.text || type === MIME_TYPES.html) {
           types[type] = await (await item.getType(type)).text();
+          console.log("[DEBUG] readSystemClipboard | text/html item read", {
+            type,
+            textLength:
+              typeof types[type] === "string" ? types[type].length : 0,
+          });
         } else if (isSupportedImageFileType(type)) {
           const imageBlob = await item.getType(type);
           const file = createFile(imageBlob, type, undefined);
           types[type] = file;
+          console.log("[DEBUG] readSystemClipboard | image item read", {
+            type,
+            blobSize: imageBlob.size,
+            fileName: file.name,
+            fileType: file.type,
+            fileSize: file.size,
+          });
         } else {
           throw new ExcalidrawError(`Unsupported clipboard type: ${type}`);
         }
       } catch (error: any) {
+        console.log("[DEBUG] readSystemClipboard | item read FAILED", {
+          type,
+          name: error?.name,
+          message: error?.message,
+          stack: error?.stack,
+        });
         console.warn(
           error instanceof ExcalidrawError
             ? error.message
@@ -320,6 +377,17 @@ export const readSystemClipboard = async () => {
     console.warn("No clipboard data found from clipboard.read().");
     return types;
   }
+
+  console.log("[DEBUG] readSystemClipboard | result", {
+    typeKeys: Object.keys(types),
+    fileTypes: Object.entries(types)
+      .filter(([, value]) => value instanceof File)
+      .map(([type, value]) => ({
+        type,
+        fileType: (value as File).type,
+        fileSize: (value as File).size,
+      })),
+  });
 
   return types;
 };

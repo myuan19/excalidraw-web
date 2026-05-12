@@ -1,0 +1,27 @@
+{
+  "id": "P2-5",
+  "title": "共享 AI 配置入口",
+  "status": "PASS",
+  "checks": [
+    {
+      "name": "AISettings copy states the config is shared by Home, Excalidraw and MindMap",
+      "pass": true
+    },
+    {
+      "name": "AI config is centralized in aiConfig and persisted via server API",
+      "pass": true
+    },
+    {
+      "name": "Home FileList uses the shared AISettings dialog",
+      "pass": true
+    },
+    {
+      "name": "MindMapEditorShell uses the same AISettings dialog and aiConfig subscription",
+      "pass": true
+    },
+    {
+      "name": "Excalidraw AI features still use the shared aiConfig module",
+      "pass": true
+    }
+  ]
+}

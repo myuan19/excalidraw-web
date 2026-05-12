@@ -1,16 +1,22 @@
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Excalidraw,
   ExcalidrawAPIProvider,
   useExcalidrawAPI,
 } from "@excalidraw/excalidraw";
 import { THEME } from "@excalidraw/common";
-import { restoreAppState, restoreElements } from "@excalidraw/excalidraw/data/restore";
+import {
+  restoreAppState,
+  restoreElements,
+} from "@excalidraw/excalidraw/data/restore";
+import {
+  buildMindMapEmbedBridgePayload,
+  buildEmbedEditUrl,
+  getEmbedDocumentKind,
+  getMindMapEmbedData,
+  type EmbedDocumentKind,
+} from "./data/embedDocument";
+import { handleEmbedEditLinkClick } from "./embed/openEmbedEditUrl";
 
 import type {
   ExcalidrawInitialDataState,
@@ -22,20 +28,30 @@ import "./EmbedViewer.scss";
 // ── Custom SVG icons (reference: Notion-Boost) ──────────────────────────────
 
 const CrosshairIcon = (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+  >
     <circle cx="12" cy="12" r="3" />
     <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
   </svg>
 );
 
-const PinIcon = (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-    <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z" />
-  </svg>
-);
-
 const ExternalLinkIcon = (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
     <polyline points="15 3 21 3 21 9" />
     <line x1="10" y1="14" x2="21" y2="3" />
@@ -47,11 +63,8 @@ declare global {
     __EXCALIDRAW_EMBED_MODE__?: boolean;
     __EXCALIDRAW_EMBED_FILE_ID__?: string;
     __EXCALIDRAW_EMBED_FILE_NAME__?: string;
-    __EXCALIDRAW_EMBED_DATA__?: {
-      elements?: unknown[];
-      appState?: Record<string, unknown>;
-      files?: Record<string, unknown>;
-    };
+    __EXCALIDRAW_EMBED_KIND__?: string;
+    __EXCALIDRAW_EMBED_DATA__?: unknown;
   }
 }
 
@@ -64,15 +77,26 @@ function getEmbedInitialData(): ExcalidrawInitialDataState | null {
   if (!raw || typeof raw !== "object") {
     return null;
   }
+  const scene = raw as {
+    elements?: unknown[];
+    appState?: Record<string, unknown>;
+    files?: Record<string, unknown>;
+  };
 
   return {
-    elements: restoreElements((raw.elements as any) ?? [], null, {
+    elements: restoreElements((scene.elements as any) ?? [], null, {
       repairBindings: true,
       deleteInvisibleElements: true,
     }),
-    appState: restoreAppState((raw.appState as any) ?? {}, null),
-    files: (raw.files || {}) as any,
+    appState: restoreAppState((scene.appState as any) ?? {}, null),
+    files: (scene.files || {}) as any,
+    scrollToContent: true,
   };
+}
+
+function getEmbedResourceTokenQuery(): string {
+  const token = new URLSearchParams(window.location.search).get("token");
+  return token ? `?_t=${encodeURIComponent(token)}` : "";
 }
 
 // ── Inner canvas + controls (must be child of ExcalidrawAPIProvider) ─────────
@@ -84,7 +108,11 @@ interface DefaultViewport {
 }
 
 function embedDebug(event: string, data?: Record<string, unknown>): void {
-  console.info("[embedViewer]", event, data ?? {});
+  try {
+    console.info(`[DEBUG] embedViewer | ${event} ${JSON.stringify(data ?? {})}`);
+  } catch {
+    console.info(`[DEBUG] embedViewer | ${event}`, data ?? {});
+  }
 }
 
 function viewportFromAppState(appState: AppState): DefaultViewport {
@@ -95,7 +123,34 @@ function viewportFromAppState(appState: AppState): DefaultViewport {
   };
 }
 
-function roundViewport(viewport: DefaultViewport | null): DefaultViewport | null {
+function viewportFromUnknownAppState(appState: unknown): DefaultViewport | null {
+  if (!appState || typeof appState !== "object") {
+    return null;
+  }
+  const state = appState as {
+    scrollX?: unknown;
+    scrollY?: unknown;
+    zoom?: { value?: unknown } | unknown;
+  };
+  const scrollX = typeof state.scrollX === "number" ? state.scrollX : null;
+  const scrollY = typeof state.scrollY === "number" ? state.scrollY : null;
+  const zoomValue =
+    state.zoom && typeof state.zoom === "object"
+      ? (state.zoom as { value?: unknown }).value
+      : null;
+  if (
+    scrollX === null ||
+    scrollY === null ||
+    typeof zoomValue !== "number"
+  ) {
+    return null;
+  }
+  return { scrollX, scrollY, zoom: zoomValue };
+}
+
+function roundViewport(
+  viewport: DefaultViewport | null,
+): DefaultViewport | null {
   if (!viewport) {
     return null;
   }
@@ -112,33 +167,28 @@ interface EmbedCanvasProps {
   editUrl: string;
 }
 
-type ViewControlState =
-  | "pinned-overview"
-  | "free-overview"
-  | "free-offset";
+type DefaultViewportSource = "current" | "preview-range";
 
 const EmbedCanvas = ({ initialData, theme, editUrl }: EmbedCanvasProps) => {
   const api = useExcalidrawAPI();
   const [isAtDefaultView, setIsAtDefaultView] = useState(true);
-  const [isPinned, setIsPinned] = useState(true);
   const suppress = useRef(false);
   const justFitted = useRef(false);
   const defaultViewport = useRef<DefaultViewport | null>(null);
+  const defaultViewportSource = useRef<DefaultViewportSource>("current");
   const isAtDefaultViewRef = useRef(isAtDefaultView);
-  const isPinnedRef = useRef(isPinned);
   const initialFitDone = useRef(false);
 
-  const fitToOverview = useCallback(
-    (nextPinned = true, source = "unknown") => {
+  const applyExcalidrawPreviewRange = useCallback(
+    (source = "unknown") => {
       if (!api) {
-        embedDebug("fit skipped: no api", { source, nextPinned });
+        embedDebug("preview range skipped: no api", { source });
         return;
       }
       const elements = api.getSceneElements();
       if (elements.length === 0) {
-        embedDebug("fit skipped: empty scene", { source, nextPinned });
+        embedDebug("preview range skipped: empty scene", { source });
         setIsAtDefaultView(true);
-        setIsPinned(nextPinned);
         return;
       }
 
@@ -146,7 +196,9 @@ const EmbedCanvas = ({ initialData, theme, editUrl }: EmbedCanvasProps) => {
       justFitted.current = true;
 
       const containerEl = document.querySelector(".excalidraw-embed-viewer");
-      const canvasEl = containerEl?.querySelector(".excalidraw") as HTMLElement | null;
+      const canvasEl = containerEl?.querySelector(
+        ".excalidraw",
+      ) as HTMLElement | null;
       const containerRect = containerEl?.getBoundingClientRect();
       const canvasRect = canvasEl?.getBoundingClientRect();
 
@@ -160,17 +212,22 @@ const EmbedCanvas = ({ initialData, theme, editUrl }: EmbedCanvasProps) => {
         }),
         { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
       );
-      embedDebug("fit start", {
+      embedDebug("preview range apply start", {
         source,
-        nextPinned,
         elementCount: elements.length,
         before: roundViewport(before),
         defaultViewport: roundViewport(defaultViewport.current),
         container: containerRect
-          ? { w: Math.round(containerRect.width), h: Math.round(containerRect.height) }
+          ? {
+              w: Math.round(containerRect.width),
+              h: Math.round(containerRect.height),
+            }
           : null,
         canvas: canvasRect
-          ? { w: Math.round(canvasRect.width), h: Math.round(canvasRect.height) }
+          ? {
+              w: Math.round(canvasRect.width),
+              h: Math.round(canvasRect.height),
+            }
           : null,
         sceneBounds: {
           w: Math.round(sceneBounds.maxX - sceneBounds.minX),
@@ -188,11 +245,10 @@ const EmbedCanvas = ({ initialData, theme, editUrl }: EmbedCanvasProps) => {
         scrollY: afterState.scrollY,
         zoom: afterState.zoom.value,
       };
+      defaultViewportSource.current = "preview-range";
       setIsAtDefaultView(true);
-      setIsPinned(nextPinned);
-      embedDebug("fit done", {
+      embedDebug("preview range apply done", {
         source,
-        nextPinned,
         after: roundViewport(defaultViewport.current),
         afterWidth: afterState.width,
         afterHeight: afterState.height,
@@ -200,7 +256,7 @@ const EmbedCanvas = ({ initialData, theme, editUrl }: EmbedCanvasProps) => {
 
       setTimeout(() => {
         suppress.current = false;
-        embedDebug("fit suppress released", {
+        embedDebug("preview range suppress released", {
           source,
           defaultViewport: roundViewport(defaultViewport.current),
         });
@@ -213,6 +269,12 @@ const EmbedCanvas = ({ initialData, theme, editUrl }: EmbedCanvasProps) => {
   const lastKnownSize = useRef<{ w: number; h: number } | null>(null);
 
   useEffect(() => {
+    const containerEl = document.querySelector(".excalidraw-embed-viewer");
+    const canvasEl = containerEl?.querySelector(
+      ".excalidraw",
+    ) as HTMLElement | null;
+    const containerRect = containerEl?.getBoundingClientRect();
+    const canvasRect = canvasEl?.getBoundingClientRect();
     embedDebug("mounted", {
       fileId: window.__EXCALIDRAW_EMBED_FILE_ID__ ?? null,
       fileName: window.__EXCALIDRAW_EMBED_FILE_NAME__ ?? null,
@@ -222,8 +284,67 @@ const EmbedCanvas = ({ initialData, theme, editUrl }: EmbedCanvasProps) => {
       initialFileCount: initialData?.files
         ? Object.keys(initialData.files).length
         : 0,
+      initialViewport: initialData?.appState
+        ? roundViewport(viewportFromUnknownAppState(initialData.appState))
+        : null,
+      container: containerRect
+        ? {
+            w: Math.round(containerRect.width),
+            h: Math.round(containerRect.height),
+          }
+        : null,
+      canvas: canvasRect
+        ? {
+            w: Math.round(canvasRect.width),
+            h: Math.round(canvasRect.height),
+          }
+        : null,
+      windowSize: { w: window.innerWidth, h: window.innerHeight },
       theme,
     });
+    requestAnimationFrame(() => {
+      const appState = api?.getAppState();
+      const nextContainerRect = containerEl?.getBoundingClientRect();
+      const nextCanvasRect = canvasEl?.getBoundingClientRect();
+      embedDebug("after first animation frame", {
+        viewport: appState ? roundViewport(viewportFromAppState(appState)) : null,
+        container: nextContainerRect
+          ? {
+              w: Math.round(nextContainerRect.width),
+              h: Math.round(nextContainerRect.height),
+            }
+          : null,
+        canvas: nextCanvasRect
+          ? {
+              w: Math.round(nextCanvasRect.width),
+              h: Math.round(nextCanvasRect.height),
+            }
+          : null,
+      });
+    });
+    const timer = window.setTimeout(() => {
+      const appState = api?.getAppState();
+      const nextContainerRect = containerEl?.getBoundingClientRect();
+      const nextCanvasRect = canvasEl?.getBoundingClientRect();
+      embedDebug("after 800ms", {
+        viewport: appState ? roundViewport(viewportFromAppState(appState)) : null,
+        defaultViewport: roundViewport(defaultViewport.current),
+        defaultViewportSource: defaultViewportSource.current,
+        container: nextContainerRect
+          ? {
+              w: Math.round(nextContainerRect.width),
+              h: Math.round(nextContainerRect.height),
+            }
+          : null,
+        canvas: nextCanvasRect
+          ? {
+              w: Math.round(nextCanvasRect.width),
+              h: Math.round(nextCanvasRect.height),
+            }
+          : null,
+      });
+    }, 800);
+    return () => window.clearTimeout(timer);
   }, [api, initialData, theme]);
 
   // Re-fit when the container resizes (iframe gets its correct dimensions)
@@ -259,15 +380,21 @@ const EmbedCanvas = ({ initialData, theme, editUrl }: EmbedCanvasProps) => {
         from: prev,
         to: rounded,
         elapsed,
-        willRefit: elapsed < 5000,
+        defaultViewportSource: defaultViewportSource.current,
+        willRefit:
+          elapsed < 5000 &&
+          defaultViewportSource.current === "preview-range",
       });
 
-      if (elapsed < 5000) {
+      if (
+        elapsed < 5000 &&
+        defaultViewportSource.current === "preview-range"
+      ) {
         if (refitTimer) clearTimeout(refitTimer);
         refitTimer = setTimeout(() => {
           refitTimer = null;
           embedDebug("refit after resize", { size: rounded });
-          fitToOverview(isPinnedRef.current, "resize-refit");
+          applyExcalidrawPreviewRange("resize-refit");
         }, 100);
       }
     });
@@ -277,43 +404,48 @@ const EmbedCanvas = ({ initialData, theme, editUrl }: EmbedCanvasProps) => {
       observer.disconnect();
       if (refitTimer) clearTimeout(refitTimer);
     };
-  }, [api, fitToOverview]);
+  }, [api, applyExcalidrawPreviewRange]);
+
+  useEffect(() => {
+    if (!api) {
+      return;
+    }
+    const onMessage = (event: MessageEvent<unknown>) => {
+      const message = event.data as { type?: unknown } | null;
+      if (!message || typeof message !== "object") {
+        return;
+      }
+      if (message.type !== "EMBED_LOCATE" && message.type !== "EMBED_REFIT") {
+        return;
+      }
+      const appState = api.getAppState();
+      embedDebug("host locate/refit message received", {
+        type: message.type,
+        origin: event.origin,
+        viewport: roundViewport(viewportFromAppState(appState)),
+        defaultViewport: roundViewport(defaultViewport.current),
+        defaultViewportSource: defaultViewportSource.current,
+        isAtDefaultView: isAtDefaultViewRef.current,
+      });
+      applyExcalidrawPreviewRange(
+        message.type === "EMBED_LOCATE" ? "host-embed-locate" : "host-embed-refit",
+      );
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [api, applyExcalidrawPreviewRange]);
 
   useEffect(() => {
     isAtDefaultViewRef.current = isAtDefaultView;
   }, [isAtDefaultView]);
 
-  useEffect(() => {
-    isPinnedRef.current = isPinned;
-  }, [isPinned]);
-
-  const viewControlState: ViewControlState = !isAtDefaultView
-    ? "free-offset"
-    : isPinned
-      ? "pinned-overview"
-      : "free-overview";
-
   const handleViewControl = useCallback(() => {
-    embedDebug("view control clicked", {
-      viewControlState,
+    embedDebug("locate button clicked", {
       isAtDefaultView,
-      isPinned,
       defaultViewport: roundViewport(defaultViewport.current),
     });
-    if (viewControlState === "free-offset") {
-      fitToOverview(false, "button-offset");
-      return;
-    }
-    setIsPinned((current) => {
-      const nextPinned = !current;
-      embedDebug("pin toggled", {
-        from: current,
-        to: nextPinned,
-        viewControlState,
-      });
-      return nextPinned;
-    });
-  }, [fitToOverview, isAtDefaultView, isPinned, viewControlState]);
+    applyExcalidrawPreviewRange("button-locate");
+  }, [applyExcalidrawPreviewRange, isAtDefaultView]);
 
   const handleChange = useCallback(
     (_elements: unknown, appState: AppState) => {
@@ -327,15 +459,16 @@ const EmbedCanvas = ({ initialData, theme, editUrl }: EmbedCanvasProps) => {
       }
       if (!initialFitDone.current) {
         initialFitDone.current = true;
-        embedDebug("onChange initial fit trigger", {
+        embedDebug("onChange initial viewport; fitting to preview range", {
           current: roundViewport(currentViewport),
           elementCount: api?.getSceneElements().length ?? null,
         });
-        fitToOverview(true, "initial-onChange");
+        applyExcalidrawPreviewRange("initial-load");
         return;
       }
       if (!defaultViewport.current) {
         defaultViewport.current = currentViewport;
+        defaultViewportSource.current = "current";
         embedDebug("onChange default viewport initialized", {
           current: roundViewport(currentViewport),
         });
@@ -346,6 +479,7 @@ const EmbedCanvas = ({ initialData, theme, editUrl }: EmbedCanvasProps) => {
       if (justFitted.current) {
         justFitted.current = false;
         defaultViewport.current = currentViewport;
+        defaultViewportSource.current = "preview-range";
         embedDebug("onChange recalibrated after fit", {
           nextDefaultViewport: roundViewport(currentViewport),
         });
@@ -367,13 +501,6 @@ const EmbedCanvas = ({ initialData, theme, editUrl }: EmbedCanvasProps) => {
         Math.abs(appState.zoom.value - dv.zoom) > 0.005;
 
       if (moved) {
-        if (isPinnedRef.current && isAtDefaultViewRef.current) {
-          defaultViewport.current = currentViewport;
-          embedDebug("onChange recalibrated pinned overview", {
-            nextDefaultViewport: roundViewport(currentViewport),
-          });
-          return;
-        }
         if (!isAtDefaultViewRef.current) {
           return;
         }
@@ -393,17 +520,11 @@ const EmbedCanvas = ({ initialData, theme, editUrl }: EmbedCanvasProps) => {
         setIsAtDefaultView(true);
       }
     },
-    [api, fitToOverview],
+    [api, applyExcalidrawPreviewRange],
   );
 
-  const isOffset = viewControlState === "free-offset";
-  const lockInteraction = isPinned && isAtDefaultView;
-  const viewControlLabel =
-    viewControlState === "free-offset"
-      ? "适配视图"
-      : viewControlState === "pinned-overview"
-        ? "取消钉住"
-        : "钉住视图";
+  const viewControlState = isAtDefaultView ? "overview" : "free-offset";
+  const viewControlLabel = "定位";
 
   return (
     <>
@@ -428,27 +549,21 @@ const EmbedCanvas = ({ initialData, theme, editUrl }: EmbedCanvasProps) => {
         detectScroll={false}
         handleKeyboardGlobally={false}
       />
-      {lockInteraction && <div className="embed-viewer-interaction-lock" />}
       <div className="embed-viewer-controls">
         <button
-          className={[
-            "embed-viewer-btn",
-            "embed-viewer-btn--view",
-            viewControlState === "pinned-overview"
-              ? "embed-viewer-btn--active"
-              : "",
-          ].filter(Boolean).join(" ")}
+          className="embed-viewer-btn embed-viewer-btn--view"
           data-state={viewControlState}
           onClick={handleViewControl}
           title={viewControlLabel}
           aria-label={viewControlLabel}
           type="button"
         >
-          {isOffset ? CrosshairIcon : PinIcon}
+          {CrosshairIcon}
         </button>
         <a
           className="embed-viewer-btn embed-viewer-btn--share"
           href={editUrl}
+          onClick={(event) => handleEmbedEditLinkClick(event, editUrl)}
           target="_blank"
           rel="noopener noreferrer"
           title="打开编辑页"
@@ -461,23 +576,231 @@ const EmbedCanvas = ({ initialData, theme, editUrl }: EmbedCanvasProps) => {
   );
 };
 
+const MindMapEmbedViewer = ({
+  data,
+  editUrl,
+}: {
+  data: ReturnType<typeof getMindMapEmbedData>;
+  editUrl: string;
+}) => {
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const [isReady, setIsReady] = useState(false);
+
+  const getFrameDebugInfo = useCallback(() => {
+    const container = document.querySelector(".mindmap-embed-viewer");
+    const iframe = iframeRef.current;
+    const containerRect = container?.getBoundingClientRect();
+    const iframeRect = iframe?.getBoundingClientRect();
+    return {
+      container: containerRect
+        ? {
+            w: Math.round(containerRect.width),
+            h: Math.round(containerRect.height),
+            x: Math.round(containerRect.x),
+            y: Math.round(containerRect.y),
+          }
+        : null,
+      iframe: iframeRect
+        ? {
+            w: Math.round(iframeRect.width),
+            h: Math.round(iframeRect.height),
+            x: Math.round(iframeRect.x),
+            y: Math.round(iframeRect.y),
+          }
+        : null,
+      isReady,
+      iframeSrc: iframe?.getAttribute("src") ?? null,
+    };
+  }, [isReady]);
+
+  const postInit = useCallback(() => {
+    embedDebug("mindmap post init", {
+      ...getFrameDebugInfo(),
+      rootChildren: data.root?.children?.length ?? 0,
+      hasView: !!data.view,
+    });
+    iframeRef.current?.contentWindow?.postMessage(
+      {
+        source: "excalidraw-web",
+        type: "initMindMap",
+        payload: buildMindMapEmbedBridgePayload(data),
+      },
+      window.location.origin,
+    );
+  }, [data, getFrameDebugInfo]);
+
+  const applyMindMapPreviewRange = useCallback(() => {
+    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    embedDebug("mindmap preview range button clicked", {
+      requestId,
+      ...getFrameDebugInfo(),
+      hasInitialView: !!data.view,
+    });
+    iframeRef.current?.contentWindow?.postMessage(
+      {
+        source: "excalidraw-web",
+        type: "restoreMindMapView",
+        payload: { requestId, reason: "embed-button" },
+      },
+      window.location.origin,
+    );
+  }, [data.view, getFrameDebugInfo]);
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent<unknown>) => {
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+      const message = event.data as { source?: unknown; type?: unknown };
+      if (
+        message?.source === "simple-mind-map-native" &&
+        message.type === "ready"
+      ) {
+        embedDebug("mindmap iframe ready", getFrameDebugInfo());
+        setIsReady(true);
+        postInit();
+        return;
+      }
+      if (
+        message?.source === "simple-mind-map-native" &&
+        message.type === "appInited"
+      ) {
+        embedDebug("mindmap iframe appInited", getFrameDebugInfo());
+        return;
+      }
+      if (
+        message?.source === "simple-mind-map-native" &&
+        message.type === "mindMapScaleState"
+      ) {
+        embedDebug("mindmap iframe scale", {
+          ...getFrameDebugInfo(),
+          payload: (message as { payload?: unknown }).payload ?? null,
+        });
+        return;
+      }
+      if (
+        message?.source === "simple-mind-map-native" &&
+        message.type === "mindMapViewRestoreDone"
+      ) {
+        embedDebug("mindmap iframe view restore done", {
+          ...getFrameDebugInfo(),
+          payload: (message as { payload?: unknown }).payload ?? null,
+        });
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [getFrameDebugInfo, postInit]);
+
+  useEffect(() => {
+    const container = document.querySelector(".mindmap-embed-viewer");
+    if (!container) {
+      return;
+    }
+    let lastSize: { w: number; h: number } | null = null;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) {
+        return;
+      }
+      const size = {
+        w: Math.round(entry.contentRect.width),
+        h: Math.round(entry.contentRect.height),
+      };
+      if (lastSize && lastSize.w === size.w && lastSize.h === size.h) {
+        return;
+      }
+      embedDebug("mindmap container resized", {
+        from: lastSize,
+        to: size,
+        ...getFrameDebugInfo(),
+      });
+      lastSize = size;
+    });
+    observer.observe(container);
+    requestAnimationFrame(() => {
+      embedDebug("mindmap after first animation frame", getFrameDebugInfo());
+    });
+    const timer = window.setTimeout(() => {
+      embedDebug("mindmap after 800ms", getFrameDebugInfo());
+    }, 800);
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(timer);
+    };
+  }, [getFrameDebugInfo]);
+
+  return (
+    <div className="mindmap-embed-viewer">
+      <iframe
+        ref={iframeRef}
+        title="MindMap"
+        className="mindmap-embed-viewer__frame"
+        src={`/embed/mind-map/index.html${getEmbedResourceTokenQuery()}`}
+        onLoad={() => embedDebug("mindmap iframe load", getFrameDebugInfo())}
+      />
+      <div className="embed-viewer-controls">
+        <button
+          className="embed-viewer-btn embed-viewer-btn--view"
+          data-state="free-offset"
+          onClick={applyMindMapPreviewRange}
+          title="定位"
+          aria-label="定位"
+          type="button"
+        >
+          {CrosshairIcon}
+        </button>
+        <a
+          className="embed-viewer-btn embed-viewer-btn--share"
+          href={editUrl}
+          onClick={(event) => handleEmbedEditLinkClick(event, editUrl)}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="打开编辑页"
+          aria-label="打开编辑页"
+        >
+          {ExternalLinkIcon}
+        </a>
+      </div>
+    </div>
+  );
+};
+
 // ── Public component ──────────────────────────────────────────────────────────
 
 const EmbedViewer = () => {
+  const kind: EmbedDocumentKind = getEmbedDocumentKind(
+    window.__EXCALIDRAW_EMBED_KIND__,
+  );
+  const fileId = window.__EXCALIDRAW_EMBED_FILE_ID__;
+  const editUrl = buildEmbedEditUrl(fileId, kind);
+
+  if (kind === "mindmap") {
+    try {
+      const mindMapData = getMindMapEmbedData(window.__EXCALIDRAW_EMBED_DATA__);
+      return <MindMapEmbedViewer data={mindMapData} editUrl={editUrl} />;
+    } catch (error) {
+      return (
+        <div className="excalidraw-embed-viewer excalidraw-embed-viewer--error">
+          MindMap 嵌入数据无效
+        </div>
+      );
+    }
+  }
+
   const initialData = getEmbedInitialData();
 
   const theme =
     (initialData?.appState as any)?.theme === "dark" ? THEME.DARK : THEME.LIGHT;
 
-  const fileId = window.__EXCALIDRAW_EMBED_FILE_ID__;
-  const editUrl = fileId
-    ? `${window.location.origin}/#file=${fileId}`
-    : window.location.origin;
-
   return (
     <div className="excalidraw-embed-viewer">
       <ExcalidrawAPIProvider>
-        <EmbedCanvas initialData={initialData} theme={theme} editUrl={editUrl} />
+        <EmbedCanvas
+          initialData={initialData}
+          theme={theme}
+          editUrl={editUrl}
+        />
       </ExcalidrawAPIProvider>
     </div>
   );

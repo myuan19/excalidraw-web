@@ -102,10 +102,17 @@ export const ContextMenu = React.memo(
                 key={idx}
                 data-testid={actionName}
                 onClick={() => {
+                  console.log("[DEBUG] ContextMenu | item click", {
+                    actionName,
+                    label,
+                  });
                   // we need update state before executing the action in case
                   // the action uses the appState it's being passed (that still
                   // contains a defined contextMenu) to return the next state.
                   onClose(() => {
+                    console.log("[DEBUG] ContextMenu | execute action", {
+                      actionName,
+                    });
                     actionManager.executeAction(item, "contextMenu");
                   });
                 }}

@@ -1,0 +1,119 @@
+<svg viewBox="70.65999999999997 128.39999999999998 847.0000000000001 508.20000000000005" style="background-color:#f1f1f1;" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet" width="100%" height="100%">
+<title>深度很多</title>
+<g class="smm-container" transform="matrix(1,0,0,1,0,0)">
+<g class="smm-line-container"><path d="M 334,382.5L 360,382.5L 360,411.6009366250858L 365,411.6009366250858" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 478,411.6009366250858L 510.4,411.6009366250858L 510.4,433.220026966937L 550,433.220026966937" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 645,433.220026966937L 685.5,433.220026966937L 685.5,443.8296590890757L 735,443.8296590890757" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 830,443.8296590890757L 870.5,443.8296590890757L 870.5,437.83222502414634L 920,437.83222502414634" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 1015,437.83222502414634L 1055.5,437.83222502414634L 1055.5,416.696105799069L 1105,416.696105799069" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 1200,416.696105799069L 1240.5,416.696105799069L 1240.5,385.596160548071L 1290,385.596160548071" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 1385,385.596160548071L 1425.5,385.596160548071L 1425.5,352.14674051710585L 1475,352.14674051710585" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 1570,352.14674051710585L 1610.5,352.14674051710585L 1610.5,324.5374303190609L 1660,324.5374303190609" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 1755,324.5374303190609L 1795.5,324.5374303190609L 1795.5,309.5279519987734L 1845,309.5279519987734" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 1940,309.5279519987734L 1980.5,309.5279519987734L 1980.5,310.7931493229066L 2030,310.7931493229066" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 2137.6,310.7931493229066L 2172.43,310.7931493229066L 2172.43,328.0232578612133L 2215,328.0232578612133" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 2322.6,328.0232578612133L 2357.43,328.0232578612133L 2357.43,356.999746122473L 2400,356.999746122473" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 2507.6,356.999746122473L 2542.43,356.999746122473L 2542.43,390.6281591899715L 2585,390.6281591899715" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 2692.6,390.6281591899715L 2727.43,390.6281591899715L 2727.43,420.67508871287765L 2770,420.67508871287765" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 2877.6,420.67508871287765L 2912.43,420.67508871287765L 2912.43,439.7839984206822L 2955,439.7839984206822" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 3062.6,439.7839984206822L 3097.43,439.7839984206822L 3097.43,443.27636077038994L 3140,443.27636077038994" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 3247.6,443.27636077038994L 3282.43,443.27636077038994L 3282.43,430.29712365839737L 3325,430.29712365839737" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 3432.6,430.29712365839737L 3467.43,430.29712365839737L 3467.43,404.02405699643947L 3510,404.02405699643947" stroke="#1e3556" stroke-width="2" fill="none"></path></g>
+<g class="smm-node-container"><g class="smm-node" transform="matrix(1,0,0,1,180,360)">
+<rect width="154" height="45" rx="10" ry="10" class="smm-node-shape" fill="#1e3556" stroke="#1e3556" stroke-width="2"></rect>
+<text x="77" y="30.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="24" fill="#fff" font-weight="700">中心主题</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,365,392.6009366250858)">
+<rect width="113" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="56.5" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">第 1 层</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,550,417.220026966937)">
+<rect width="95" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="47.5" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">第 2 层</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,735,427.8296590890757)">
+<rect width="95" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="47.5" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">第 3 层</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,920,421.83222502414634)">
+<rect width="95" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="47.5" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">第 4 层</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,1105,400.696105799069)">
+<rect width="95" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="47.5" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">第 5 层</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,1290,369.596160548071)">
+<rect width="95" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="47.5" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">第 6 层</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,1475,336.14674051710585)">
+<rect width="95" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="47.5" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">第 7 层</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,1660,308.5374303190609)">
+<rect width="95" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="47.5" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">第 8 层</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,1845,293.5279519987734)">
+<rect width="95" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="47.5" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">第 9 层</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,2030,294.7931493229066)">
+<rect width="107.60000000000001" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="53.800000000000004" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">第 10 层</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,2215,312.0232578612133)">
+<rect width="107.60000000000001" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="53.800000000000004" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">第 11 层</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,2400,340.999746122473)">
+<rect width="107.60000000000001" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="53.800000000000004" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">第 12 层</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,2585,374.6281591899715)">
+<rect width="107.60000000000001" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="53.800000000000004" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">第 13 层</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,2770,404.67508871287765)">
+<rect width="107.60000000000001" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="53.800000000000004" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">第 14 层</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,2955,423.7839984206822)">
+<rect width="107.60000000000001" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="53.800000000000004" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">第 15 层</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,3140,427.27636077038994)">
+<rect width="107.60000000000001" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="53.800000000000004" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">第 16 层</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,3325,414.29712365839737)">
+<rect width="107.60000000000001" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="53.800000000000004" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">第 17 层</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,3510,388.02405699643947)">
+<rect width="107.60000000000001" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="53.800000000000004" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">第 18 层</text>
+
+</g></g>
+<g class="smm-associative-line-container"><path d="M 0 0L10 10"></path></g>
+</g>
+</svg>

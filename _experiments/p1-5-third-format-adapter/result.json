@@ -1,0 +1,21 @@
+{
+  "id": "P1-5",
+  "title": "第三种格式 adapter",
+  "conclusion": "PASS",
+  "checks": {
+    "registered": true,
+    "emptyValid": true,
+    "parsedValid": true,
+    "serializedMatches": true,
+    "managedDocumentShape": true
+  },
+  "document": {
+    "kind": "markdown",
+    "containerVersion": 1,
+    "formatVersion": 1,
+    "data": {
+      "text": "# Hello\n"
+    }
+  },
+  "recommendation": "A simple non-canvas format fits the adapter abstraction. Keep editor routing separate from storage so this remains low-cost."
+}

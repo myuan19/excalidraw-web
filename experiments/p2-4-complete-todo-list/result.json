@@ -1,0 +1,39 @@
+{
+  "id": "P2-4",
+  "title": "todo-list 全部完成验证",
+  "status": "PASS",
+  "checks": [
+    {
+      "name": "Import flow uses adapter registry for non-Excalidraw formats",
+      "pass": true
+    },
+    {
+      "name": "Download flow serializes by adapter and preserves extensions",
+      "pass": true
+    },
+    {
+      "name": "Container and format migration registry exists",
+      "pass": true
+    },
+    {
+      "name": "Third text format adapter is registered",
+      "pass": true
+    },
+    {
+      "name": "MindMap enhancements are wired",
+      "pass": true
+    },
+    {
+      "name": "MindMap clipboard bridge from Notion plugin is migrated",
+      "pass": true
+    },
+    {
+      "name": "Hash parser supports query-style file hashes",
+      "pass": true
+    },
+    {
+      "name": "architecture and MindMap UI implementation docs exist",
+      "pass": true
+    }
+  ]
+}

@@ -12,11 +12,13 @@ import {
   writeFileListTreeCache,
 } from "../data/fileListSessionCache";
 import { FileSyncState } from "../data/FileSyncState";
+import { chooseFileCardThumbnail } from "../data/fileCardThumbnail";
 import {
   formatImportErrorMessage,
   loadExcalidrawFileAsServerSceneData,
 } from "../data/importExcalidrawScene";
 import { LocalThumbnailCache } from "../data/localThumbnailCache";
+import { detectFormat } from "../data/formats/detectFormat";
 import {
   ServerSync,
   type FileOrderItem,
@@ -24,8 +26,13 @@ import {
   type ServerFolder,
 } from "../data/ServerSync";
 import {
+  getDocumentFormatAdapter,
+  MindMapAdapter,
+} from "../data/formats/registry";
+import {
   buildSceneThumbnailSvg,
   extractThumbBg,
+  isMindMapThumbnailDebugEnabled,
   patchThumbnailSvgForCard,
 } from "../data/thumbnailSvg";
 import {
@@ -34,6 +41,7 @@ import {
   subscribeAIConfig,
 } from "../data/aiConfig";
 import { computeThumbFetchAllowIds } from "../data/thumbCoverage";
+import { createBlankExcalidrawInitialScene } from "../data/forkFileScene";
 import { AISettings } from "./AISettings";
 import { EmbedTokenManager } from "./EmbedTokenManager";
 
@@ -45,12 +53,39 @@ const logList = createLogger({ module: "fileList" });
 const logThumb = createLogger({ module: "thumbnail" });
 const logPipe = createLogger({ module: "thumbPipeline" });
 
+const HOME_APP_TITLE = "可视化文档私有部署";
+
+function getDebugSvgAttr(svgMarkup: string | null, name: string): string | null {
+  if (!svgMarkup) {
+    return null;
+  }
+  return (
+    svgMarkup
+      .match(/<svg\b[^>]*>/i)?.[0]
+      .match(new RegExp(`\\s${name}="([^"]*)"`, "i"))?.[1] ?? null
+  );
+}
+
+function debugFileListThumbnail(
+  label: string,
+  data: Record<string, unknown>,
+): void {
+  if (!isMindMapThumbnailDebugEnabled()) {
+    return;
+  }
+  console.log(
+    `[DEBUG] FileList.renderFileCard | ${label}`,
+    JSON.stringify(data, null, 2),
+  );
+}
+
 interface FileListProps {
-  onOpenFile: (id: string) => void;
+  onOpenFile: (file: { id: string; kind?: string }) => void;
   onReady?: () => void;
 }
 
 type SortKey = "updated_at" | "created_at" | "name";
+type NewDocumentKind = "excalidraw" | "mindmap";
 type FolderDraft =
   | { mode: "create"; parentId: string | null }
   | { mode: "rename"; folder: ServerFolder };
@@ -63,17 +98,19 @@ const FOLDER_DND_MIME = "application/x-excalidraw-fork-folder";
 
 function sanitizeFileBaseName(name: string): string {
   const base =
-    name.replace(/\.(excalidraw|json|png|svg)$/i, "").trim() || "Imported";
+    name.replace(/\.(excalidraw|smm|json|png|svg)$/i, "").trim() || "Imported";
   return base.slice(0, 120);
 }
 
-/** 从拖放/多选里筛出可能为 Excalidraw 场景：扩展名 或 典型 MIME。不再「无 type 就全收」，免杂文件进导入。 */
-const IMPORTABLE_NAME = /\.(excalidraw|excalidrawlib|json|png|svg|jpe?g)$/i;
+/** 从拖放/多选里筛出可能导入的文档：扩展名 或 典型 MIME。不再「无 type 就全收」，免杂文件进导入。 */
+const IMPORTABLE_NAME = /\.(excalidraw|excalidrawlib|smm|txt|json|png|svg|jpe?g)$/i;
 function takeImportableFilesFromList(fileList: FileList | File[]): File[] {
   return Array.from(fileList).filter(
     (f) =>
       IMPORTABLE_NAME.test(f.name) ||
       f.type === "application/json" ||
+      f.type === "application/vnd.simple-mind-map+json" ||
+      f.type === "text/plain" ||
       f.type?.startsWith("image/") ||
       f.type === "application/vnd.excalidraw+json" ||
       f.type === "application/x-excalidraw",
@@ -135,6 +172,9 @@ function iconPath(
     | "folder"
     | "file"
     | "grid"
+    | "home"
+    | "excalidraw"
+    | "mindmap"
     | "chevron"
     | "plus"
     | "upload"
@@ -155,6 +195,12 @@ function iconPath(
     file:
       "M6 2h8l4 4v16H6V2zm7 1.5V7h3.5",
     grid: "M3 3h7v7H3V3zm11 0h7v7h-7V3zM3 14h7v7H3v-7zm11 0h7v7h-7v-7z",
+    home:
+      "M12 3l9 8h-2v9h-5v-6h-4v6H5v-9H3l9-8z",
+    excalidraw:
+      "M5 19l4.2-1.1 8.7-8.7a2.1 2.1 0 0 0-3-3L7.2 14.9 5 19zm3.2-2.4l-.9.2.2-.9 7.9-7.9.7.7-7.9 7.9zM4 21h16v-2H4v2z",
+    mindmap:
+      "M12 4a3 3 0 0 1 2.83 2h3.17a3 3 0 1 1 0 2h-3.17a3 3 0 0 1-1.83 1.83v4.34A3 3 0 1 1 11 14.17V9.83A3 3 0 0 1 12 4zm-5 6a3 3 0 1 1 2.83-4h1.34a3.99 3.99 0 0 0 0 2H9.83A3 3 0 0 1 7 10z",
     chevron: "M9 6l6 6-6 6",
     plus: "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z",
     upload: "M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z",
@@ -267,6 +313,10 @@ function getInitialFileListStateFromCache(): {
 }
 
 export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
+  useEffect(() => {
+    document.title = HOME_APP_TITLE;
+  }, []);
+
   const initialList = getInitialFileListStateFromCache();
   const [files, setFiles] = useState<ServerFile[]>(initialList.files);
   const [folders, setFolders] = useState<ServerFolder[]>(initialList.folders);
@@ -329,6 +379,8 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
   const [aiDotOk, setAiDotOk] = useState(false);
   const [newFileDialogOpen, setNewFileDialogOpen] = useState(false);
   const [newFileName, setNewFileName] = useState("未命名");
+  const [newDocumentKind, setNewDocumentKind] =
+    useState<NewDocumentKind>("excalidraw");
 
   const [moveDialogFile, setMoveDialogFile] = useState<ServerFile | null>(null);
   const [moveTargetFolderId, setMoveTargetFolderId] = useState<string | null>(null);
@@ -673,7 +725,11 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
         hasScene: !!initialScene,
         elements: initialScene ? (initialScene.elements as unknown[]).length : 0,
       });
-      const created = await ServerSync.createFile(name, currentFolderId);
+      const created = await ServerSync.createFile(
+        name,
+        currentFolderId,
+        "excalidraw",
+      );
       const id = created.id;
 
       if (initialScene) {
@@ -715,6 +771,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
 
   const openNewFileDialog = useCallback(() => {
     setNewFileName("未命名");
+    setNewDocumentKind("excalidraw");
     setNewFileDialogOpen(true);
   }, []);
 
@@ -722,12 +779,36 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
     const name = newFileName.trim() || "未命名";
     setNewFileDialogOpen(false);
     try {
-      const id = await createFileOnServer(name);
-      onOpenFile(id);
+      if (newDocumentKind === "mindmap") {
+        const created = await ServerSync.createFile(
+          name,
+          currentFolderId,
+          "mindmap",
+        );
+        const mindMapData = MindMapAdapter.createEmpty();
+        const document = MindMapAdapter.toDocument(mindMapData);
+        await ServerSync.saveFileImmediate(created.id, document, name);
+        await refresh({ silent: true, noErrorOnFailure: true });
+        onOpenFile({ id: created.id, kind: "mindmap" });
+        return;
+      }
+
+      const id = await createFileOnServer(
+        name,
+        createBlankExcalidrawInitialScene(name),
+      );
+      onOpenFile({ id, kind: "excalidraw" });
     } catch (e: any) {
       setError(e.message);
     }
-  }, [newFileName, createFileOnServer, onOpenFile]);
+  }, [
+    newFileName,
+    newDocumentKind,
+    currentFolderId,
+    createFileOnServer,
+    onOpenFile,
+    refresh,
+  ]);
 
   const openMoveDialog = useCallback((e: React.MouseEvent, f: ServerFile) => {
     e.stopPropagation();
@@ -754,7 +835,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
     }
   }, [moveDialogFile, moveTargetFolderId, refresh]);
 
-  const importExcalidrawFiles = useCallback(
+  const importDocumentFiles = useCallback(
     async (fileList: File[]) => {
       if (fileList.length === 0) {
         return;
@@ -771,6 +852,28 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
             size: file.size,
             folderId: currentFolderId,
           });
+          const detected = await detectFormat(file);
+          if (detected.kind !== "excalidraw") {
+            const adapter = getDocumentFormatAdapter(detected.kind);
+            if (!adapter || detected.kind === "unknown") {
+              throw new Error(
+                `无法识别「${file.name}」的文档格式，请确认它是 Excalidraw 或 MindMap 文件。`,
+              );
+            }
+            const data = await adapter.parse(file);
+            const created = await ServerSync.createFile(
+              sanitizeFileBaseName(file.name),
+              currentFolderId,
+              adapter.kind,
+            );
+            createdIds.push(created.id);
+            await ServerSync.saveFileImmediate(
+              created.id,
+              adapter.toDocument(data),
+              sanitizeFileBaseName(file.name),
+            );
+            continue;
+          }
           const { elements, appState, files: sceneFiles } =
             await loadExcalidrawFileAsServerSceneData(file);
           logList.debug("import parsed", {
@@ -817,7 +920,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
     if (picked.length === 0) {
       return;
     }
-    void importExcalidrawFiles(picked);
+    void importDocumentFiles(picked);
   };
 
   /** 覆盖左侧树 + 右侧主区；与文件夹内拖移区分 */
@@ -854,13 +957,13 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
       const next = takeImportableFilesFromList(files);
       if (next.length === 0) {
         setError(
-          "未识别到可导入的 Excalidraw 相关文件（如 .excalidraw、.json、.png、.svg）。",
+          "未识别到可导入的文档文件（如 .excalidraw、.smm、.json、.png、.svg）。",
         );
         return;
       }
-      void importExcalidrawFiles(next);
+      void importDocumentFiles(next);
     },
-    [importing, draggingFolderId, importExcalidrawFiles],
+    [importing, draggingFolderId, importDocumentFiles],
   );
 
   const handleDelete = async (
@@ -1347,15 +1450,66 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
     const state = draftStateById[f.id];
     const syncState = state?.syncState ?? "synced";
     const localDraftThumb = state?.localDraftThumb ?? null;
-    const generatedDraftThumb =
-      syncState === "draft" ? draftThumbs[f.id] : null;
+    const localThumb =
+      syncState === "draft" ? draftThumbs[f.id] || localDraftThumb : null;
     const shouldUseDraftPreview = syncState === "draft";
-    const thumbSvg = shouldUseDraftPreview
-      ? generatedDraftThumb || localDraftThumb || null
-      : localDraftThumb ||
-        generatedDraftThumb ||
-        fetchedThumbs[f.id] ||
-        null;
+    const thumbnailChoice = chooseFileCardThumbnail({
+      syncState,
+      localThumb,
+      fetchedThumb: fetchedThumbs[f.id] ?? null,
+    });
+    const thumbSvg = thumbnailChoice.thumbSvg;
+    const kind = f.kind ?? "excalidraw";
+    const cardThumbSvg = thumbSvg ? patchThumbnailSvgForCard(thumbSvg) : null;
+    if (syncState === "draft" || !thumbSvg) {
+      debugFileListThumbnail("thumbnail choice", {
+        id: f.id,
+        id8: f.id.slice(0, 8),
+        name: f.name,
+        kind,
+        syncState,
+        shouldUseDraftPreview,
+        hasServerThumbnailFlag: !!f.has_thumbnail,
+        contentSha: f.content_sha256 ?? null,
+        localThumbLen: localThumb?.length ?? 0,
+        cachedDraftThumbLen: localDraftThumb?.length ?? 0,
+        fetchedThumbLen: fetchedThumbs[f.id]?.length ?? 0,
+        finalSource: thumbnailChoice.finalSource,
+      });
+    }
+    if (kind === "mindmap" && cardThumbSvg && isMindMapThumbnailDebugEnabled()) {
+      debugFileListThumbnail("mindmap thumbnail svg", {
+        id: f.id,
+        id8: f.id.slice(0, 8),
+        name: f.name,
+        syncState,
+        finalSource: thumbnailChoice.finalSource,
+        rawLen: thumbSvg?.length ?? 0,
+        cardLen: cardThumbSvg.length,
+        rawViewBox: getDebugSvgAttr(thumbSvg, "viewBox"),
+        cardViewBox: getDebugSvgAttr(cardThumbSvg, "viewBox"),
+        cardPreserveAspectRatio: getDebugSvgAttr(
+          cardThumbSvg,
+          "preserveAspectRatio",
+        ),
+        cardWidth: getDebugSvgAttr(cardThumbSvg, "width"),
+        cardHeight: getDebugSvgAttr(cardThumbSvg, "height"),
+        rawHasControls: {
+          hover: /\bsmm-hover-node\b/i.test(thumbSvg ?? ""),
+          quickCreate: /\bsmm-quick-create-child-btn\b/i.test(thumbSvg ?? ""),
+          expand: /\bsmm-expand-btn\b/i.test(thumbSvg ?? ""),
+          nodeAdd: /\bsmm-node-add\b/i.test(thumbSvg ?? ""),
+          footer: /\bclass="[^"]*\bfooter\b[^"]*"/i.test(thumbSvg ?? ""),
+        },
+        cardHasControls: {
+          hover: /\bsmm-hover-node\b/i.test(cardThumbSvg),
+          quickCreate: /\bsmm-quick-create-child-btn\b/i.test(cardThumbSvg),
+          expand: /\bsmm-expand-btn\b/i.test(cardThumbSvg),
+          nodeAdd: /\bsmm-node-add\b/i.test(cardThumbSvg),
+          footer: /\bclass="[^"]*\bfooter\b[^"]*"/i.test(cardThumbSvg),
+        },
+      });
+    }
     const q = searchQuery.trim();
     const thumbLoading = !thumbSvg && f.has_thumbnail;
     return (
@@ -1376,10 +1530,11 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
           }
           logFileListOpen("card click → onOpenFile", {
             fileId8: f.id.slice(0, 8),
+            kind: f.kind ?? "excalidraw",
             targetTag: t?.tagName,
             targetClass: String(t?.className || "").slice(0, 100),
           });
-          onOpenFile(f.id);
+          onOpenFile({ id: f.id, kind: f.kind ?? "excalidraw" });
         }}
       >
         <div
@@ -1400,14 +1555,14 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
             <div
               className="filelist__card-thumb-svg"
               dangerouslySetInnerHTML={{
-                __html: patchThumbnailSvgForCard(thumbSvg),
+                __html: cardThumbSvg ?? "",
               }}
             />
           ) : thumbLoading ? (
             <div className="filelist__card-thumb-loading" />
           ) : (
             <div className="filelist__card-thumb-placeholder">
-              <Icon type="file" size={40} />
+              <Icon type={kind === "mindmap" ? "mindmap" : "excalidraw"} size={40} />
             </div>
           )}
           <div className="filelist__card-actions">
@@ -1569,8 +1724,8 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
           >
             <Icon type="menu" size={20} />
           </button>
-          <Icon type="grid" size={22} />
-          <h1 className="filelist__title">Excalidraw 私有部署</h1>
+          <Icon type="home" size={22} />
+          <h1 className="filelist__title">{HOME_APP_TITLE}</h1>
         </div>
         <div className="filelist__header-right">
           <div className="filelist__search-wrap">
@@ -1633,12 +1788,12 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
                 ref={sceneImportInputRef}
                 type="file"
                 multiple
-                accept=".excalidraw,.json,.png,.svg,application/vnd.excalidraw+json,application/json,image/png,image/svg+xml"
+                accept=".excalidraw,.smm,.txt,.json,.png,.svg,application/vnd.excalidraw+json,application/vnd.simple-mind-map+json,application/json,text/plain,image/png,image/svg+xml"
                 className="filelist__file-input-overlay"
                 onChange={onSceneImportInputChange}
                 disabled={importing}
                 tabIndex={-1}
-                title="导入 Excalidraw 场景"
+                title="导入 Excalidraw 或 MindMap 文档"
               />
             </label>
             <button className="filelist__new-btn" onClick={openNewFileDialog}>
@@ -1832,8 +1987,40 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
           >
             <h2 className="filelist__detail-title">新建画布</h2>
             <p className="filelist__new-file-hint">
-              为画布起个名字，稍后在列表里也可以随时重命名
+              选择文件类型并起个名字，稍后在列表里也可以随时重命名
             </p>
+            <div className="filelist__new-file-kind">
+              <button
+                type="button"
+                className={[
+                  "filelist__kind-option",
+                  newDocumentKind === "excalidraw"
+                    ? "filelist__kind-option--active"
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                onClick={() => setNewDocumentKind("excalidraw")}
+              >
+                <Icon type="excalidraw" size={18} />
+                <span>Excalidraw 画布</span>
+              </button>
+              <button
+                type="button"
+                className={[
+                  "filelist__kind-option",
+                  newDocumentKind === "mindmap"
+                    ? "filelist__kind-option--active"
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                onClick={() => setNewDocumentKind("mindmap")}
+              >
+                <Icon type="mindmap" size={18} />
+                <span>MindMap 思维导图</span>
+              </button>
+            </div>
             <input
               className="filelist__folder-input filelist__new-file-input"
               value={newFileName}

@@ -14,11 +14,14 @@
 !lib/
 !server/
 !docker/
+!mind-map/
 
 # keep (sub)sub directories at the end to exclude from explicit included
 # e.g. ./packages/excalidraw/{dist,node_modules}
 **/build
 **/dist
+!public/mind-map/dist/
+!public/mind-map/dist/**
 **/node_modules
 
 # 运行时数据不打包进镜像（通过卷挂载）

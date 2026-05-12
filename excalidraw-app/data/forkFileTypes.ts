@@ -2,11 +2,16 @@
  * Fork 私有部署：画布文件相关的持久化与传输数据结构。
  *
  * 层次：
- * - 服务器 `ServerFile.data`：与 Excalidraw 导出的场景 JSON 一致（elements / appState / files）。
+ * - 服务器 `ServerFile.data`：当前兼容 Excalidraw 场景 JSON，后续可演进为 ManagedDocument。
  * - 浏览器 localStorage（FileSyncState）：按 fileId 存的「本地草稿」{@link ForkLocalCacheRecord}，
  *   在**未保存到服务器**期间随编辑防抖写入（与画布一致）+ 增量 deltas；另存 draft/baseline 哈希键用于「未保存」判断。
  * - 浏览器 sessionStorage（LocalThumbnailCache）：列表预览用 SVG，与会话绑定。
  */
+
+import {
+  normalizeDocument,
+  type ManagedDocument,
+} from "./documentTypes";
 
 /** 与 API GET/PUT `data` 字段及 serialize/hash 管线一致的场景快照。 */
 export interface ForkSceneSnapshot {
@@ -20,6 +25,7 @@ export interface ForkSceneSnapshot {
  * `deltas` 与 DeltaStorage 对齐，用于恢复增量历史；紧急落盘可为空数组。
  */
 export interface ForkLocalCacheRecord extends ForkSceneSnapshot {
+  document?: ManagedDocument;
   deltas: unknown[];
 }
 
@@ -45,17 +51,23 @@ export function parseForkLocalCache(raw: unknown): ForkLocalCacheRecord | null {
     body = raw.payload as Record<string, unknown>;
   }
 
-  if (!("elements" in body)) {
+  const document = normalizeDocument(body.document) ?? normalizeDocument(body);
+  if (!document || !isRecord(document.data)) {
     return null;
   }
 
+  const scene =
+    document.kind === "excalidraw"
+      ? (document.data as Record<string, unknown>)
+      : {};
   const deltasRaw = body.deltas;
   const deltas = Array.isArray(deltasRaw) ? deltasRaw : [];
 
   return {
-    elements: body.elements,
-    appState: body.appState,
-    files: body.files,
+    elements: scene.elements,
+    appState: scene.appState,
+    files: scene.files,
+    document,
     deltas,
   };
 }

@@ -117,10 +117,10 @@ export const FileSyncState = {
   getSyncState(fileId: string): "synced" | "draft" {
     const draft = this.getDraftHash(fileId);
     const baseline = this.getBaselineHash(fileId);
-    if (!draft || !baseline) {
+    if (!draft) {
       return "synced";
     }
-    if (draft !== baseline) {
+    if (!baseline || draft !== baseline) {
       return "draft";
     }
     return "synced";

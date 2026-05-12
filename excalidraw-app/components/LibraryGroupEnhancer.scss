@@ -13,10 +13,7 @@
   background: var(--color-primary-light) !important;
   color: var(--color-primary) !important;
   box-shadow: 0 0 0 var(--nb-border-width-accent) var(--color-primary) !important;
-  transition:
-    background 0.15s ease,
-    box-shadow 0.15s ease,
-    color 0.15s ease;
+  transition: background 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
 }
 
 // Legacy compat: keep old class names working in case anything references them

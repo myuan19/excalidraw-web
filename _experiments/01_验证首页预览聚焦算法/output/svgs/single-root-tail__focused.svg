@@ -1,0 +1,16 @@
+<svg viewBox="-29.45833333333337 100.62499999999997 572.9166666666667 343.75000000000006" style="background-color:#f1f1f1;" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet" width="100%" height="100%">
+<title>单节点 + 跟随元素</title>
+<rect x="0" y="0" width="900" height="540" fill="#f1f1f1"></rect>
+<g class="smm-container" transform="matrix(1,0,0,1,0,0)">
+<g class="smm-line-container"></g>
+<g class="smm-node-container"><g class="smm-node smm-root-node" transform="matrix(1,0,0,1,180,250)">
+<rect width="154" height="45" rx="10" ry="10" class="smm-node-shape" fill="#1e3556" stroke="#1e3556" stroke-width="2"></rect>
+<text x="77" y="30.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="24" fill="#fff" font-weight="700">中心主题</text>
+<rect width="158" height="49" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g></g>
+<g class="smm-tail-marker" transform="matrix(1,0,0,1,420,248)">
+<path d="M 0 26 C 55 -18 185 -18 240 26 C 185 70 55 70 0 26 Z" fill="transparent" stroke="#1e3556" stroke-width="2" stroke-dasharray="5 5"></path>
+<text x="120" y="32" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556">跟随元素</text>
+</g>
+</g>
+</svg>

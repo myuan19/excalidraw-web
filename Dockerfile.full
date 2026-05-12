@@ -14,6 +14,7 @@ COPY packages/element/package.json packages/element/
 COPY packages/excalidraw/package.json packages/excalidraw/
 COPY packages/math/package.json packages/math/
 COPY packages/utils/package.json packages/utils/
+COPY mind-map/simple-mind-map/package.json mind-map/simple-mind-map/
 RUN sed -i 's|https://registry.yarnpkg.com|https://registry.npmmirror.com|g' yarn.lock && \
     yarn --network-timeout 600000 --registry https://registry.npmmirror.com
 

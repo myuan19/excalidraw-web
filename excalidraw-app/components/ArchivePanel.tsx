@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import { FileSyncState } from "../data/FileSyncState";
 import { ServerSync, type ArchiveEntry } from "../data/ServerSync";
@@ -29,6 +29,7 @@ export const ArchivePanel: React.FC<ArchivePanelProps> = ({
   const [versions, setVersions] = useState<ArchiveEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [, syncBump] = useState(0);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
 
   const refresh = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -55,6 +56,45 @@ export const ArchivePanel: React.FC<ArchivePanelProps> = ({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    const overlay = overlayRef.current;
+    if (!overlay) {
+      console.log("[DEBUG] ArchivePanel | overlay ref missing", { fileId });
+      return;
+    }
+    const panel = overlay.querySelector(".nb-history-panel");
+    const overlayStyle = window.getComputedStyle(overlay);
+    const panelStyle =
+      panel instanceof HTMLElement ? window.getComputedStyle(panel) : null;
+    const overlayRect = overlay.getBoundingClientRect();
+    const centerElement = document.elementFromPoint(
+      overlayRect.left + overlayRect.width / 2,
+      overlayRect.top + overlayRect.height / 2,
+    );
+    console.log("[DEBUG] ArchivePanel | mounted", {
+      fileId,
+      overlayBackground: overlayStyle.background,
+      overlayBackgroundColor: overlayStyle.backgroundColor,
+      overlayZIndex: overlayStyle.zIndex,
+      overlayPosition: overlayStyle.position,
+      overlayDisplay: overlayStyle.display,
+      overlayOpacity: overlayStyle.opacity,
+      panelBackground: panelStyle?.background,
+      panelBackgroundColor: panelStyle?.backgroundColor,
+      panelZIndex: panelStyle?.zIndex,
+      panelOpacity: panelStyle?.opacity,
+      panelBackdropFilter: panelStyle?.backdropFilter,
+      centerElementTag: centerElement?.tagName ?? null,
+      centerElementClass:
+        centerElement instanceof HTMLElement ? centerElement.className : null,
+      cssVars: {
+        zIndexPopup: overlayStyle.getPropertyValue("--zIndex-popup").trim(),
+        islandBgColor: overlayStyle.getPropertyValue("--island-bg-color").trim(),
+      },
+      rect: overlayRect.toJSON(),
+    });
+  }, [fileId]);
 
   useEffect(() => {
     const onSaved = () => void refresh({ silent: true });
@@ -87,72 +127,89 @@ export const ArchivePanel: React.FC<ArchivePanelProps> = ({
   const unsaved = FileSyncState.hasUnsavedChanges(fileId);
 
   return (
-    <div className="nb-history-panel">
-      <div className="nb-history-header">
-        <span>历史版本</span>
-        <button
-          type="button"
-          className="nb-history-close"
-          onClick={onClose}
-          aria-label="关闭"
-        >
-          ×
-        </button>
-      </div>
-      <div className="nb-history-list">
-        {/* 本地草稿 — 始终显示在最上方 */}
-        <div className="nb-history-item nb-history-item--local">
-          <span className="nb-history-time" style={{ fontWeight: 600 }}>
-            本地草稿
-          </span>
-          <span
-            className={
-              unsaved
-                ? "nb-history-badge nb-history-badge--unsaved"
-                : "nb-history-badge nb-history-badge--synced"
-            }
+    <div
+      ref={overlayRef}
+      className="nb-history-overlay"
+      role="presentation"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        className="nb-history-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="nb-history-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="nb-history-header">
+          <span id="nb-history-title">历史版本</span>
+          <button
+            type="button"
+            className="nb-history-close"
+            onClick={onClose}
+            aria-label="关闭"
           >
-            {unsaved ? "未保存" : "无修改"}
-          </span>
+            ×
+          </button>
         </div>
-
-        {loading && (
-          <div className="nb-history-item">
-            <span className="nb-history-time">加载中…</span>
+        <div className="nb-history-list">
+          {/* 本地草稿 — 始终显示在最上方 */}
+          <div className="nb-history-item nb-history-item--local">
+            <span className="nb-history-time" style={{ fontWeight: 600 }}>
+              本地草稿
+            </span>
+            <span
+              className={
+                unsaved
+                  ? "nb-history-badge nb-history-badge--unsaved"
+                  : "nb-history-badge nb-history-badge--synced"
+              }
+            >
+              {unsaved ? "未保存" : "无修改"}
+            </span>
           </div>
-        )}
 
-        {!loading && versions.length === 0 && (
-          <div className="nb-history-item">
-            <span className="nb-history-time">暂无服务器版本</span>
-          </div>
-        )}
-
-        {!loading &&
-          versions.map((a, i) => (
-            <div key={a.id} className="nb-history-item">
-              <div className="nb-history-info">
-                <span
-                  className="nb-history-time"
-                  style={i === 0 ? { fontWeight: 600 } : undefined}
-                >
-                  {i === 0 ? "最新提交" : formatVersionTime(a.created_at)}
-                </span>
-                {i === 0 && (
-                  <span className="nb-history-sub">
-                    {formatVersionTime(a.created_at)}
-                  </span>
-                )}
-              </div>
-              <button
-                type="button"
-                className="nb-history-restore"
-                onClick={() => void handleRestore(a.id)}
-              >
-                恢复
-              </button>
+          {loading && (
+            <div className="nb-history-item">
+              <span className="nb-history-time">加载中…</span>
             </div>
-          ))}
+          )}
+
+          {!loading && versions.length === 0 && (
+            <div className="nb-history-item">
+              <span className="nb-history-time">暂无服务器版本</span>
+            </div>
+          )}
+
+          {!loading &&
+            versions.map((a, i) => (
+              <div key={a.id} className="nb-history-item">
+                <div className="nb-history-info">
+                  <span
+                    className="nb-history-time"
+                    style={i === 0 ? { fontWeight: 600 } : undefined}
+                  >
+                    {i === 0 ? "最新提交" : formatVersionTime(a.created_at)}
+                  </span>
+                  {i === 0 && (
+                    <span className="nb-history-sub">
+                      {formatVersionTime(a.created_at)}
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="nb-history-restore"
+                  onClick={() => void handleRestore(a.id)}
+                >
+                  恢复
+                </button>
+              </div>
+            ))}
+        </div>
       </div>
     </div>
   );

@@ -1,0 +1,24 @@
+{
+  "id": "P0-1",
+  "title": "MindMap 独立 payload 保存与恢复",
+  "conclusion": "PARTIAL_PASS",
+  "checks": {
+    "sourceExists": true,
+    "packageVersion": "0.14.0-fix.2",
+    "getDataWithConfigReturnsFullShape": true,
+    "setFullDataRestoresFullShape": true,
+    "representativeJsonRoundtrip": true,
+    "runtimeInstantiationExecuted": false,
+    "runtimeInstantiationBlocker": "simple-mind-map runtime requires browser DOM and dependencies such as @svgdotjs/svg.js/quill; this experiment validates API shape and JSON payload preservation only."
+  },
+  "samplePayloadSummary": {
+    "layout": "mindMap",
+    "rootText": "Root",
+    "childCount": 1,
+    "hasTheme": true,
+    "hasView": true,
+    "hasInlineImage": true
+  },
+  "repoRoot": "/root/projects/archive/excalidraw-web",
+  "mindMapRoot": "/root/projects/archive/mind-map"
+}

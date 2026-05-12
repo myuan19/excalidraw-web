@@ -1,0 +1,13 @@
+{
+  "id": "P0-4",
+  "title": "MindMap 编辑器嵌入 React/Vite",
+  "conclusion": "PARTIAL_PASS_NEEDS_DEPENDENCY_INSTALL_AND_BROWSER_POC",
+  "checks": {
+    "reactVitePresent": true,
+    "mindMapFrameworkAgnosticClaimed": true,
+    "mindMapConstructorAcceptsElement": true,
+    "mindMapHasDestroy": true,
+    "missingDepsInExcalidrawWeb": ["@svgdotjs/svg.js", "deepmerge", "eventemitter3", "quill"]
+  },
+  "recommendation": "Use a React shell with a ref container, instantiate MindMap in useEffect, call mindMap.destroy() on cleanup. Before runtime PoC, add or alias missing simple-mind-map dependencies in excalidraw-web."
+}

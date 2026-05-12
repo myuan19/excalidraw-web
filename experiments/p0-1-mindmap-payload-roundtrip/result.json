@@ -1,0 +1,23 @@
+{
+  "id": "P0-1",
+  "title": "MindMap 独立 payload 保存与恢复",
+  "status": "PASS",
+  "checks": [
+    {
+      "name": "MindMapAdapter defines full data with root",
+      "pass": true
+    },
+    {
+      "name": "MindMapAdapter empty document includes layout/theme",
+      "pass": true
+    },
+    {
+      "name": "Native MindMap bridge reads full data via getData(true)",
+      "pass": true
+    },
+    {
+      "name": "MindMapEditorShell restores full data through initMindMap bridge",
+      "pass": true
+    }
+  ]
+}

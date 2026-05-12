@@ -5,6 +5,18 @@ import { join, dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import db, { DATA_DIR } from "../db.js";
 import { createLogger } from "../lib/logger.js";
+import {
+  isAllowedMindMapEmbedAssetPath,
+  rewriteMindMapCssForEmbed,
+  rewriteMindMapHtmlForEmbed,
+} from "../lib/embedMindMapAssets.js";
+import { buildEmbedRuntimeAssetInterceptor } from "../lib/embedRuntimeAssets.js";
+import { createEmbedTokenActiveCache } from "../lib/embedTokenCache.js";
+import { injectEmbedBootstrap } from "../lib/embedPageHtml.js";
+import {
+  isPublicEmbedStaticAssetPath,
+  isTokenProtectedEmbedPath,
+} from "../lib/embedStaticPolicy.js";
 
 const log = createLogger({ module: "embed" });
 
@@ -14,9 +26,38 @@ const tokenRouter = Router();
 const pageRouter = Router();
 const TOKEN_SELECT =
   "id, token, file_id, allowed_domains, created_at, usage_count";
+const TOKEN_ACTIVE_CACHE_TTL_MS = 10_000;
 
 function currentPath(fileId) {
   return join(DATA_DIR, "files", fileId, "current.excalidraw");
+}
+
+function summarizeEmbedData(data) {
+  if (!data || typeof data !== "object") {
+    return {
+      type: data === null ? "null" : typeof data,
+    };
+  }
+  const inner =
+    data.data && typeof data.data === "object" && !Array.isArray(data.data)
+      ? data.data
+      : null;
+  return {
+    keys: Object.keys(data).slice(0, 12),
+    kind: typeof data.kind === "string" ? data.kind : null,
+    containerVersion:
+      typeof data.containerVersion === "number" ? data.containerVersion : null,
+    formatVersion: typeof data.formatVersion === "number" ? data.formatVersion : null,
+    topElements: Array.isArray(data.elements) ? data.elements.length : null,
+    topRootChildren:
+      data.root && Array.isArray(data.root.children) ? data.root.children.length : null,
+    dataKeys: inner ? Object.keys(inner).slice(0, 12) : null,
+    dataElements: inner && Array.isArray(inner.elements) ? inner.elements.length : null,
+    dataRootChildren:
+      inner && inner.root && Array.isArray(inner.root.children)
+        ? inner.root.children.length
+        : null,
+  };
 }
 
 function normalizeHost(value) {
@@ -152,6 +193,7 @@ tokenRouter.patch("/:id", (req, res) => {
     allowedDomains,
     req.params.id,
   );
+  embedTokenActiveCache.clear(row.token);
 
   log.info("token domains updated", { id: req.params.id.slice(0, 8) });
   res.json({ ...row, allowed_domains: allowedDomains });
@@ -177,7 +219,11 @@ tokenRouter.delete("/:id", (req, res) => {
   if (!row) {
     return res.status(404).json({ error: "token not found" });
   }
+  const tokenRow = db
+    .prepare("SELECT token FROM embed_tokens WHERE id = ?")
+    .get(req.params.id);
   db.prepare("DELETE FROM embed_tokens WHERE id = ?").run(req.params.id);
+  embedTokenActiveCache.clear(tokenRow?.token);
   log.info("token deleted", { id: req.params.id.slice(0, 8) });
   res.json({ ok: true });
 });
@@ -189,8 +235,7 @@ tokenRouter.delete("/:id", (req, res) => {
 // so the same React bundle renders in embed mode — no separate build needed.
 // ---------------------------------------------------------------------------
 
-function validateEmbedToken(req) {
-  const token = req.query.token;
+function validateEmbedToken(req, token = req.query.token) {
   if (!token) {
     return { ok: false, status: 403, error: "Missing embed token" };
   }
@@ -262,6 +307,28 @@ function findSpaIndexHtml() {
   return existsSync(dockerIndexPath) ? dockerIndexPath : null;
 }
 
+function findEmbedIndexHtml() {
+  const spaIndexPath = findSpaIndexHtml();
+  if (!spaIndexPath) {
+    return null;
+  }
+  const root = dirname(spaIndexPath);
+  const embedIndexPath = join(root, "embed/index.html");
+  return existsSync(embedIndexPath) ? embedIndexPath : spaIndexPath;
+}
+
+function rewriteSpaAssetRefsForEmbed(html, encodedToken) {
+  let out = html.replace(
+    /((?:src|href)=["'])(?:\.\.\/|\.\/)?(?:\/)?assets\/([^"']+)(["'])/g,
+    `$1/embed/assets/$2?_t=${encodedToken}$3`,
+  );
+  out = out.replace(
+    /((?:src|href)=["'])(?:\.\.\/|\.\/)?(?:\/)?fonts\/([^"']+)(["'])/g,
+    `$1/embed/fonts/$2?_t=${encodedToken}$3`,
+  );
+  return out;
+}
+
 function errorPage(message) {
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -324,16 +391,27 @@ function getEmbedRequestToken(req) {
   );
 }
 
+const embedTokenActiveCache = createEmbedTokenActiveCache({
+  ttlMs: TOKEN_ACTIVE_CACHE_TTL_MS,
+  now: () => Date.now(),
+  lookup(token) {
+    if (!token) return false;
+    const row = db
+      .prepare("SELECT id FROM embed_tokens WHERE token = ?")
+      .get(token);
+    return !!row;
+  },
+});
+
 function isTokenActive(token) {
   if (!token) return false;
-  const row = db
-    .prepare("SELECT id FROM embed_tokens WHERE token = ?")
-    .get(token);
-  if (!row) return false;
-  return true;
+  return embedTokenActiveCache.isActive(token);
 }
 
 function embedAssetGate(req, res, next) {
+  if (isPublicEmbedStaticAssetPath(req.path)) {
+    return next();
+  }
   const token = getEmbedRequestToken(req);
   if (!isTokenActive(token)) {
     return res.status(403).type("text/plain").send("Forbidden");
@@ -341,11 +419,36 @@ function embedAssetGate(req, res, next) {
   next();
 }
 
+function embedMindMapGate(req, res, next) {
+  const assetPath = routePath(req) || "index.html";
+  if (assetPath.startsWith("dist/")) {
+    return next();
+  }
+  return embedAssetGate(req, res, next);
+}
+
 function getAssetsRoot() {
   const idx = findSpaIndexHtml();
   if (idx) return dirname(idx);
   const fallback = "/var/www/excalidraw-static";
   if (existsSync(fallback)) return fallback;
+  return null;
+}
+
+function getMindMapRoot() {
+  const root = getAssetsRoot();
+  if (root) {
+    const buildMindMapRoot = join(root, "mind-map");
+    if (existsSync(join(buildMindMapRoot, "index.html"))) {
+      return buildMindMapRoot;
+    }
+  }
+
+  const localMindMapRoot = join(__dirname, "../../public/mind-map");
+  if (existsSync(join(localMindMapRoot, "index.html"))) {
+    return localMindMapRoot;
+  }
+
   return null;
 }
 
@@ -359,6 +462,11 @@ function safeJoin(base, userPath) {
 // ── Token-gated static assets  (/embed/assets/*, /embed/fonts/*) ──
 
 const _cssCache = new Map();
+
+function setImmutableEmbedAssetCache(res) {
+  res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+}
 
 function routePath(req) {
   try {
@@ -396,13 +504,11 @@ function sendEmbedAsset(req, res) {
       `url($1/embed/fonts/$2?_t=${encodedToken}$1)`,
     );
     res.setHeader("Content-Type", "text/css; charset=utf-8");
-    res.setHeader("Cache-Control", "no-store");
-    res.setHeader("X-Content-Type-Options", "nosniff");
+    setImmutableEmbedAssetCache(res);
     return res.send(css);
   }
 
-  res.setHeader("Cache-Control", "no-store");
-  res.setHeader("X-Content-Type-Options", "nosniff");
+  setImmutableEmbedAssetCache(res);
   res.sendFile(filePath);
 }
 
@@ -418,21 +524,154 @@ function sendEmbedFont(req, res) {
     return res.status(404).type("text/plain").send("Not found");
   }
 
-  res.setHeader("Cache-Control", "no-store");
-  res.setHeader("X-Content-Type-Options", "nosniff");
+  setImmutableEmbedAssetCache(res);
   res.sendFile(filePath);
 }
 
-pageRouter.use("/assets", embedAssetGate, sendEmbedAsset);
-pageRouter.use("/fonts", embedAssetGate, sendEmbedFont);
+function sendEmbedMindMap(req, res) {
+  const root = getMindMapRoot();
+  if (!root) {
+    return res.status(500).type("text/plain").send("MindMap assets not available");
+  }
+
+  const rawAssetPath = routePath(req);
+  if (rawAssetPath === null) {
+    return res.status(400).type("text/plain").send("Bad request");
+  }
+
+  const assetPath = rawAssetPath || "index.html";
+  if (!isAllowedMindMapEmbedAssetPath(assetPath)) {
+    return res.status(404).type("text/plain").send("Not found");
+  }
+
+  const filePath = safeJoin(root, assetPath);
+  if (!filePath || !existsSync(filePath) || statSync(filePath).isDirectory()) {
+    return res.status(404).type("text/plain").send("Not found");
+  }
+
+  const encodedToken = encodeURIComponent(
+    String(getEmbedRequestToken(req) || ""),
+  );
+
+  if (assetPath.endsWith(".html")) {
+    const html = rewriteMindMapHtmlForEmbed(
+      readFileSync(filePath, "utf-8"),
+      encodedToken,
+    );
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    return res.send(html);
+  }
+
+  if (assetPath.endsWith(".css")) {
+    const stat = statSync(filePath);
+    const cached = _cssCache.get(filePath);
+    const rawCss =
+      cached && cached.mtimeMs === stat.mtimeMs
+        ? cached.content
+        : readFileSync(filePath, "utf-8");
+    if (!cached || cached.mtimeMs !== stat.mtimeMs) {
+      _cssCache.set(filePath, { mtimeMs: stat.mtimeMs, content: rawCss });
+    }
+    const css = rewriteMindMapCssForEmbed(rawCss, assetPath, encodedToken);
+    res.setHeader("Content-Type", "text/css; charset=utf-8");
+    setImmutableEmbedAssetCache(res);
+    return res.send(css);
+  }
+
+  setImmutableEmbedAssetCache(res);
+  res.sendFile(filePath);
+}
+
+pageRouter.use("/assets", sendEmbedAsset);
+pageRouter.use("/fonts", sendEmbedFont);
+pageRouter.use("/mind-map", embedMindMapGate, sendEmbedMindMap);
+
+pageRouter.get("/api/:fileId/data", (req, res) => {
+  const token = getEmbedRequestToken(req);
+  log.info("[DEBUG] embed.apiData | request start", {
+    fileId: req.params.fileId?.slice(0, 8),
+    hasToken: !!token,
+    tokenLength: token ? String(token).length : 0,
+    referer: req.get("referer") || null,
+    origin: req.get("origin") || null,
+  });
+  const result = validateEmbedToken(req, token);
+  if (!result.ok) {
+    log.info("[DEBUG] embed.apiData | token rejected", {
+      fileId: req.params.fileId?.slice(0, 8),
+      status: result.status,
+      error: result.error,
+    });
+    return res.status(result.status).json({ error: result.error });
+  }
+
+  const fileId = req.params.fileId;
+  const fileRow = db.prepare("SELECT * FROM files WHERE id = ?").get(fileId);
+  if (!fileRow) {
+    log.info("[DEBUG] embed.apiData | file row missing", {
+      fileId: fileId.slice(0, 8),
+    });
+    return res.status(404).json({ error: "File not found" });
+  }
+
+  const fp = currentPath(fileId);
+  if (!existsSync(fp)) {
+    log.info("[DEBUG] embed.apiData | current file missing", {
+      fileId: fileId.slice(0, 8),
+      fp,
+    });
+    return res.status(404).json({ error: "File data missing" });
+  }
+
+  try {
+    const raw = readFileSync(fp, "utf-8");
+    const data = JSON.parse(raw);
+    log.info("[DEBUG] embed.apiData | payload ready", {
+      fileId: fileId.slice(0, 8),
+      name: fileRow.name,
+      dbKind: fileRow.kind || "excalidraw",
+      bytes: raw.length,
+      summary: summarizeEmbedData(data),
+    });
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      id: fileId,
+      name: fileRow.name,
+      kind: fileRow.kind || "excalidraw",
+      data,
+    });
+  } catch (error) {
+    log.info("[DEBUG] embed.apiData | payload failed", {
+      fileId: fileId.slice(0, 8),
+      message: error?.message || String(error),
+      stack: error?.stack || null,
+    });
+    res.status(500).json({ error: "Corrupt scene file" });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Embed page  (/embed/:fileId?token=xxx)
 // ---------------------------------------------------------------------------
 
 pageRouter.get("/:fileId", (req, res) => {
+  log.info("[DEBUG] embed.page | request start", {
+    fileId: req.params.fileId?.slice(0, 8),
+    hasToken: !!req.query.token,
+    tokenLength: req.query.token ? String(req.query.token).length : 0,
+    referer: req.get("referer") || null,
+    origin: req.get("origin") || null,
+    host: req.get("host") || null,
+  });
   const result = validateEmbedToken(req);
   if (!result.ok) {
+    log.info("[DEBUG] embed.page | token rejected", {
+      fileId: req.params.fileId?.slice(0, 8),
+      status: result.status,
+      error: result.error,
+    });
     log.warn(`page rejected: ${result.error}`, {
       fileId: req.params.fileId?.slice(0, 8),
       ip: req.ip,
@@ -446,65 +685,55 @@ pageRouter.get("/:fileId", (req, res) => {
 
   const fileRow = db.prepare("SELECT * FROM files WHERE id = ?").get(fileId);
   if (!fileRow) {
+    log.info("[DEBUG] embed.page | file row missing", {
+      fileId: fileId.slice(0, 8),
+    });
     return res.status(404).send(errorPage("File not found"));
   }
 
   const fp = currentPath(fileId);
   if (!existsSync(fp)) {
+    log.info("[DEBUG] embed.page | current file missing", {
+      fileId: fileId.slice(0, 8),
+      fp,
+    });
     return res.status(404).send(errorPage("File data missing"));
   }
 
-  let sceneJson;
-  try {
-    sceneJson = readFileSync(fp, "utf-8");
-    JSON.parse(sceneJson);
-  } catch {
-    return res.status(500).send(errorPage("Corrupt scene file"));
-  }
-
-  const indexPath = findSpaIndexHtml();
+  const indexPath = findEmbedIndexHtml();
   if (!indexPath) {
+    log.info("[DEBUG] embed.page | index missing", {
+      fileId: fileId.slice(0, 8),
+    });
     return res
       .status(500)
-      .send(errorPage("SPA build not found — cannot serve embed page"));
+      .send(errorPage("Embed build not found — cannot serve embed page"));
   }
 
   let html = readFileSync(indexPath, "utf-8");
   const encodedToken = encodeURIComponent(String(token));
 
-  // ── rewrite asset / font paths to token-gated embed routes ──
-  // Vite `base: "./"` produces `"./assets/…"` (relative), but deployments
-  // with `VITE_BASE_PATH=/` produce `"/assets/…"` (absolute).  Handle both.
-  html = html.replace(
-    /((?:src|href)=["'])(?:\.\/)?(?:\/)?assets\/([^"']+)(["'])/g,
-    `$1/embed/assets/$2?_t=${encodedToken}$3`,
-  );
-  html = html.replace(
-    /((?:src|href)=["'])(?:\.\/)?(?:\/)?fonts\/([^"']+)(["'])/g,
-    `$1/embed/fonts/$2?_t=${encodedToken}$3`,
-  );
+  html = rewriteSpaAssetRefsForEmbed(html, encodedToken);
 
   // Intercept JS-level font/asset loads that still reference /fonts/ or /assets/
-  const fontInterceptor = `<script>
-(function(){
-  var remap=function(u){
-    return typeof u==='string'?u.replace(/^(?:\\.?\\/)?(?=fonts\\/|assets\\/)/,'/embed/'):u;
-  };
-  var _f=window.fetch;
-  window.fetch=function(u,o){return _f.call(this,remap(u),o);};
-  if(window.FontFace){var _FF=window.FontFace;window.FontFace=function(f,s,d){return new _FF(f,remap(s),d);};window.FontFace.prototype=_FF.prototype;}
-})();
-</script>`;
-
-  const embedScript = `<script>
-window.__EXCALIDRAW_EMBED_MODE__ = true;
-window.__EXCALIDRAW_EMBED_FILE_ID__ = ${escapeForScript(JSON.stringify(fileId))};
-window.__EXCALIDRAW_EMBED_FILE_NAME__ = ${escapeForScript(JSON.stringify(fileRow.name))};
-window.__EXCALIDRAW_EMBED_DATA__ = ${escapeForScript(sceneJson)};
-</script>`;
+  const fontInterceptor = buildEmbedRuntimeAssetInterceptor(encodedToken);
 
   html = html.replace("<head>", `<head>\n${fontInterceptor}`);
-  html = html.replace("</head>", `${embedScript}\n</head>`);
+  html = injectEmbedBootstrap(html, {
+    fileId,
+    fileName: fileRow.name,
+    kind: fileRow.kind || "excalidraw",
+    token: String(token),
+  });
+  log.info("[DEBUG] embed.page | bootstrap injected", {
+    fileId: fileId.slice(0, 8),
+    fileName: fileRow.name,
+    kind: fileRow.kind || "excalidraw",
+    indexPath,
+    htmlLength: html.length,
+    hasEmbedIndex: indexPath.includes("/embed/"),
+    dataUrl: `/embed/api/${encodeURIComponent(fileId)}/data?_t=<redacted>`,
+  });
 
   // Set embed cookie for subsequent asset/font requests from this iframe
   res.setHeader(
@@ -533,7 +762,10 @@ window.__EXCALIDRAW_EMBED_DATA__ = ${escapeForScript(sceneJson)};
 });
 
 pageRouter.use((req, res) => {
-  if (!isTokenActive(getEmbedRequestToken(req))) {
+  if (
+    isTokenProtectedEmbedPath(req.path) &&
+    !isTokenActive(getEmbedRequestToken(req))
+  ) {
     return res.status(403).type("text/plain").send("Forbidden");
   }
   res.status(404).type("text/plain").send("Not found");

@@ -33,6 +33,7 @@
     "jotai": "2.11.0",
     "react": "19.0.0",
     "react-dom": "19.0.0",
+    "simple-mind-map": "file:../mind-map/simple-mind-map",
     "uqr": "0.1.2",
     "vite-plugin-html": "3.2.2"
   },

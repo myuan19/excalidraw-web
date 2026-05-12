@@ -14,6 +14,36 @@ export function hashSceneSnapshot(data: ForkSceneSnapshot | unknown): string {
   if (!data || typeof data !== "object") {
     return "0";
   }
+  try {
+    return hashString(JSON.stringify(stableNormalize(toSceneHashPayload(data))));
+  } catch {
+    return hashString(JSON.stringify(data));
+  }
+}
+
+/**
+ * Stable fingerprint for any managed document payload.
+ *
+ * Legacy Excalidraw scene payloads keep the existing scene hash semantics.
+ * Managed Excalidraw documents still ignore `data.appState.name`, while other
+ * document kinds hash the whole stable-normalized document shell and payload.
+ */
+export function hashDocumentSnapshot(data: unknown): string {
+  if (!data || typeof data !== "object") {
+    return "0";
+  }
+  try {
+    return hashString(JSON.stringify(stableNormalize(toDocumentHashPayload(data))));
+  } catch {
+    return hashString(JSON.stringify(data));
+  }
+}
+
+function toSceneHashPayload(data: ForkSceneSnapshot | unknown): {
+  elements: unknown;
+  appState: unknown;
+  files: unknown;
+} {
   const o = data as {
     elements?: unknown;
     appState?: unknown;
@@ -24,13 +54,50 @@ export function hashSceneSnapshot(data: ForkSceneSnapshot | unknown): string {
     const { name: _stripped, ...rest } = appState as Record<string, unknown>;
     appState = rest;
   }
-  try {
-    const payload = { elements: o.elements, appState, files: o.files ?? {} };
-    const s = JSON.stringify(stableNormalize(payload));
-    return hashString(s);
-  } catch {
-    return hashString(JSON.stringify(data));
+
+  return { elements: o.elements, appState, files: o.files ?? {} };
+}
+
+function isManagedDocument(value: unknown): value is {
+  kind: string;
+  data?: unknown;
+  [key: string]: unknown;
+} {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    typeof (value as { kind?: unknown }).kind === "string" &&
+    "data" in value
+  );
+}
+
+function isExcalidrawLikeScene(value: unknown): boolean {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    ((value as { type?: unknown }).type === "excalidraw" ||
+      "elements" in value ||
+      "appState" in value ||
+      "files" in value)
+  );
+}
+
+function toDocumentHashPayload(data: unknown): unknown {
+  if (isManagedDocument(data)) {
+    if (data.kind === "excalidraw") {
+      return {
+        ...data,
+        data: toSceneHashPayload(data.data),
+      };
+    }
+    return data;
   }
+
+  if (isExcalidrawLikeScene(data)) {
+    return toSceneHashPayload(data);
+  }
+
+  return data;
 }
 
 function stableNormalize(value: unknown): unknown {

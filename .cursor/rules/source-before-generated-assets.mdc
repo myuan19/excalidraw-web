@@ -1,0 +1,14 @@
+---
+description: Edit source files before generated assets
+alwaysApply: true
+---
+
+# Source Before Generated Assets
+
+- Do not hand-edit generated build artifacts as the primary fix.
+- For MindMap embeds, source lives under `mind-map/web/src/**` and `mind-map/simple-mind-map/src/**`.
+- `mind-map/dist/**` and `public/mind-map/dist/**` are generated assets. Update them only by running the relevant build and copying/syncing the build output when the served embed path requires it.
+- After changing MindMap native source that affects embedded/editor runtime behavior, run the MindMap Web build from `mind-map/web` (typically `NODE_OPTIONS=--openssl-legacy-provider yarn build`) and sync `mind-map/index.html` plus `mind-map/dist/**` into `public/mind-map/`, because the app/server iframe loads the generated static files.
+- Do not stop at `yarn build:app` or Vite app build for MindMap iframe changes; that build consumes existing `public/mind-map` assets and will not regenerate the native Vue bundle.
+- If a generated HTML shell such as `mind-map/index.html`, `public/mind-map/index.html`, or `mind-map/web/public/index.html` contains custom bridge code, keep the source copies in sync and explain why they are touched.
+- In final summaries, distinguish source changes from regenerated artifacts so it is clear what was authored and what was produced by build output.

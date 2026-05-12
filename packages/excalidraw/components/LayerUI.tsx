@@ -187,11 +187,7 @@ const LayerUI = ({
   const [eyeDropperState, setEyeDropperState] = useAtom(activeEyeDropperAtom);
 
   const isSidebarDocked = useAtomValue(isSidebarDockedAtom);
-  /** Match zen-mode slide animations when the default sidebar is docked with a tab open — not `zenModeEnabled`. */
-  const dockUILayoutShift =
-    isSidebarDocked &&
-    appState.openSidebar?.name === DEFAULT_SIDEBAR.name &&
-    !!appState.openSidebar?.tab;
+  const dockUILayoutShift = false;
 
   const renderJSONExportDialog = () => {
     if (!UIOptions.canvasActions.export) {
@@ -594,16 +590,7 @@ const LayerUI = ({
       )}
       {editorInterface.formFactor !== "phone" && (
         <>
-          <div
-            className="layer-ui__wrapper"
-            style={
-              appState.openSidebar &&
-              isSidebarDocked &&
-              editorInterface.canFitSidebar
-                ? { width: `calc(100% - var(--right-sidebar-width))` }
-                : {}
-            }
-          >
+          <div className="layer-ui__wrapper">
             {renderWelcomeScreen && <tunnels.WelcomeScreenCenterTunnel.Out />}
             {renderFixedSideContainer()}
             <Footer
@@ -611,7 +598,6 @@ const LayerUI = ({
               actionManager={actionManager}
               showExitZenModeBtn={showExitZenModeBtn}
               renderWelcomeScreen={renderWelcomeScreen}
-              dockUILayoutShift={dockUILayoutShift}
             />
             {(appState.toast || appState.scrolledOutside) && (
               <div className="floating-status-stack">

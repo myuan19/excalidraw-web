@@ -3827,12 +3827,32 @@ class App extends React.Component<AppProps, AppState> {
   public pasteFromClipboard = withBatchedUpdates(
     async (event: ClipboardEvent) => {
       const isPlainPaste = !!IS_PLAIN_PASTE;
+      console.log("[DEBUG] pasteFromClipboard | enter", {
+        hasEvent: !!event,
+        isTrusted: event?.isTrusted,
+        isPlainPaste,
+        activeElementTag: document.activeElement?.tagName ?? null,
+        activeElementClass:
+          document.activeElement instanceof HTMLElement
+            ? document.activeElement.className
+            : null,
+        clipboardTypes: event?.clipboardData
+          ? Array.from(event.clipboardData.types)
+          : [],
+        clipboardFileCount: event?.clipboardData?.files.length ?? 0,
+        lastViewportPosition: this.lastViewportPosition,
+      });
 
       // #686
       const target = document.activeElement;
       const isExcalidrawActive =
         this.excalidrawContainerRef.current?.contains(target);
       if (event && !isExcalidrawActive) {
+        console.log("[DEBUG] pasteFromClipboard | return inactive editor", {
+          activeElementTag: target?.tagName ?? null,
+          activeElementClass:
+            target instanceof HTMLElement ? target.className : null,
+        });
         return;
       }
 
@@ -3845,6 +3865,15 @@ class App extends React.Component<AppProps, AppState> {
         (!(elementUnderCursor instanceof HTMLCanvasElement) ||
           isWritableElement(target))
       ) {
+        console.log("[DEBUG] pasteFromClipboard | return invalid target", {
+          elementUnderCursorTag: elementUnderCursor?.tagName ?? null,
+          elementUnderCursorClass:
+            elementUnderCursor instanceof HTMLElement
+              ? elementUnderCursor.className
+              : null,
+          isCanvas: elementUnderCursor instanceof HTMLCanvasElement,
+          isWritableTarget: isWritableElement(target),
+        });
         return;
       }
 
@@ -3854,20 +3883,43 @@ class App extends React.Component<AppProps, AppState> {
       const dataTransferList = await parseDataTransferEvent(event);
 
       const filesList = dataTransferList.getFiles();
+      console.log("[DEBUG] pasteFromClipboard | parsed transfer", {
+        itemCount: dataTransferList.length,
+        filesCount: filesList.length,
+        itemTypes: dataTransferList.map((item) => ({
+          type: item.type,
+          kind: item.kind,
+        })),
+      });
 
       const data = await parseClipboard(dataTransferList, isPlainPaste);
+      console.log("[DEBUG] pasteFromClipboard | parsed clipboard", {
+        hasText: !!data.text,
+        textLength: data.text?.length ?? 0,
+        hasElements: !!data.elements,
+        elementCount: data.elements?.length ?? 0,
+        hasFiles: !!data.files,
+        hasMixedContent: !!data.mixedContent,
+        errorMessage: data.errorMessage ?? null,
+      });
 
       if (this.props.onPaste) {
         try {
           if ((await this.props.onPaste(data, event)) === false) {
+            console.log("[DEBUG] pasteFromClipboard | onPaste returned false");
             return;
           }
         } catch (error: any) {
+          console.log("[DEBUG] pasteFromClipboard | onPaste threw", {
+            message: error?.message,
+            stack: error?.stack,
+          });
           console.error(error);
         }
       }
 
       await this.insertClipboardContent(data, filesList, isPlainPaste);
+      console.log("[DEBUG] pasteFromClipboard | insertClipboardContent done");
 
       this.setActiveTool(
         { type: this.state.preferredSelectionTool.type },
@@ -12065,6 +12117,21 @@ class App extends React.Component<AppProps, AppState> {
   private handleCanvasContextMenu = (
     event: React.MouseEvent<HTMLElement | HTMLCanvasElement>,
   ) => {
+    console.log("[DEBUG] handleCanvasContextMenu | enter", {
+      clientX: event.clientX,
+      clientY: event.clientY,
+      button: event.button,
+      pointerType:
+        "pointerType" in event.nativeEvent
+          ? event.nativeEvent.pointerType
+          : undefined,
+      activeTool: this.state.activeTool.type,
+      preferredSelectionTool: this.state.preferredSelectionTool.type,
+      targetTag:
+        event.target instanceof HTMLElement ? event.target.tagName : null,
+      targetClass:
+        event.target instanceof HTMLElement ? event.target.className : null,
+    });
     event.preventDefault();
 
     if (
@@ -12076,6 +12143,7 @@ class App extends React.Component<AppProps, AppState> {
           event.button !== POINTER_BUTTON.SECONDARY)) &&
       this.state.activeTool.type !== this.state.preferredSelectionTool.type
     ) {
+      console.log("[DEBUG] handleCanvasContextMenu | return touch/pen tool gate");
       return;
     }
 
@@ -12093,6 +12161,12 @@ class App extends React.Component<AppProps, AppState> {
       );
 
     const type = element || isHittingCommonBoundBox ? "element" : "canvas";
+    console.log("[DEBUG] handleCanvasContextMenu | resolved type", {
+      type,
+      elementId: element?.id ?? null,
+      isHittingCommonBoundBox,
+      selectedCount: selectedElements.length,
+    });
 
     const container = this.excalidrawContainerRef.current!;
     const { top: offsetTop, left: offsetLeft } =
@@ -12127,8 +12201,17 @@ class App extends React.Component<AppProps, AppState> {
         showHyperlinkPopup: false,
       },
       () => {
+        const items = this.getContextMenuItems(type);
+        console.log("[DEBUG] handleCanvasContextMenu | set context menu", {
+          type,
+          left,
+          top,
+          itemNames: items.map((item) =>
+            item && item !== "separator" ? item.name : item,
+          ),
+        });
         this.setState({
-          contextMenu: { top, left, items: this.getContextMenuItems(type) },
+          contextMenu: { top, left, items },
         });
       },
     );

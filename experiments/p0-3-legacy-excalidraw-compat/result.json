@@ -1,0 +1,15 @@
+{
+  "id": "P0-3",
+  "title": "旧 .excalidraw 文件兼容",
+  "conclusion": "PASS",
+  "checks": {
+    "managedDocumentTypeExists": true,
+    "normalizeDocumentExists": true,
+    "legacySceneWrapsAsExcalidraw": true,
+    "localCacheUsesNormalizeDocument": true,
+    "localCacheNoLongerRejectsMissingTopLevelElements": true,
+    "serverCreateStillWritesLegacyScene": true,
+    "blobLoaderHasLegacyRepair": true
+  },
+  "recommendation": "ManagedDocument normalization is available and local cache no longer requires top-level elements. Continue to keep external .excalidraw export format unchanged until adapter stage."
+}

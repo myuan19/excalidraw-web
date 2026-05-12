@@ -15,16 +15,13 @@ const Footer = ({
   actionManager,
   showExitZenModeBtn,
   renderWelcomeScreen,
-  dockUILayoutShift = false,
 }: {
   appState: UIAppState;
   actionManager: ActionManager;
   showExitZenModeBtn: boolean;
   renderWelcomeScreen: boolean;
-  /** Sidebar docked + tab open: same slide animation as zen, without zen mode. */
-  dockUILayoutShift?: boolean;
 }) => {
-  const footerShift = appState.zenModeEnabled || dockUILayoutShift;
+  const footerShift = appState.zenModeEnabled;
   const { FooterCenterTunnel, WelcomeScreenHelpHintTunnel } = useTunnels();
 
   return (

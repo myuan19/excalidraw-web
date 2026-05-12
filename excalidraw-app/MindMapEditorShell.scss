@@ -1,0 +1,217 @@
+.mindmap-editor {
+  height: 100vh;
+  position: relative;
+  background: #ffffff;
+  color: #1f2937;
+  font-family: var(--nb-font-ui), system-ui, sans-serif;
+}
+
+.mindmap-editor__error {
+  position: fixed;
+  z-index: 4200;
+  left: 16px;
+  top: 72px;
+  margin: 16px;
+  padding: 16px;
+  border: 1px solid #ffc9c9;
+  border-radius: 10px;
+  background: #fff5f5;
+  color: #c92a2a;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mindmap-editor__loading {
+  position: fixed;
+  inset: 0;
+  z-index: 4100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: var(--nb-space-8);
+  background: #ffffff;
+  color: var(--nb-text-muted);
+  font-family: var(--nb-font-ui), system-ui, sans-serif;
+  font-size: var(--nb-font-loading);
+}
+
+.mindmap-editor__native-frame {
+  width: 100vw;
+  height: 100vh;
+  border: 0;
+  display: block;
+  background: #ffffff;
+}
+
+.mindmap-editor .fork-home-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 4400;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--nb-space-16);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+}
+
+.mindmap-editor .fork-home-dialog {
+  max-width: 25rem;
+  width: 100%;
+  background: #ffffff;
+  color: #303133;
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
+  padding: 0;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+}
+
+.mindmap-editor .fork-home-dialog h3 {
+  margin: 0;
+  padding: 20px 24px 10px;
+  font-size: 18px;
+  font-weight: 500;
+  color: #303133;
+}
+
+.mindmap-editor .fork-home-dialog-desc {
+  margin: 0;
+  padding: 0 24px 18px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #606266;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.mindmap-editor .fork-home-dialog-actions {
+  display: flex;
+  flex-direction: row-reverse;
+  gap: 10px;
+  padding: 16px 24px 10px;
+}
+
+.mindmap-editor .fork-home-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-width: 88px;
+  min-height: 32px;
+  padding: 8px 15px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 400;
+  font-family: inherit;
+  border: 1px solid #dcdfe6;
+  background: #ffffff;
+  color: #606266;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease,
+    color 0.15s ease, opacity 0.15s ease;
+  box-sizing: border-box;
+}
+
+.mindmap-editor .fork-home-btn:hover:not(:disabled) {
+  color: #409eff;
+  border-color: #c6e2ff;
+  background: #ecf5ff;
+}
+
+.mindmap-editor .fork-home-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mindmap-editor .fork-home-btn--primary {
+  background: #409eff;
+  color: #ffffff;
+  border-color: #409eff;
+  box-shadow: none;
+}
+
+.mindmap-editor .fork-home-btn--primary:hover:not(:disabled) {
+  background: #66b1ff;
+  border-color: #66b1ff;
+  color: #ffffff;
+}
+
+.mindmap-editor .fork-home-btn--danger {
+  background: #ffffff;
+  color: #f56c6c;
+  border-color: #fbc4c4;
+  box-shadow: none;
+}
+
+.mindmap-editor .fork-home-btn--danger:hover:not(:disabled) {
+  background: #fef0f0;
+  border-color: #f56c6c;
+  color: #f56c6c;
+}
+
+.mindmap-editor .fork-home-dialog-cancel {
+  display: block;
+  margin: 0 24px 18px auto;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  font-size: 13px;
+  color: #909399;
+  cursor: pointer;
+  font-family: inherit;
+  border-radius: 4px;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.mindmap-editor .fork-home-dialog-cancel:hover:not(:disabled) {
+  color: #409eff;
+  background: #ecf5ff;
+}
+
+.excalidraw-app.theme--dark .mindmap-editor .fork-home-dialog {
+  background: #262a2e;
+  color: rgba(255, 255, 255, 0.9);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.excalidraw-app.theme--dark .mindmap-editor__loading {
+  background: #121212;
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.excalidraw-app.theme--dark .mindmap-editor .fork-home-dialog h3 {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.excalidraw-app.theme--dark .mindmap-editor .fork-home-dialog-desc {
+  color: rgba(255, 255, 255, 0.68);
+  border-bottom-color: rgba(255, 255, 255, 0.12);
+}
+
+.excalidraw-app.theme--dark .mindmap-editor .fork-home-btn {
+  background: #303640;
+  color: rgba(255, 255, 255, 0.82);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.excalidraw-app.theme--dark
+  .mindmap-editor
+  .fork-home-btn:hover:not(:disabled) {
+  color: #409eff;
+  border-color: #409eff;
+  background: rgba(64, 158, 255, 0.12);
+}
+
+.excalidraw-app.theme--dark .mindmap-editor .fork-home-btn--primary {
+  background: #409eff;
+  color: #ffffff;
+  border-color: #409eff;
+}
+
+.excalidraw-app.theme--dark .mindmap-editor .fork-home-btn--danger {
+  color: #f56c6c;
+  border-color: rgba(245, 108, 108, 0.45);
+}

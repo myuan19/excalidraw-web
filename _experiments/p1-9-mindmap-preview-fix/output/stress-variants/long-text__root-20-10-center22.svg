@@ -1,0 +1,41 @@
+<svg viewBox="150.65999999999997 288.4 847.0000000000001 508.20000000000005" style="background-color:#f1f1f1;" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet" width="100%" height="100%">
+<title>超长文本链路</title>
+<g class="smm-container" transform="matrix(1,0,0,1,0,0)">
+<g class="smm-line-container"><path d="M 414,542.5L 479.7,542.5L 479.7,279L 560,279" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 800,279L 826,279L 826,404L 810,404" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 1050,404L 1076,404L 1076,532L 1060,532" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 1281,532L 1307,532L 1307,660L 1310,660" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 1543.6,660L 1569.6,660L 1569.6,788L 1560,788" stroke="#1e3556" stroke-width="2" fill="none"></path></g>
+<g class="smm-node-container"><g class="smm-node" transform="matrix(1,0,0,1,260,520)">
+<rect width="154" height="45" rx="10" ry="10" class="smm-node-shape" fill="#1e3556" stroke="#1e3556" stroke-width="2"></rect>
+<text x="77" y="30.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="24" fill="#fff" font-weight="700">中心主题</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,260)">
+<rect width="240" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="120" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">这是一条非常长的分支标题用于测试文本宽度</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,810,388)">
+<rect width="240" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="120" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">较长节点内容会让画布横向跨度明显增加</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,1060,516)">
+<rect width="221" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="110.5" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">需要确认预览仍聚焦中心主题附近</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,1310,644)">
+<rect width="233.6" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="116.8" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">不要把所有超长内容全部塞进卡片里</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,1560,772)">
+<rect width="208.4" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="104.2" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">只保证根节点大小和局部可读性</text>
+
+</g></g>
+<g class="smm-associative-line-container"><path d="M 0 0L10 10"></path></g>
+</g>
+</svg>

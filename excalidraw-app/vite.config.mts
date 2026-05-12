@@ -120,6 +120,10 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: "build",
       rollupOptions: {
+        input: {
+          main: path.resolve(__dirname, "index.html"),
+          embed: path.resolve(__dirname, "embed/index.html"),
+        },
         output: {
           assetFileNames(chunkInfo) {
             if (chunkInfo?.name?.endsWith(".woff2")) {
@@ -246,10 +250,10 @@ export default defineConfig(({ mode }) => {
                 maximumFileSizeToCacheInBytes: 2.3 * 1024 ** 2,
               },
               manifest: {
-                short_name: "Excalidraw",
-                name: "Excalidraw",
+                short_name: "可视化文档私有部署",
+                name: "可视化文档私有部署",
                 description:
-                  "Excalidraw is a whiteboard tool that lets you easily sketch diagrams that have a hand-drawn feel to them.",
+                  "统一管理 Excalidraw 画布与 MindMap 思维导图。",
                 icons: [
                   {
                     src: "android-chrome-192x192.png",

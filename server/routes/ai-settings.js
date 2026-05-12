@@ -6,11 +6,57 @@ const router = Router();
 /** 默认空配置（未设置过） */
 function emptyConfig() {
   return {
-    endpoint: "",
-    apiKey: "",
-    textToDiagramModel: "",
-    diagramToCodeModel: "",
-    iconTagModel: "",
+    excalidraw: {
+      endpoint: "",
+      apiKey: "",
+      textToDiagramModel: "",
+      diagramToCodeModel: "",
+      iconTagModel: "",
+    },
+    mindmap: {
+      endpoint: "",
+      apiKey: "",
+      model: "",
+    },
+  };
+}
+
+function sanitizeExcalidrawConfig(data = {}) {
+  return {
+    endpoint: typeof data.endpoint === "string" ? data.endpoint : "",
+    apiKey: typeof data.apiKey === "string" ? data.apiKey : "",
+    textToDiagramModel:
+      typeof data.textToDiagramModel === "string" ? data.textToDiagramModel : "",
+    diagramToCodeModel:
+      typeof data.diagramToCodeModel === "string" ? data.diagramToCodeModel : "",
+    iconTagModel: typeof data.iconTagModel === "string" ? data.iconTagModel : "",
+  };
+}
+
+function sanitizeMindMapConfig(data = {}, fallback = {}) {
+  return {
+    endpoint:
+      typeof data.endpoint === "string" ? data.endpoint : fallback.endpoint || "",
+    apiKey: typeof data.apiKey === "string" ? data.apiKey : fallback.apiKey || "",
+    model:
+      typeof data.model === "string"
+        ? data.model
+        : fallback.textToDiagramModel || fallback.diagramToCodeModel || "",
+  };
+}
+
+function normalizeConfig(data) {
+  const body = data && typeof data === "object" ? data : {};
+  const rawExcalidraw =
+    body.excalidraw && typeof body.excalidraw === "object"
+      ? body.excalidraw
+      : body;
+  const excalidraw = sanitizeExcalidrawConfig(rawExcalidraw);
+  const rawMindMap =
+    body.mindmap && typeof body.mindmap === "object" ? body.mindmap : {};
+  return {
+    excalidraw,
+    mindmap: sanitizeMindMapConfig(rawMindMap, excalidraw),
   };
 }
 
@@ -30,10 +76,7 @@ router.get("/", (_req, res) => {
       return res.json(emptyConfig());
     }
     const parsed = JSON.parse(row.config_json);
-    return res.json({
-      ...emptyConfig(),
-      ...parsed,
-    });
+    return res.json(normalizeConfig(parsed));
   } catch (e) {
     console.error("[ai-settings] GET", e);
     return res.status(500).json({ error: "failed to read ai settings" });
@@ -42,24 +85,7 @@ router.get("/", (_req, res) => {
 
 router.put("/", (req, res) => {
   try {
-    const body = req.body && typeof req.body === "object" ? req.body : {};
-    const config = {
-      endpoint:
-        typeof body.endpoint === "string" ? body.endpoint : "",
-      apiKey: typeof body.apiKey === "string" ? body.apiKey : "",
-      textToDiagramModel:
-        typeof body.textToDiagramModel === "string"
-          ? body.textToDiagramModel
-          : "",
-      diagramToCodeModel:
-        typeof body.diagramToCodeModel === "string"
-          ? body.diagramToCodeModel
-          : "",
-      iconTagModel:
-        typeof body.iconTagModel === "string"
-          ? body.iconTagModel
-          : "",
-    };
+    const config = normalizeConfig(req.body);
     db.prepare(
       `INSERT INTO ai_settings (id, config_json) VALUES (1, @json)
        ON CONFLICT(id) DO UPDATE SET config_json = excluded.config_json`,

@@ -1,0 +1,15 @@
+{
+  "id": "P1-3",
+  "title": "MindMap 图片与附件存储",
+  "conclusion": "PARTIAL_PASS",
+  "checks": {
+    "nodeBase64ImagePluginExists": true,
+    "nodeDataMentionsImage": true,
+    "nodeDataMentionsNote": true,
+    "nodeDataMentionsHyperlink": true,
+    "exportPluginSerializesJson": true,
+    "sampleInlineImagePreserved": true
+  },
+  "blocker": "This static validation confirms JSON can preserve inline image references. A browser validation is still needed for remote URLs, image upload plugin behavior, and export rendering.",
+  "recommendation": "For MVP, require inline/base64 images or stable URLs inside MindMap payload. If external attachments are needed, introduce a format-level files map similar to Excalidraw files."
+}

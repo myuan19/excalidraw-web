@@ -1,0 +1,19 @@
+{
+  "id": "P0-5",
+  "title": "多格式 hash 与 dirty 判断",
+  "conclusion": "FAIL_CURRENT_NEEDS_DOCUMENT_HASH",
+  "checks": {
+    "currentHashIgnoresMindmapData": true,
+    "proposedHashDetectsMindmapData": true,
+    "currentHashIgnoresExcalidrawName": true,
+    "serverSyncDispatchUsesSceneHash": true,
+    "sceneHashOnlyUsesSceneFields": true
+  },
+  "hashes": {
+    "currentMindmapA": "1qdkwq2",
+    "currentMindmapB": "1qdkwq2",
+    "proposedMindmapA": "15lyb90",
+    "proposedMindmapB": "9xndmf"
+  },
+  "recommendation": "Replace hashSceneSnapshot at multi-format boundaries with a document-level stable hash that includes kind/containerVersion/formatVersion/data. Preserve Excalidraw appState.name stripping inside ExcalidrawAdapter if needed."
+}

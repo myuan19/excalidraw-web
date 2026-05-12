@@ -407,7 +407,6 @@
   font-weight: 600;
 }
 
-
 .filelist__tree-toggle,
 .filelist__tree-action {
   display: inline-flex;
@@ -807,7 +806,8 @@
   color: var(--nb-text-muted);
   cursor: pointer;
   backdrop-filter: blur(var(--nb-blur-sheet));
-  transition: background-color 80ms ease-in, color 80ms ease-in, transform 0.1s ease;
+  transition: background-color 80ms ease-in, color 80ms ease-in,
+    transform 0.1s ease;
 
   &:hover {
     background: var(--fl-surface-high);
@@ -1052,6 +1052,38 @@
 }
 
 .filelist__new-file-dialog {
+  .filelist__new-file-kind {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--nb-space-4);
+    margin-bottom: var(--nb-space-6);
+  }
+
+  .filelist__kind-option {
+    display: flex;
+    align-items: center;
+    gap: var(--nb-space-3);
+    padding: var(--nb-space-5);
+    border: var(--nb-border-width) solid var(--fl-border);
+    border-radius: var(--nb-radius-md);
+    background: var(--fl-surface-high);
+    color: var(--nb-text);
+    font-family: inherit;
+    cursor: pointer;
+    text-align: left;
+
+    &:hover {
+      border-color: var(--fl-border-strong);
+      background: var(--nb-surface-row-hover);
+    }
+  }
+
+  .filelist__kind-option--active {
+    border-color: var(--fl-primary);
+    background: var(--fl-primary-soft);
+    color: var(--fl-primary);
+  }
+
   .filelist__new-file-input {
     box-sizing: border-box;
     display: block;

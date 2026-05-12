@@ -4,8 +4,11 @@
 
 import { createLogger } from "../lib/logger";
 import { FileSyncState } from "./FileSyncState";
+import { getDocumentFormatAdapter } from "./formats/registry";
 
-import { hashSceneSnapshot } from "./sceneHash";
+import { hashDocumentSnapshot } from "./sceneHash";
+
+import { normalizeDocument } from "./documentTypes";
 
 import type { ForkSceneSnapshot } from "./forkFileTypes";
 
@@ -74,6 +77,7 @@ async function api<T = unknown>(
 export interface ServerFile {
   id: string;
   name: string;
+  kind?: string;
   created_at: string;
   updated_at: string;
   folder_id?: string | null;
@@ -158,10 +162,14 @@ export const ServerSync = {
     return api<FileTreeResponse>("/files/tree", { signal: opts?.signal });
   },
 
-  createFile(name = "Untitled", folderId?: string | null): Promise<ServerFile> {
+  createFile(
+    name = "Untitled",
+    folderId?: string | null,
+    kind = "excalidraw",
+  ): Promise<ServerFile> {
     return api("/files", {
       method: "POST",
-      body: JSON.stringify({ name, folder_id: folderId ?? null }),
+      body: JSON.stringify({ name, folder_id: folderId ?? null, kind }),
     });
   },
 
@@ -224,7 +232,7 @@ export const ServerSync = {
     if (result?.skipped) {
       logHash.debug("server-saved (immediate) skipped", { id });
       if (!opts?.suppressSavedEvent) {
-        const hash = hashSceneSnapshot(data);
+        const hash = hashDocumentSnapshot(data);
         window.dispatchEvent(
           new CustomEvent("excalidraw-server-saved", {
             detail: { id, hash },
@@ -234,7 +242,7 @@ export const ServerSync = {
       return result;
     }
     if (!opts?.suppressSavedEvent) {
-      const hash = hashSceneSnapshot(data);
+      const hash = hashDocumentSnapshot(data);
       logHash.debug("server-saved (immediate)", { id, hash });
       window.dispatchEvent(
         new CustomEvent("excalidraw-server-saved", {
@@ -272,12 +280,32 @@ export const ServerSync = {
 
   async downloadFile(id: string, fileName: string): Promise<void> {
     const file = await this.getFile(id);
-    const blob = new Blob([JSON.stringify(file.data, null, 2)], {
+    const managedDocument = normalizeDocument(file.data);
+    const kind = managedDocument?.kind ?? file.kind ?? "excalidraw";
+    const adapter = getDocumentFormatAdapter(kind);
+    const data =
+      managedDocument && adapter
+        ? await adapter.serialize(managedDocument.data)
+        : file.data;
+    const extension =
+      kind === "mindmap" ? "smm" : kind === "text" ? "txt" : "excalidraw";
+    const blob = new Blob(
+      [
+        typeof data === "string"
+          ? data
+          : `${JSON.stringify(data, null, 2)}\n`,
+      ],
+      {
       type: "application/json",
-    });
+      },
+    );
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `${fileName || "drawing"}.excalidraw`;
+    const baseName = (fileName || "document").replace(
+      /\.(excalidraw|smm|txt)$/i,
+      "",
+    );
+    a.download = `${baseName}.${extension}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

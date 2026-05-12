@@ -1,0 +1,14 @@
+{
+  "id": "P0-3",
+  "title": "旧 .excalidraw 文件兼容",
+  "conclusion": "PASS_WITH_LOCAL_CACHE_RISK",
+  "checks": {
+    "legacyInferredAsExcalidraw": true,
+    "legacyVersionPreserved": true,
+    "managedDocumentPassesThrough": true,
+    "serverCreateStillWritesLegacyScene": true,
+    "blobLoaderHasLegacyRepair": true,
+    "localCacheCurrentlyRequiresElements": true
+  },
+  "recommendation": "Introduce inferDocument/normalizeDocument at the file boundary and update local cache parsing before switching storage to ManagedDocument."
+}

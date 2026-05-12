@@ -1,0 +1,39 @@
+{
+  "id": "P0-4",
+  "title": "MindMap 编辑器嵌入 React/Vite",
+  "status": "PASS",
+  "checks": [
+    {
+      "name": "excalidraw-app depends on local simple-mind-map package",
+      "pass": true
+    },
+    {
+      "name": "yarn.lock records local simple-mind-map package and native assets are built",
+      "pass": true
+    },
+    {
+      "name": "App lazy-routes kind=mindmap to MindMapEditorShell",
+      "pass": true
+    },
+    {
+      "name": "MindMapEditorShell embeds the native MindMap web UI instead of rebuilding toolbar in React",
+      "pass": true
+    },
+    {
+      "name": "Native toolbar owns host action buttons through hostBridge",
+      "pass": true
+    },
+    {
+      "name": "Native MindMap page runs in takeOverApp mode and exposes bridge methods",
+      "pass": true
+    },
+    {
+      "name": "MindMap iframe clipboard operations are proxied through host bridge",
+      "pass": true
+    },
+    {
+      "name": "TypeScript has a minimal simple-mind-map declaration",
+      "pass": true
+    }
+  ]
+}

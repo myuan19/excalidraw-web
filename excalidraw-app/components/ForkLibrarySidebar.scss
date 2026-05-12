@@ -52,7 +52,10 @@
   border-radius: var(--nb-radius-lg);
 }
 
-.excalidraw-app .excalidraw .default-sidebar .sidebar-tab-trigger[data-state="active"] {
+.excalidraw-app
+  .excalidraw
+  .default-sidebar
+  .sidebar-tab-trigger[data-state="active"] {
   --button-bg: var(--island-bg-color);
   --button-hover-bg: var(--button-hover-bg, var(--island-bg-color));
   --button-hover-color: var(--color-primary);
@@ -61,7 +64,8 @@
   box-shadow: var(--nb-shadow-tab-active);
 }
 
-.excalidraw-app .excalidraw.theme--dark
+.excalidraw-app
+  .excalidraw.theme--dark
   .default-sidebar
   .sidebar-tab-trigger[data-state="active"] {
   box-shadow: var(--nb-shadow-tab-active-dark),

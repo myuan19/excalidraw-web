@@ -1,0 +1,16 @@
+{
+  "id": "P2-1",
+  "title": "ExcalidrawAdapter",
+  "conclusion": "PASS",
+  "checks": {
+    "adapterInterfaceExists": true,
+    "excalidrawAdapterExists": true,
+    "createEmptyReturnsScene": true,
+    "parseUsesExistingImporter": true,
+    "validateKeepsSceneShape": true,
+    "toDocumentWrapsManagedDocument": true,
+    "registryRegistersExcalidraw": true,
+    "externalExcalidrawJsonUnchanged": true
+  },
+  "recommendation": "Excalidraw is now represented as the first DocumentFormatAdapter without changing external .excalidraw serialization."
+}

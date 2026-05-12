@@ -1,0 +1,15 @@
+{
+  "id": "P0-2",
+  "title": "当前文件系统保存非 Excalidraw payload",
+  "conclusion": "PASS",
+  "checks": {
+    "currentFileExists": true,
+    "roundtripEqual": true,
+    "archiveRoundtripEqual": true,
+    "contentShaMatches": true,
+    "archiveCreated": true,
+    "hasNoSceneFields": true,
+    "serverRouteObservation": "server/routes/files.js PUT path writes JSON.stringify(req.body.data) and hashes arbitrary JSON; route logging assumes scene summary but does not reject non-scene payloads."
+  },
+  "tempDataDirCleaned": true
+}

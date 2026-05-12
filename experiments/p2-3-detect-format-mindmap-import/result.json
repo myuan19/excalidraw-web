@@ -1,0 +1,36 @@
+{
+  "id": "P2-3",
+  "title": "detectFormat 与 MindMap 导入",
+  "status": "PASS",
+  "checks": [
+    {
+      "name": "detectFormat module exists and exports file/data detection",
+      "pass": true
+    },
+    {
+      "name": "detectFormat recognizes managed/raw MindMap payloads",
+      "pass": true
+    },
+    {
+      "name": "detectFormat preserves Excalidraw recognition",
+      "pass": true
+    },
+    {
+      "name": "detectFormat does not classify arbitrary JSON as MindMap",
+      "pass": true
+    },
+    {
+      "name": "FileList import accepts .smm and MindMap MIME",
+      "pass": true
+    },
+    {
+      "name": "FileList routes detected non-Excalidraw imports through adapter registry",
+      "pass": true
+    },
+    {
+      "name": "todo-list tracks remaining stage 7 tasks",
+      "pass": true
+    }
+  ],
+  "scope": "This slice covers format detection and MindMap import. Full adapter-based export, migrations, and third-format validation remain pending."
+}

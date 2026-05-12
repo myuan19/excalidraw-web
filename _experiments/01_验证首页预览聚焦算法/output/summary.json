@@ -1,0 +1,482 @@
+[
+  {
+    "id": "single-root",
+    "title": "只有中心主题",
+    "viewBox": "160.54 95.62 572.92 343.75",
+    "nodeVisualScale": 1.2,
+    "actualVisualScale": 1.2,
+    "targetRootRatio": 0.27,
+    "rootVisualRatio": 0.27,
+    "rootCenter": {
+      "x": 447,
+      "y": 267.5
+    },
+    "otherCenter": {
+      "x": 447,
+      "y": 267.5
+    },
+    "rawCenter": {
+      "x": 447,
+      "y": 267.5
+    },
+    "limitedCenter": {
+      "x": 447,
+      "y": 267.5
+    },
+    "actualCenter": {
+      "x": 447,
+      "y": 267.5
+    },
+    "rootScreen": {
+      "centerX": 50,
+      "centerY": 50
+    },
+    "rootCenterLimit": {
+      "x": 143.23,
+      "y": 85.94
+    },
+    "allBounds": {
+      "x": 370,
+      "y": 245,
+      "width": 154,
+      "height": 45
+    },
+    "otherBounds": null
+  },
+  {
+    "id": "single-root-tail",
+    "title": "单节点 + 跟随元素",
+    "viewBox": "-29.46 100.62 572.92 343.75",
+    "nodeVisualScale": 1.2,
+    "actualVisualScale": 1.2,
+    "targetRootRatio": 0.27,
+    "rootVisualRatio": 0.27,
+    "rootCenter": {
+      "x": 257,
+      "y": 272.5
+    },
+    "otherCenter": {
+      "x": 257,
+      "y": 272.5
+    },
+    "rawCenter": {
+      "x": 257,
+      "y": 272.5
+    },
+    "limitedCenter": {
+      "x": 257,
+      "y": 272.5
+    },
+    "actualCenter": {
+      "x": 257,
+      "y": 272.5
+    },
+    "rootScreen": {
+      "centerX": 50,
+      "centerY": 50
+    },
+    "rootCenterLimit": {
+      "x": 143.23,
+      "y": 85.94
+    },
+    "allBounds": {
+      "x": 180,
+      "y": 250,
+      "width": 154,
+      "height": 45
+    },
+    "otherBounds": null
+  },
+  {
+    "id": "compact",
+    "title": "普通中等规模",
+    "viewBox": "69.01 151.44 644.53 386.72",
+    "nodeVisualScale": 1.07,
+    "actualVisualScale": 1.07,
+    "targetRootRatio": 0.24,
+    "rootVisualRatio": 0.24,
+    "rootCenter": {
+      "x": 337,
+      "y": 342.5
+    },
+    "otherCenter": {
+      "x": 608.4,
+      "y": 354
+    },
+    "rawCenter": {
+      "x": 391.28,
+      "y": 344.8
+    },
+    "limitedCenter": {
+      "x": 391.28,
+      "y": 344.8
+    },
+    "actualCenter": {
+      "x": 391.28,
+      "y": 344.8
+    },
+    "rootScreen": {
+      "centerX": 41.58,
+      "centerY": 49.41
+    },
+    "rootCenterLimit": {
+      "x": 161.13,
+      "y": 96.68
+    },
+    "allBounds": {
+      "x": 260,
+      "y": 150,
+      "width": 396.8,
+      "height": 408
+    },
+    "otherBounds": {
+      "x": 560,
+      "y": 150,
+      "width": 96.8,
+      "height": 408
+    }
+  },
+  {
+    "id": "wide-siblings",
+    "title": "同级节点很多",
+    "viewBox": "2.53 694.44 787.21 472.33",
+    "nodeVisualScale": 0.87,
+    "actualVisualScale": 0.87,
+    "targetRootRatio": 0.2,
+    "rootVisualRatio": 0.2,
+    "rootCenter": {
+      "x": 337,
+      "y": 922.5
+    },
+    "otherCenter": {
+      "x": 632.7,
+      "y": 963
+    },
+    "rawCenter": {
+      "x": 396.14,
+      "y": 930.6
+    },
+    "limitedCenter": {
+      "x": 396.14,
+      "y": 930.6
+    },
+    "actualCenter": {
+      "x": 396.14,
+      "y": 930.6
+    },
+    "rootScreen": {
+      "centerX": 42.49,
+      "centerY": 48.29
+    },
+    "rootCenterLimit": {
+      "x": 196.8,
+      "y": 118.08
+    },
+    "allBounds": {
+      "x": 260,
+      "y": 80,
+      "width": 445.4,
+      "height": 1766
+    },
+    "otherBounds": {
+      "x": 560,
+      "y": 80,
+      "width": 145.4,
+      "height": 1766
+    }
+  },
+  {
+    "id": "deep-chain",
+    "title": "深度很多",
+    "viewBox": "74.15 161.92 731.38 438.83",
+    "nodeVisualScale": 0.94,
+    "actualVisualScale": 0.94,
+    "targetRootRatio": 0.21,
+    "rootVisualRatio": 0.21,
+    "rootCenter": {
+      "x": 257,
+      "y": 382.5
+    },
+    "otherCenter": {
+      "x": 1991.3,
+      "y": 376.68
+    },
+    "rawCenter": {
+      "x": 603.86,
+      "y": 381.34
+    },
+    "limitedCenter": {
+      "x": 439.85,
+      "y": 381.34
+    },
+    "actualCenter": {
+      "x": 439.85,
+      "y": 381.34
+    },
+    "rootScreen": {
+      "centerX": 25,
+      "centerY": 50.27
+    },
+    "rootCenterLimit": {
+      "x": 182.85,
+      "y": 109.71
+    },
+    "allBounds": {
+      "x": 180,
+      "y": 293.53,
+      "width": 3437.6,
+      "height": 166.3
+    },
+    "otherBounds": {
+      "x": 365,
+      "y": 293.53,
+      "width": 3252.6,
+      "height": 166.3
+    }
+  },
+  {
+    "id": "left-heavy",
+    "title": "左侧展开很多",
+    "viewBox": "587.92 505.44 711.21 426.72",
+    "nodeVisualScale": 0.97,
+    "actualVisualScale": 0.97,
+    "targetRootRatio": 0.22,
+    "rootVisualRatio": 0.22,
+    "rootCenter": {
+      "x": 1057,
+      "y": 722.5
+    },
+    "otherCenter": {
+      "x": 489.6,
+      "y": 704
+    },
+    "rawCenter": {
+      "x": 943.52,
+      "y": 718.8
+    },
+    "limitedCenter": {
+      "x": 943.52,
+      "y": 718.8
+    },
+    "actualCenter": {
+      "x": 943.52,
+      "y": 718.8
+    },
+    "rootScreen": {
+      "centerX": 65.96,
+      "centerY": 50.87
+    },
+    "rootCenterLimit": {
+      "x": 177.8,
+      "y": 106.68
+    },
+    "allBounds": {
+      "x": 200,
+      "y": 90,
+      "width": 934,
+      "height": 1228
+    },
+    "otherBounds": {
+      "x": 200,
+      "y": 90,
+      "width": 579.2,
+      "height": 1228
+    }
+  },
+  {
+    "id": "two-sided",
+    "title": "左右两侧展开",
+    "viewBox": "619.57 495.03 741.91 445.14",
+    "nodeVisualScale": 0.93,
+    "actualVisualScale": 0.93,
+    "targetRootRatio": 0.21,
+    "rootVisualRatio": 0.21,
+    "rootCenter": {
+      "x": 997,
+      "y": 722.5
+    },
+    "otherCenter": {
+      "x": 964.6,
+      "y": 698
+    },
+    "rawCenter": {
+      "x": 990.52,
+      "y": 717.6
+    },
+    "limitedCenter": {
+      "x": 990.52,
+      "y": 717.6
+    },
+    "actualCenter": {
+      "x": 990.52,
+      "y": 717.6
+    },
+    "rootScreen": {
+      "centerX": 50.87,
+      "centerY": 51.1
+    },
+    "rootCenterLimit": {
+      "x": 185.48,
+      "y": 111.29
+    },
+    "allBounds": {
+      "x": 440,
+      "y": 130,
+      "width": 1049.2,
+      "height": 1136
+    },
+    "otherBounds": {
+      "x": 440,
+      "y": 130,
+      "width": 1049.2,
+      "height": 1136
+    }
+  },
+  {
+    "id": "balanced-tree",
+    "title": "平衡多层树",
+    "viewBox": "20.19 507.39 859.37 515.62",
+    "nodeVisualScale": 0.8,
+    "actualVisualScale": 0.8,
+    "targetRootRatio": 0.18,
+    "rootVisualRatio": 0.18,
+    "rootCenter": {
+      "x": 337,
+      "y": 762.5
+    },
+    "otherCenter": {
+      "x": 901.4,
+      "y": 776
+    },
+    "rawCenter": {
+      "x": 449.88,
+      "y": 765.2
+    },
+    "limitedCenter": {
+      "x": 449.88,
+      "y": 765.2
+    },
+    "actualCenter": {
+      "x": 449.88,
+      "y": 765.2
+    },
+    "rootScreen": {
+      "centerX": 36.86,
+      "centerY": 49.48
+    },
+    "rootCenterLimit": {
+      "x": 214.84,
+      "y": 128.91
+    },
+    "allBounds": {
+      "x": 260,
+      "y": 160,
+      "width": 982.8,
+      "height": 1232
+    },
+    "otherBounds": {
+      "x": 560,
+      "y": 160,
+      "width": 682.8,
+      "height": 1232
+    }
+  },
+  {
+    "id": "vertical-extreme",
+    "title": "上下高度极大",
+    "viewBox": "34.14 1066.2 812.01 487.2",
+    "nodeVisualScale": 0.85,
+    "actualVisualScale": 0.85,
+    "targetRootRatio": 0.19,
+    "rootVisualRatio": 0.19,
+    "rootCenter": {
+      "x": 377,
+      "y": 1302.5
+    },
+    "otherCenter": {
+      "x": 692.7,
+      "y": 1339
+    },
+    "rawCenter": {
+      "x": 440.14,
+      "y": 1309.8
+    },
+    "limitedCenter": {
+      "x": 440.14,
+      "y": 1309.8
+    },
+    "actualCenter": {
+      "x": 440.14,
+      "y": 1309.8
+    },
+    "rootScreen": {
+      "centerX": 42.22,
+      "centerY": 48.5
+    },
+    "rootCenterLimit": {
+      "x": 203,
+      "y": 121.8
+    },
+    "allBounds": {
+      "x": 300,
+      "y": 80,
+      "width": 465.4,
+      "height": 2518
+    },
+    "otherBounds": {
+      "x": 620,
+      "y": 80,
+      "width": 145.4,
+      "height": 2518
+    }
+  },
+  {
+    "id": "far-cluster",
+    "title": "其他节点远离 root",
+    "viewBox": "85.13 205.55 687.5 412.5",
+    "nodeVisualScale": 1,
+    "actualVisualScale": 1,
+    "targetRootRatio": 0.22,
+    "rootVisualRatio": 0.22,
+    "rootCenter": {
+      "x": 257,
+      "y": 422.5
+    },
+    "otherCenter": {
+      "x": 1654.6,
+      "y": 369
+    },
+    "rawCenter": {
+      "x": 536.52,
+      "y": 411.8
+    },
+    "limitedCenter": {
+      "x": 428.88,
+      "y": 411.8
+    },
+    "actualCenter": {
+      "x": 428.88,
+      "y": 411.8
+    },
+    "rootScreen": {
+      "centerX": 25,
+      "centerY": 52.59
+    },
+    "rootCenterLimit": {
+      "x": 171.88,
+      "y": 103.13
+    },
+    "allBounds": {
+      "x": 180,
+      "y": 180,
+      "width": 1729.2,
+      "height": 378
+    },
+    "otherBounds": {
+      "x": 1400,
+      "y": 180,
+      "width": 509.2,
+      "height": 378
+    }
+  }
+]

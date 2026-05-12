@@ -157,7 +157,7 @@
       var(--nb-shadow-surface-strong),
     0 var(--nb-space-8) var(--nb-space-20) var(--nb-shadow-surface);
   --nb-shadow-dialog-tight: 0 var(--nb-space-8) var(--nb-space-24)
-      var(--nb-shadow-ink-strong);
+    var(--nb-shadow-ink-strong);
   --nb-shadow-modal-deep: 0 var(--nb-space-24) var(--nb-space-27)
       rgba(15, 23, 42, 0.12),
     0 var(--nb-space-4) var(--nb-space-12) rgba(15, 23, 42, 0.06);
@@ -297,8 +297,7 @@
   --nb-border-input: rgba(255, 255, 255, 0.16);
   --nb-primary-soft: rgba(168, 165, 255, 0.16);
   --nb-blue-soft: rgba(168, 165, 255, 0.16);
-  --nb-btn-primary-shadow: rgba(0, 0, 0, 0.3) 0 0 0 var(--nb-border-width)
-      inset,
+  --nb-btn-primary-shadow: rgba(0, 0, 0, 0.3) 0 0 0 var(--nb-border-width) inset,
     rgba(0, 0, 0, 0.2) 0 var(--nb-space-1) var(--nb-space-2);
   --nb-btn-ghost-shadow: rgba(0, 0, 0, 0.25) 0 0 0 var(--nb-border-width) inset;
 }

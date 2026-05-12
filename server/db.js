@@ -27,6 +27,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS files (
     id         TEXT PRIMARY KEY,
     name       TEXT NOT NULL,
+    kind       TEXT NOT NULL DEFAULT 'excalidraw',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     folder_id  TEXT,
@@ -101,6 +102,12 @@ try {
 
 try {
   db.exec(`ALTER TABLE files ADD COLUMN content_sha256 TEXT`);
+} catch {
+  // column exists
+}
+
+try {
+  db.exec(`ALTER TABLE files ADD COLUMN kind TEXT NOT NULL DEFAULT 'excalidraw'`);
 } catch {
   // column exists
 }

@@ -1,0 +1,14 @@
+{
+  "id": "P1-4",
+  "title": "文件列表多格式路由",
+  "conclusion": "FAIL_CURRENT_NEEDS_KIND_ROUTING",
+  "checks": {
+    "serverFileHasDataUnknown": true,
+    "serverFileHasNoKindField": true,
+    "openCallbackOnlyReceivesId": true,
+    "cardOpenDoesNotBranchOnKind": true,
+    "createFileOnlyExcalidrawDefault": true,
+    "importAcceptOnlyExcalidrawAndImages": true
+  },
+  "recommendation": "Add kind to ServerFile, propagate it through list/tree responses, update onOpenFile to receive or resolve kind, and branch editor routing before MindMap MVP."
+}

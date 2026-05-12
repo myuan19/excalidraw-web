@@ -1,0 +1,48 @@
+<svg viewBox="0 0 1200 780" style="background-color:#f1f1f1;" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet" width="100%" height="100%">
+<title>普通中等规模</title>
+<rect x="0" y="0" width="1200" height="780" fill="#f1f1f1"></rect>
+<g class="smm-container" transform="matrix(1,0,0,1,0,0)">
+<g class="smm-line-container"><path d="M 414,342.5L 479.7,342.5L 479.7,169L 560,169" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,342.5L 479.7,342.5L 479.7,243L 560,243" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,342.5L 479.7,342.5L 479.7,317L 560,317" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,342.5L 479.7,342.5L 479.7,391L 560,391" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,342.5L 479.7,342.5L 479.7,465L 560,465" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 414,342.5L 479.7,342.5L 479.7,539L 560,539" stroke="#1e3556" stroke-width="2" fill="none"></path></g>
+<g class="smm-node-container"><g class="smm-node smm-root-node" transform="matrix(1,0,0,1,260,320)">
+<rect width="154" height="45" rx="10" ry="10" class="smm-node-shape" fill="#1e3556" stroke="#1e3556" stroke-width="2"></rect>
+<text x="77" y="30.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="24" fill="#fff" font-weight="700">中心主题</text>
+<rect width="158" height="49" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,150)">
+<rect width="96.8" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="48.4" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">分支 1</text>
+<rect width="100.8" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,224)">
+<rect width="96.8" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="48.4" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">分支 2</text>
+<rect width="100.8" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,298)">
+<rect width="96.8" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="48.4" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">分支 3</text>
+<rect width="100.8" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,372)">
+<rect width="96.8" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="48.4" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">分支 4</text>
+<rect width="100.8" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,446)">
+<rect width="96.8" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="48.4" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">分支 5</text>
+<rect width="100.8" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,520)">
+<rect width="96.8" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="48.4" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">分支 6</text>
+<rect width="100.8" height="42" x="-2" y="-2" class="smm-hover-node" rx="5" ry="5" fill="none" stroke="#5ec8f8"></rect>
+</g></g>
+
+</g>
+</svg>

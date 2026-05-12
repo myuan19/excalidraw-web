@@ -69,7 +69,7 @@ async function generateIconTags(
       "请先在首页（文件列表）打开「AI 设置」，配置 Base URL 与 API Key。",
     );
   }
-  const cfg = getCachedAIConfig();
+  const cfg = getCachedAIConfig().excalidraw;
   const models = resolveAIModels(cfg);
 
   const results = new Map<string, string>();

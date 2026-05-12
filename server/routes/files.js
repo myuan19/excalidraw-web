@@ -72,6 +72,7 @@ function assertFolderExists(folderId, res) {
 function mapFileRow(r) {
   return {
     ...r,
+    kind: r.kind || "excalidraw",
     folder_id: r.folder_id ?? null,
     sort_index: r.sort_index ?? 0,
     has_thumbnail: existsSync(thumbnailPath(r.id)),
@@ -219,6 +220,7 @@ router.get("/tree", (_req, res) => {
   const files = db
     .prepare(
       `SELECT f.id, f.name, f.created_at, f.updated_at, f.content_sha256, f.folder_id, f.sort_index,
+              f.kind,
               (SELECT count(*) FROM archives a WHERE a.file_id = f.id) AS archive_count
        FROM files f
        ORDER BY f.folder_id IS NOT NULL, f.folder_id ASC, f.sort_index ASC, f.updated_at DESC`,
@@ -384,6 +386,7 @@ router.get("/", (_req, res) => {
   const rows = db
     .prepare(
       `SELECT f.id, f.name, f.created_at, f.updated_at, f.content_sha256, f.folder_id, f.sort_index,
+              f.kind,
               (SELECT count(*) FROM archives a WHERE a.file_id = f.id) AS archive_count
        FROM files f ORDER BY f.updated_at DESC`,
     )
@@ -395,6 +398,9 @@ router.get("/", (_req, res) => {
 router.post("/", (req, res) => {
   const id = randomUUID();
   const name = req.body.name || "Untitled";
+  const kind = typeof req.body.kind === "string" && req.body.kind.trim()
+    ? req.body.kind.trim()
+    : "excalidraw";
   const folderId = normalizeFolderId(req.body.folder_id);
   if (!assertFolderExists(folderId, res)) {
     return;
@@ -403,15 +409,17 @@ router.post("/", (req, res) => {
   log.info("POST / create file (随后导入会 PUT 场景)", {
     id: id.slice(0, 8),
     name: truncStr(String(name), 120),
+    kind,
     folder_id: folderId,
   });
 
   const sortIndex = nextSortIndex("files", "folder_id", folderId);
   db.prepare(
-    "INSERT INTO files (id, name, created_at, updated_at, folder_id, sort_index) VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT INTO files (id, name, kind, created_at, updated_at, folder_id, sort_index) VALUES (?, ?, ?, ?, ?, ?, ?)",
   ).run(
     id,
     name,
+    kind,
     now,
     now,
     folderId,
@@ -432,6 +440,7 @@ router.post("/", (req, res) => {
   res.status(201).json({
     id,
     name,
+    kind,
     created_at: now,
     updated_at: now,
     folder_id: folderId,
@@ -440,30 +449,70 @@ router.post("/", (req, res) => {
 });
 
 router.get("/:id", (req, res) => {
+  const startedAt = Date.now();
   const fid = req.params.id;
+  const dbStartedAt = Date.now();
   const row = db.prepare("SELECT * FROM files WHERE id = ?").get(fid);
+  const dbMs = Date.now() - dbStartedAt;
   if (!row) {
+    log.info("[DEBUG] files.getById | not found", {
+      id: fid.slice(0, 8),
+      dbMs,
+      totalMs: Date.now() - startedAt,
+    });
     log.warn("GET /:id not found", { id: fid.slice(0, 8) });
     return res.status(404).json({ error: "not found" });
   }
 
   const fp = currentPath(fid);
   if (!existsSync(fp)) {
+    log.info("[DEBUG] files.getById | disk missing", {
+      id: fid.slice(0, 8),
+      dbMs,
+      totalMs: Date.now() - startedAt,
+      path: fp,
+    });
     log.warn("GET /:id disk missing", { id: fid.slice(0, 8), path: fp });
     return res.status(404).json({ error: "file data missing" });
   }
 
   let data;
+  let raw = "";
+  let readMs = 0;
+  let parseMs = 0;
   try {
-    data = JSON.parse(readFileSync(fp, "utf-8"));
+    const readStartedAt = Date.now();
+    raw = readFileSync(fp, "utf-8");
+    readMs = Date.now() - readStartedAt;
+    const parseStartedAt = Date.now();
+    data = JSON.parse(raw);
+    parseMs = Date.now() - parseStartedAt;
   } catch (e) {
+    log.info("[DEBUG] files.getById | JSON.parse failed", {
+      id: fid.slice(0, 8),
+      dbMs,
+      readMs,
+      parseMs,
+      bytes: Buffer.byteLength(raw || "", "utf-8"),
+      totalMs: Date.now() - startedAt,
+      message: e.message,
+    });
     log.error("GET /:id JSON.parse failed", {
       id: fid.slice(0, 8),
       message: e.message,
     });
     return res.status(500).json({ error: "corrupt scene file", message: e.message });
   }
-  res.json({ ...row, data });
+  log.info("[DEBUG] files.getById | success", {
+    id: fid.slice(0, 8),
+    dbMs,
+    readMs,
+    parseMs,
+    bytes: Buffer.byteLength(raw, "utf-8"),
+    totalMs: Date.now() - startedAt,
+    kind: row.kind,
+  });
+  res.json({ ...mapFileRow(row), data });
 });
 
 router.put("/:id", (req, res) => {
@@ -644,6 +693,7 @@ router.patch("/:id", (req, res) => {
   const updated = db
     .prepare(
       `SELECT f.id, f.name, f.created_at, f.updated_at, f.content_sha256, f.folder_id, f.sort_index,
+              f.kind,
               (SELECT count(*) FROM archives a WHERE a.file_id = f.id) AS archive_count
        FROM files f WHERE f.id = ?`,
     )

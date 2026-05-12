@@ -1,0 +1,50 @@
+[
+  {
+    "label": "excalidraw-chinese-text",
+    "id": "5084da5c",
+    "originalSize": 64848,
+    "processedSize": 34564,
+    "hasFontFace": true,
+    "procHasFontFace": false,
+    "textCount": 14,
+    "origTexts": ["服务器/应用层", "Exporter/SDK", "Prometheus", "TSDB 时序数据库", "Grafana", "用户浏览器/大屏", "暴露指标", "HTTP Pull", "存储", "Query 请求", "Return 数据", "渲染图表", "企业微信机器人", "webhook"],
+    "procTexts": ["服务器/应用层", "Exporter/SDK", "Prometheus", "TSDB 时序数据库", "Grafana", "用户浏览器/大屏", "暴露指标", "HTTP Pull", "存储", "Query 请求", "Return 数据", "渲染图表", "企业微信机器人", "webhook"],
+    "textChanged": false
+  },
+  {
+    "label": "excalidraw-english-image",
+    "id": "1186e861",
+    "originalSize": 241468,
+    "processedSize": 237141,
+    "hasFontFace": true,
+    "procHasFontFace": false,
+    "textCount": 6,
+    "origTexts": ["Slack", "Slack", "Users", "Users", "VPC", "Graph DB"],
+    "procTexts": ["Slack", "Slack", "Users", "Users", "VPC", "Graph DB"],
+    "textChanged": false
+  },
+  {
+    "label": "mindmap-simplified",
+    "id": "fdddd582",
+    "originalSize": 1396,
+    "processedSize": 1434,
+    "hasFontFace": false,
+    "procHasFontFace": false,
+    "textCount": 6,
+    "origTexts": ["vibe coding", "", "写网页", "通用", "写后端", "MindMap"],
+    "procTexts": ["vibe coding", "", "写网页", "通用", "写后端", "MindMap"],
+    "textChanged": false
+  },
+  {
+    "label": "excalidraw-no-text",
+    "id": "347f8782",
+    "originalSize": 3415,
+    "processedSize": 3396,
+    "hasFontFace": false,
+    "procHasFontFace": false,
+    "textCount": 0,
+    "origTexts": [],
+    "procTexts": [],
+    "textChanged": false
+  }
+]

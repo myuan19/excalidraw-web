@@ -9,6 +9,11 @@ export const FILE_LIST_THUMB_EXPORT_PADDING = 8;
 /** 与列表卡片预览区 `aspect-ratio` 一致（宽 ÷ 高）；供需要统一比例的调用方复用。 */
 export const FILE_LIST_THUMB_DISPLAY_ASPECT = 5 / 3;
 
+/** 文件列表缩略图最小视野，避免极小元素占满整个卡片。 */
+export const FILE_LIST_THUMB_MIN_VIEWPORT_WIDTH = 240;
+export const FILE_LIST_THUMB_MIN_VIEWPORT_HEIGHT =
+  FILE_LIST_THUMB_MIN_VIEWPORT_WIDTH / FILE_LIST_THUMB_DISPLAY_ASPECT;
+
 /** 列表缩略图需导出背景，留白区域与画布一致，避免边缘发灰/透明 */
 export function appStateForThumbnailExport(appState: AppState): AppState {
   return {

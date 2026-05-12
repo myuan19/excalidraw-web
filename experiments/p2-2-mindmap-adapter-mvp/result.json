@@ -1,0 +1,32 @@
+{
+  "id": "P2-2",
+  "title": "MindMapAdapter MVP",
+  "status": "PASS",
+  "checks": [
+    {
+      "name": "MindMapAdapter implements DocumentFormatAdapter and managed document wrapper",
+      "pass": true
+    },
+    {
+      "name": "MindMapAdapter is registered in format registry",
+      "pass": true
+    },
+    {
+      "name": "App routes kind=mindmap to the formal editor shell",
+      "pass": true
+    },
+    {
+      "name": "FileList can create kind=mindmap files with initial managed document",
+      "pass": true
+    },
+    {
+      "name": "MindMapEditorShell hosts native UI, saves bridged data, and tracks dirty hash",
+      "pass": true
+    },
+    {
+      "name": "Native MindMap web UI remains the feature surface",
+      "pass": true
+    }
+  ],
+  "scope": "MVP covers create, open, bridged native UI save, dirty hash and server persistence. Import detection, thumbnails, autosave and external attachments are handled in later validations."
+}

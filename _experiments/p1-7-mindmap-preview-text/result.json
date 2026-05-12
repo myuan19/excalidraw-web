@@ -1,0 +1,15 @@
+{
+  "id": "P1-7",
+  "title": "MindMap preview text normalization",
+  "conclusion": "PASS",
+  "checks": {
+    "beforeHasEscapedHtmlTags": true,
+    "afterHasEscapedHtmlTags": false,
+    "afterContainsPlainChinese": true,
+    "afterRootText": "vibe coding",
+    "beforeText": ["&lt;p&gt;vibe coding&lt;/p&gt;", "&lt;p&gt;写网页&lt;/p&gt;", "&lt;p&gt;写后端&lt;/p&gt;"],
+    "afterText": ["vibe coding", "写网页", "写后端"]
+  },
+  "outputs": ["before.svg", "after.svg", "preview.html"],
+  "recommendation": "Normalize MindMap thumbnail text nodes by decoding XML entities, converting rich-text HTML to plain text, then escaping XML text before rendering/saving."
+}

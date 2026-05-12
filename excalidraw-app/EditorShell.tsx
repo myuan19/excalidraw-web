@@ -283,6 +283,10 @@ const ExcalidrawWrapper = () => {
   );
 
   useEffect(() => {
+    document.title = "Excalidraw 画布";
+  }, []);
+
+  useEffect(() => {
     setForkCanvasRevealed(!forkFileId);
   }, [forkFileId]);
 
@@ -672,7 +676,7 @@ const ExcalidrawWrapper = () => {
               type="button"
               className="excal-action-btn excal-btn-stash excal-btn-home"
               disabled={forkSaving}
-              title="返回文件列表（有未保存修改时将询问）"
+              title="主页（有未保存修改时将询问）"
               onClick={() => void forkGoHomeWithServerSave()}
             >
               {smallHouseIcon}
@@ -736,13 +740,6 @@ const ExcalidrawWrapper = () => {
           theme={appTheme}
           setTheme={(theme) => setAppTheme(theme)}
           refresh={() => forceRefresh((prev) => !prev)}
-          onGoHome={() => void forkGoHomeWithServerSave()}
-          onSaveToServer={
-            forkFileId
-              ? () => void saveCurrentFileToServer({ source: "toolbar" })
-              : undefined
-          }
-          saveToServerPending={forkSaving}
           onToggleHistory={() => setShowHistoryPanel((v) => !v)}
         />
         <AppWelcomeScreen />
@@ -845,7 +842,7 @@ const ExcalidrawWrapper = () => {
             aria-labelledby="fork-home-nav-title"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 id="fork-home-nav-title">返回文件列表</h3>
+            <h3 id="fork-home-nav-title">主页</h3>
             <p className="fork-home-dialog-desc">
               当前画布有未保存的修改，是否先保存？
             </p>

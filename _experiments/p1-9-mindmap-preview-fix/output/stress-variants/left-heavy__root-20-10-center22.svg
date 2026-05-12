@@ -1,0 +1,95 @@
+<svg viewBox="752.9999999999999 468.4 847.0000000000001 508.20000000000005" style="background-color:#f1f1f1;" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet" width="100%" height="100%">
+<title>左侧展开很多</title>
+<g class="smm-container" transform="matrix(1,0,0,1,0,0)">
+<g class="smm-line-container"><path d="M 980,722.5L 889.64,722.5L 889.64,109L 779.2,109" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 980,722.5L 812.4200000000001,722.5L 812.4200000000001,198L 607.6,198" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 980,722.5L 744.9200000000001,722.5L 744.9200000000001,290L 457.6,290" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 980,722.5L 677.4200000000001,722.5L 677.4200000000001,382L 307.6,382" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 980,722.5L 879.92,722.5L 879.92,474L 757.6,474" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 980,722.5L 812.4200000000001,722.5L 812.4200000000001,566L 607.6,566" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 980,722.5L 744.9200000000001,722.5L 744.9200000000001,658L 457.6,658" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 980,722.5L 677.4200000000001,722.5L 677.4200000000001,750L 307.6,750" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 980,722.5L 879.92,722.5L 879.92,842L 757.6,842" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 980,722.5L 818.09,722.5L 818.09,934L 620.2,934" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 980,722.5L 750.59,722.5L 750.59,1026L 470.2,1026" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 980,722.5L 683.09,722.5L 683.09,1118L 320.2,1118" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 980,722.5L 885.59,722.5L 885.59,1210L 770.2,1210" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 980,722.5L 818.09,722.5L 818.09,1302L 620.2,1302" stroke="#1e3556" stroke-width="2" fill="none"></path></g>
+<g class="smm-node-container"><g class="smm-node" transform="matrix(1,0,0,1,980,700)">
+<rect width="154" height="45" rx="10" ry="10" class="smm-node-shape" fill="#1e3556" stroke="#1e3556" stroke-width="2"></rect>
+<text x="77" y="30.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="24" fill="#fff" font-weight="700">中心主题</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,650,90)">
+<rect width="129.2" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="64.6" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">左侧节点 1</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,500,182)">
+<rect width="107.60000000000001" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="53.800000000000004" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">左侧节点 2</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,350,274)">
+<rect width="107.60000000000001" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="53.800000000000004" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">左侧节点 3</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,200,366)">
+<rect width="107.60000000000001" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="53.800000000000004" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">左侧节点 4</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,650,458)">
+<rect width="107.60000000000001" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="53.800000000000004" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">左侧节点 5</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,500,550)">
+<rect width="107.60000000000001" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="53.800000000000004" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">左侧节点 6</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,350,642)">
+<rect width="107.60000000000001" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="53.800000000000004" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">左侧节点 7</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,200,734)">
+<rect width="107.60000000000001" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="53.800000000000004" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">左侧节点 8</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,650,826)">
+<rect width="107.60000000000001" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="53.800000000000004" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">左侧节点 9</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,500,918)">
+<rect width="120.2" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="60.1" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">左侧节点 10</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,350,1010)">
+<rect width="120.2" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="60.1" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">左侧节点 11</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,200,1102)">
+<rect width="120.2" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="60.1" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">左侧节点 12</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,650,1194)">
+<rect width="120.2" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="60.1" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">左侧节点 13</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,500,1286)">
+<rect width="120.2" height="32" rx="5" ry="5" class="smm-node-shape" fill="transparent" stroke="#1e3556" stroke-width="1"></rect>
+<text x="60.1" y="20.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="14" fill="#1e3556" font-weight="400">左侧节点 14</text>
+
+</g></g>
+<g class="smm-associative-line-container"><path d="M 0 0L10 10"></path></g>
+</g>
+</svg>

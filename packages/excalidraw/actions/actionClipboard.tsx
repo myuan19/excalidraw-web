@@ -59,8 +59,24 @@ export const actionPaste = register({
   perform: async (elements, appState, data, app) => {
     let types;
     try {
+      console.log("[DEBUG] actionPaste | before readSystemClipboard");
       types = await readSystemClipboard();
+      console.log("[DEBUG] actionPaste | readSystemClipboard result", {
+        typeKeys: Object.keys(types || {}),
+        fileEntries: Object.entries(types || {})
+          .filter(([, value]) => value instanceof File)
+          .map(([type, value]) => ({
+            type,
+            fileType: (value as File).type,
+            fileSize: (value as File).size,
+          })),
+      });
     } catch (error: any) {
+      console.log("[DEBUG] actionPaste | readSystemClipboard FAILED", {
+        name: error?.name,
+        message: error?.message,
+        stack: error?.stack,
+      });
       if (error.name === "AbortError" || error.name === "NotAllowedError") {
         // user probably aborted the action. Though not 100% sure, it's best
         // to not annoy them with an error message.
@@ -89,8 +105,15 @@ export const actionPaste = register({
     }
 
     try {
+      console.log("[DEBUG] actionPaste | before pasteFromClipboard");
       app.pasteFromClipboard(createPasteEvent({ types }));
+      console.log("[DEBUG] actionPaste | pasteFromClipboard dispatched");
     } catch (error: any) {
+      console.log("[DEBUG] actionPaste | pasteFromClipboard FAILED", {
+        name: error?.name,
+        message: error?.message,
+        stack: error?.stack,
+      });
       console.error(error);
       return {
         captureUpdate: CaptureUpdateAction.EVENTUALLY,

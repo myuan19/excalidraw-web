@@ -1,0 +1,131 @@
+<svg viewBox="810.66 468.4 847.0000000000001 508.20000000000005" style="background-color:#f1f1f1;" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet" width="100%" height="100%">
+<title>左右两侧展开</title>
+<g class="smm-container" transform="matrix(1,0,0,1,0,0)">
+<g class="smm-line-container"><path d="M 920,722.5L 808.85,722.5L 808.85,149L 673,149" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 1074,722.5L 1148.7,722.5L 1148.7,149L 1240,149" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 920,722.5L 754.85,722.5L 754.85,271L 553,271" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 1074,722.5L 1202.7,722.5L 1202.7,271L 1360,271" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 920,722.5L 808.85,722.5L 808.85,393L 673,393" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 1074,722.5L 1148.7,722.5L 1148.7,393L 1240,393" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 920,722.5L 754.85,722.5L 754.85,515L 553,515" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 1074,722.5L 1202.7,722.5L 1202.7,515L 1360,515" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 920,722.5L 808.85,722.5L 808.85,637L 673,637" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 1074,722.5L 1148.7,722.5L 1148.7,637L 1240,637" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 920,722.5L 754.85,722.5L 754.85,759L 553,759" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 1074,722.5L 1202.7,722.5L 1202.7,759L 1360,759" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 920,722.5L 808.85,722.5L 808.85,881L 673,881" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 1074,722.5L 1148.7,722.5L 1148.7,881L 1240,881" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 920,722.5L 754.85,722.5L 754.85,1003L 553,1003" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 1074,722.5L 1202.7,722.5L 1202.7,1003L 1360,1003" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 920,722.5L 808.85,722.5L 808.85,1125L 673,1125" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 1074,722.5L 1148.7,722.5L 1148.7,1125L 1240,1125" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 920,722.5L 762.14,722.5L 762.14,1247L 569.2,1247" stroke="#1e3556" stroke-width="2" fill="none"></path>
+<path d="M 1074,722.5L 1202.7,722.5L 1202.7,1247L 1360,1247" stroke="#1e3556" stroke-width="2" fill="none"></path></g>
+<g class="smm-node-container"><g class="smm-node" transform="matrix(1,0,0,1,920,700)">
+<rect width="154" height="45" rx="10" ry="10" class="smm-node-shape" fill="#1e3556" stroke="#1e3556" stroke-width="2"></rect>
+<text x="77" y="30.9" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="24" fill="#fff" font-weight="700">中心主题</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,130)">
+<rect width="113" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="56.5" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">左分支 1</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,1240,130)">
+<rect width="113" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="56.5" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">右分支 1</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,440,252)">
+<rect width="113" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="56.5" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">左分支 2</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,1360,252)">
+<rect width="113" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="56.5" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">右分支 2</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,374)">
+<rect width="113" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="56.5" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">左分支 3</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,1240,374)">
+<rect width="113" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="56.5" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">右分支 3</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,440,496)">
+<rect width="113" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="56.5" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">左分支 4</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,1360,496)">
+<rect width="113" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="56.5" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">右分支 4</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,618)">
+<rect width="113" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="56.5" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">左分支 5</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,1240,618)">
+<rect width="113" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="56.5" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">右分支 5</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,440,740)">
+<rect width="113" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="56.5" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">左分支 6</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,1360,740)">
+<rect width="113" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="56.5" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">右分支 6</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,862)">
+<rect width="113" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="56.5" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">左分支 7</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,1240,862)">
+<rect width="113" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="56.5" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">右分支 7</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,440,984)">
+<rect width="113" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="56.5" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">左分支 8</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,1360,984)">
+<rect width="113" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="56.5" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">右分支 8</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,560,1106)">
+<rect width="113" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="56.5" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">左分支 9</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,1240,1106)">
+<rect width="113" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="56.5" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">右分支 9</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,440,1228)">
+<rect width="129.2" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="64.6" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">左分支 10</text>
+
+</g>
+<g class="smm-node" transform="matrix(1,0,0,1,1360,1228)">
+<rect width="129.2" height="38" rx="5" ry="5" class="smm-node-shape" fill="#a9dada" stroke="#1e3556" stroke-width="2"></rect>
+<text x="64.6" y="25.3" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" font-size="18" fill="#fff" font-weight="400">右分支 10</text>
+
+</g></g>
+<g class="smm-associative-line-container"><path d="M 0 0L10 10"></path></g>
+</g>
+</svg>

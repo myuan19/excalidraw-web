@@ -31,13 +31,25 @@ export const AIComponents = ({
     <>
       <DiagramToCodePlugin
         generate={async ({ frame, children }) => {
+          console.log("[DEBUG] AIComponents.generate | start", {
+            childCount: children.length,
+            frameId: frame.id,
+          });
           await ensureAIConfigLoaded();
-          if (!isAIConfigured()) {
-            throw new Error(
-              "请先在首页（文件列表）打开「AI 设置」，配置 Base URL 与 API Key。",
-            );
+          const configured = isAIConfigured();
+          console.log("[DEBUG] AIComponents.generate | config checked", {
+            configured,
+          });
+          if (!configured) {
+            excalidrawAPI.setToast({
+              message:
+                "AI 尚未配置，请返回首页在「AI 设置」中填写 Base URL 与 API Key",
+              closable: true,
+              duration: 5000,
+            });
+            throw new Error("AI 未配置");
           }
-          const cfg = getCachedAIConfig();
+          const cfg = getCachedAIConfig().excalidraw;
           const models = resolveAIModels(cfg);
           const appState = excalidrawAPI.getAppState();
 
@@ -70,17 +82,29 @@ export const AIComponents = ({
 
       <TTDDialog
         onTextSubmit={async (props) => {
+          console.log("[DEBUG] AIComponents.onTextSubmit | start", {
+            messageCount: props.messages.length,
+          });
           await ensureAIConfigLoaded();
-          if (!isAIConfigured()) {
+          const configured = isAIConfigured();
+          console.log("[DEBUG] AIComponents.onTextSubmit | config checked", {
+            configured,
+          });
+          if (!configured) {
+            excalidrawAPI.setToast({
+              message:
+                "AI 尚未配置，请返回首页在「AI 设置」中填写 Base URL 与 API Key",
+              closable: true,
+              duration: 5000,
+            });
             return {
               error: new RequestError({
-                message:
-                  "请先在首页（文件列表）打开「AI 设置」，配置 Base URL 与 API Key。",
+                message: "AI 未配置",
                 status: 400,
               }),
             };
           }
-          const cfg = getCachedAIConfig();
+          const cfg = getCachedAIConfig().excalidraw;
           const models = resolveAIModels(cfg);
           const { onChunk, onStreamCreated, signal, messages } = props;
 

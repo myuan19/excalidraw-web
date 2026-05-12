@@ -1,0 +1,38 @@
+{
+  "id": "P1-1",
+  "title": "格式识别 detectFormat(file)",
+  "conclusion": "PASS",
+  "cases": [
+    {
+      "name": "scene.excalidraw",
+      "expected": "excalidraw",
+      "actual": "excalidraw",
+      "ok": true
+    },
+    {
+      "name": "wrapped.json",
+      "expected": "mindmap",
+      "actual": "mindmap",
+      "ok": true
+    },
+    {
+      "name": "map.smm",
+      "expected": "mindmap",
+      "actual": "mindmap",
+      "ok": true
+    },
+    {
+      "name": "random.json",
+      "expected": "unknown",
+      "actual": "unknown",
+      "ok": true
+    },
+    {
+      "name": "notes.md",
+      "expected": "markdown",
+      "actual": "markdown",
+      "ok": true
+    }
+  ],
+  "recommendation": "Prefer JSON kind/type when available, then extension-specific fallbacks. Treat generic .json as unknown unless shape is recognized."
+}
