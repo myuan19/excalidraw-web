@@ -267,17 +267,20 @@ function validateEmbedToken(req, token = req.query.token) {
 }
 
 function buildFrameAncestors(allowedDomains) {
+  // CSP `frame-ancestors *` only matches network schemes (http/https/ws/wss);
+  // chrome-extension: must be listed explicitly for browser extension iframes.
+  const extensionSchemes = "chrome-extension: moz-extension:";
   if (!allowedDomains || allowedDomains === "*") {
-    return "*";
+    return `* ${extensionSchemes}`;
   }
   const hosts = allowedDomains
     .split(",")
     .map(normalizeHost)
     .filter(Boolean);
   if (hosts.length === 0) {
-    return "*";
+    return `* ${extensionSchemes}`;
   }
-  return hosts.map((h) => `https://${h} http://${h}`).join(" ");
+  return hosts.map((h) => `https://${h} http://${h}`).join(" ") + ` ${extensionSchemes}`;
 }
 
 function escapeForScript(s) {

@@ -219,6 +219,44 @@ export default function MindMapEmbedViewer({
     pinState.togglePin();
   }, [applyMindMapPreviewRange, isAtDefaultView, pinState]);
 
+  const handleQuickDoubleLock = useCallback(() => {
+    if (pinState.isPinnedRef.current) return;
+    embedDebug("mindmap dblclick quick-lock", {
+      isAtDefaultView: isAtDefaultViewRef.current,
+    });
+    if (!isAtDefaultViewRef.current) {
+      applyMindMapPreviewRange();
+    }
+    pinState.pin();
+  }, [pinState, applyMindMapPreviewRange]);
+
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe || !isReady) return;
+
+    let doc: Document | null = null;
+    try {
+      doc = iframe.contentDocument;
+    } catch {
+      return;
+    }
+    if (!doc) return;
+
+    const handler = () => {
+      if (pinState.isPinnedRef.current) return;
+      embedDebug("mindmap iframe dblclick quick-lock", {
+        isAtDefaultView: isAtDefaultViewRef.current,
+      });
+      if (!isAtDefaultViewRef.current) {
+        applyMindMapPreviewRange();
+      }
+      pinState.pin();
+    };
+
+    doc.addEventListener("dblclick", handler);
+    return () => doc?.removeEventListener("dblclick", handler);
+  }, [isReady, pinState, applyMindMapPreviewRange]);
+
   useEffect(() => {
     pendingInitRef.current = buildMindMapEmbedBridgePayload(mindMapData);
   }, [mindMapData]);
@@ -391,7 +429,7 @@ export default function MindMapEmbedViewer({
   const lockInteraction = pinState.isPinned && isAtDefaultView;
 
   return (
-    <div className="mindmap-embed-viewer">
+    <div className="mindmap-embed-viewer" onDoubleClick={handleQuickDoubleLock}>
       <iframe
         ref={iframeRef}
         title="MindMap"
@@ -399,7 +437,15 @@ export default function MindMapEmbedViewer({
         src={`/embed/mind-map/index.html${getEmbedResourceTokenQuery()}`}
         onLoad={() => embedDebug("mindmap iframe load", getFrameDebugInfo())}
       />
-      {lockInteraction && <div className="embed-viewer-interaction-lock" />}
+      {lockInteraction && (
+        <div
+          className="embed-viewer-interaction-lock"
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            pinState.unpin();
+          }}
+        />
+      )}
       <div className="embed-viewer-controls">
         <button
           className="embed-viewer-btn embed-viewer-btn--view"

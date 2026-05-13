@@ -23,20 +23,6 @@ export const openEmbedEditUrl = (
   if (opened) {
     return true;
   }
-
-  let topWindow: EmbedWindow | null = null;
-  try {
-    topWindow = win.top && win.top !== win ? win.top : null;
-  } catch {
-    topWindow = null;
-  }
-
-  try {
-    (topWindow ?? win).location.href = editUrl;
-  } catch {
-    win.location.href = editUrl;
-  }
-
   return false;
 };
 
@@ -45,7 +31,13 @@ export const handleEmbedEditLinkClick = (
   editUrl: string,
   win: EmbedWindow = window,
 ) => {
-  event.preventDefault();
-  event.stopPropagation?.();
-  openEmbedEditUrl(editUrl, win);
+  const opened = openEmbedEditUrl(editUrl, win);
+  if (opened) {
+    event.preventDefault();
+    event.stopPropagation?.();
+  }
+  // If window.open() failed (e.g. inside Electron webview like Typora),
+  // let the native <a target="_blank"> behavior proceed — the host app
+  // can intercept it via setWindowOpenHandler / new-window and open in
+  // the system browser.
 };

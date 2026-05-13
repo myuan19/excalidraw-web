@@ -402,6 +402,17 @@ const EmbedCanvas = ({
     pinState.togglePin();
   }, [applyExcalidrawPreviewRange, isAtDefaultView, pinState]);
 
+  const handleQuickDoubleLock = useCallback(() => {
+    if (pinState.isPinnedRef.current) return;
+    embedDebug("dblclick quick-lock", {
+      isAtDefaultView: isAtDefaultViewRef.current,
+    });
+    if (!isAtDefaultViewRef.current) {
+      applyExcalidrawPreviewRange("dblclick-lock");
+    }
+    pinState.pin();
+  }, [pinState, applyExcalidrawPreviewRange]);
+
   const handleChange = useCallback(
     (_elements: unknown, appState: AppState) => {
       const currentViewport = viewportFromAppState(appState);
@@ -511,7 +522,10 @@ const EmbedCanvas = ({
   const lockInteraction = pinState.isPinned && isAtDefaultView;
 
   return (
-    <>
+    <div
+      style={{ width: "100%", height: "100%" }}
+      onDoubleClick={handleQuickDoubleLock}
+    >
       <Excalidraw
         initialData={initialData}
         viewModeEnabled={true}
@@ -533,7 +547,15 @@ const EmbedCanvas = ({
         detectScroll={false}
         handleKeyboardGlobally={false}
       />
-      {lockInteraction && <div className="embed-viewer-interaction-lock" />}
+      {lockInteraction && (
+        <div
+          className="embed-viewer-interaction-lock"
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            pinState.unpin();
+          }}
+        />
+      )}
       <div className="embed-viewer-controls">
         <button
           className="embed-viewer-btn embed-viewer-btn--view"
@@ -557,7 +579,7 @@ const EmbedCanvas = ({
           {ExternalLinkIcon}
         </a>
       </div>
-    </>
+    </div>
   );
 };
 
