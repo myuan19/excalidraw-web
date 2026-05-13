@@ -3,6 +3,7 @@ import { debounce } from "@excalidraw/common";
 
 import { FileSyncState } from "../data/FileSyncState";
 import { MindMapAdapter } from "../data/formats/registry";
+import { saveMindMapBrowserViewFromData } from "../data/mindMapBrowserViewStorage";
 import { hashDocumentSnapshot } from "../data/sceneHash";
 import { ServerSync } from "../data/ServerSync";
 import { getFileIdFromHash } from "../data/fileIdFromHash";
@@ -26,9 +27,15 @@ function legacyMindMapCacheKey(fileId: string): string {
   return `mindmap-local-cache-${fileId}`;
 }
 
+function normalizeMindMapSaveDocument(
+  document: MindMapSaveDocument,
+): MindMapSaveDocument {
+  return MindMapAdapter.toDocument(MindMapAdapter.migrate(document, 1));
+}
+
 export function toMindMapLocalCacheRecord(document: MindMapSaveDocument) {
   return {
-    document,
+    document: normalizeMindMapSaveDocument(document),
     elements: undefined,
     appState: undefined,
     files: {},
@@ -41,7 +48,12 @@ export function getCachedMindMapDocument(
 ): MindMapSaveDocument | null {
   const localCache = FileSyncState.getLocalCache(fileId);
   if (localCache?.document?.kind === "mindmap") {
-    return localCache.document as MindMapSaveDocument;
+    saveMindMapBrowserViewFromData(fileId, localCache.document.data);
+    const document = normalizeMindMapSaveDocument(
+      localCache.document as MindMapSaveDocument,
+    );
+    FileSyncState.setLocalCache(fileId, toMindMapLocalCacheRecord(document));
+    return document;
   }
   try {
     const legacy = localStorage.getItem(legacyMindMapCacheKey(fileId));
@@ -49,6 +61,10 @@ export function getCachedMindMapDocument(
       return null;
     }
     const parsed = JSON.parse(legacy);
+    saveMindMapBrowserViewFromData(
+      fileId,
+      parsed?.kind === "mindmap" ? parsed.data : parsed,
+    );
     const document = MindMapAdapter.toDocument(MindMapAdapter.migrate(parsed, 1));
     FileSyncState.setLocalCache(fileId, toMindMapLocalCacheRecord(document));
     localStorage.removeItem(legacyMindMapCacheKey(fileId));

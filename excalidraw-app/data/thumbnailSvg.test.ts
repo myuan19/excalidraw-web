@@ -1,6 +1,7 @@
 import { afterEach, vi } from "vitest";
 
 import {
+  buildMindMapThumbnailSvg,
   buildSceneThumbnailSvg,
   mindMapRichTextToPlainText,
   normalizeMindMapThumbnailSvg,
@@ -66,6 +67,26 @@ const nativePathNode = (
   "</g>";
 
 describe("MindMap SVG thumbnails", () => {
+  it("builds an eager import thumbnail from MindMap document data", async () => {
+    const svg = await buildMindMapThumbnailSvg({
+      root: {
+        data: { text: "<p>产品规划</p>", richText: true },
+        children: [
+          {
+            data: { text: "<p>调研</p>", richText: true },
+            children: [],
+          },
+        ],
+      },
+    });
+
+    expect(svg).toContain('data-excal-filelist-thumb="1"');
+    expect(svg).toContain('data-excal-thumb-bg="#ffffff"');
+    expect(svg).toContain(">产品规划</text>");
+    expect(svg).toContain(">调研</text>");
+    expect(svg).not.toContain("&lt;p&gt;");
+  });
+
   it("uses the configured root offset and visible limit ratios", () => {
     expect(previewViewportConfig.centerTowardOthersRatio).toBe(0.24);
     expect(previewViewportConfig.rootCenterLimitRatio).toBe(0.4);

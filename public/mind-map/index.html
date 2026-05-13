@@ -1,7 +1,7 @@
 <!DOCTYPE html><html lang=""><head><meta charset="utf-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width,user-scalable=no,initial-scale=1,maximum-scale=1,minimum-scale=1"><link rel="icon" href="dist/logo.ico"><link rel="preload" href="dist/js/chunk-vendors.js" as="script"><link rel="preload" href="dist/js/chunk-552c98a7.js" as="script"><title>mindmap</title><script>// 自定义静态资源的路径
       window.externalPublicPath = './dist/'
       // 接管应用
-      window.takeOverApp = true</script><link href="dist/css/chunk-vendors.css?0df10968f505abc293dd" rel="stylesheet"><link href="dist/css/app.css?0df10968f505abc293dd" rel="stylesheet"></head><body><noscript><strong>We're sorry but thoughts doesn't work properly without JavaScript enabled. Please enable it to continue.</strong></noscript><div id="app"></div><script>const bridgeSource = 'simple-mind-map-native'
+      window.takeOverApp = true</script><link href="dist/css/chunk-vendors.css?05567916a09ceb2e1b89" rel="stylesheet"><link href="dist/css/app.css?05567916a09ceb2e1b89" rel="stylesheet"></head><body><noscript><strong>We're sorry but thoughts doesn't work properly without JavaScript enabled. Please enable it to continue.</strong></noscript><div id="app"></div><script>const bridgeSource = 'simple-mind-map-native'
       const hostSource = 'excalidraw-web'
       const bridgeStartedAt = performance.now()
       const debugMindMapOpen = (label, data) => {
@@ -209,14 +209,9 @@
         window.$bus.$on('data_change', () => {
           postToHost('mindMapDirtyState', { dirty: true })
         })
-        window.$bus.$on('view_data_change', () => {
-          postToHost('mindMapDirtyState', { dirty: true })
-          if (nativeMindMap?.view) {
-            postToHost('mindMapViewState', {
-              scale: nativeMindMap.view.scale,
-              x: nativeMindMap.view.x,
-              y: nativeMindMap.view.y
-            })
+        window.$bus.$on('view_data_change', viewData => {
+          if (viewData) {
+            postToHost('mindMapViewState', viewData)
           }
         })
         window.$bus.$on('scale', scale => {
@@ -407,4 +402,4 @@
         if (!window.takeOverApp) return
         debugMindMapOpen('window.onload post ready')
         postToHost('ready')
-      }</script><script src="dist/js/chunk-vendors.js?0df10968f505abc293dd"></script><script src="dist/js/app.js?0df10968f505abc293dd"></script></body></html>
+      }</script><script src="dist/js/chunk-vendors.js?05567916a09ceb2e1b89"></script><script src="dist/js/app.js?05567916a09ceb2e1b89"></script></body></html>

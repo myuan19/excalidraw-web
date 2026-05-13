@@ -12,7 +12,7 @@ import { useEmbedPinState } from "./EmbedFocusGate";
 
 import "../EmbedViewer.scss";
 
-interface MindMapViewport {
+export interface MindMapViewport {
   scale: number;
   x: number;
   y: number;
@@ -31,6 +31,48 @@ function roundMmViewport(
     x: Math.round(v.x * 100) / 100,
     y: Math.round(v.y * 100) / 100,
   };
+}
+
+function numberFromRecord(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  return typeof value === "number" ? value : null;
+}
+
+export function getMindMapViewportFromPayload(
+  payload: unknown,
+): MindMapViewport | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+  const record = payload as Record<string, unknown>;
+  const flatViewport = {
+    scale: numberFromRecord(record, "scale"),
+    x: numberFromRecord(record, "x"),
+    y: numberFromRecord(record, "y"),
+  };
+  if (
+    flatViewport.scale !== null &&
+    flatViewport.x !== null &&
+    flatViewport.y !== null
+  ) {
+    return flatViewport as MindMapViewport;
+  }
+
+  const state = record.state;
+  if (!state || typeof state !== "object" || Array.isArray(state)) {
+    return null;
+  }
+  const stateRecord = state as Record<string, unknown>;
+  const stateViewport = {
+    scale: numberFromRecord(stateRecord, "scale"),
+    x: numberFromRecord(stateRecord, "x"),
+    y: numberFromRecord(stateRecord, "y"),
+  };
+  return stateViewport.scale !== null &&
+    stateViewport.x !== null &&
+    stateViewport.y !== null
+    ? (stateViewport as MindMapViewport)
+    : null;
 }
 
 function summarizeMindMapRaw(raw: unknown) {
@@ -237,15 +279,10 @@ export default function MindMapEmbedViewer({
       }
 
       if (message.type === "mindMapViewState") {
-        const payload = message.payload as MindMapViewport | undefined;
-        if (!payload) {
+        const current = getMindMapViewportFromPayload(message.payload);
+        if (!current) {
           return;
         }
-        const current: MindMapViewport = {
-          scale: payload.scale,
-          x: payload.x,
-          y: payload.y,
-        };
 
         if (suppressViewTracking.current) {
           suppressViewTracking.current = false;

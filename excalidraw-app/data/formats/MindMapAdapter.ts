@@ -36,6 +36,7 @@ export type MindMapDocumentData = {
   config?: Record<string, unknown>;
   localConfig?: Record<string, unknown> | null;
   lang?: string;
+  /** Accepted from native/simple-mind-map payloads, but stripped before persistence. */
   view?: unknown;
 };
 
@@ -71,6 +72,13 @@ export function isEffectivelyEmptyMindMapData(
   data: unknown,
 ): boolean {
   return isRecord(data) && isMindMapNode(data.root) && !nodeHasVisibleContent(data.root);
+}
+
+export function stripMindMapViewportState(
+  data: MindMapDocumentData,
+): MindMapDocumentData {
+  const { view: _view, ...persistedData } = data;
+  return persistedData;
 }
 
 function parseJsonString(input: string): unknown {
@@ -121,11 +129,11 @@ export const MindMapAdapter: DocumentFormatAdapter<MindMapDocumentData> = {
     if (document?.kind === "mindmap" && this.validate(document.data)) {
       const migrated = migrateManagedDocument(document);
       if (migrated.kind === "mindmap" && this.validate(migrated.data)) {
-        return migrated.data;
+        return stripMindMapViewportState(migrated.data);
       }
     }
     if (this.validate(data)) {
-      return data;
+      return stripMindMapViewportState(data);
     }
     throw new Error("Invalid MindMap document");
   },
@@ -140,7 +148,7 @@ export const MindMapAdapter: DocumentFormatAdapter<MindMapDocumentData> = {
       containerVersion: CONTAINER_VERSION,
       formatVersion: MINDMAP_FORMAT_VERSION,
       sourceVersion: SIMPLE_MIND_MAP_VERSION,
-      data,
+      data: stripMindMapViewportState(data),
     };
   },
 };

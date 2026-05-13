@@ -16,6 +16,11 @@ import { LocalThumbnailCache } from "./data/localThumbnailCache";
 import { isEffectivelyEmptyMindMapData } from "./data/formats/MindMapAdapter";
 import { MindMapAdapter } from "./data/formats/registry";
 import {
+  applyMindMapBrowserView,
+  saveMindMapBrowserView,
+  saveMindMapBrowserViewFromData,
+} from "./data/mindMapBrowserViewStorage";
+import {
   shouldFetchServerAfterCachedMindMapOpen,
   shouldOpenCachedMindMapFirst,
 } from "./data/mindMapOpenState";
@@ -71,7 +76,8 @@ type NativeMindMapMessage =
         | "saveLocalConfig"
         | "saveLanguage"
         | "mindMapDirtyState"
-        | "mindMapScaleState";
+        | "mindMapScaleState"
+        | "mindMapViewState";
       payload: unknown;
     }
   | {
@@ -97,12 +103,16 @@ function isNativeMindMapMessage(value: unknown): value is NativeMindMapMessage {
   );
 }
 
-function toBridgePayload(data: MindMapDocumentData): NativeMindMapBridgePayload {
+function toBridgePayload(
+  data: MindMapDocumentData,
+  fileId: string | null,
+): NativeMindMapBridgePayload {
+  const mindMapData = applyMindMapBrowserView(data, fileId);
   return {
-    mindMapData: data,
-    mindMapConfig: data.config ?? {},
-    lang: data.lang ?? "zh",
-    localConfig: data.localConfig ?? null,
+    mindMapData,
+    mindMapConfig: mindMapData.config ?? {},
+    lang: mindMapData.lang ?? "zh",
+    localConfig: mindMapData.localConfig ?? null,
   };
 }
 
@@ -251,7 +261,6 @@ const MindMapEditorShell = () => {
   const [fileName, setFileName] = useState("未命名 mindmap");
   const [showAISettings, setShowAISettings] = useState(false);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
-  const [, setNativeScale] = useState<number | null>(null);
   const needsInitialThumbnailRef = useRef(false);
   const saveResolveRef = useRef<
     ((result: MindMapNativeSaveResult | null) => void) | null
@@ -312,11 +321,11 @@ const MindMapEditorShell = () => {
 
   const publishMindMapDataToNative = useCallback(
     (data: MindMapDocumentData) => {
-      pendingInitPayloadRef.current = toBridgePayload(data);
+      pendingInitPayloadRef.current = toBridgePayload(data, fileId);
       if (nativeAppInitedRef.current) {
         debugMindMapOpen("publish setMindMapData to initialized iframe", {
           rootChildren: data.root?.children?.length ?? 0,
-          hasView: !!data.view,
+          hasView: !!pendingInitPayloadRef.current.mindMapData.view,
         });
         postToNative("setMindMapData", pendingInitPayloadRef.current);
         setIsNativeReady(true);
@@ -324,7 +333,7 @@ const MindMapEditorShell = () => {
       }
       sendInitPayload();
     },
-    [postToNative, sendInitPayload],
+    [fileId, postToNative, sendInitPayload],
   );
 
   const updateLatestDocument = useCallback(
@@ -570,6 +579,7 @@ const MindMapEditorShell = () => {
           setFileName(serverFile.name || "未命名 mindmap");
           needsInitialThumbnailRef.current = !serverFile.has_thumbnail;
           const parseStart = performance.now();
+          saveMindMapBrowserViewFromData(fileId, serverFile.data);
           const data = serverFile.data
             ? await MindMapAdapter.parse(serverFile.data)
             : MindMapAdapter.createEmpty();
@@ -801,6 +811,7 @@ const MindMapEditorShell = () => {
           );
           return;
         }
+        saveMindMapBrowserViewFromData(fileId, savePayload.data);
         void MindMapAdapter.parse(savePayload.data)
           .then((parsedData) => {
             if (savePayload.revision !== undefined) {
@@ -853,13 +864,11 @@ const MindMapEditorShell = () => {
         return;
       }
       if (event.data.type === "mindMapScaleState") {
-        const scale =
-          event.data.payload &&
-          typeof event.data.payload === "object" &&
-          typeof (event.data.payload as { scale?: unknown }).scale === "number"
-            ? (event.data.payload as { scale: number }).scale
-            : null;
-        setNativeScale(scale);
+        // Legacy bridge signal; scale is covered by the full view state payload.
+        return;
+      }
+      if (event.data.type === "mindMapViewState") {
+        saveMindMapBrowserView(fileId, event.data.payload);
         return;
       }
       if (event.data.type === "mindMapDirtyState") {
@@ -932,12 +941,13 @@ const MindMapEditorShell = () => {
       return;
     }
     const serverFile = await ServerSync.getFile(fileId);
+    saveMindMapBrowserViewFromData(fileId, serverFile.data);
     const data = serverFile.data
       ? await MindMapAdapter.parse(serverFile.data)
       : MindMapAdapter.createEmpty();
     const document = MindMapAdapter.toDocument(data);
     latestDocumentRef.current = document;
-    pendingInitPayloadRef.current = toBridgePayload(data);
+    pendingInitPayloadRef.current = toBridgePayload(data, fileId);
     FileSyncState.alignHashes(fileId, hashDocumentSnapshot(document));
     FileSyncState.clearLocalEditTime(fileId);
     FileSyncState.clearLocalCache(fileId);

@@ -31,10 +31,12 @@ import {
   MindMapAdapter,
 } from "../data/formats/registry";
 import {
+  buildMindMapThumbnailSvg,
   buildSceneThumbnailSvg,
   extractThumbBg,
   patchThumbnailSvgForCard,
 } from "../data/thumbnailSvg";
+import { saveMindMapBrowserViewFromData } from "../data/mindMapBrowserViewStorage";
 import {
   ensureAIConfigLoaded,
   isAIConfigured,
@@ -483,6 +485,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const suppressNextCardOpenRef = useRef<string | null>(null);
   const [folderDraft, setFolderDraft] = useState<FolderDraft | null>(null);
   const [folderNameValue, setFolderNameValue] = useState("");
   const [syncVersion, setSyncVersion] = useState(0);
@@ -1026,7 +1029,20 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
         );
         const mindMapData = MindMapAdapter.createEmpty();
         const document = MindMapAdapter.toDocument(mindMapData);
-        await ServerSync.saveFileImmediate(created.id, document, name);
+        let thumbnail: string | undefined;
+        try {
+          thumbnail = await buildMindMapThumbnailSvg(mindMapData);
+          LocalThumbnailCache.set(created.id, thumbnail);
+          logThumb.debug(
+            `createMindMapFile ${created.id.slice(0, 8)}, svgLen=${thumbnail.length}`,
+          );
+        } catch (err) {
+          logThumb.debug(
+            `createMindMapFile ${created.id.slice(0, 8)} export FAILED`,
+            err,
+          );
+        }
+        await ServerSync.saveFileImmediate(created.id, document, name, thumbnail);
         await refresh({ silent: true, noErrorOnFailure: true });
         onOpenFile({ id: created.id, kind: "mindmap" });
         return;
@@ -1099,17 +1115,48 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
                 `无法识别「${file.name}」的文档格式，请确认它是 excalidraw 或 mindmap 文件。`,
               );
             }
-            const data = await adapter.parse(file);
+            let rawMindMapData: unknown = null;
+            let data: unknown;
+            if (adapter.kind === "mindmap") {
+              try {
+                rawMindMapData = JSON.parse(await file.text());
+              } catch {
+                throw new Error("Invalid MindMap JSON");
+              }
+              data = await MindMapAdapter.parse(rawMindMapData);
+            } else {
+              data = await adapter.parse(file);
+            }
             const created = await ServerSync.createFile(
               sanitizeFileBaseName(file.name),
               currentFolderId,
               adapter.kind,
             );
             createdIds.push(created.id);
+            if (adapter.kind === "mindmap") {
+              saveMindMapBrowserViewFromData(created.id, rawMindMapData);
+            }
+            const document = adapter.toDocument(data);
+            let thumbnail: string | undefined;
+            if (adapter.kind === "mindmap" && MindMapAdapter.validate(data)) {
+              try {
+                thumbnail = await buildMindMapThumbnailSvg(data);
+                LocalThumbnailCache.set(created.id, thumbnail);
+                logThumb.debug(
+                  `importMindMap ${created.id.slice(0, 8)}, svgLen=${thumbnail.length}`,
+                );
+              } catch (err) {
+                logThumb.debug(
+                  `importMindMap ${created.id.slice(0, 8)} export FAILED`,
+                  err,
+                );
+              }
+            }
             await ServerSync.saveFileImmediate(
               created.id,
-              adapter.toDocument(data),
+              document,
               sanitizeFileBaseName(file.name),
+              thumbnail,
             );
             continue;
           }
@@ -1254,8 +1301,21 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
 
   const startRename = (e: React.MouseEvent, id: string, name: string) => {
     e.stopPropagation();
+    suppressNextCardOpenRef.current = null;
     setRenamingId(id);
     setRenameValue(name);
+  };
+
+  const suppressNextCardOpen = (id: string) => {
+    suppressNextCardOpenRef.current = id;
+  };
+
+  const consumeSuppressedCardOpen = (id: string): boolean => {
+    if (suppressNextCardOpenRef.current !== id) {
+      return false;
+    }
+    suppressNextCardOpenRef.current = null;
+    return true;
   };
 
   const commitRename = async (id: string) => {
@@ -1777,6 +1837,9 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
         style={{ animationDelay: `${Math.min(index, 20) * 25}ms` }}
         onClick={(ev) => {
           const t = ev.target as HTMLElement;
+          if (consumeSuppressedCardOpen(f.id) || renamingId === f.id) {
+            return;
+          }
           if (t.closest(".filelist__card-action")) {
             return;
           }
@@ -1827,6 +1890,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
             <button
               className="filelist__card-action"
               title="重命名"
+              onPointerDown={() => suppressNextCardOpen(f.id)}
               onClick={(e) => startRename(e, f.id, f.name)}
             >
               <Icon type="edit" size={16} />
@@ -1871,7 +1935,14 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
                 className="filelist__card-rename"
                 value={renameValue}
                 autoFocus
-                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  suppressNextCardOpen(f.id);
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  suppressNextCardOpenRef.current = null;
+                }}
                 onChange={(e) => setRenameValue(e.target.value)}
                 onBlur={() => commitRename(f.id)}
                 onKeyDown={(e) => {
@@ -1887,6 +1958,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
               <span
                 className="filelist__card-name"
                 title={`${f.name} — 点击重命名`}
+                onPointerDown={() => suppressNextCardOpen(f.id)}
                 onClick={(e) => {
                   e.stopPropagation();
                   logFileListOpen("card name click → startRename (same as rename button)", {

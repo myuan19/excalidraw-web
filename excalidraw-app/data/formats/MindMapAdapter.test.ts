@@ -50,50 +50,50 @@ describe("MindMapAdapter", () => {
   });
 
   it("accepts Notion-style simple-mind-map data", async () => {
-    await expect(
-      MindMapAdapter.parse({
-        root: {
-          data: {
-            text: "<p>根节点</p>",
-            richText: true,
-            expand: true,
-            uid: "root",
-          },
-          children: [],
+    const parsed = await MindMapAdapter.parse({
+      root: {
+        data: {
+          text: "<p>根节点</p>",
+          richText: true,
+          expand: true,
+          uid: "root",
         },
-        layout: "logicalStructure",
-        theme: {
-          template: "classic4",
-          config: {},
-        },
-        view: {
-          transform: {
-            scaleX: 1,
-            scaleY: 1,
-            shear: 0,
-            rotate: 0,
-            translateX: 0,
-            translateY: 0,
-            originX: 0,
-            originY: 0,
-            a: 1,
-            b: 0,
-            c: 0,
-            d: 1,
-            e: 0,
-            f: 0,
-          },
-          state: {
-            scale: 1,
-            x: 0,
-            y: 0,
-            sx: 0,
-            sy: 0,
-          },
-        },
+        children: [],
+      },
+      layout: "logicalStructure",
+      theme: {
+        template: "classic4",
         config: {},
-      }),
-    ).resolves.toMatchObject({
+      },
+      view: {
+        transform: {
+          scaleX: 1,
+          scaleY: 1,
+          shear: 0,
+          rotate: 0,
+          translateX: 0,
+          translateY: 0,
+          originX: 0,
+          originY: 0,
+          a: 1,
+          b: 0,
+          c: 0,
+          d: 1,
+          e: 0,
+          f: 0,
+        },
+        state: {
+          scale: 1,
+          x: 0,
+          y: 0,
+          sx: 0,
+          sy: 0,
+        },
+      },
+      config: {},
+    });
+
+    expect(parsed).toMatchObject({
       root: {
         data: {
           text: "<p>根节点</p>",
@@ -105,6 +105,22 @@ describe("MindMapAdapter", () => {
         template: "classic4",
       },
     });
+    expect(parsed).not.toHaveProperty("view");
+  });
+
+  it("does not include viewport state in persisted MindMap documents", () => {
+    const document = MindMapAdapter.toDocument({
+      ...MindMapAdapter.createEmpty(),
+      view: {
+        state: {
+          scale: 1,
+          x: 120,
+          y: -80,
+        },
+      },
+    });
+
+    expect(document.data).not.toHaveProperty("view");
   });
 
   it("detects transient empty native data", () => {

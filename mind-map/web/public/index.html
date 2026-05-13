@@ -238,14 +238,9 @@
         window.$bus.$on('data_change', () => {
           postToHost('mindMapDirtyState', { dirty: true })
         })
-        window.$bus.$on('view_data_change', () => {
-          postToHost('mindMapDirtyState', { dirty: true })
-          if (nativeMindMap?.view) {
-            postToHost('mindMapViewState', {
-              scale: nativeMindMap.view.scale,
-              x: nativeMindMap.view.x,
-              y: nativeMindMap.view.y
-            })
+        window.$bus.$on('view_data_change', viewData => {
+          if (viewData) {
+            postToHost('mindMapViewState', viewData)
           }
         })
         window.$bus.$on('scale', scale => {

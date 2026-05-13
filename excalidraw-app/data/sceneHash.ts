@@ -25,8 +25,9 @@ export function hashSceneSnapshot(data: ForkSceneSnapshot | unknown): string {
  * Stable fingerprint for any managed document payload.
  *
  * Legacy Excalidraw scene payloads keep the existing scene hash semantics.
- * Managed Excalidraw documents still ignore `data.appState.name`, while other
- * document kinds hash the whole stable-normalized document shell and payload.
+ * Managed Excalidraw documents still ignore `data.appState.name`, and managed
+ * MindMap documents ignore `data.view` because viewport position is local UI
+ * state rather than document content.
  */
 export function hashDocumentSnapshot(data: unknown): string {
   if (!data || typeof data !== "object") {
@@ -88,6 +89,21 @@ function toDocumentHashPayload(data: unknown): unknown {
       return {
         ...data,
         data: toSceneHashPayload(data.data),
+      };
+    }
+    if (
+      data.kind === "mindmap" &&
+      data.data &&
+      typeof data.data === "object" &&
+      !Array.isArray(data.data)
+    ) {
+      const { view: _ignoredView, ...contentData } = data.data as Record<
+        string,
+        unknown
+      >;
+      return {
+        ...data,
+        data: contentData,
       };
     }
     return data;

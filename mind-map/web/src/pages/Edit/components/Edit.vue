@@ -474,6 +474,9 @@ export default {
         storeData({ root: data })
       })
       this.$bus.$on('view_data_change', data => {
+        if (window.takeOverApp) {
+          return
+        }
         clearTimeout(this.storeConfigTimer)
         this.storeConfigTimer = setTimeout(() => {
           storeData({

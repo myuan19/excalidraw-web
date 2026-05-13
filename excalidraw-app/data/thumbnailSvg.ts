@@ -6,6 +6,11 @@ import {
 } from "./thumbnailExport";
 import previewViewportConfig from "../../mind-map/previewViewportConfig.json";
 
+import type {
+  MindMapDocumentData,
+  MindMapNode,
+} from "./formats/MindMapAdapter";
+
 /** Remove broken embedded fonts from exported SVG thumbnails. */
 export function sanitizeThumbnailSvg(svgMarkup: string): string {
   return svgMarkup
@@ -604,6 +609,118 @@ export function normalizeMindMapThumbnailSvg(svgMarkup: string): string {
   return svg;
 }
 
+type MindMapThumbnailNode = {
+  depth: number;
+  order: number;
+  parentOrder: number | null;
+  label: string;
+  width: number;
+  height: number;
+};
+
+function collectMindMapThumbnailNodes(
+  node: MindMapNode,
+  depth: number,
+  parentOrder: number | null,
+  nodes: MindMapThumbnailNode[],
+): void {
+  const label = mindMapRichTextToPlainText(node.data.text) || "Untitled";
+  const order = nodes.length;
+  nodes.push({
+    depth,
+    order,
+    parentOrder,
+    label,
+    width: clamp(48 + label.length * 12, 120, 260),
+    height: 44,
+  });
+  for (const child of node.children ?? []) {
+    collectMindMapThumbnailNodes(child, depth + 1, order, nodes);
+  }
+}
+
+function buildMindMapThumbnailPath(node: MindMapThumbnailNode): string {
+  return `M0 0L${node.width} 0L${node.width} ${node.height}L0 ${node.height}Z`;
+}
+
+function withFileListThumbnailAttrs(svgMarkup: string, background: string): string {
+  if (/\bdata-excal-filelist-thumb\s*=/i.test(svgMarkup)) {
+    return svgMarkup;
+  }
+  return svgMarkup.replace(
+    /<svg\b/i,
+    `<svg data-excal-filelist-thumb="1" data-excal-thumb-bg="${escapeXmlAttr(
+      background,
+    )}" `,
+  );
+}
+
+export async function buildMindMapThumbnailSvg(
+  data: MindMapDocumentData,
+): Promise<string> {
+  const nodes: MindMapThumbnailNode[] = [];
+  collectMindMapThumbnailNodes(data.root, 0, null, nodes);
+
+  const xGap = 210;
+  const yGap = 82;
+  const padding = 48;
+  const positions = nodes.map((node) => ({
+    x: padding + node.depth * xGap,
+    y: padding + node.order * yGap,
+  }));
+  const maxRight = Math.max(
+    ...nodes.map((node, index) => positions[index].x + node.width),
+  );
+  const maxBottom = Math.max(
+    ...nodes.map((node, index) => positions[index].y + node.height),
+  );
+  const width = Math.max(420, maxRight + padding);
+  const height = Math.max(240, maxBottom + padding);
+  const background = "#ffffff";
+
+  const links = nodes
+    .filter((node) => node.parentOrder !== null)
+    .map((node) => {
+      const fromNode = nodes[node.parentOrder!];
+      const from = positions[node.parentOrder!];
+      const to = positions[node.order];
+      const x1 = from.x + fromNode.width;
+      const y1 = from.y + fromNode.height / 2;
+      const x2 = to.x;
+      const y2 = to.y + node.height / 2;
+      const midX = x1 + (x2 - x1) / 2;
+      return `<path d="M${x1} ${y1}C${midX} ${y1},${midX} ${y2},${x2} ${y2}" fill="none" stroke="#8b9bb4" stroke-width="2"/>`;
+    })
+    .join("");
+
+  const renderedNodes = nodes
+    .map((node, index) => {
+      const { x, y } = positions[index];
+      const fill = node.depth === 0 ? "#4f8cff" : "#ffffff";
+      const stroke = node.depth === 0 ? "#4f8cff" : "#d0d7e2";
+      const textFill = node.depth === 0 ? "#ffffff" : "#1f2937";
+      return (
+        `<g class="smm-node" transform="matrix(1,0,0,1,${x},${y})">` +
+        `<path class="smm-node-shape" d="${buildMindMapThumbnailPath(
+          node,
+        )}" fill="${fill}" stroke="${stroke}" stroke-width="2"></path>` +
+        `<text x="24" y="28" fill="${textFill}" font-size="16" font-family="Arial, sans-serif">${escapeXmlText(
+          node.label,
+        )}</text>` +
+        "</g>"
+      );
+    })
+    .join("");
+
+  const raw =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
+    `<rect width="${width}" height="${height}" fill="${background}"/>` +
+    `<g class="smm-container">${links}${renderedNodes}</g>` +
+    "</svg>";
+
+  return withFileListThumbnailAttrs(normalizeMindMapThumbnailSvg(raw), background);
+}
+
 function viewBackgroundFromSceneAppState(appState: unknown): string {
   if (!appState || typeof appState !== "object") {
     return "#ffffff";
@@ -758,12 +875,7 @@ export async function buildSceneThumbnailSvg(scene: {
     );
   }
   if (!/\bdata-excal-filelist-thumb\s*=/i.test(html)) {
-    html = html.replace(
-      /<svg\b/i,
-      `<svg data-excal-filelist-thumb="1" data-excal-thumb-bg="${escapeXmlAttr(
-        bg,
-      )}" `,
-    );
+    html = withFileListThumbnailAttrs(html, bg);
   }
   return html;
 }
