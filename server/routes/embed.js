@@ -289,7 +289,7 @@ function escapeForScript(s) {
 
 function findSpaIndexHtml() {
   const raw = (process.env.SERVE_SPA || "").trim();
-  const defaultRoot = join(__dirname, "../../excalidraw-app/build");
+  const defaultRoot = join(__dirname, "../../app/build");
   const dockerRoot = "/var/www/excalidraw-static";
   let root;
   if (!raw || raw === "1" || raw === "true") {

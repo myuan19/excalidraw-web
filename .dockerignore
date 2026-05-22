@@ -4,7 +4,7 @@
 !.eslintrc.json
 !.npmrc
 !.prettierrc
-!excalidraw-app/
+!app/
 !package.json
 !public/
 !packages/
@@ -13,8 +13,8 @@
 !yarn.lock
 !lib/
 !server/
-!docker/
-!mind-map/
+!deploy/
+!app/editors/mindmap/native/
 
 # keep (sub)sub directories at the end to exclude from explicit included
 # e.g. ./packages/excalidraw/{dist,node_modules}

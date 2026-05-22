@@ -1,0 +1,330 @@
+.file-card-thumbnail {
+  aspect-ratio: 8 / 5;
+}
+
+.dialog-panel {
+  border-radius: var(--radius-dialog);
+  box-shadow: var(--shadow-dialog);
+}
+
+.file-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+}
+
+.file-card:hover {
+  box-shadow: var(--shadow-card-hover);
+}
+
+.file-card-archive-badge {
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+}
+
+.file-status-badge {
+  position: absolute;
+  z-index: 2;
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 12%);
+}
+
+.file-status-badge--top-right {
+  top: var(--spacing-sm);
+  right: var(--spacing-sm);
+}
+
+.file-status-badge--bottom-left {
+  bottom: var(--spacing-lg);
+  left: var(--spacing-lg);
+}
+
+.file-status-badge--temp {
+  background: var(--color-temp-soft);
+  color: var(--color-temp);
+}
+
+.file-status-badge--draft {
+  background: var(--color-draft-soft);
+  color: var(--color-draft);
+}
+
+.editor-viewport-body {
+  position: relative;
+}
+
+.editor-viewport-status {
+  z-index: 25;
+}
+
+.file-card-actions {
+  background: linear-gradient(to top, rgb(0 0 0 / 50%), transparent);
+}
+
+.file-card-name {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.375rem;
+  font-weight: 500;
+}
+
+.file-card-search-hit {
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.file-card-meta {
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+.file-card-action-button {
+  border-radius: var(--radius-control);
+  color: var(--color-overlay-control);
+}
+
+.file-card-action-button:hover {
+  background: var(--color-overlay-control-hover);
+}
+
+.file-card-action-button-danger:hover {
+  background: rgb(239 68 68 / 30%);
+  color: rgb(254 202 202);
+}
+
+.move-dialog-list {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+
+.import-progress-banner {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.mobile-folder-dialog {
+  max-height: 70vh;
+}
+
+.mobile-folder-tree {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+
+.move-dialog-icon {
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+
+.move-dialog-current,
+.new-file-kind-label,
+.settings-hint {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.move-dialog-current {
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+}
+
+.new-file-kind-label {
+  font-weight: 500;
+}
+
+.app-sidebar {
+  border-right: 1px solid var(--color-border);
+}
+
+.sidebar-logo,
+.sidebar-nav-item,
+.sidebar-status-button {
+  border-radius: var(--radius-control);
+}
+
+.sidebar-avatar {
+  border-radius: 9999px;
+}
+
+.sidebar-logo-icon {
+  font-size: 1.5rem;
+  line-height: 2rem;
+}
+
+.sidebar-icon,
+.sidebar-status-icon,
+.sidebar-avatar-icon {
+  font-size: 1.25rem;
+  line-height: 1.75rem;
+}
+
+.sidebar-nav-label {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 500;
+}
+
+.sidebar-icon-label {
+  max-width: 100%;
+  padding: 0 0.125rem;
+  font-size: 0.625rem;
+  line-height: 0.875rem;
+  font-weight: 500;
+  text-align: center;
+  word-break: keep-all;
+}
+
+.editor-viewport {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: var(--spacing-sidebar);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-background);
+}
+
+.editor-layer--hidden {
+  visibility: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.page-layer--hidden {
+  visibility: hidden;
+  pointer-events: none;
+  position: fixed;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.editor-viewport-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.editor-sidebar-actions {
+  flex-shrink: 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.app-sidebar-divider {
+  flex-shrink: 0;
+}
+
+
+.empty-state-icon {
+  font-size: 3.75rem;
+  line-height: 1;
+}
+
+.empty-state-copy {
+  font-size: 1.125rem;
+  line-height: 1.75rem;
+  font-weight: 500;
+}
+
+.empty-state-button-icon,
+.editor-toolbar-icon {
+  font-size: 1.125rem;
+  line-height: 1.75rem;
+}
+
+.editor-floating-toolbar {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-dialog);
+}
+
+.editor-toolbar-error {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.editor-toolbar-file {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.archive-message,
+.archive-title {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.archive-title {
+  font-weight: 500;
+}
+
+.archive-meta {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.archive-error,
+.archive-list {
+  border-radius: var(--radius-control);
+}
+
+.archive-list {
+  border: 1px solid var(--color-border);
+}
+
+.archive-row {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.field-label,
+.settings-copy {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.field-label {
+  font-weight: 500;
+}
+
+.library-panel,
+.library-stat-card,
+.library-list-title {
+  border: 1px solid var(--color-border);
+}
+
+.library-stat-card {
+  border-radius: var(--radius-control);
+}
+
+.library-title,
+.library-stat-count {
+  margin: 0;
+  font-weight: 600;
+}
+
+.library-title {
+  font-size: 1.125rem;
+  line-height: 1.75rem;
+}
+
+.library-stat-count {
+  font-size: 1.5rem;
+  line-height: 2rem;
+}
+
+.library-list-title {
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+}

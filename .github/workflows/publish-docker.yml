@@ -25,6 +25,7 @@ jobs:
         uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
         with:
           context: .
+          file: deploy/Dockerfile
           push: true
           tags: excalidraw/excalidraw:latest
           platforms: linux/amd64, linux/arm64, linux/arm/v7

@@ -2,17 +2,28 @@
 
 ## Project Structure
 
-Excalidraw is a **monorepo** with a clear separation between the core library and the application:
+Active line (what you edit day-to-day):
+
+```text
+app/        Host app — file list, editor shells, sync, embed (see app/editors/)
+server/     API + SQLite + file storage
+packages/   @excalidraw/* libraries (excalidraw native runtime)
+public/     Static assets + public/mind-map/ iframe build
+lib/        Shared logger
+scripts/    Build tooling (_scripts/ = dev/deploy helpers, gitignored)
+deploy/     Docker + compose
+_archive/   Reference only — experiments, old shell, upstream docs
+```
 
 - **`packages/excalidraw/`** - Main React component library published to npm as `@excalidraw/excalidraw`
-- **`excalidraw-app/`** - Full-featured web application (excalidraw.com) that uses the library
+- **`app/`** - Full-featured web application (excalidraw.com) that uses the library
 - **`packages/`** - Core packages: `@excalidraw/common`, `@excalidraw/element`, `@excalidraw/math`, `@excalidraw/utils`
-- **`examples/`** - Integration examples (NextJS, browser script)
+- **`_archive/`** - Archived experiments, old v0.3 shell, upstream examples/docs (not in active build)
 
 ## Development Workflow
 
 1. **Package Development**: Work in `packages/*` for editor features
-2. **App Development**: Work in `excalidraw-app/` for app-specific features
+2. **App Development**: Work in `app/` for app-specific features
 3. **Testing**: Always run `yarn test:update` before committing
 4. **Type Safety**: Use `yarn test:typecheck` to verify TypeScript
 

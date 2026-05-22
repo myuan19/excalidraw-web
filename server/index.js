@@ -76,7 +76,7 @@ app.use("/api/embed-tokens", embedTokenRouter);
 app.use("/embed", embedPageRouter);
 
 /**
- * 与 API 同机部署时，同一端口托管 `excalidraw-app/build`（`./assets/*.js` 等），避免只起了 API 而静态资源 404。
+ * 与 API 同机部署时，同一端口托管 `app/build`（`./assets/*.js` 等），避免只起了 API 而静态资源 404。
  * 用法：`SERVE_SPA=1 node server/index.js` 或 `SERVE_SPA=/绝对路径/到/build`
  */
 {
@@ -84,7 +84,7 @@ app.use("/embed", embedPageRouter);
   if (raw) {
     const root =
       raw === "1" || raw === "true"
-        ? path.join(__dirname, "../excalidraw-app/build")
+        ? path.join(__dirname, "../app/build")
         : path.isAbsolute(raw)
           ? raw
           : path.join(__dirname, raw);

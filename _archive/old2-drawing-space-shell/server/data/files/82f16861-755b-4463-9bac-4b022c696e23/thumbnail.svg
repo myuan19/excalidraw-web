@@ -1,0 +1,413 @@
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:svgjs="http://svgjs.dev/svgjs" width="332" height="208" style="background-color: rgb(241, 241, 241);"><title>MindMap</title><g class="smm-container" transform="matrix(1,0,0,1,-795,-409.16668701171875)"><g class="smm-line-container"><path d="M 909,513.1666870117188L 971.4,513.1666870117188L 971.4,440.16668701171875Q 971.4,435.16668701171875 976.4,435.16668701171875L 1013,435.16668701171875" stroke-dasharray="none" stroke-width="2" stroke="#1e3556" fill="none"></path><path d="M 909,513.1666870117188L 971.4,513.1666870117188L 971.4,513.1666870117188L 1013,513.1666870117188" stroke-dasharray="none" stroke-width="2" stroke="#1e3556" fill="none"></path><path d="M 909,513.1666870117188L 971.4,513.1666870117188L 971.4,586.1666870117188Q 971.4,591.1666870117188 976.4,591.1666870117188L 1013,591.1666870117188" stroke-dasharray="none" stroke-width="2" stroke="#1e3556" fill="none"></path></g><g class="smm-node-container"><g class="smm-node" transform="matrix(1,0,0,1,804,492.66668701171875)" style="cursor: default;"><path d="
+      M10,0
+      L93,0
+      C93,0 103,0 103,10
+      L103,29
+      C103,29 103,39 93,39
+      L10,39
+      C10,39 0,39 0,29
+      L0,10
+      C0,10 0,0 10,0
+      Z
+    " class="smm-node-shape" transform="matrix(1,0,0,1,1,1)" fill="#1e3556" stroke-dasharray="none" stroke-width="2" stroke="#bdc5c9"></path><g transform="matrix(1,0,0,1,16,6)"><g data-width="73" data-height="29" data-offsetx="0" opacity="1"><foreignObject width="73" height="29" x="0" y="0" style="line-height: 1.2; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 24px; font-weight: bold; font-style: normal; text-decoration: none; color: rgb(255, 255, 255); text-align: left;"><div class="smm-richtext-node-wrap ql-editor" xmlns="http://www.w3.org/1999/xhtml" style="max-width: 500px;"><p><span>根节点</span></p></div><style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    
+  .smm-richtext-node-wrap p {
+    margin: 0;
+  }
+
+  .smm-richtext-node-wrap p + p {
+    margin-top: 0.35em;
+  }
+
+  .smm-richtext-node-wrap h1,
+.smm-richtext-node-wrap h2,
+.smm-richtext-node-wrap h3,
+.smm-richtext-node-wrap h4,
+.smm-richtext-node-wrap h5,
+.smm-richtext-node-wrap h6 {
+    margin: 0;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  .smm-richtext-node-wrap h1 {
+    font-size: 1.6em;
+  }
+
+  .smm-richtext-node-wrap h2 {
+    font-size: 1.45em;
+  }
+
+  .smm-richtext-node-wrap h3 {
+    font-size: 1.3em;
+  }
+
+  .smm-richtext-node-wrap h4 {
+    font-size: 1.15em;
+  }
+
+  .smm-richtext-node-wrap h5,
+.smm-richtext-node-wrap h6 {
+    font-size: 1em;
+  }
+
+  .smm-richtext-node-wrap ol,
+.smm-richtext-node-wrap ul {
+    margin: 0.25em 0 0.45em;
+    padding-left: 1.4em;
+  }
+
+  .smm-richtext-node-wrap blockquote {
+    border-left: 3px solid #d0d7de;
+    color: #57606a;
+    margin: 0.45em 0;
+    padding-left: 0.75em;
+  }
+
+  .smm-richtext-node-wrap code {
+    background: rgba(175, 184, 193, 0.2);
+    border-radius: 3px;
+    font-family: ui-monospace, SFMono-Regular, SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace;
+    padding: 0.1em 0.25em;
+  }
+
+  .smm-richtext-node-wrap pre,
+.smm-richtext-node-wrap .ql-code-block-container {
+    background: rgba(175, 184, 193, 0.2);
+    border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace;
+    line-height: 1.35;
+    margin: 0.45em 0;
+    max-width: 100%;
+    overflow-x: auto;
+    padding: 0.45em 0.6em;
+    white-space: pre;
+  }
+
+  .smm-richtext-node-wrap pre code {
+    background: transparent;
+    display: block;
+    padding: 0;
+    white-space: pre;
+  }
+
+  .smm-richtext-node-wrap a {
+    color: #0969da;
+    text-decoration: underline;
+  }
+
+  .smm-richtext-node-wrap table {
+    border-collapse: collapse;
+    margin: 0.45em 0;
+    max-width: 100%;
+  }
+
+  .smm-richtext-node-wrap th,
+.smm-richtext-node-wrap td {
+    border: 1px solid #d0d7de;
+    padding: 0.25em 0.5em;
+  }
+
+  .smm-richtext-node-wrap th {
+    background: rgba(175, 184, 193, 0.16);
+    font-weight: 700;
+  }
+
+  .smm-richtext-node-wrap img {
+    display: block;
+    margin: 0.45em 0;
+    max-width: 100%;
+  }
+
+  .smm-richtext-node-wrap mark,
+.smm-richtext-node-wrap .ql-bg-yellow {
+    background: rgba(255, 229, 100, 0.55);
+    border-radius: 2px;
+    padding: 0 0.12em;
+  }
+
+  .smm-richtext-node-wrap .ql-formula {
+    display: inline-block;
+    font-size: 1em;
+    vertical-align: middle;
+  }
+
+  .smm-richtext-node-wrap .ql-formula[data-formula-block="true"] {
+    display: block;
+    margin: 0.35em 0;
+    text-align: center;
+  }
+
+  .smm-richtext-node-wrap hr {
+    border: 0;
+    border-top: 1px solid #d0d7de;
+    margin: 0.45em 0;
+  }
+
+  .smm-richtext-node-wrap li[data-list="checked"],
+.smm-richtext-node-wrap li[data-list="unchecked"] {
+    list-style-type: none;
+  }
+
+  .smm-richtext-node-wrap li input[type="checkbox"] {
+    margin-right: 0.35em;
+  }
+
+  </style></foreignObject></g></g></g><g class="smm-node" transform="matrix(1,0,0,1,1013,418.16668701171875)" style="cursor: default;"><path d="
+      M10,0
+      L93,0
+      C93,0 103,0 103,10
+      L103,22
+      C103,22 103,32 93,32
+      L10,32
+      C10,32 0,32 0,22
+      L0,10
+      C0,10 0,0 10,0
+      Z
+    " class="smm-node-shape" transform="matrix(1,0,0,1,1,1)" fill="#a9dada" stroke-dasharray="none" stroke-width="2" stroke="#1e3556"></path><g transform="matrix(1,0,0,1,16,6)"><g data-width="73" data-height="22" data-offsetx="0" opacity="1"><foreignObject width="73" height="22" x="0" y="0" style="line-height: 1.2; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; font-weight: normal; font-style: normal; text-decoration: none; color: rgb(255, 255, 255); text-align: left;"><div class="smm-richtext-node-wrap ql-editor" xmlns="http://www.w3.org/1999/xhtml" style="max-width: 500px;"><p>二级节点</p></div></foreignObject></g></g></g><g class="smm-node" transform="matrix(1,0,0,1,1013,496.16668701171875)" style="cursor: default;"><path d="
+      M10,0
+      L93,0
+      C93,0 103,0 103,10
+      L103,22
+      C103,22 103,32 93,32
+      L10,32
+      C10,32 0,32 0,22
+      L0,10
+      C0,10 0,0 10,0
+      Z
+    " class="smm-node-shape" transform="matrix(1,0,0,1,1,1)" fill="#a9dada" stroke-dasharray="none" stroke-width="2" stroke="#1e3556"></path><g transform="matrix(1,0,0,1,16,6)"><g data-width="73" data-height="22" data-offsetx="0" opacity="1"><foreignObject width="73" height="22" x="0" y="0" style="line-height: 1.2; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; font-weight: normal; font-style: normal; text-decoration: none; color: rgb(255, 255, 255); text-align: left;"><div class="smm-richtext-node-wrap ql-editor" xmlns="http://www.w3.org/1999/xhtml" style="max-width: 500px;"><p>二级节点</p></div></foreignObject></g></g></g><g class="smm-node" transform="matrix(1,0,0,1,1013,574.1666870117188)" style="cursor: default;"><path d="
+      M10,0
+      L93,0
+      C93,0 103,0 103,10
+      L103,22
+      C103,22 103,32 93,32
+      L10,32
+      C10,32 0,32 0,22
+      L0,10
+      C0,10 0,0 10,0
+      Z
+    " class="smm-node-shape" transform="matrix(1,0,0,1,1,1)" fill="#a9dada" stroke-dasharray="none" stroke-width="2" stroke="#1e3556"></path><g transform="matrix(1,0,0,1,16,6)"><g data-width="73" data-height="22" data-offsetx="0" opacity="1"><foreignObject width="73" height="22" x="0" y="0" style="line-height: 1.2; font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; font-size: 18px; font-weight: normal; font-style: normal; text-decoration: none; color: rgb(255, 255, 255); text-align: left;"><div class="smm-richtext-node-wrap ql-editor" xmlns="http://www.w3.org/1999/xhtml" style="max-width: 500px;"><p>二级节点</p></div></foreignObject></g></g></g></g><g class="smm-associative-line-container"></g></g><style>
+  /* 鼠标hover和激活时渲染的矩形 */
+  .smm-hover-node{
+    display: none;
+    opacity: 0.6;
+    stroke-width: 1;
+  }
+
+  .smm-node:not(.smm-node-dragging):hover .smm-hover-node{
+    display: block;
+  }
+
+  .smm-node.active .smm-hover-node, .smm-node-highlight .smm-hover-node{
+    display: block;
+    opacity: 1;
+    stroke-width: 2;
+  }
+
+  .smm-text-node-wrap, .smm-expand-btn-text {
+    user-select: none;
+  }
+
+      .smm-richtext-node-wrap {
+        word-break: break-all;
+        user-select: none;
+      }
+
+      
+  .ql-editor p,
+.smm-richtext-node-wrap p {
+    margin: 0;
+  }
+
+  .ql-editor p + p,
+.smm-richtext-node-wrap p + p {
+    margin-top: 0.35em;
+  }
+
+  .ql-editor h1,
+.smm-richtext-node-wrap h1,
+.ql-editor h2,
+.smm-richtext-node-wrap h2,
+.ql-editor h3,
+.smm-richtext-node-wrap h3,
+.ql-editor h4,
+.smm-richtext-node-wrap h4,
+.ql-editor h5,
+.smm-richtext-node-wrap h5,
+.ql-editor h6,
+.smm-richtext-node-wrap h6 {
+    margin: 0;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  .ql-editor h1,
+.smm-richtext-node-wrap h1 {
+    font-size: 1.6em;
+  }
+
+  .ql-editor h2,
+.smm-richtext-node-wrap h2 {
+    font-size: 1.45em;
+  }
+
+  .ql-editor h3,
+.smm-richtext-node-wrap h3 {
+    font-size: 1.3em;
+  }
+
+  .ql-editor h4,
+.smm-richtext-node-wrap h4 {
+    font-size: 1.15em;
+  }
+
+  .ql-editor h5,
+.smm-richtext-node-wrap h5,
+.ql-editor h6,
+.smm-richtext-node-wrap h6 {
+    font-size: 1em;
+  }
+
+  .ql-editor ol,
+.smm-richtext-node-wrap ol,
+.ql-editor ul,
+.smm-richtext-node-wrap ul {
+    margin: 0.25em 0 0.45em;
+    padding-left: 1.4em;
+  }
+
+  .ql-editor blockquote,
+.smm-richtext-node-wrap blockquote {
+    border-left: 3px solid #d0d7de;
+    color: #57606a;
+    margin: 0.45em 0;
+    padding-left: 0.75em;
+  }
+
+  .ql-editor code,
+.smm-richtext-node-wrap code {
+    background: rgba(175, 184, 193, 0.2);
+    border-radius: 3px;
+    font-family: ui-monospace, SFMono-Regular, SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace;
+    padding: 0.1em 0.25em;
+  }
+
+  .ql-editor pre,
+.smm-richtext-node-wrap pre,
+.ql-editor .ql-code-block-container,
+.smm-richtext-node-wrap .ql-code-block-container {
+    background: rgba(175, 184, 193, 0.2);
+    border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace;
+    line-height: 1.35;
+    margin: 0.45em 0;
+    max-width: 100%;
+    overflow-x: auto;
+    padding: 0.45em 0.6em;
+    white-space: pre;
+  }
+
+  .ql-editor pre code,
+.smm-richtext-node-wrap pre code {
+    background: transparent;
+    display: block;
+    padding: 0;
+    white-space: pre;
+  }
+
+  .ql-editor a,
+.smm-richtext-node-wrap a {
+    color: #0969da;
+    text-decoration: underline;
+  }
+
+  .ql-editor table,
+.smm-richtext-node-wrap table {
+    border-collapse: collapse;
+    margin: 0.45em 0;
+    max-width: 100%;
+  }
+
+  .ql-editor th,
+.smm-richtext-node-wrap th,
+.ql-editor td,
+.smm-richtext-node-wrap td {
+    border: 1px solid #d0d7de;
+    padding: 0.25em 0.5em;
+  }
+
+  .ql-editor th,
+.smm-richtext-node-wrap th {
+    background: rgba(175, 184, 193, 0.16);
+    font-weight: 700;
+  }
+
+  .ql-editor img,
+.smm-richtext-node-wrap img {
+    display: block;
+    margin: 0.45em 0;
+    max-width: 100%;
+  }
+
+  .ql-editor mark,
+.smm-richtext-node-wrap mark,
+.ql-editor .ql-bg-yellow,
+.smm-richtext-node-wrap .ql-bg-yellow {
+    background: rgba(255, 229, 100, 0.55);
+    border-radius: 2px;
+    padding: 0 0.12em;
+  }
+
+  .ql-editor .ql-formula,
+.smm-richtext-node-wrap .ql-formula {
+    display: inline-block;
+    font-size: 1em;
+    vertical-align: middle;
+  }
+
+  .ql-editor .ql-formula[data-formula-block="true"],
+.smm-richtext-node-wrap .ql-formula[data-formula-block="true"] {
+    display: block;
+    margin: 0.35em 0;
+    text-align: center;
+  }
+
+  .ql-editor hr,
+.smm-richtext-node-wrap hr {
+    border: 0;
+    border-top: 1px solid #d0d7de;
+    margin: 0.45em 0;
+  }
+
+  .ql-editor li[data-list="checked"],
+.smm-richtext-node-wrap li[data-list="checked"],
+.ql-editor li[data-list="unchecked"],
+.smm-richtext-node-wrap li[data-list="unchecked"] {
+    list-style-type: none;
+  }
+
+  .ql-editor li input[type="checkbox"],
+.smm-richtext-node-wrap li input[type="checkbox"] {
+    margin-right: 0.35em;
+  }
+
+
+      .ql-editor .ql-align-left, 
+      .smm-richtext-node-wrap .ql-align-left {
+        text-align: left;
+      }
+
+      .smm-richtext-node-wrap .ql-align-right {
+        text-align: right;
+      }
+
+      .smm-richtext-node-wrap .ql-align-center {
+        text-align: center;
+      }
+      </style></svg>

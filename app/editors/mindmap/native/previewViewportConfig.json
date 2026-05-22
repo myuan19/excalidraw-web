@@ -1,0 +1,13 @@
+{
+  "targetAspect": 1.6666666666666667,
+  "baselineRootScreenRatio": 0.224,
+  "thumbnailRootScreenRatioMultiplier": 1,
+  "editorRootScreenRatioMultiplier": 0.75,
+  "embedRootScreenRatioMultiplier": 0.75,
+  "baselineNodeCount": 10,
+  "minVisualScaleNodeCount": 40,
+  "singleNodeVisualScale": 1.2,
+  "minNodeVisualScale": 0.8,
+  "centerTowardOthersRatio": 0.24,
+  "rootCenterLimitRatio": 0.4
+}

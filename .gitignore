@@ -31,9 +31,13 @@ meta*.json
 # Local API server runtime data (SQLite DB + user files)
 server/data/
 
-# Local-only management scripts & docs (not part of source)
+# Local-only dev/deploy helpers (not part of source)
 _scripts/
 docs/
 
 # Scratch notes at repo root
 /Untitled
+
+# Local scratch / logs (not source)
+_ai_docs/
+_logs/

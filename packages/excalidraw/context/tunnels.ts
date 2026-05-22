@@ -1,8 +1,20 @@
 import { createIsolation } from "jotai-scope";
 import React from "react";
-import tunnel from "tunnel-rat";
+import tunnelRat from "tunnel-rat";
 
-export type Tunnel = ReturnType<typeof tunnel>;
+/** tunnel-rat's bundled types use `() => JSX.Element`, which breaks under React 19. */
+export type Tunnel = {
+  In: React.FC<{ children: React.ReactNode }>;
+  Out: React.FC;
+};
+
+function createTunnel(): Tunnel {
+  const t = tunnelRat();
+  return {
+    In: ({ children }) => t.In({ children }),
+    Out: () => t.Out() as unknown as React.ReactElement,
+  };
+}
 
 type TunnelsContextValue = {
   MainMenuTunnel: Tunnel;
@@ -29,16 +41,16 @@ const tunnelsJotai = createIsolation();
 export const useInitializeTunnels = () => {
   return React.useMemo((): TunnelsContextValue => {
     return {
-      MainMenuTunnel: tunnel(),
-      WelcomeScreenMenuHintTunnel: tunnel(),
-      WelcomeScreenToolbarHintTunnel: tunnel(),
-      WelcomeScreenHelpHintTunnel: tunnel(),
-      WelcomeScreenCenterTunnel: tunnel(),
-      FooterCenterTunnel: tunnel(),
-      DefaultSidebarTriggerTunnel: tunnel(),
-      DefaultSidebarTabTriggersTunnel: tunnel(),
-      OverwriteConfirmDialogTunnel: tunnel(),
-      TTDDialogTriggerTunnel: tunnel(),
+      MainMenuTunnel: createTunnel(),
+      WelcomeScreenMenuHintTunnel: createTunnel(),
+      WelcomeScreenToolbarHintTunnel: createTunnel(),
+      WelcomeScreenHelpHintTunnel: createTunnel(),
+      WelcomeScreenCenterTunnel: createTunnel(),
+      FooterCenterTunnel: createTunnel(),
+      DefaultSidebarTriggerTunnel: createTunnel(),
+      DefaultSidebarTabTriggersTunnel: createTunnel(),
+      OverwriteConfirmDialogTunnel: createTunnel(),
+      TTDDialogTriggerTunnel: createTunnel(),
       tunnelsJotai,
     };
   }, []);

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="384" viewBox="0 0 640 384">
+  <rect width="640" height="384" rx="28" fill="rgb(248 250 252)"/>
+  <rect x="24" y="24" width="592" height="336" rx="22" fill="rgb(255 255 255)" stroke="rgb(226 232 240)" stroke-width="2"/>
+  <path d="M160 192h96v48h-96zM384 96h96v48h-96zM384 240h96v48h-96zM256 216h64v-96h64" fill="none" stroke="rgb(37 99 235)" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="40" y="340" font-family="Inter, system-ui, sans-serif" font-size="28" font-weight="600" fill="rgb(51 65 85)">MindMap</text>
+</svg>
