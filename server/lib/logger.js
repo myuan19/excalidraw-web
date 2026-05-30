@@ -1,4 +1,8 @@
 import { Logger, LEVEL_VALUE } from "../../lib/logger/core.js";
+import {
+  getClientFileTransport,
+  getServerFileTransport,
+} from "./rotatingFileTransport.js";
 
 /** @typedef {import("../../lib/logger/core.js").LogEntry} LogEntry */
 
@@ -19,6 +23,12 @@ const minLevel = (() => {
 })();
 
 const transports = [new StdoutTransport()];
+
+const serverFile = getServerFileTransport();
+if (serverFile) transports.push(serverFile);
+
+const clientFile = getClientFileTransport();
+if (clientFile) transports.push(clientFile);
 
 /**
  * @param {{ module: string }} opts

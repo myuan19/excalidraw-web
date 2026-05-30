@@ -1,7 +1,8 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { resolveDevFilesRoot } from "./lib/devDataDir.mjs";
 
-const filesRoot = join(process.cwd(), "server/data/files");
+const filesRoot = resolveDevFilesRoot();
 
 function decodeXmlTextEntities(value) {
   return value

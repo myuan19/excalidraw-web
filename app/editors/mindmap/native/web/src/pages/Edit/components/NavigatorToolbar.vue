@@ -70,7 +70,7 @@
     <div class="item">
       <Fullscreen :isDark="isDark" :mindMap="mindMap"></Fullscreen>
     </div>
-    <div class="item" v-if="!isHostMode">
+    <div class="item">
       <Scale :isDark="isDark" :mindMap="mindMap"></Scale>
     </div>
     <div class="item">

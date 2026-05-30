@@ -1,0 +1,317 @@
+.editor-platform-shell {
+  position: relative;
+  height: 100%;
+  min-height: 100vh;
+}
+
+.editor-platform-shell__content {
+  height: 100%;
+  min-height: 100vh;
+}
+
+.editor-bridge {
+  position: fixed;
+  z-index: var(--nb-z-fork-home, 200000);
+  overflow: visible;
+  touch-action: none;
+  transition:
+    left 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    top 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.editor-bridge--dragging {
+  transition: none;
+}
+
+.editor-bridge__peel-zone {
+  position: absolute;
+  z-index: 0;
+  top: 50%;
+  left: 50%;
+  width: 4.25rem;
+  height: 4.25rem;
+  border-radius: 9999px;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+}
+
+.editor-bridge--docked.editor-bridge--edge-left .editor-bridge__peel-zone {
+  transform: translate(calc(-50% - var(--ep-dock-hide, 2.375rem)), -50%);
+}
+
+.editor-bridge--docked.editor-bridge--edge-right .editor-bridge__peel-zone {
+  transform: translate(calc(-50% + var(--ep-dock-hide, 2.375rem)), -50%);
+}
+
+.editor-bridge--docked.editor-bridge--edge-top .editor-bridge__peel-zone {
+  transform: translate(-50%, calc(-50% - var(--ep-dock-hide, 2.375rem)));
+}
+
+.editor-bridge--docked.editor-bridge--edge-bottom .editor-bridge__peel-zone {
+  transform: translate(-50%, calc(-50% + var(--ep-dock-hide, 2.375rem)));
+}
+
+.editor-bridge--docked:hover .editor-bridge__peel-zone,
+.editor-bridge--docked:has(.editor-bridge__peel-zone:hover) .editor-bridge__peel-zone {
+  transform: translate(-50%, -50%);
+}
+
+.editor-bridge__ball {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.25rem;
+  height: 3.25rem;
+  padding: 0;
+  border: 1px solid var(--nb-filelist-border, rgba(0, 0, 0, 0.08));
+  border-radius: 9999px;
+  background: var(--nb-surface, #fff);
+  box-shadow: var(--nb-shadow-soft, 0 4px 16px rgba(15, 23, 42, 0.1));
+  cursor: grab;
+  user-select: none;
+  overflow: visible;
+  transition:
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+
+  img {
+    display: block;
+    border-radius: 9999px;
+    pointer-events: none;
+  }
+
+  &:hover {
+    box-shadow: var(--nb-shadow-card-hover, 0 8px 24px rgba(15, 23, 42, 0.14));
+  }
+
+  &:active {
+    cursor: grabbing;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--nb-primary, #6965db);
+    outline-offset: 2px;
+  }
+}
+
+.editor-bridge--dragging .editor-bridge__ball {
+  transition: none;
+}
+
+.editor-bridge--docked.editor-bridge--edge-left .editor-bridge__ball {
+  transform: translateX(calc(-1 * var(--ep-dock-hide, 2.375rem)));
+}
+
+.editor-bridge--docked.editor-bridge--edge-right .editor-bridge__ball {
+  transform: translateX(var(--ep-dock-hide, 2.375rem));
+}
+
+.editor-bridge--docked.editor-bridge--edge-top .editor-bridge__ball {
+  transform: translateY(calc(-1 * var(--ep-dock-hide, 2.375rem)));
+}
+
+.editor-bridge--docked.editor-bridge--edge-bottom .editor-bridge__ball {
+  transform: translateY(var(--ep-dock-hide, 2.375rem));
+}
+
+.editor-bridge--docked:hover .editor-bridge__ball,
+.editor-bridge--docked:has(.editor-bridge__peel-zone:hover) .editor-bridge__ball {
+  transform: translate(0, 0);
+}
+
+.editor-bridge--open.editor-bridge--edge-left .editor-bridge__ball {
+  transform: translateX(calc(-1 * var(--ep-ball-panel-gap, 0.625rem)));
+}
+
+.editor-bridge--open.editor-bridge--edge-right .editor-bridge__ball {
+  transform: translateX(var(--ep-ball-panel-gap, 0.625rem));
+}
+
+.editor-bridge--open.editor-bridge--edge-top .editor-bridge__ball {
+  transform: translateY(calc(-1 * var(--ep-ball-panel-gap, 0.625rem)));
+}
+
+.editor-bridge--open.editor-bridge--edge-bottom .editor-bridge__ball {
+  transform: translateY(var(--ep-ball-panel-gap, 0.625rem));
+}
+
+.editor-bridge--dragging .editor-bridge__ball {
+  transform: translate(0, 0);
+}
+
+/* 草稿状态外圈：与历史面板「未保存 / 无修改」一致，展开时也保持 */
+.editor-bridge--unsaved .editor-bridge__ball {
+  border-color: color-mix(in srgb, var(--nb-warning, #f59e0b) 45%, transparent);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--nb-warning, #f59e0b) 18%, transparent),
+    var(--nb-shadow-soft, 0 4px 16px rgba(15, 23, 42, 0.1));
+}
+
+.editor-bridge--saved .editor-bridge__ball {
+  border-color: color-mix(in srgb, var(--nb-success, #22c55e) 45%, transparent);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--nb-success, #22c55e) 18%, transparent),
+    var(--nb-shadow-soft, 0 4px 16px rgba(15, 23, 42, 0.1));
+}
+
+.editor-bridge__status-dot {
+  position: absolute;
+  width: 0.625rem;
+  height: 0.625rem;
+  border: 2px solid var(--nb-surface, #fff);
+  border-radius: 9999px;
+  pointer-events: none;
+}
+
+.editor-bridge--edge-left .editor-bridge__status-dot,
+.editor-bridge--edge-right .editor-bridge__status-dot {
+  top: 50%;
+  right: -0.125rem;
+  transform: translateY(-50%);
+}
+
+.editor-bridge--edge-top .editor-bridge__status-dot,
+.editor-bridge--edge-bottom .editor-bridge__status-dot {
+  left: 50%;
+  bottom: -0.125rem;
+  transform: translateX(-50%);
+}
+
+.editor-bridge--unsaved .editor-bridge__status-dot {
+  background: var(--nb-warning, #f59e0b);
+  animation: editorBridgeStatusPulse 2.4s ease-in-out infinite;
+}
+
+.editor-bridge--saved .editor-bridge__status-dot {
+  background: var(--nb-success, #22c55e);
+}
+
+@keyframes editorBridgeStatusPulse {
+  0%,
+  100% {
+    opacity: 1;
+    scale: 1;
+  }
+
+  50% {
+    opacity: 0.72;
+    scale: 0.92;
+  }
+}
+
+.editor-bridge__panel {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  width: 4.5rem;
+  padding: 0.25rem 0;
+  border: 1px solid var(--nb-filelist-border, rgba(0, 0, 0, 0.08));
+  border-radius: var(--nb-radius-xl, 1rem);
+  background: color-mix(in srgb, var(--nb-surface, #fff) 94%, transparent);
+  backdrop-filter: blur(12px) saturate(1.2);
+  box-shadow: var(--nb-shadow-card, 0 10px 30px rgba(15, 23, 42, 0.12));
+  animation: editorBridgePanelIn 0.18s ease;
+  pointer-events: auto;
+}
+
+@keyframes editorBridgePanelIn {
+  from {
+    opacity: 0;
+    scale: 0.96;
+  }
+
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+.editor-bridge__action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.125rem;
+  width: 100%;
+  padding: 0.5rem 0.25rem;
+  border: 0;
+  background: transparent;
+  color: var(--nb-text-muted, #64748b);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+
+  &:hover:not(:disabled) {
+    background: var(--nb-filelist-muted, rgba(105, 101, 219, 0.08));
+    color: var(--nb-primary, #6965db);
+  }
+
+  &:disabled {
+    opacity: 0.38;
+    cursor: not-allowed;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--nb-primary, #6965db);
+    outline-offset: -2px;
+  }
+}
+
+.editor-bridge__action-label {
+  max-width: 100%;
+  padding: 0 0.125rem;
+  font-family: var(--nb-font-ui, system-ui, sans-serif);
+  font-size: 0.625rem;
+  line-height: 0.875rem;
+  font-weight: 500;
+  text-align: center;
+}
+
+.editor-bridge__divider {
+  flex-shrink: 0;
+  width: 2rem;
+  height: 1px;
+  margin: 0.25rem auto;
+  background: var(--nb-filelist-border, rgba(0, 0, 0, 0.08));
+}
+
+.excalidraw-app.theme--dark {
+  .editor-bridge__ball,
+  .editor-bridge__panel {
+    background: var(--nb-fork-home-surface, #2a2a32);
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .editor-bridge__status-dot {
+    border-color: var(--nb-fork-home-surface, #2a2a32);
+  }
+
+  .editor-bridge--unsaved .editor-bridge__ball {
+    border-color: color-mix(in srgb, var(--nb-warning-text-dark, #fbbf24) 50%, transparent);
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--nb-warning-text-dark, #fbbf24) 22%, transparent),
+      var(--nb-shadow-soft, 0 4px 16px rgba(0, 0, 0, 0.35));
+  }
+
+  .editor-bridge--saved .editor-bridge__ball {
+    border-color: color-mix(in srgb, var(--nb-success-text-dark, #86efac) 50%, transparent);
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--nb-success-text-dark, #86efac) 22%, transparent),
+      var(--nb-shadow-soft, 0 4px 16px rgba(0, 0, 0, 0.35));
+  }
+
+  .editor-bridge__action {
+    color: var(--nb-fork-home-muted, #a3a3a3);
+
+    &:hover:not(:disabled) {
+      color: #ececec;
+      background: rgba(255, 255, 255, 0.06);
+    }
+  }
+}

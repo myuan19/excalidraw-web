@@ -16,7 +16,7 @@
 本地运行（仅供参考，需在此目录内 `yarn install`）：
 
 ```bash
-cd _archive/old2-drawing-space-shell
+cd _references/old2-drawing-space-shell
 yarn install
 yarn dev
 ```

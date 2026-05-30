@@ -1,4 +1,4 @@
-# Archive
+# References
 
 Non-mainline code kept for reference. Not part of the active build (`yarn start` / `yarn build`).
 

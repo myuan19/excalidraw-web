@@ -1,3 +1,5 @@
+import "./loadEnv.mjs";
+import "./initLogging.mjs";
 import { existsSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";

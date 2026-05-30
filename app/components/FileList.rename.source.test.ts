@@ -8,7 +8,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 describe("FileList rename interaction source contract", () => {
   it("suppresses the card open click when a rename interaction starts", () => {
-    const source = fs.readFileSync(path.join(__dirname, "FileList.tsx"), "utf8");
+    const source = fs.readFileSync(
+      path.join(__dirname, "../hooks/useFileListController.tsx"),
+      "utf8",
+    );
     const renderFileCard = source.slice(
       source.indexOf("const renderFileCard ="),
       source.indexOf("const empty = !loading"),

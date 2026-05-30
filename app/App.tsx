@@ -6,6 +6,7 @@ import {
 } from "./app-jotai";
 import { TopErrorBoundary } from "./components/TopErrorBoundary";
 import { FileList } from "./components/FileList";
+import { EditorPlatformShell } from "./components/EditorPlatformSidebar";
 import { logFileListOpen } from "./lib/logger";
 import { isEmbedMode } from "./embed/embedMode";
 import { editorRegistry } from "./editors";
@@ -156,9 +157,11 @@ const ForkRoot = () => {
   }
 
   return (
-    <Suspense fallback={<EditorFallback />}>
-      <LazyEditor />
-    </Suspense>
+    <EditorPlatformShell>
+      <Suspense fallback={<EditorFallback />}>
+        <LazyEditor />
+      </Suspense>
+    </EditorPlatformShell>
   );
 };
 

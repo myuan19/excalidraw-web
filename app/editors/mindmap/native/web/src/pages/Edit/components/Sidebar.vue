@@ -3,7 +3,7 @@
     class="sidebarContainer"
     @click.stop
     :class="{ show: show, isDark: isDark }"
-    :style="{ zIndex: zIndex }"
+    :style="{ zIndex: zIndex, top: sidebarTop + 'px' }"
   >
     <span class="closeBtn el-icon-close" @click="close"></span>
     <div class="sidebarHeader" v-if="title">
@@ -18,6 +18,7 @@
 <script>
 import { store } from '@/config'
 import { mapState, mapMutations } from 'vuex'
+import { getSidebarTopMargin } from '@/utils/sidebarLayout'
 
 // 侧边栏容器
 export default {
@@ -30,7 +31,8 @@ export default {
   data() {
     return {
       show: false,
-      zIndex: 0
+      zIndex: 0,
+      sidebarTop: 110
     }
   },
   computed: {
@@ -42,17 +44,30 @@ export default {
     show(val, oldVal) {
       if (val && !oldVal) {
         this.zIndex = store.sidebarZIndex++
+        this.updateSidebarTop()
       }
     }
   },
   created() {
     this.$bus.$on('closeSideBar', this.handleCloseSidebar)
+    window.addEventListener('resize', this.updateSidebarTop)
+    this.updateSidebarTop()
+  },
+  mounted() {
+    this.$nextTick(() => {
+      this.updateSidebarTop()
+    })
   },
   beforeDestroy() {
     this.$bus.$off('closeSideBar', this.handleCloseSidebar)
+    window.removeEventListener('resize', this.updateSidebarTop)
   },
   methods: {
     ...mapMutations(['setActiveSidebar']),
+
+    updateSidebarTop() {
+      this.sidebarTop = getSidebarTopMargin()
+    },
 
     handleCloseSidebar() {
       this.close()
@@ -74,7 +89,6 @@ export default {
 .sidebarContainer {
   position: fixed;
   right: -300px;
-  top: 110px;
   bottom: 0;
   width: 300px;
   background-color: #fff;

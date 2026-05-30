@@ -147,6 +147,7 @@ import Contextmenu from './Contextmenu.vue'
 import RichTextToolbar from './RichTextToolbar.vue'
 import NodeNoteContentShow from './NodeNoteContentShow.vue'
 import { getData, getConfig, storeData } from '@/api'
+import { isHostMode, requestSave } from '@/utils/hostBridge'
 import Navigator from './Navigator.vue'
 import NodeImgPreview from './NodeImgPreview.vue'
 import SidebarTrigger from './SidebarTrigger.vue'
@@ -476,6 +477,10 @@ export default {
 
     // 手动保存
     manualSave() {
+      if (isHostMode()) {
+        requestSave()
+        return
+      }
       storeData(this.mindMap.getData(true))
     },
 
@@ -633,6 +638,9 @@ export default {
         isShowScrollbar: this.isShowScrollbar
       })
       this.mindMap.keyCommand.addShortcut('Control+s', () => {
+        this.manualSave()
+      })
+      this.mindMap.keyCommand.addShortcut('Meta+s', () => {
         this.manualSave()
       })
       // 转发事件

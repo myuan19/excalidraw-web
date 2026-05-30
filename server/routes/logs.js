@@ -1,5 +1,5 @@
 /**
- * POST /api/logs — batched browser log entries → stdout (docker logs).
+ * POST /api/logs — batched browser log entries → stdout + _dev_data/logs/client.log
  * Disable: LOG_CLIENT_INGEST=0 or EXCALIDRAW_CLIENT_LOG=0
  */
 import express from "express";
@@ -43,11 +43,17 @@ router.post("/", (req, res) => {
     return res.status(400).json({ error: "entries array required" });
   }
 
-  const batch = entries.slice(0, MAX_ENTRIES_PER_BATCH);
+  const batch = entries
+    .slice(0, MAX_ENTRIES_PER_BATCH)
+    .filter((raw) => raw && typeof raw === "object")
+    .sort((a, b) =>
+      String(typeof a.ts === "string" ? a.ts : "").localeCompare(
+        String(typeof b.ts === "string" ? b.ts : ""),
+      ),
+    );
   let written = 0;
 
   for (const raw of batch) {
-    if (!raw || typeof raw !== "object") continue;
     if (!raw.msg || typeof raw.msg !== "string") continue;
 
     const entry = {

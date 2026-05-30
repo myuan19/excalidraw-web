@@ -32,5 +32,5 @@
     }
   },
   "include": ["packages", "app"],
-  "exclude": ["_archive", "dist", "types", "tests"]
+  "exclude": ["_references", "_dev_data", "dist", "types", "tests"]
 }

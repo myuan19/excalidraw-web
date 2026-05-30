@@ -6,21 +6,18 @@ import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, "..");
+const controllerPath = path.join(appRoot, "hooks/useFileListController.tsx");
 
 describe("File list branding source contract", () => {
   it("uses drawing space home branding and app icon", () => {
-    const source = fs.readFileSync(path.join(__dirname, "FileList.tsx"), "utf8");
+    const source = fs.readFileSync(controllerPath, "utf8");
     const htmlSource = fs.readFileSync(path.join(appRoot, "index.html"), "utf8");
     const viteSource = fs.readFileSync(path.join(appRoot, "vite.config.mts"), "utf8");
 
     expect(source).toContain('const HOME_APP_TITLE = "绘图空间"');
     expect(source).toContain(
-      'const DRAWING_SPACE_ICON = "/icons/drawing-space.svg"',
+      '<h1 className="m-0 text-lg font-semibold">{HOME_APP_TITLE}</h1>',
     );
-    expect(source).toContain(
-      '<ImageIcon src={DRAWING_SPACE_ICON} alt="" size={22} />',
-    );
-    expect(source).toContain("filelist__title\">{HOME_APP_TITLE}</h1>");
     expect(htmlSource).toContain("<title>绘图空间</title>");
     expect(htmlSource).toContain('content="绘图空间"');
     expect(htmlSource).toContain('content="统一管理 excalidraw 与 mindmap。"');
@@ -31,15 +28,12 @@ describe("File list branding source contract", () => {
     expect(source).not.toContain("Excalidraw 私有部署");
   });
 
-  it("uses separate icons and plain editor names for document kinds", () => {
-    const source = fs.readFileSync(path.join(__dirname, "FileList.tsx"), "utf8");
+  it("uses editor registry icons and display names for document kinds", () => {
+    const source = fs.readFileSync(controllerPath, "utf8");
 
-    expect(source).toContain('const EXCALIDRAW_EDITOR_ICON = "/icons/excalidraw.svg"');
-    expect(source).toContain('const MINDMAP_EDITOR_ICON = "/icons/mindmap.ico"');
-    expect(source).toContain("<span>excalidraw</span>");
-    expect(source).toContain("<span>mindmap</span>");
-    expect(source).not.toContain("<span>Excalidraw 画布</span>");
-    expect(source).not.toContain("<span>MindMap 思维导图</span>");
+    expect(source).toContain("editorRegistry.getByKind(newDocumentKind)");
+    expect(source).toContain("plugin.displayName");
+    expect(source).toContain("listCreatable()");
   });
 
   it("ships icon assets for the home app and both editors", () => {
@@ -58,7 +52,7 @@ describe("File list branding source contract", () => {
   });
 
   it("does not show document type badges in file cards", () => {
-    const source = fs.readFileSync(path.join(__dirname, "FileList.tsx"), "utf8");
+    const source = fs.readFileSync(controllerPath, "utf8");
 
     expect(source).not.toContain("const DOCUMENT_KIND_LABELS");
     expect(source).not.toContain('excalidraw: "EXCALIDRAW"');

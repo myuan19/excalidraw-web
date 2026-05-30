@@ -1,13 +1,12 @@
 import Database from "better-sqlite3";
 import { existsSync, mkdirSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
+import { join } from "path";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-/** Persisted volume in Docker: `-v …:/var/lib/excalidraw` + `EXCALIDRAW_DATA_DIR=/var/lib/excalidraw` */
-const DATA_DIR = process.env.EXCALIDRAW_DATA_DIR
-  ? process.env.EXCALIDRAW_DATA_DIR
-  : join(__dirname, "data");
+import "./loadEnv.mjs";
+import { resolveDataDir } from "./config/dataDir.js";
+
+/** Docker: `-v …:/var/lib/excalidraw` + `EXCALIDRAW_DATA_DIR=/var/lib/excalidraw` */
+const DATA_DIR = resolveDataDir();
 
 if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 

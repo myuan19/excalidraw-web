@@ -11,14 +11,17 @@ packages/   @excalidraw/* libraries (excalidraw native runtime)
 public/     Static assets + public/mind-map/ iframe build
 lib/        Shared logger — lib/logger/ (core) + app/lib/ + server/lib/ adapters
 scripts/    Build tooling (_scripts/ = dev/deploy helpers, gitignored)
-deploy/     Docker + compose
-_archive/   Reference only — experiments, old shell, upstream docs
+deploy/     Docker + compose + legacy Vercel config
+tests/      Vitest global setup
+_references/   Reference only — experiments, old shell, upstream docs
 ```
+
+**Local data (dev only):** `_dev_data/` at repo root. **Logs:** `_dev_data/logs/` via `rotating-file-stream` (size + daily rotation, auto cleanup). See `server/config/logDir.js`.
 
 - **`packages/excalidraw/`** - Main React component library published to npm as `@excalidraw/excalidraw`
 - **`app/`** - Full-featured web application (excalidraw.com) that uses the library
 - **`packages/`** - Core packages: `@excalidraw/common`, `@excalidraw/element`, `@excalidraw/math`, `@excalidraw/utils`
-- **`_archive/`** - Archived experiments, old v0.3 shell, upstream examples/docs (not in active build)
+- **`_references/`** - Reference-only experiments, old v0.3 shell, upstream examples/docs (not in active build)
 
 ## Development Workflow
 

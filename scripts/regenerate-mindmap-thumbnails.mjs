@@ -15,9 +15,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { extname, join } from "node:path";
+import { resolveDevFilesRoot } from "./lib/devDataDir.mjs";
 
 const MIND_MAP_DIR = join(process.cwd(), "mind-map");
-const FILES_ROOT = join(process.cwd(), "server/data/files");
+const FILES_ROOT = resolveDevFilesRoot();
 const CHROMIUM_PATH = process.env.CHROMIUM_PATH || null;
 
 const MIME = {

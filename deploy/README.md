@@ -8,6 +8,7 @@ Docker and compose files for this fork. Build context is always the **repository
 | `Dockerfile.full` | Full stack: SPA + Express API + nginx |
 | `docker-compose.yml` | Upstream-style dev container |
 | `docker-compose.full.yml` | Production full-stack compose |
+| `vercel.json` | Legacy upstream Vercel headers/redirects (self-host uses Docker) |
 
 ```bash
 # Full stack (recommended for self-host)

@@ -1,3 +1,5 @@
+// @ts-expect-error Tailwind Vite plugin types require bundler moduleResolution
+import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
 import { defineConfig, loadEnv } from "vite";
@@ -11,8 +13,9 @@ import Sitemap from "vite-plugin-sitemap";
 
 import { woff2BrowserPlugin } from "../scripts/woff2/woff2-vite-plugins";
 
-/** server/data is API persistence, not source code — exclude from HMR watcher. */
-const serverDataDir = path.resolve(__dirname, "../server/data");
+/** Legacy in-repo dev data paths — exclude from Vite HMR if present */
+const devDataDir = path.resolve(__dirname, "../_dev_data");
+const legacyServerDataDir = path.resolve(__dirname, "../server/data");
 
 export default defineConfig(({ mode }) => {
   // To load .env variables
@@ -50,7 +53,7 @@ export default defineConfig(({ mode }) => {
       port: Number(envVars.VITE_APP_PORT || 3000),
       open: true,
       watch: {
-        ignored: [`${serverDataDir}/**`],
+        ignored: [`${devDataDir}/**`, `${legacyServerDataDir}/**`],
       },
       proxy: apiProxy,
     },
@@ -162,6 +165,7 @@ export default defineConfig(({ mode }) => {
       assetsInlineLimit: 0,
     },
     plugins: [
+      tailwindcss(),
       Sitemap({
         hostname: "https://excalidraw.com",
         outDir: "build",

@@ -24,5 +24,6 @@
 !public/mind-map/dist/**
 **/node_modules
 
-# 运行时数据不打包进镜像（通过卷挂载）
+# 运行时 / 开发数据不打包进镜像（通过卷挂载或使用 _dev_data 本地目录）
+_dev_data
 server/data

@@ -7,7 +7,7 @@
 在仓库根目录执行：
 
 ```bash
-for f in _archive/experiments/*/validate.mjs; do node "$f"; done
+for f in _references/experiments/*/validate.mjs; do node "$f"; done
 ```
 
 每个脚本会在对应目录生成 `result.json`。验证结论以各目录的 `README.md` 为准。

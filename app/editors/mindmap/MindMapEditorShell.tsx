@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AISettings } from "../../components/AISettings";
 import { ArchivePanel } from "../../components/ArchivePanel";
+import { APP_SHELL_GO_HOME } from "../../shell/Sidebar";
+import { buildViewHash, type AppView } from "../../shell/useAppView";
 import { EmbedTokenManager } from "../../components/EmbedTokenManager";
 import {
   ensureAIConfigLoaded,
@@ -640,6 +642,11 @@ const MindMapEditorShell = () => {
     return promise;
   }, [postToNative]);
 
+  const navigateToFileListHomeRef = useRef(() => {});
+  const navigateToFileListHome = useCallback(() => {
+    navigateToFileListHomeRef.current();
+  }, []);
+
   const {
     mindMapSaving,
     mindMapSaveHint,
@@ -657,12 +664,18 @@ const MindMapEditorShell = () => {
     getCurrentDocument: () => latestDocumentRef.current,
     requestNativeMindMapData: requestNativeSave,
     getFileName: () => fileName,
-    navigateToFileListHome: () => {
-      window.location.hash = "";
-    },
+    navigateToFileListHome,
     setErrorMessage: setError,
     setStatus,
   });
+
+  useEffect(() => {
+    navigateToFileListHomeRef.current = () => {
+      skipLeaveStashOnceRef.current = true;
+      window.location.hash = buildViewHash("home");
+      window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
+    };
+  }, [skipLeaveStashOnceRef]);
 
   const postMindMapAIConfig = useCallback(
     (reason: string) => {
@@ -1003,7 +1016,7 @@ const MindMapEditorShell = () => {
         return;
       }
       if (event.data.type === "hostRequestSave") {
-        void saveCurrentFileToServer({ source: "toolbar" });
+        void saveToServerRef.current({ source: "hotkey" });
         return;
       }
       if (event.data.type === "saveMindMapData") {
@@ -1218,29 +1231,36 @@ const MindMapEditorShell = () => {
   }, [fileId, sendInitPayload]);
 
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.key !== "s") {
-        return;
-      }
-      const target = event.target as HTMLElement | null;
-      const tag = target?.tagName;
-      if (
-        tag === "INPUT" ||
-        tag === "TEXTAREA" ||
-        (event as KeyboardEvent & { isComposing?: boolean }).isComposing
-      ) {
-        return;
-      }
-      if (!getFileIdFromHash()) {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      void saveToServerRef.current({ source: "hotkey" });
+    const onSave = () => void saveToServerRef.current({ source: "sidebar" });
+    const onHistory = () => setShowHistoryPanel(true);
+    const onEmbed = () => setShowEmbedManager(true);
+    const onShellGoHome = (event: Event) => {
+      const target = ((event as CustomEvent<{ target?: string }>).detail
+        ?.target ?? "home") as Exclude<AppView, "editor">;
+      navigateToFileListHomeRef.current = () => {
+        skipLeaveStashOnceRef.current = true;
+        window.location.hash = buildViewHash(target);
+        window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
+      };
+      void mindMapGoHomeWithServerSave();
     };
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [saveToServerRef]);
+    window.addEventListener("mindmap-host-request-save", onSave);
+    window.addEventListener("excalidraw-host-request-save", onSave);
+    window.addEventListener("mindmap-host-open-history", onHistory);
+    window.addEventListener("excalidraw-host-open-history", onHistory);
+    window.addEventListener("mindmap-host-open-embed", onEmbed);
+    window.addEventListener("excalidraw-host-open-embed", onEmbed);
+    window.addEventListener(APP_SHELL_GO_HOME, onShellGoHome);
+    return () => {
+      window.removeEventListener("mindmap-host-request-save", onSave);
+      window.removeEventListener("excalidraw-host-request-save", onSave);
+      window.removeEventListener("mindmap-host-open-history", onHistory);
+      window.removeEventListener("excalidraw-host-open-history", onHistory);
+      window.removeEventListener("mindmap-host-open-embed", onEmbed);
+      window.removeEventListener("excalidraw-host-open-embed", onEmbed);
+      window.removeEventListener(APP_SHELL_GO_HOME, onShellGoHome);
+    };
+  }, [mindMapGoHomeWithServerSave, saveToServerRef, skipLeaveStashOnceRef]);
 
   useEffect(() => {
     if (!fileId) {

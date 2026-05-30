@@ -60,7 +60,8 @@ import DebugCanvas, {
 import { AIComponents } from "../../components/AI";
 
 import { AppSidebar } from "../../components/AppSidebar";
-import { smallHouseIcon, toolbarSaveIcon, toolbarEmbedIcon } from "../../components/appToolbarIcons";
+import { APP_SHELL_GO_HOME } from "../../shell/Sidebar";
+import { buildViewHash, type AppView } from "../../shell/useAppView";
 import { EmbedTokenManager } from "../../components/EmbedTokenManager";
 import { ArchivePanel } from "../../components/ArchivePanel";
 import "../../components/ExcalToolbar.scss";
@@ -90,7 +91,6 @@ import {
 
 import { useBeforeUnloadGuard } from "../../hooks/useBeforeUnloadGuard";
 import { useForkFileSave } from "./useForkFileSave";
-import { useForkKeyboardShortcuts } from "../../hooks/useForkKeyboardShortcuts";
 import { useSceneInitialization } from "../../hooks/useSceneInitialization";
 
 const logInit = createLogger({ module: "init" });
@@ -337,12 +337,46 @@ const ExcalidrawWrapper = () => {
   useEffect(() => {
     navigateToFileListHomeRef.current = () => {
       skipLeaveStashOnceRef.current = true;
-      if (window.location.hash.startsWith("#file=")) {
-        window.location.hash = "";
-      }
+      window.location.hash = buildViewHash("home");
       window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
     };
   }, [skipLeaveStashOnceRef]);
+
+  useEffect(() => {
+    const onSave = () => void saveCurrentFileToServer({ source: "sidebar" });
+    const onHistory = () => setShowHistoryPanel(true);
+    const onEmbed = () => setShowEmbedManager(true);
+    const onShellGoHome = (event: Event) => {
+      const target = ((event as CustomEvent<{ target?: string }>).detail
+        ?.target ?? "home") as Exclude<AppView, "editor">;
+      navigateToFileListHomeRef.current = () => {
+        skipLeaveStashOnceRef.current = true;
+        window.location.hash = buildViewHash(target);
+        window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
+      };
+      void forkGoHomeWithServerSave();
+    };
+    window.addEventListener("excalidraw-host-request-save", onSave);
+    window.addEventListener("excalidraw-host-open-history", onHistory);
+    window.addEventListener("excalidraw-host-open-embed", onEmbed);
+    window.addEventListener("mindmap-host-request-save", onSave);
+    window.addEventListener("mindmap-host-open-history", onHistory);
+    window.addEventListener("mindmap-host-open-embed", onEmbed);
+    window.addEventListener(APP_SHELL_GO_HOME, onShellGoHome);
+    return () => {
+      window.removeEventListener("excalidraw-host-request-save", onSave);
+      window.removeEventListener("excalidraw-host-open-history", onHistory);
+      window.removeEventListener("excalidraw-host-open-embed", onEmbed);
+      window.removeEventListener("mindmap-host-request-save", onSave);
+      window.removeEventListener("mindmap-host-open-history", onHistory);
+      window.removeEventListener("mindmap-host-open-embed", onEmbed);
+      window.removeEventListener(APP_SHELL_GO_HOME, onShellGoHome);
+    };
+  }, [
+    forkGoHomeWithServerSave,
+    saveCurrentFileToServer,
+    skipLeaveStashOnceRef,
+  ]);
 
   // ---------------------------------------------------------------------------
   // Scene initialization hook
@@ -374,7 +408,7 @@ const ExcalidrawWrapper = () => {
     updateDraftHashDebounced: updateDraftHashDebouncedRef.current,
   });
 
-  useForkKeyboardShortcuts(saveToServerRef);
+  // Ctrl+S is handled by EditorPlatformSidebar (same as the ball save button).
 
   // ---------------------------------------------------------------------------
   // Misc lifecycle effects
@@ -645,66 +679,7 @@ const ExcalidrawWrapper = () => {
     };
   }, [forkFileId, persistLocalDraftToCache]);
 
-  const renderForkTopRightUI = useCallback(
-    (isMobile: boolean) => {
-      if (!forkFileId) {
-        return null;
-      }
-      return (
-        <div
-          className={
-            isMobile
-              ? "excal-fork-toolbar-stack excal-fork-toolbar-stack--phone excalidraw-ui-top-right"
-              : "excal-fork-toolbar-stack excalidraw-ui-top-right"
-          }
-        >
-          <div
-            className="excal-fork-toolbar-wrap"
-            role="toolbar"
-            aria-label="文件与保存"
-          >
-            <button
-              type="button"
-              className="excal-action-btn excal-btn-save"
-              disabled={forkSaving}
-              title="保存到服务器（Ctrl+S / ⌘S）"
-              aria-label="保存到服务器"
-              onClick={() => void saveCurrentFileToServer({ source: "toolbar" })}
-            >
-              {toolbarSaveIcon}
-              <span>{forkSaving ? "保存中…" : "保存"}</span>
-            </button>
-            <button
-              type="button"
-              className="excal-action-btn"
-              title="复制嵌入链接"
-              aria-label="复制嵌入链接"
-              onClick={() => setShowEmbedManager(true)}
-            >
-              {toolbarEmbedIcon}
-              <span>嵌入</span>
-            </button>
-            <button
-              type="button"
-              className="excal-action-btn excal-btn-stash excal-btn-home"
-              disabled={forkSaving}
-              title="主页（有未保存修改时将询问）"
-              onClick={() => void forkGoHomeWithServerSave()}
-            >
-              {smallHouseIcon}
-              <span>主页</span>
-            </button>
-          </div>
-          {forkSaveHint ? (
-            <div className="excal-fork-save-hint" role="status">
-              {forkSaveHint}
-            </div>
-          ) : null}
-        </div>
-      );
-    },
-    [forkFileId, forkSaving, forkSaveHint, saveCurrentFileToServer, forkGoHomeWithServerSave],
-  );
+  const renderForkTopRightUI = useCallback(() => null, []);
 
   const hideForkCanvasUntilFit = !!forkFileId && !forkCanvasRevealed;
 
@@ -752,7 +727,6 @@ const ExcalidrawWrapper = () => {
           theme={appTheme}
           setTheme={(theme) => setAppTheme(theme)}
           refresh={() => forceRefresh((prev) => !prev)}
-          onToggleHistory={() => setShowHistoryPanel((v) => !v)}
         />
         <AppWelcomeScreen />
         <OverwriteConfirmDialog>
@@ -778,24 +752,6 @@ const ExcalidrawWrapper = () => {
 
         <CommandPalette
           customCommandPaletteItems={[
-            {
-              label: "主页",
-              category: DEFAULT_CATEGORIES.app,
-              keywords: ["home", "list", "files", "主页", "返回"],
-              predicate: () => !!getFileIdFromHash(),
-              perform: () => {
-                void forkGoHomeWithServerSave();
-              },
-            },
-            {
-              label: "历史版本",
-              category: DEFAULT_CATEGORIES.app,
-              keywords: ["history", "version", "archive", "历史", "版本"],
-              predicate: () => !!getFileIdFromHash(),
-              perform: () => {
-                setShowHistoryPanel((v) => !v);
-              },
-            },
             {
               ...CommandPalette.defaultItems.toggleTheme,
               perform: () => {

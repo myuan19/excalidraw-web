@@ -1,0 +1,11 @@
+@import "tailwindcss";
+@plugin "@iconify/tailwind4";
+@import "./styles/tokens.css";
+@import "./styles/base.css";
+@import "./styles/layout.css";
+@import "./styles/app-components.css";
+@import "./styles/shell-components.css";
+@import "./styles/home-layout.css";
+@import "./styles/home-components.css";
+@import "./styles/settings-user.css";
+@import "./styles/ttd-chat.css";

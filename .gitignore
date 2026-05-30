@@ -28,12 +28,14 @@ html
 meta*.json
 .claude
 
-# Local API server runtime data (SQLite DB + user files)
+# Local dev persistence (SQLite + canvas JSON) — never commit or Docker-pack
+_dev_data/*
+!_dev_data/.gitkeep
 server/data/
 
 # Local-only dev/deploy helpers (not part of source)
 _scripts/
-docs/
+/docs/
 
 # Scratch notes at repo root
 /Untitled

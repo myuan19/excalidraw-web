@@ -3,7 +3,7 @@
     class="sidebarTriggerContainer "
     @click.stop
     :class="{ hasActive: show && activeSidebar, show: show, isDark: isDark }"
-    :style="{ maxHeight: maxHeight + 'px' }"
+    :style="containerStyle"
   >
     <div class="toggleShowBtn" :class="{ hide: !show }" @click="show = !show">
       <span class="iconfont iconjiantouyou"></span>
@@ -26,16 +26,24 @@
 <script>
 import { mapState, mapMutations } from 'vuex'
 import { sidebarTriggerList } from '@/config'
+import { getSidebarTopMargin, SIDEBAR_BOTTOM_MARGIN } from '@/utils/sidebarLayout'
 
 // 侧边栏触发器
 export default {
   data() {
     return {
       show: true,
-      maxHeight: 0
+      maxHeight: 0,
+      topMargin: 110
     }
   },
   computed: {
+    containerStyle() {
+      return {
+        maxHeight: `${this.maxHeight}px`,
+        top: `${this.topMargin}px`
+      }
+    },
     ...mapState({
       isDark: state => state.localConfig.isDark,
       activeSidebar: state => state.activeSidebar,
@@ -65,6 +73,11 @@ export default {
       }
     }
   },
+  mounted() {
+    this.$nextTick(() => {
+      this.updateSize()
+    })
+  },
   created() {
     window.addEventListener('resize', this.onResize)
     this.updateSize()
@@ -84,9 +97,9 @@ export default {
     },
 
     updateSize() {
-      const topMargin = 110
-      const bottomMargin = 80
-      this.maxHeight = window.innerHeight - topMargin - bottomMargin
+      this.topMargin = getSidebarTopMargin()
+      this.maxHeight =
+        window.innerHeight - this.topMargin - SIDEBAR_BOTTOM_MARGIN
     }
   }
 }
@@ -95,7 +108,6 @@ export default {
 <style lang="less" scoped>
 .sidebarTriggerContainer {
   position: fixed;
-  top: 110px;
   bottom: 80px;
   right: -60px;
   transition: all 0.3s;

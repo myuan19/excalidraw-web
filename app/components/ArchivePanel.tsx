@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
-import { FileSyncState } from "../data/FileSyncState";
 import { ServerSync, type ArchiveEntry } from "../data/ServerSync";
+import { useFileDraftStatus } from "../hooks/useFileDraftStatus";
 
 import "./ExcalToolbar.scss";
 
@@ -28,8 +28,8 @@ export const ArchivePanel: React.FC<ArchivePanelProps> = ({
 }) => {
   const [versions, setVersions] = useState<ArchiveEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [, syncBump] = useState(0);
   const overlayRef = useRef<HTMLDivElement | null>(null);
+  const { unsaved, label: draftStatusLabel } = useFileDraftStatus(fileId);
 
   const refresh = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -58,57 +58,11 @@ export const ArchivePanel: React.FC<ArchivePanelProps> = ({
   }, [refresh]);
 
   useEffect(() => {
-    const overlay = overlayRef.current;
-    if (!overlay) {
-      console.log("[DEBUG] ArchivePanel | overlay ref missing", { fileId });
-      return;
-    }
-    const panel = overlay.querySelector(".nb-history-panel");
-    const overlayStyle = window.getComputedStyle(overlay);
-    const panelStyle =
-      panel instanceof HTMLElement ? window.getComputedStyle(panel) : null;
-    const overlayRect = overlay.getBoundingClientRect();
-    const centerElement = document.elementFromPoint(
-      overlayRect.left + overlayRect.width / 2,
-      overlayRect.top + overlayRect.height / 2,
-    );
-    console.log("[DEBUG] ArchivePanel | mounted", {
-      fileId,
-      overlayBackground: overlayStyle.background,
-      overlayBackgroundColor: overlayStyle.backgroundColor,
-      overlayZIndex: overlayStyle.zIndex,
-      overlayPosition: overlayStyle.position,
-      overlayDisplay: overlayStyle.display,
-      overlayOpacity: overlayStyle.opacity,
-      panelBackground: panelStyle?.background,
-      panelBackgroundColor: panelStyle?.backgroundColor,
-      panelZIndex: panelStyle?.zIndex,
-      panelOpacity: panelStyle?.opacity,
-      panelBackdropFilter: panelStyle?.backdropFilter,
-      centerElementTag: centerElement?.tagName ?? null,
-      centerElementClass:
-        centerElement instanceof HTMLElement ? centerElement.className : null,
-      cssVars: {
-        zIndexPopup: overlayStyle.getPropertyValue("--zIndex-popup").trim(),
-        islandBgColor: overlayStyle.getPropertyValue("--island-bg-color").trim(),
-      },
-      rect: overlayRect.toJSON(),
-    });
-  }, [fileId]);
-
-  useEffect(() => {
     const onSaved = () => void refresh({ silent: true });
     window.addEventListener("excalidraw-server-saved", onSaved);
     return () =>
       window.removeEventListener("excalidraw-server-saved", onSaved);
   }, [refresh]);
-
-  useEffect(() => {
-    const bump = () => syncBump((n) => n + 1);
-    window.addEventListener("excalidraw-file-sync-state", bump);
-    return () =>
-      window.removeEventListener("excalidraw-file-sync-state", bump);
-  }, []);
 
   const handleRestore = async (archiveId: string) => {
     if (
@@ -123,8 +77,6 @@ export const ArchivePanel: React.FC<ArchivePanelProps> = ({
       alert(`恢复失败：${e.message}`);
     }
   };
-
-  const unsaved = FileSyncState.hasUnsavedChanges(fileId);
 
   return (
     <div
@@ -168,7 +120,7 @@ export const ArchivePanel: React.FC<ArchivePanelProps> = ({
                   : "nb-history-badge nb-history-badge--synced"
               }
             >
-              {unsaved ? "未保存" : "无修改"}
+              {draftStatusLabel}
             </span>
           </div>
 

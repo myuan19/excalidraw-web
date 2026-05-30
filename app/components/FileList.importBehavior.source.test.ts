@@ -8,7 +8,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 describe("FileList import behavior source contract", () => {
   it("does not auto-open MindMap files after import", () => {
-    const source = fs.readFileSync(path.join(__dirname, "FileList.tsx"), "utf8");
+    const source = fs.readFileSync(
+      path.join(__dirname, "../hooks/useFileListController.tsx"),
+      "utf8",
+    );
     const importBranch = source.slice(
       source.indexOf("const importDocumentFiles = useCallback"),
       source.indexOf("const onSceneImportInputChange"),
