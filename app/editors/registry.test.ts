@@ -4,26 +4,38 @@ import {
   createEditorRegistry,
   editorRegistry,
 } from "./registry";
-import { excalidrawEditorDefinition } from "./excalidraw";
-import { mindMapEditorDefinition } from "./mindmap";
+import { excalidrawPlugin } from "./excalidraw";
+import { mindMapPlugin } from "./mindmap";
 
 describe("editor registry", () => {
   it("looks up registered editors by kind and extension", () => {
     const registry = createEditorRegistry([
-      excalidrawEditorDefinition,
-      mindMapEditorDefinition,
+      excalidrawPlugin,
+      mindMapPlugin,
     ]);
 
-    expect(registry.getByKind("excalidraw")).toBe(excalidrawEditorDefinition);
-    expect(registry.getByKind("mindmap")).toBe(mindMapEditorDefinition);
-    expect(registry.getByExtension(".excalidraw")).toBe(
-      excalidrawEditorDefinition,
-    );
-    expect(registry.getByExtension(".smm")).toBe(mindMapEditorDefinition);
+    expect(registry.getByKind("excalidraw")).toBe(excalidrawPlugin);
+    expect(registry.getByKind("mindmap")).toBe(mindMapPlugin);
+    expect(registry.getByExtension(".excalidraw")).toBe(excalidrawPlugin);
+    expect(registry.getByExtension(".smm")).toBe(mindMapPlugin);
   });
 
-  it("exposes the app editors as parallel definitions", () => {
+  it("exposes the app editors as parallel plugins", () => {
     expect(editorRegistry.list().map((editor) => editor.kind)).toEqual([
+      "excalidraw",
+      "mindmap",
+    ]);
+  });
+
+  it("builds file hashes from the default kind", () => {
+    expect(editorRegistry.buildFileHash("abc")).toBe("#file=abc");
+    expect(editorRegistry.buildFileHash("abc", "mindmap")).toBe(
+      "#file=abc&kind=mindmap",
+    );
+  });
+
+  it("lists creatable editors with createFile hooks", () => {
+    expect(editorRegistry.listCreatable().map((plugin) => plugin.kind)).toEqual([
       "excalidraw",
       "mindmap",
     ]);

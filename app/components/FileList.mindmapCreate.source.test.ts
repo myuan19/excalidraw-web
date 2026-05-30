@@ -6,32 +6,30 @@ import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-describe("FileList MindMap creation source contract", () => {
+describe("MindMap editor plugin host actions", () => {
   it("creates MindMap files with an eagerly saved thumbnail", () => {
-    const source = fs.readFileSync(path.join(__dirname, "FileList.tsx"), "utf8");
-    const mindMapBranch = source.slice(
-      source.indexOf('if (newDocumentKind === "mindmap")'),
-      source.indexOf("const id = await createFileOnServer"),
+    const source = fs.readFileSync(
+      path.join(__dirname, "../editors/mindmap/hostActions.ts"),
+      "utf8",
     );
 
-    expect(mindMapBranch).toContain("const mindMapData = MindMapAdapter.createEmpty()");
-    expect(mindMapBranch).toContain("generateMindMapThumbnailAndCache");
-    expect(mindMapBranch).toContain(
+    expect(source).toContain("const mindMapData = MindMapAdapter.createEmpty()");
+    expect(source).toContain("generateMindMapThumbnailAndCache");
+    expect(source).toContain(
       "await ServerSync.saveFileImmediate(created.id, document, name, thumbnail)",
     );
   });
 
   it("imports MindMap files with the same eager thumbnail save path", () => {
-    const source = fs.readFileSync(path.join(__dirname, "FileList.tsx"), "utf8");
-    const importBranch = source.slice(
-      source.indexOf('if (detected.kind !== "excalidraw")'),
-      source.indexOf("const { elements, appState, files: sceneFiles }"),
+    const source = fs.readFileSync(
+      path.join(__dirname, "../editors/mindmap/hostActions.ts"),
+      "utf8",
     );
 
-    expect(importBranch).toContain('adapter.kind === "mindmap"');
-    expect(importBranch).toContain("generateMindMapThumbnailAndCache");
-    expect(importBranch).toContain(
-      "await ServerSync.saveFileImmediate(\n              created.id,\n              document,\n              sanitizeFileBaseName(file.name),\n              thumbnail,",
+    expect(source).toContain("saveMindMapBrowserViewFromData");
+    expect(source).toContain("generateMindMapThumbnailAndCache");
+    expect(source).toContain(
+      "await ServerSync.saveFileImmediate(\n    created.id,\n    document,\n    fileName,\n    thumbnail,",
     );
   });
 });

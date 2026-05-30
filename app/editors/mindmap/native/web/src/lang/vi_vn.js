@@ -131,7 +131,6 @@ export default {
     copyToClipboard: 'Sao chép vào clipboard',
     copyToSmm: 'SMM',
     copyToJson: 'JSON',
-    copyToMarkdown: 'Markdown',
     copyToTxt: 'Txt',
     copyToPng: 'Png',
     copySuccess: 'Sao chép thành công',
@@ -163,7 +162,6 @@ export default {
     imageFile: 'Tệp hình ảnh',
     svgFile: 'Tệp svg',
     pdfFile: 'Tệp pdf',
-    markdownFile: 'Tệp markdown',
     isTransparent: 'Nền là trong suốt',
     transformingDomToImages: 'Đang chuyển đổi nút: ',
     notifyTitle: 'Thông tin',
@@ -198,10 +196,7 @@ export default {
     fileContentError: 'Nội dung tệp không chính xác',
     importSuccess: 'Nhập thành công',
     fileParsingFailed: 'Phân tích tệp thất bại',
-    xmindCanvasSelectDialogTitle: 'Chọn canvas để nhập',
-    mdImportDialogTitle: 'Dán nội dung Markdown để nhập',
-    mdPlaceholder: 'Vui lòng nhập nội dung ở định dạng Markdown',
-    mdEmptyTip: 'Nội dung không được trống'
+    xmindCanvasSelectDialogTitle: 'Chọn canvas để nhập'
   },
   navigatorToolbar: {
     openMiniMap: 'Mở bản đồ thu nhỏ',
@@ -532,13 +527,13 @@ export default {
     configurationMissing: 'Thiếu cấu hình',
     aiCreateMsgPrefix: 'Giúp tôi viết một【',
     aiCreateMsgPostfix:
-      '】. Nó cần được trả về ở định dạng Markdown và chỉ có thể sử dụng hai cú pháp: tiêu đề Markdown và danh sách không có thứ tự. Nó có thể hỗ trợ nhiều lớp lồng nhau. Chỉ cần trả về nội dung.',
+      '】. Chỉ trả về một JSON object dạng {"data":{"text":"Chủ đề"},"children":[{"data":{"text":"Con"},"children":[]}]}. Không thêm văn bản khác.',
     aiCreatePartMsgPrefix: 'Tôi có một chủ đề là【',
     aiCreatePartMsgCenter:
       '】Bạn có thể giúp tôi tiếp tục viết một trong những nội dung của sơ đồ tư duy【',
     aiCreatePartMsgPostfix: '】Nội dung phụ thuộc của nút',
     aiCreatePartMsgHelp:
-      '. Cần được trả về ở định dạng Markdown và chỉ có thể sử dụng hai cú pháp: tiêu đề Markdown và danh sách không có thứ tự. Nó có thể hỗ trợ lồng ghép nhiều cấp độ. Chỉ cần trả về nội dung.',
+      '. Chỉ trả về JSON dạng {"data":{"text":"Tiêu đề nút"},"children":[{"data":{"text":"Con"},"children":[]}]}, trong đó children là các nút con cần thêm. Không thêm văn bản khác.',
     aiCreatePart: 'AI Tiếp tục'
   },
   note: {

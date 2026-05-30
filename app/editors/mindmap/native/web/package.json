@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "postinstall": "node scripts/verifyInstall.js",
     "serve": "vue-cli-service serve",
     "watch:sync": "NODE_OPTIONS=--openssl-legacy-provider chokidar \"src/**/*\" \"public/index.html\" \"../simple-mind-map/src/**/*\" -i \"**/node_modules/**\" -c \"npm run build\"",
     "build": "vue-cli-service build && node ../copy.js",
@@ -43,8 +42,6 @@
     "express": "^4.21.2",
     "less": "^3.12.2",
     "less-loader": "^7.1.0",
-    "markdown-it": "^13.0.1",
-    "markdown-it-checkbox": "^1.1.0",
     "prettier": "^1.19.1",
     "vconsole": "^3.15.1",
     "vue-template-compiler": "^2.6.11",

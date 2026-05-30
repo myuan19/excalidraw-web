@@ -1,5 +1,4 @@
 import { CONSTANTS } from './constant'
-import { getRenderedMarkdownCss } from '../plugins/markdown/markdownStyles'
 
 // 默认选项配置
 export const defaultOpt = {
@@ -183,6 +182,9 @@ export const defaultOpt = {
   onlyOneEnableActiveNodeOnCooperate: false,
   // 插入概要的默认文本
   defaultGeneralizationText: '概要',
+  // 粘贴文本的方式创建新节点时，控制是否按换行自动分割节点，即如果存在换行，那么会根据换行创建多个节点，否则只会创建一个节点
+  // 可以传递一个函数，返回promise，resolve代表根据换行分割，reject代表忽略换行
+  handleIsSplitByWrapOnPasteCreateNewNode: null,
   // 多少时间内只允许添加一次历史记录，避免添加没有必要的中间状态，单位：ms
   addHistoryTime: 100,
   // 是否禁止拖动画布
@@ -387,8 +389,6 @@ export const defaultOpt = {
       padding: 0;
       box-sizing: border-box;
     }
-
-    ${getRenderedMarkdownCss()}
   `,
   // 导出图片时canvas的缩放倍数，该配置会和window.devicePixelRatio值取最大值
   minExportImgCanvasScale: 2,

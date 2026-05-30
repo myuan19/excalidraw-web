@@ -9,7 +9,7 @@ app/        Host app — file list, editor shells, sync, embed (see app/editors/
 server/     API + SQLite + file storage
 packages/   @excalidraw/* libraries (excalidraw native runtime)
 public/     Static assets + public/mind-map/ iframe build
-lib/        Shared logger
+lib/        Shared logger — lib/logger/ (core) + app/lib/ + server/lib/ adapters
 scripts/    Build tooling (_scripts/ = dev/deploy helpers, gitignored)
 deploy/     Docker + compose
 _archive/   Reference only — experiments, old shell, upstream docs

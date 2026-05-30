@@ -9,12 +9,6 @@ import {
   camelCaseToHyphen,
   getNodeRichTextStyles
 } from '../../../utils'
-import {
-  debugMindMap,
-  summarizeHtml,
-  summarizeNodeForDebug
-} from '../../../utils/mindMapDebug'
-import { resolveNodeRenderHtml } from '../../../plugins/markdown/markdownStorage'
 import { Image as SVGImage, SVG, A, G, Rect, Text } from '@svgdotjs/svg.js'
 import iconsSvg from '../../../svg/icons'
 import { noneRichTextNodeLineHeight } from '../../../constants/constant'
@@ -141,9 +135,9 @@ function createIconNode() {
 
 // 创建富文本节点
 function createRichTextNode(specifyText) {
-  const start = performance.now()
   const hasCustomWidth = this.hasCustomWidth()
-  let text = resolveNodeRenderHtml(this, specifyText)
+  let text =
+    typeof specifyText === 'string' ? specifyText : this.getData('text')
   let { textAutoWrapWidth, emptyTextMeasureHeightText } = this.mindMap.opt
   textAutoWrapWidth = hasCustomWidth ? this.customTextWidth : textAutoWrapWidth
   const g = new G()
@@ -192,7 +186,7 @@ function createRichTextNode(specifyText) {
   const html = `<div>${text}</div>`
   div.innerHTML = html
   const el = div.children[0]
-  el.classList.add('smm-richtext-node-wrap', 'ql-editor')
+  el.classList.add('smm-richtext-node-wrap')
   addXmlns(el)
   el.style.maxWidth = textAutoWrapWidth + 'px'
   if (hasCustomWidth) {
@@ -205,20 +199,12 @@ function createRichTextNode(specifyText) {
   if (height <= 0) {
     div.innerHTML = `<p>${emptyTextMeasureHeightText}</p>`
     let elTmp = div.children[0]
-    elTmp.classList.add('smm-richtext-node-wrap', 'ql-editor')
+    elTmp.classList.add('smm-richtext-node-wrap')
     height = elTmp.getBoundingClientRect().height
     div.innerHTML = html
   }
   width = Math.min(Math.ceil(width) + 1, textAutoWrapWidth) // 修复getBoundingClientRect方法对实际宽度是小数的元素获取到的值是整数，导致宽度不够文本发生换行的问题
   height = Math.ceil(height)
-  debugMindMap('mindmap-render', 'createRichTextNode measured', {
-    elapsed: Math.round(performance.now() - start),
-    node: summarizeNodeForDebug(this),
-    hasCustomWidth,
-    textAutoWrapWidth,
-    measured: { width, height },
-    text: summarizeHtml(text)
-  })
   g.attr('data-width', width)
   g.attr('data-height', height)
   const foreignObject = createForeignObjectNode({

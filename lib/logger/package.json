@@ -1,0 +1,9 @@
+{
+  "name": "@excalidraw-web/logger",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./core.js",
+    "./core.js": "./core.js"
+  }
+}

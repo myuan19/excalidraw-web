@@ -79,7 +79,7 @@ export default {
     // 显示备注浮层
     onShowNoteContent(content, left, top, node) {
       this.node = node
-      this.editor.setMarkdown(content)
+      this.editor.setHTML(content)
       this.handleALink()
       this.updateNoteContentPosition(left, top)
       this.show = true

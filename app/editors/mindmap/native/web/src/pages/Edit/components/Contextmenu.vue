@@ -99,18 +99,6 @@
       <div class="item" @click="exec('REMOVE_NOTE')" v-if="hasNote">
         <span class="name">{{ $t('contextmenu.removeNote') }}</span>
       </div>
-      <div class="item" @click="exec('CONVERT_HYPERLINK_TO_INLINE')" v-if="hasHyperlink">
-        <span class="name">将节点链接转为文内链接</span>
-      </div>
-      <div class="item" @click="exec('CONVERT_INLINE_LINK_TO_HYPERLINK')" v-if="hasInlineLink">
-        <span class="name">将文内链接提取为节点链接</span>
-      </div>
-      <div class="item" @click="exec('CONVERT_NODE_IMAGE_TO_INLINE')" v-if="hasNodeImage">
-        <span class="name">将节点图片转为内联图片</span>
-      </div>
-      <div class="item" @click="exec('CONVERT_INLINE_IMAGE_TO_NODE')" v-if="hasInlineImage">
-        <span class="name">将内联图片提取为节点图片</span>
-      </div>
       <div class="item" @click="exec('REMOVE_CUSTOM_STYLES')">
         <span class="name">{{ $t('contextmenu.removeCustomStyles') }}</span>
       </div>
@@ -196,7 +184,6 @@
 <script>
 import { mapState, mapMutations } from 'vuex'
 import { getTextFromHtml, imgToDataUrl } from 'simple-mind-map/src/utils'
-import { transformToMarkdown } from 'simple-mind-map/src/parse/toMarkdown'
 import { transformToTxt } from 'simple-mind-map/src/parse/toTxt'
 import { setDataToClipboard, setImgToClipboard, copy } from '@/utils'
 import { numberTypeList, numberLevelList } from '@/config'
@@ -250,10 +237,6 @@ export default {
         {
           name: this.$t('contextmenu.copyToJson'),
           value: 'json'
-        },
-        {
-          name: this.$t('contextmenu.copyToMarkdown'),
-          value: 'md'
         },
         {
           name: this.$t('contextmenu.copyToTxt'),
@@ -313,19 +296,6 @@ export default {
     },
     hasNodeLink() {
       return !!this.node.getData('nodeLink')
-    },
-    hasInlineLink() {
-      const markdown = this.node.getData('markdown')
-      if (typeof markdown !== 'string') return false
-      return /\[([^\]]*)\]\(([^)]+)\)/.test(markdown)
-    },
-    hasNodeImage() {
-      return !!this.node.getData('image')
-    },
-    hasInlineImage() {
-      const markdown = this.node.getData('markdown')
-      if (typeof markdown !== 'string') return false
-      return /!\[([^\]]*)\]\(([^)]+)\)/.test(markdown)
     }
   },
   created() {
@@ -469,18 +439,6 @@ export default {
         case 'REMOVE_NOTE':
           this.node.setNote('')
           break
-        case 'CONVERT_HYPERLINK_TO_INLINE':
-          this.mindMap.execCommand('CONVERT_HYPERLINK_TO_INLINE', this.node)
-          break
-        case 'CONVERT_INLINE_LINK_TO_HYPERLINK':
-          this.mindMap.execCommand('CONVERT_INLINE_LINK_TO_HYPERLINK', this.node)
-          break
-        case 'CONVERT_NODE_IMAGE_TO_INLINE':
-          this.mindMap.execCommand('CONVERT_NODE_IMAGE_TO_INLINE', this.node)
-          break
-        case 'CONVERT_INLINE_IMAGE_TO_NODE':
-          this.mindMap.execCommand('CONVERT_INLINE_IMAGE_TO_NODE', this.node)
-          break
         case 'EXPORT_CUR_NODE_TO_PNG':
           this.mindMap.export(
             'png',
@@ -516,10 +474,6 @@ export default {
             data = this.mindMap.getData(true)
             str = JSON.stringify(data)
             break
-          case 'md':
-            data = this.mindMap.getData()
-            str = transformToMarkdown(data)
-            break
           case 'txt':
             data = this.mindMap.getData()
             str = transformToTxt(data)
@@ -527,14 +481,14 @@ export default {
           case 'png':
             const png = await this.mindMap.export('png', false)
             const blob = await imgToDataUrl(png, true)
-            await setImgToClipboard(blob)
+            setImgToClipboard(blob)
             break
           default:
             break
         }
         if (str) {
           if (this.enableCopyToClipboardApi) {
-            await setDataToClipboard(str)
+            setDataToClipboard(str)
           } else {
             copy(str)
           }

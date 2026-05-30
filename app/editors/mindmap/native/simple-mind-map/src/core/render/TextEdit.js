@@ -1,5 +1,6 @@
 import {
   getStrWithBrFromHtml,
+  checkNodeOuter,
   focusInput,
   selectAllInput,
   htmlEscape,
@@ -14,7 +15,6 @@ import {
   CONSTANTS,
   noneRichTextNodeLineHeight
 } from '../../constants/constant'
-import { debugMindMap, summarizeNodeForDebug } from '../../utils/mindMapDebug'
 
 const SMM_NODE_EDIT_WRAP = 'smm-node-edit-wrap'
 
@@ -45,22 +45,8 @@ export default class TextEdit {
     this.show = this.show.bind(this)
     this.onScale = this.onScale.bind(this)
     this.onKeydown = this.onKeydown.bind(this)
-    this.mindMap.on('node_edit_request', (node, e) => {
-      debugMindMap('mindmap-edit', 'node_edit_request received', {
-        node: summarizeNodeForDebug(node),
-        hasRichTextPlugin: !!this.mindMap.richText,
-        openRealtimeRenderOnNodeTextEdit: this.mindMap.opt.openRealtimeRenderOnNodeTextEdit
-      })
-      this.show({ node, e })
-    })
     // 节点双击事件
     this.mindMap.on('node_dblclick', (node, e, isInserting) => {
-      debugMindMap('mindmap-edit', 'node_dblclick received', {
-        node: summarizeNodeForDebug(node),
-        isInserting: !!isInserting,
-        hasRichTextPlugin: !!this.mindMap.richText,
-        openRealtimeRenderOnNodeTextEdit: this.mindMap.opt.openRealtimeRenderOnNodeTextEdit
-      })
       this.show({ node, e, isInserting })
     })
     // 点击事件
@@ -225,49 +211,16 @@ export default class TextEdit {
   // isFromKeyDown：是否是在按键事件进入的编辑
   async show({
     node,
-    e = null,
     isInserting = false,
     isFromKeyDown = false,
     isFromScale = false
   }) {
-    const start = performance.now()
-    debugMindMap('mindmap-edit', 'TextEdit.show start', {
-      node: summarizeNodeForDebug(node),
-      isInserting,
-      isFromKeyDown,
-      isFromScale,
-      hasRichTextPlugin: !!this.mindMap.richText
-    })
     // 使用了自定义节点内容那么不响应编辑事件
     if (node.isUseCustomNodeContent()) {
-      debugMindMap('mindmap-edit', 'TextEdit.show skipped: custom node content', {
-        node: summarizeNodeForDebug(node)
-      })
       return
     }
     // 如果有正在编辑中的节点，那么先结束它
     const currentEditNode = this.getCurrentEditNode()
-    if (currentEditNode === node) {
-      if (this.mindMap.richText && e) {
-        debugMindMap(
-          'mindmap-edit',
-          'TextEdit.show refocus same rich text node',
-          {
-            node: summarizeNodeForDebug(node)
-          }
-        )
-        this.mindMap.richText.focusQuillAtPoint(e)
-        return
-      }
-      debugMindMap(
-        'mindmap-edit',
-        'TextEdit.show skipped: same node already editing',
-        {
-          node: summarizeNodeForDebug(node)
-        }
-      )
-      return
-    }
     if (currentEditNode) {
       this.hideEditTextBox()
     }
@@ -281,57 +234,33 @@ export default class TextEdit {
         isShow = false
         this.mindMap.opt.errorHandler(ERROR_TYPES.BEFORE_TEXT_EDIT_ERROR, error)
       }
-      if (!isShow) {
-        debugMindMap('mindmap-edit', 'TextEdit.show blocked by beforeTextEdit', {
-          node: summarizeNodeForDebug(node)
-        })
-        return
-      }
+      if (!isShow) return
     }
-    const viewBeforeEdit = this.mindMap.view.getTransformData()
+    const { offsetLeft, offsetTop } = checkNodeOuter(this.mindMap, node)
+    this.mindMap.view.translateXY(offsetLeft, offsetTop)
     const g = node._textData.node
     // 需要先显示，不然宽高获取到的可能是0
-    g.show()
+    if (openRealtimeRenderOnNodeTextEdit) {
+      g.show()
+    }
     const rect = g.node.getBoundingClientRect()
-    debugMindMap('mindmap-edit', 'TextEdit.show measured node text', {
-      node: summarizeNodeForDebug(node),
-      rect: {
-        left: Math.round(rect.left),
-        top: Math.round(rect.top),
-        width: Math.round(rect.width),
-        height: Math.round(rect.height)
-      },
-      openRealtimeRenderOnNodeTextEdit,
-      viewBeforeEdit,
-      viewAfterEdit: this.mindMap.view.getTransformData(),
-      elapsed: Math.round(performance.now() - start)
-    })
-    // 富文本编辑时由 Quill 编辑层承载可见文字和光标，避免两层排版错位。
-    if (this.mindMap.richText) {
+    // 如果开启了大小实时更新，那么直接隐藏节点原文本
+    if (openRealtimeRenderOnNodeTextEdit) {
       g.hide()
     }
     const params = {
       node,
       rect,
-      e,
       isInserting,
       isFromKeyDown,
       isFromScale
     }
     if (this.mindMap.richText) {
       this.mindMap.richText.showEditText(params)
-      debugMindMap('mindmap-edit', 'TextEdit.show delegated to RichText', {
-        node: summarizeNodeForDebug(node),
-        elapsed: Math.round(performance.now() - start)
-      })
       return
     }
     this.currentNode = node
     this.showEditTextBox(params)
-    debugMindMap('mindmap-edit', 'TextEdit.show plain editor shown', {
-      node: summarizeNodeForDebug(node),
-      elapsed: Math.round(performance.now() - start)
-    })
   }
 
   // 当openRealtimeRenderOnNodeTextEdit配置更新后需要更新编辑框样式
@@ -368,7 +297,7 @@ export default class TextEdit {
   }
 
   //  显示文本编辑框
-  showEditTextBox({ node, rect, e, isInserting, isFromKeyDown, isFromScale }) {
+  showEditTextBox({ node, rect, isInserting, isFromKeyDown, isFromScale }) {
     if (this.showTextEdit) return
     const {
       nodeTextEditZIndex,
@@ -472,26 +401,10 @@ export default class TextEdit {
     // }
     if (isInserting || (selectTextOnEnterEditText && !isFromKeyDown)) {
       selectAllInput(this.textEditNode)
-    } else if (e) {
-      this.focusPlainTextAtPoint(e)
     } else {
       focusInput(this.textEditNode)
     }
     this.cacheEditingText = ''
-  }
-
-  focusPlainTextAtPoint(e) {
-    this.textEditNode.focus()
-    const range = document.caretRangeFromPoint
-      ? document.caretRangeFromPoint(e.clientX, e.clientY)
-      : null
-    if (!range || !this.textEditNode.contains(range.startContainer)) {
-      focusInput(this.textEditNode)
-      return
-    }
-    const selection = window.getSelection()
-    selection.removeAllRanges()
-    selection.addRange(range)
   }
 
   // 派发节点文本编辑事件

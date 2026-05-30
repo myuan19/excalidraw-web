@@ -303,7 +303,7 @@ export default {
         const fileList = []
         for await (const [key, value] of dirHandle.entries()) {
           const isFile = value.kind === 'file'
-          if (isFile && !/\.(smm|xmind|md|json)$/.test(value.name)) {
+          if (isFile && !/\.(smm|xmind|json)$/.test(value.name)) {
             continue
           }
           const enableEdit = isFile && /\.smm$/.test(value.name)

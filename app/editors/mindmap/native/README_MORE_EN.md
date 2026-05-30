@@ -7,7 +7,7 @@
 - [x] Nodes support drag-and-drop (move, free resize), multiple node shapes; supports extending node content, supports using DDM for fully custom node content.
 - [x] Supports canvas dragging and zooming.
 - [x] Supports two methods for multi-selecting nodes: mouse button drag selection and Ctrl+left click.
-- [x] Supports export to `json`, `png`, `svg`, `pdf`, `markdown`, `xmind`, `txt`; supports import from `json`, `xmind`, `markdown`.
+- [x] Supports export to `json`, `png`, `svg`, `pdf`, `xmind`, `txt`; supports import from `json`, `xmind`.
 - [x] Supports shortcuts, undo/redo, associative lines, search/replace, mini-map, watermark, scrollbars, hand-drawn style, rainbow lines, markers, outer frames.
 - [x] Provides rich configuration options to meet various scenarios and usage habits.
 - [x] Supports collaborative editing.

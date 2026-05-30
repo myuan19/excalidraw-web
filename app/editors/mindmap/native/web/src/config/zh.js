@@ -585,12 +585,6 @@ export const downTypeList = [
     desc: '适合查看浏览和打印'
   },
   {
-    name: 'Markdown',
-    type: 'md',
-    icon: 'iconmarkdown',
-    desc: 'md文本格式，便于其他软件打开'
-  },
-  {
     name: 'XMind',
     type: 'xmind',
     icon: 'iconxmind',

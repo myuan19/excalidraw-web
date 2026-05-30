@@ -21,13 +21,11 @@ import OuterFrame from './src/plugins/OuterFrame.js'
 import MindMapLayoutPro from './src/plugins/MindMapLayoutPro.js'
 import NodeBase64ImageStorage from './src/plugins/NodeBase64ImageStorage.js'
 import xmind from './src/parse/xmind.js'
-import markdown from './src/parse/markdown.js'
 import icons from './src/svg/icons.js'
 import * as constants from './src/constants/constant.js'
 import * as defaultTheme from './src/theme/default.js'
 
 MindMap.xmind = xmind
-MindMap.markdown = markdown
 MindMap.iconList = icons.nodeIconList
 MindMap.constants = constants
 MindMap.defaultTheme = defaultTheme

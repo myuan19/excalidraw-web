@@ -2,6 +2,7 @@ import {
   isManagedDocument,
   isLegacyExcalidrawScene,
 } from "../documentTypes";
+import { editorRegistry } from "../../editors/registry";
 import { MindMapAdapter } from "./MindMapAdapter";
 import { TextAdapter } from "./TextAdapter";
 
@@ -125,5 +126,8 @@ export async function detectFormat(file: File): Promise<DetectedDocumentFormat> 
 }
 
 export function isKnownDocumentKind(kind: string): kind is DocumentKind {
-  return kind === "excalidraw" || kind === "mindmap" || kind === "text";
+  return (
+    editorRegistry.getByKind(kind) != null ||
+    kind === "text"
+  );
 }

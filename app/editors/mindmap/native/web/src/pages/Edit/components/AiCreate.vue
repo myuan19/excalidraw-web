@@ -103,7 +103,7 @@
 
 <script>
 import Ai from '@/utils/ai'
-import { transformMarkdownTo } from 'simple-mind-map/src/parse/markdownTo'
+import { parseAiTreeJson } from '@/utils/aiTreeJson'
 import {
   createUid,
   isUndef,
@@ -316,7 +316,7 @@ export default {
     loopRenderOnAiCreating() {
       if (!this.aiCreatingContent.trim() || this.isLoopRendering) return
       this.isLoopRendering = true
-      const treeData = transformMarkdownTo(this.aiCreatingContent)
+      const treeData = parseAiTreeJson(this.aiCreatingContent)
       this.addUid(treeData)
       let lastTreeData = JSON.stringify(treeData)
 
@@ -332,7 +332,7 @@ export default {
           return
         }
 
-        const treeData = transformMarkdownTo(this.aiCreatingContent)
+        const treeData = parseAiTreeJson(this.aiCreatingContent)
         this.addUid(treeData)
         // 正在生成中
         if (this.isAiCreating) {
@@ -512,7 +512,7 @@ export default {
     loopRenderOnAiCreatingPart() {
       if (!this.aiCreatingContent.trim() || this.isLoopRendering) return
       this.isLoopRendering = true
-      const partData = transformMarkdownTo(this.aiCreatingContent)
+      const partData = parseAiTreeJson(this.aiCreatingContent)
       this.addUid(partData)
       let lastPartData = JSON.stringify(partData)
       const treeData = this.addToTargetNode(partData.children || [])
@@ -529,7 +529,7 @@ export default {
           return
         }
 
-        const partData = transformMarkdownTo(this.aiCreatingContent)
+        const partData = parseAiTreeJson(this.aiCreatingContent)
         this.addUid(partData)
         const treeData = this.addToTargetNode(partData.children || [])
 

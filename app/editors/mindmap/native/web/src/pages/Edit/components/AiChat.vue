@@ -61,9 +61,19 @@
 import Sidebar from './Sidebar.vue'
 import { mapState } from 'vuex'
 import { createUid } from 'simple-mind-map/src/utils'
-import MarkdownIt from 'markdown-it'
 
-let md = null
+function escapeHtml(text) {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function formatAiReply(text) {
+  return `<pre style="white-space:pre-wrap;word-break:break-word;margin:0;font:inherit;">${escapeHtml(text)}</pre>`
+}
 
 export default {
   components: {
@@ -134,10 +144,7 @@ export default {
         'ai_chat',
         textList,
         res => {
-          if (!md) {
-            md = new MarkdownIt()
-          }
-          this.chatList[this.chatList.length - 1].content = md.render(res)
+          this.chatList[this.chatList.length - 1].content = formatAiReply(res)
           this.$refs.chatResBoxRef.scrollTop = this.$refs.chatResBoxRef.scrollHeight
         },
         () => {

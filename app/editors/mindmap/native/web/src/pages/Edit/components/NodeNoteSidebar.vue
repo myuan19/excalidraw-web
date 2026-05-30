@@ -80,7 +80,7 @@ export default {
     onNodeNoteClick(node) {
       this.node = node
       this.setActiveSidebar('noteSidebar')
-      this.editor.setMarkdown(node.getData('note'))
+      this.editor.setHTML(node.getData('note') || '')
     }
   }
 }

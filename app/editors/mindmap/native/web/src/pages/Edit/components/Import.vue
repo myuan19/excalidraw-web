@@ -58,7 +58,6 @@
 
 <script>
 import xmind from 'simple-mind-map/src/parse/xmind.js'
-import markdown from 'simple-mind-map/src/parse/markdown.js'
 import { mapMutations } from 'vuex'
 import Vue from 'vue'
 
@@ -71,13 +70,12 @@ export default {
       selectPromiseResolve: null,
       xmindCanvasSelectDialogVisible: false,
       selectCanvas: '',
-      canvasList: [],
-      mdStr: ''
+      canvasList: []
     }
   },
   computed: {
     supportFileStr() {
-      return '.smm,.json,.xmind,.md'
+      return '.smm,.json,.xmind'
     }
   },
   watch: {
@@ -105,7 +103,7 @@ export default {
     },
 
     getRegexp() {
-      return new RegExp(`\.(smm|json|xmind|md)$`)
+      return new RegExp(`\.(smm|json|xmind)$`)
     },
 
     // 检查url中是否操作需要打开的文件
@@ -127,8 +125,6 @@ export default {
           this.handleSmm(data)
         } else if (type === 'xmind') {
           this.handleXmind(data)
-        } else if (type === 'md') {
-          this.handleMd(data)
         }
       } catch (error) {
         console.log(error)
@@ -175,8 +171,6 @@ export default {
         this.handleSmm(file)
       } else if (/\.xmind$/.test(file.name)) {
         this.handleXmind(file)
-      } else if (/\.md$/.test(file.name)) {
-        this.handleMd(file)
       }
       this.cancel()
       this.setActiveSidebar(null)
@@ -231,22 +225,6 @@ export default {
       this.xmindCanvasSelectDialogVisible = false
       this.canvasList = []
       this.selectCanvas = 0
-    },
-
-    // 处理markdown文件
-    async handleMd(file) {
-      let fileReader = new FileReader()
-      fileReader.readAsText(file.raw)
-      fileReader.onload = async evt => {
-        try {
-          let data = markdown.transformMarkdownTo(evt.target.result)
-          this.$bus.$emit('setData', data)
-          this.$message.success(this.$t('import.importSuccess'))
-        } catch (error) {
-          console.log(error)
-          this.$message.error(this.$t('import.fileParsingFailed'))
-        }
-      }
     },
 
     // 导入指定文件

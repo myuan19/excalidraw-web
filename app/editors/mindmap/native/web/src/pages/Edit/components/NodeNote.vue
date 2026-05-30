@@ -89,11 +89,11 @@ export default {
         this.editor = new Editor({
           el: this.$refs.noteEditor,
           height: '500px',
-          initialEditType: 'markdown',
+          initialEditType: 'wysiwyg',
           previewStyle: 'vertical'
         })
       }
-      this.editor.setMarkdown(this.note)
+      this.editor.setHTML(this.note)
     },
 
     cancel() {
@@ -105,7 +105,7 @@ export default {
     },
 
     confirm() {
-      this.note = this.editor.getMarkdown()
+      this.note = this.editor.getHTML()
       if (this.appointNode) {
         this.appointNode.setNote(this.note)
       } else {

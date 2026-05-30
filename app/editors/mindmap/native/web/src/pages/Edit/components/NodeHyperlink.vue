@@ -23,9 +23,6 @@
         </el-select>
       </el-input>
     </div>
-    <div class="hint">
-      提示：也可以在编辑内容时用 Markdown 语法 [文字](链接) 添加文内链接
-    </div>
     <div class="item">
       <span class="name">{{ $t('nodeHyperlink.name') }}</span>
       <el-input
@@ -129,13 +126,6 @@ export default {
       display: block;
       width: 50px;
     }
-  }
-
-  .hint {
-    font-size: 12px;
-    color: #999;
-    margin-bottom: 10px;
-    padding-left: 50px;
   }
 }
 </style>

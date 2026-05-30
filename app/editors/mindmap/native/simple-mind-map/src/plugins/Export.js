@@ -9,7 +9,6 @@ import {
 } from '../utils'
 import { SVG } from '@svgdotjs/svg.js'
 import drawBackgroundImageToCanvas from '../utils/simulateCSSBackgroundInCanvas'
-import { transformToMarkdown } from '../parse/toMarkdown'
 import { ERROR_TYPES } from '../constants/constant'
 import { transformToTxt } from '../parse/toTxt'
 
@@ -433,15 +432,6 @@ class Export {
   //  专有文件，其实就是json文件
   async smm(name, withConfig) {
     const res = await this.json(name, withConfig)
-    return res
-  }
-
-  // markdown文件
-  async md() {
-    const data = this.mindMap.getData()
-    const content = transformToMarkdown(data)
-    const blob = new Blob([content])
-    const res = await readBlob(blob)
     return res
   }
 

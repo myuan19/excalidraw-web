@@ -5,6 +5,7 @@
 import { createLogger } from "../lib/logger";
 import { FileSyncState } from "./FileSyncState";
 import { getDocumentFormatAdapter } from "./formats/registry";
+import { editorRegistry } from "../editors/registry";
 
 import { hashDocumentSnapshot } from "./sceneHash";
 
@@ -287,8 +288,7 @@ export const ServerSync = {
       managedDocument && adapter
         ? await adapter.serialize(managedDocument.data)
         : file.data;
-    const extension =
-      kind === "mindmap" ? "smm" : kind === "text" ? "txt" : "excalidraw";
+    const extension = editorRegistry.getDownloadExtension(kind);
     const blob = new Blob(
       [
         typeof data === "string"

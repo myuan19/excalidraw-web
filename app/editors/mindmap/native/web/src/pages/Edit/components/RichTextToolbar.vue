@@ -134,12 +134,6 @@
         <span class="icon iconfont iconqingchu"></span>
       </div>
     </el-tooltip>
-
-    <el-tooltip content="插入链接" placement="top">
-      <div class="btn" :class="{ active: formatInfo.link }" @click="insertLink">
-        <span class="icon" style="font-size: 18px;">🔗</span>
-      </div>
-    </el-tooltip>
   </div>
 </template>
 
@@ -267,12 +261,6 @@ export default {
 
     removeFormat() {
       this.mindMap.richText.removeFormat()
-    },
-
-    insertLink() {
-      const url = prompt('请输入链接地址：', 'https://')
-      if (!url) return
-      this.mindMap.richText.formatText({ link: url })
     }
   }
 }

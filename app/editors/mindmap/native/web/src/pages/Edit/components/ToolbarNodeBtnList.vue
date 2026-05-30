@@ -180,7 +180,7 @@
       </div>
       <div
         v-if="item === 'ai'"
-        class="toolbarBtn aiToolbarBtn"
+        class="toolbarBtn"
         :class="{
           disabled: hasGeneralization
         }"
@@ -346,7 +346,6 @@ export default {
 
   .toolbarBtn {
     display: flex;
-    align-items: center;
     justify-content: center;
     flex-direction: column;
     cursor: pointer;
@@ -382,25 +381,15 @@ export default {
       background: #fff;
       border-radius: 4px;
       border: 1px solid #e9e9e9;
-      align-items: center;
       justify-content: center;
+      flex-direction: column;
       text-align: center;
       padding: 0 5px;
-      line-height: 1;
     }
 
     .text {
       margin-top: 3px;
       text-align: center;
-      white-space: nowrap;
-    }
-
-    &.aiToolbarBtn {
-      .icon {
-        width: 28px;
-        padding: 0;
-        align-items: center;
-      }
     }
   }
 

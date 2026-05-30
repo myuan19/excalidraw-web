@@ -37,17 +37,6 @@ import {
   checkClipboardReadEnable,
   isNodeNotNeedRenderData
 } from '../../utils'
-import { looksLikeMarkdown } from '../../plugins/markdown/markdownPaste'
-import { createMarkdownClipboardNodeData } from '../../plugins/markdown/markdownClipboard'
-import {
-  createMarkdownRenderCache
-} from '../../plugins/markdown/markdownStorage'
-import {
-  debugMindMap,
-  summarizeHtml,
-  summarizeMarkdown,
-  summarizeNodeForDebug
-} from '../../utils/mindMapDebug'
 import { shapeList } from './node/Shape'
 import { lineStyleProps } from '../../theme/default'
 import { CONSTANTS, ERROR_TYPES } from '../../constants/constant'
@@ -215,70 +204,26 @@ class Render {
         )
       }
     })
-    this.handlePaste = this.handlePaste.bind(this)
-    window.addEventListener('paste', this.handlePaste)
-    this.mindMap.on('beforeDestroy', () => {
-      window.removeEventListener('paste', this.handlePaste)
-    })
+    // 处理非https下的复制黏贴问题
+    // 暂时不启用，因为给页面的其他输入框（比如节点文本编辑框）粘贴内容也会触发，冲突问题暂时没有想到好的解决方法，不可能要求所有输入框都阻止冒泡
+    // if (!checkClipboardReadEnable()) {
+    //   this.handlePaste = this.handlePaste.bind(this)
+    //   window.addEventListener('paste', this.handlePaste)
+    //   this.mindMap.on('beforeDestroy', () => {
+    //     window.removeEventListener('paste', this.handlePaste)
+    //   })
+    // }
   }
 
   // 监听文本编辑事件，实时更新节点大小
-  onNodeTextEditChange({ node, text, richText, shouldRealtimeRender }) {
-    const start = performance.now()
-    const textSummary = summarizeHtml(text)
-    if (richText && !shouldRealtimeRender) {
-      debugMindMap('mindmap-edit', 'onNodeTextEditChange skipped: rich text event not realtime', {
-        node: summarizeNodeForDebug(node),
-        text: textSummary
-      })
-      return
-    }
-    if (richText && summarizeHtml(text).isBlank) {
-      debugMindMap('mindmap-edit', 'onNodeTextEditChange skipped: blank rich text event', {
-        node: summarizeNodeForDebug(node),
-        text: textSummary
-      })
-      return
-    }
-    if (richText && !this.textEdit.isShowTextEdit()) {
-      debugMindMap('mindmap-edit', 'onNodeTextEditChange skipped: stale rich text event', {
-        node: summarizeNodeForDebug(node),
-        text: textSummary
-      })
-      return
-    }
-    debugMindMap('mindmap-edit', 'onNodeTextEditChange start', {
-      node: summarizeNodeForDebug(node),
-      text: textSummary,
-      currentTextData: node && node._textData
-        ? {
-            width: node._textData.width || null,
-            height: node._textData.height || null
-          }
-        : null
-    })
+  onNodeTextEditChange({ node, text }) {
     node._textData = node.createTextNode(text)
     const { width, height } = node.getNodeRect()
-    debugMindMap('mindmap-edit', 'onNodeTextEditChange measured', {
-      node: summarizeNodeForDebug(node),
-      nextTextData: node && node._textData
-        ? {
-            width: node._textData.width || null,
-            height: node._textData.height || null
-          }
-        : null,
-      rect: { width, height }
-    })
     node.width = width
     node.height = height
     node.layout()
     this.mindMap.render(() => {
       this.textEdit.updateTextEditNode()
-      debugMindMap('mindmap-edit', 'onNodeTextEditChange rendered', {
-        elapsed: Math.round(performance.now() - start),
-        node: summarizeNodeForDebug(node),
-        rect: { width, height }
-      })
     })
   }
 
@@ -431,31 +376,6 @@ class Render {
       'REMOVE_ALL_NODE_CUSTOM_STYLES',
       this.removeAllNodeCustomStyles
     )
-    // 将节点超链接转为文内链接
-    this.convertHyperlinkToInline = this.convertHyperlinkToInline.bind(this)
-    this.mindMap.command.add(
-      'CONVERT_HYPERLINK_TO_INLINE',
-      this.convertHyperlinkToInline
-    )
-    // 将文内链接提取为节点超链接
-    this.convertInlineLinkToHyperlink =
-      this.convertInlineLinkToHyperlink.bind(this)
-    this.mindMap.command.add(
-      'CONVERT_INLINE_LINK_TO_HYPERLINK',
-      this.convertInlineLinkToHyperlink
-    )
-    // 将节点图片转为内联图片
-    this.convertNodeImageToInline = this.convertNodeImageToInline.bind(this)
-    this.mindMap.command.add(
-      'CONVERT_NODE_IMAGE_TO_INLINE',
-      this.convertNodeImageToInline
-    )
-    // 将内联图片提取为节点图片
-    this.convertInlineImageToNode = this.convertInlineImageToNode.bind(this)
-    this.mindMap.command.add(
-      'CONVERT_INLINE_IMAGE_TO_NODE',
-      this.convertInlineImageToNode
-    )
   }
 
   //  注册快捷键
@@ -521,6 +441,10 @@ class Render {
     // 剪切节点
     this.mindMap.keyCommand.addShortcut('Control+x', () => {
       this.cut()
+    })
+    // 粘贴节点
+    this.mindMap.keyCommand.addShortcut('Control+v', () => {
+      this.paste()
     })
     // 根节点居中显示
     this.mindMap.keyCommand.addShortcut('Control+Enter', () => {
@@ -629,10 +553,6 @@ class Render {
   render(callback, source) {
     this.addRenderParams(callback, source)
     clearTimeout(this.renderTimer)
-    if (typeof window !== 'undefined' && window.__mindMapSyncLayout) {
-      this._render()
-      return
-    }
     this.renderTimer = setTimeout(() => {
       this._render()
     }, 0)
@@ -1271,90 +1191,6 @@ class Render {
     }
   }
 
-  // 将节点超链接转为文内链接
-  convertHyperlinkToInline(node) {
-    if (!node) return
-    const hyperlink = node.getData('hyperlink')
-    if (!hyperlink) return
-    const title = node.getData('hyperlinkTitle') || hyperlink
-    const markdown = node.getData('markdown') || ''
-    const linkMarkdown = `[${title}](${hyperlink})`
-    const newMarkdown = markdown
-      ? markdown + '\n\n' + linkMarkdown
-      : linkMarkdown
-    const newHtml = createMarkdownRenderCache(newMarkdown)
-    this.mindMap.execCommand('SET_NODE_DATA', node, {
-      markdown: newMarkdown,
-      text: newHtml,
-      hyperlink: '',
-      hyperlinkTitle: ''
-    })
-    this.mindMap.render()
-  }
-
-  // 将文内链接提取为节点超链接
-  convertInlineLinkToHyperlink(node) {
-    if (!node) return
-    const markdown = node.getData('markdown')
-    if (typeof markdown !== 'string') return
-    const linkRegex = /\[([^\]]*)\]\(([^)]+)\)/
-    const match = markdown.match(linkRegex)
-    if (!match) return
-    const [fullMatch, text, url] = match
-    const newMarkdown = markdown
-      .replace(fullMatch, text || '')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim()
-    const newHtml = createMarkdownRenderCache(newMarkdown)
-    this.mindMap.execCommand('SET_NODE_DATA', node, {
-      markdown: newMarkdown,
-      text: newHtml,
-      hyperlink: url,
-      hyperlinkTitle: text || ''
-    })
-    this.mindMap.render()
-  }
-
-  // 将节点图片转为内联图片
-  convertNodeImageToInline(node) {
-    if (!node) return
-    const image = node.getData('image')
-    if (!image) return
-    const title = node.getData('imageTitle') || ''
-    const markdown = node.getData('markdown') || ''
-    const imgMarkdown = `![${title}](${image})`
-    const newMarkdown = markdown ? markdown + '\n\n' + imgMarkdown : imgMarkdown
-    const newHtml = createMarkdownRenderCache(newMarkdown)
-    this.mindMap.execCommand('SET_NODE_DATA', node, {
-      markdown: newMarkdown,
-      text: newHtml,
-      image: '',
-      imageTitle: '',
-      imageSize: { width: 0, height: 0 }
-    })
-    this.mindMap.render()
-  }
-
-  // 将内联图片提取为节点图片
-  convertInlineImageToNode(node) {
-    if (!node) return
-    const markdown = node.getData('markdown')
-    if (typeof markdown !== 'string') return
-    const imgRegex = /!\[([^\]]*)\]\(([^)]+)\)/
-    const match = markdown.match(imgRegex)
-    if (!match) return
-    const [fullMatch, alt, src] = match
-    const newMarkdown = markdown.replace(fullMatch, '').replace(/\n{3,}/g, '\n\n').trim()
-    const newHtml = createMarkdownRenderCache(newMarkdown)
-    this.mindMap.execCommand('SET_NODE_DATA', node, {
-      markdown: newMarkdown,
-      text: newHtml,
-      image: src,
-      imageTitle: alt || ''
-    })
-    this.mindMap.render()
-  }
-
   // 复制节点
   copy() {
     this.beingCopyData = this.copyNode()
@@ -1374,48 +1210,12 @@ class Render {
     })
   }
 
+  // 非https下复制黏贴，获取内容方法
   handlePaste(event) {
     const { disabledClipboard } = this.mindMap.opt
     if (disabledClipboard) return
-    const target = event.target
-    debugMindMap('mindmap-paste', 'handlePaste enter', {
-      targetTag: target?.tagName || null,
-      targetClass: target?.className || null,
-      hasClipboardData: !!event.clipboardData,
-      clipboardTypes: event.clipboardData
-        ? Array.from(event.clipboardData.types || [])
-        : [],
-      clipboardFileCount: event.clipboardData?.files?.length || 0,
-      activeNodeCount: this.activeNodeList.length
-    })
-    if (target && target !== document.body) {
-      if (target.closest && target.closest('.smm-richtext-node-edit-wrap')) {
-        debugMindMap('mindmap-paste', 'return editor target')
-        return
-      }
-      let isEditNode = false
-      for (const cls of this.mindMap.editNodeClassList || []) {
-        if (target.classList && target.classList.contains(cls)) {
-          isEditNode = true
-          break
-        }
-      }
-      const isWritableTarget =
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement ||
-        target.isContentEditable
-      if (!isEditNode && isWritableTarget) {
-        debugMindMap('mindmap-paste', 'return writable target')
-        return
-      }
-    }
     const clipboardData =
       event.clipboardData || event.originalEvent.clipboardData
-    if (!clipboardData || !clipboardData.items) {
-      debugMindMap('mindmap-paste', 'return missing clipboard items')
-      return
-    }
     const items = clipboardData.items
     let img = null
     let text = ''
@@ -1427,48 +1227,24 @@ class Render {
         text = clipboardData.getData('text')
       }
     })
-    debugMindMap('mindmap-paste', 'clipboard snapshot', {
-      hasText: !!text,
-      textLength: text ? text.length : 0,
-      hasImage: !!img,
-      imageType: img?.type || null,
-      imageSize: img?.size || 0
-    })
-    this.paste({
-      text,
-      img
-    })
+    this.paste()
   }
 
   // 粘贴
-  async paste(clipboardSnapshot = null) {
+  async paste() {
     const {
       errorHandler,
+      handleIsSplitByWrapOnPasteCreateNewNode,
       handleNodePasteImg,
       disabledClipboard,
       onlyPasteTextWhenHasImgAndText
     } = this.mindMap.opt
     // 如果支持剪贴板操作，那么以剪贴板数据为准
-    if (!disabledClipboard && (clipboardSnapshot || checkClipboardReadEnable())) {
+    if (!disabledClipboard && checkClipboardReadEnable()) {
       try {
-        let res = {
-          text: clipboardSnapshot?.text || '',
-          img: clipboardSnapshot?.img || null
-        }
-        if (!clipboardSnapshot && checkClipboardReadEnable()) {
-          res = await getDataFromClipboard()
-        }
+        const res = await getDataFromClipboard()
         let text = res.text || ''
         let img = res.img || null
-        debugMindMap('mindmap-paste', 'paste resolved clipboard', {
-          fromSnapshot: !!clipboardSnapshot,
-          hasText: !!text,
-          textLength: text ? text.length : 0,
-          hasImage: !!img,
-          imageType: img?.type || null,
-          imageSize: img?.size || 0,
-          activeNodeCount: this.activeNodeList.length
-        })
         // 存在文本，则创建子节点
         if (text) {
           // 判断粘贴的是否是simple-mind-map的数据
@@ -1510,35 +1286,42 @@ class Render {
               Array.isArray(smmData) ? smmData : [smmData]
             )
           } else {
-            const isMarkdownText = looksLikeMarkdown(text)
-            const nodeData = isMarkdownText
-              ? createMarkdownClipboardNodeData(text)
-              : {
-                  text: this.hasRichTextPlugin() ? htmlEscape(text) : text
-                }
+            // 如果是富文本模式，那么需要转义特殊字符
             if (this.hasRichTextPlugin()) {
-              nodeData.richText = true
-              if (typeof nodeData.markdown !== 'string') {
-                nodeData.markdown = text
-              }
+              text = htmlEscape(text)
             }
-            debugMindMap('mindmap-paste', 'INSERT_CHILD_NODE text', {
-              isMarkdownText,
-              text: summarizeHtml(nodeData.text),
-              markdown: isMarkdownText ? summarizeHtml(text) : null
-            })
-            debugMindMap('mindmap-markdown', 'renderer paste create node decision', {
-              activeNodeCount: this.activeNodeList.length,
-              hasRichTextPlugin: this.hasRichTextPlugin(),
-              isMarkdownText,
-              rawText: summarizeMarkdown(text),
-              renderedHtml: summarizeHtml(nodeData.text),
-              nodeData: {
-                richText: !!nodeData.richText,
-                hasMarkdown: typeof nodeData.markdown === 'string'
-              }
-            })
-            this.mindMap.execCommand('INSERT_CHILD_NODE', false, [], nodeData)
+            const textArr = text
+              .split(new RegExp('\r?\n|(?<!\n)\r', 'g'))
+              .filter(item => {
+                return !!item
+              })
+            // 判断是否需要根据换行自动分割节点
+            if (textArr.length > 1 && handleIsSplitByWrapOnPasteCreateNewNode) {
+              handleIsSplitByWrapOnPasteCreateNewNode()
+                .then(() => {
+                  this.mindMap.execCommand(
+                    'INSERT_MULTI_CHILD_NODE',
+                    [],
+                    textArr.map(item => {
+                      return {
+                        data: {
+                          text: item
+                        },
+                        children: []
+                      }
+                    })
+                  )
+                })
+                .catch(() => {
+                  this.mindMap.execCommand('INSERT_CHILD_NODE', false, [], {
+                    text
+                  })
+                })
+            } else {
+              this.mindMap.execCommand('INSERT_CHILD_NODE', false, [], {
+                text
+              })
+            }
           }
         }
         // 存在图片，则添加到当前激活节点
@@ -1554,12 +1337,8 @@ class Render {
             } else {
               imgData = await loadImage(img)
             }
-            let targetNodes = this.activeNodeList
-            if (targetNodes.length === 0 && this.root) {
-              targetNodes = [this.root]
-            }
-            if (targetNodes.length > 0) {
-              targetNodes.forEach(node => {
+            if (this.activeNodeList.length > 0) {
+              this.activeNodeList.forEach(node => {
                 this.mindMap.execCommand('SET_NODE_IMAGE', node, {
                   url: imgData.url,
                   title: '',
@@ -1567,23 +1346,12 @@ class Render {
                   height: imgData.size.height
                 })
               })
-              debugMindMap('mindmap-paste', 'SET_NODE_IMAGE done', {
-                targetNodeCount: targetNodes.length,
-                width: imgData.size.width,
-                height: imgData.size.height
-              })
             }
           } catch (error) {
-            debugMindMap('mindmap-paste', 'image paste failed', {
-              message: error && error.message ? error.message : String(error)
-            })
             errorHandler(ERROR_TYPES.LOAD_CLIPBOARD_IMAGE_ERROR, error)
           }
         }
       } catch (error) {
-        debugMindMap('mindmap-paste', 'read clipboard failed', {
-          message: error && error.message ? error.message : String(error)
-        })
         errorHandler(ERROR_TYPES.READ_CLIPBOARD_ERROR, error)
       }
     } else {

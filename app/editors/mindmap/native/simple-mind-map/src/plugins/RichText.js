@@ -7,6 +7,7 @@ import {
   isUndef,
   checkSmmFormatData,
   formatGetNodeGeneralization,
+  nodeRichTextToTextWithWrap,
   getNodeRichTextStyles,
   htmlEscape,
   compareVersion
@@ -14,33 +15,6 @@ import {
 import { richTextSupportStyleList } from '../constants/constant'
 import MindMapNode from '../core/render/node/MindMapNode'
 import { Scope } from 'parchment'
-import {
-  debugMindMap,
-  summarizeHtml,
-  summarizeMarkdown,
-  summarizeNodeForDebug
-} from '../utils/mindMapDebug'
-import TableUp, {
-  TableMenuContextmenu,
-  TableResizeBox,
-  TableSelection
-} from 'quill-table-up'
-import 'quill-table-up/dist/index.css'
-import MarkdownShortcuts from './markdown/MarkdownShortcuts'
-import { looksLikeMarkdown } from './markdown/markdownPaste'
-import {
-  appendMarkdownBlockToSource,
-  getClipboardMarkdownFromNode,
-  isFullQuillSelection
-} from './markdown/markdownClipboard'
-import {
-  createMarkdownNodeData,
-  createMarkdownNodeDataFromHtml,
-  createMarkdownRenderCache,
-  resolveMarkdownNodeHtml,
-  setMarkdownRenderCacheNormalizer
-} from './markdown/markdownStorage'
-import { getEditorAndRenderedMarkdownCss } from './markdown/markdownStyles'
 
 let extended = false
 
@@ -67,73 +41,6 @@ let fontSizeList = new Array(100).fill(0).map((_, index) => {
 })
 
 const RICH_TEXT_EDIT_WRAP = 'ql-editor'
-const BlockEmbed = Quill.import('blots/block/embed')
-
-class DividerBlot extends BlockEmbed {
-  static blotName = 'divider'
-  static tagName = 'hr'
-}
-
-const QuillImage = Quill.import('formats/image')
-
-class SafeImageBlot extends QuillImage {
-  static create(value) {
-    const node = super.create(value)
-    if (typeof value === 'string') {
-      node.setAttribute('src', value)
-    }
-    node.setAttribute('loading', 'lazy')
-    node.style.pointerEvents = 'none'
-    node.draggable = false
-    node.addEventListener('error', () => {
-      node.style.display = 'none'
-    })
-    return node
-  }
-}
-SafeImageBlot.blotName = 'image'
-SafeImageBlot.tagName = 'IMG'
-
-const getLineFormats = (quill, context) => {
-  return Object.keys(context.format).reduce((formats, format) => {
-    if (
-      quill.scroll.query(format, Scope.BLOCK) &&
-      !Array.isArray(context.format[format])
-    ) {
-      formats[format] = context.format[format]
-    }
-    return formats
-  }, {})
-}
-
-const insertLineBreak = function (range, context) {
-  const lineFormats = getLineFormats(this.quill, context)
-  const delta = new Delta()
-    .retain(range.index)
-    .delete(range.length)
-    .insert('\n', lineFormats)
-  this.quill.updateContents(delta, Quill.sources.USER)
-  this.quill.setSelection(range.index + 1, Quill.sources.SILENT)
-  this.quill.focus()
-  Object.keys(context.format).forEach(name => {
-    if (lineFormats[name] != null) return
-    if (Array.isArray(context.format[name])) return
-    if (name === 'code' || name === 'link') return
-    this.quill.format(name, context.format[name], Quill.sources.USER)
-  })
-}
-
-const handleEnterKey = function (range, context) {
-  if (
-    context.format['code-block'] ||
-    context.format.list ||
-    context.format.blockquote
-  ) {
-    insertLineBreak.call(this, range, context)
-  }
-  // 返回 false 让普通节点仍保持 Enter 结束编辑的既有行为。
-  return false
-}
 
 // 富文本编辑插件
 class RichText {
@@ -151,12 +58,8 @@ class RichText {
     this.styleEl = null
     this.cacheEditingText = ''
     this.isCompositing = false
-    this.isPastingMarkdown = false
-    this.pendingMarkdownSource = ''
-    this.editStartHtml = ''
-    this.hasUserEdited = false
-    this.isInitializingQuill = false
-    this.isProgrammaticChange = false
+    this.textNodePaddingX = 6
+    this.textNodePaddingY = 4
     this.mindMap.addEditNodeClass(RICH_TEXT_EDIT_WRAP)
     this.initOpt()
     this.extendQuill()
@@ -198,8 +101,6 @@ class RichText {
         user-select: none;
       }
 
-      ${getEditorAndRenderedMarkdownCss()}
-
       .ql-editor .ql-align-left, 
       .smm-richtext-node-wrap .ql-align-left {
         text-align: left;
@@ -222,24 +123,6 @@ class RichText {
         line-height: 1.2;
         -webkit-user-select: text;
         text-align: inherit;
-      }
-
-      .smm-richtext-node-edit-wrap {
-        background: transparent !important;
-        box-shadow: none !important;
-      }
-
-      .smm-richtext-node-edit-wrap .ql-editor {
-        caret-color: #111827;
-        color: inherit;
-      }
-
-      .smm-richtext-node-edit-wrap .ql-container {
-        pointer-events: auto;
-      }
-
-      .smm-richtext-node-edit-wrap .ql-tooltip {
-        display: none !important;
       }
       
       .ql-container {
@@ -284,12 +167,6 @@ class RichText {
 
     this.extendAlign()
 
-    Quill.register('modules/markdownShortcuts', MarkdownShortcuts, true)
-    Quill.register({ [`modules/${TableUp.moduleName}`]: TableUp }, true)
-    Quill.register(DividerBlot, true)
-    Quill.register('formats/image', SafeImageBlot, true)
-    setMarkdownRenderCacheNormalizer(html => this.normalizeHtmlWithQuill(html))
-
     // 扩展quill的字号列表
     const SizeAttributor = Quill.import('attributors/class/size')
     SizeAttributor.whitelist = fontSizeList
@@ -321,69 +198,11 @@ class RichText {
     Quill.register(AlignFormat, true)
   }
 
-  normalizeHtmlWithQuill(html) {
-    const container = document.createElement('div')
-    container.style.display = 'none'
-    document.body.appendChild(container)
-    const quill = new Quill(container, {
-      modules: {
-        toolbar: false,
-        [TableUp.moduleName]: {
-          modules: []
-        }
-      },
-      formats: [
-        'bold',
-        'italic',
-        'underline',
-        'strike',
-        'color',
-        'background',
-        'font',
-        'size',
-        'formula',
-        'align',
-        'header',
-        'list',
-        'blockquote',
-        'code-block',
-        'code',
-        'link',
-        'indent',
-        'image',
-        'divider',
-        'table',
-        'table-up',
-        'table-up-container',
-        'table-up-main',
-        'table-up-head',
-        'table-up-body',
-        'table-up-foot',
-        'table-up-colgroup',
-        'table-up-col',
-        'table-up-row',
-        'table-up-cell',
-        'table-up-cell-inner',
-        'table-up-caption'
-      ],
-      theme: null
-    })
-    quill.clipboard.dangerouslyPasteHTML(0, html || '', Quill.sources.SILENT)
-    const normalizedHtml = quill.container.firstChild.innerHTML
-    document.body.removeChild(container)
-    return this.normalizeRichTextSaveHtml(normalizedHtml)
-  }
-
   // 显示文本编辑控件
-  showEditText({ node, rect, e, isInserting, isFromKeyDown, isFromScale }) {
+  showEditText({ node, rect, isInserting, isFromKeyDown, isFromScale }) {
     if (this.showTextEdit) {
-      debugMindMap('mindmap-richtext', 'showEditText skipped: already editing', {
-        currentNode: summarizeNodeForDebug(this.node),
-        nextNode: summarizeNodeForDebug(node)
-      })
       return
     }
-    const start = performance.now()
     let {
       customInnerElsAppendTo,
       nodeTextEditZIndex,
@@ -399,9 +218,6 @@ class RichText {
     this.node = node
     this.isInserting = isInserting
     if (!rect) rect = node._textData.node.node.getBoundingClientRect()
-    if (this.textEditNode) {
-      this.textEditNode.style.visibility = 'hidden'
-    }
     if (!isFromScale) {
       this.mindMap.emit('before_show_text_edit')
     }
@@ -410,6 +226,12 @@ class RichText {
     let g = node._textData.node
     let originWidth = g.attr('data-width')
     let originHeight = g.attr('data-height')
+    // 缩放值
+    const scaleX = Math.ceil(rect.width) / originWidth
+    const scaleY = Math.ceil(rect.height) / originHeight
+    // 内边距
+    let paddingX = this.textNodePaddingX
+    let paddingY = this.textNodePaddingY
     if (!this.textEditNode) {
       this.textEditNode = document.createElement('div')
       this.textEditNode.classList.add('smm-richtext-node-edit-wrap')
@@ -423,21 +245,15 @@ class RichText {
         }
         outline: none;
         word-break: break-all;
-        padding: 0;
+        padding: ${paddingY}px ${paddingX}px;
         line-height: 1.2;
-        visibility: hidden;
       `
       this.textEditNode.addEventListener('click', e => {
         e.stopPropagation()
       })
-      this.textEditNode.addEventListener(
-        'mousedown',
-        this.handleRichTextEditMousedown
-      )
-      this.textEditNode.addEventListener(
-        'dblclick',
-        this.preventDefaultRichTextSelection
-      )
+      this.textEditNode.addEventListener('mousedown', e => {
+        e.stopPropagation()
+      })
       this.textEditNode.addEventListener('keydown', e => {
         if (this.mindMap.renderer.textEdit.checkIsAutoEnterTextEditKey(e)) {
           e.stopPropagation()
@@ -447,37 +263,26 @@ class RichText {
       targetNode.appendChild(this.textEditNode)
     }
     this.addNodeTextStyleToTextEditNode(node)
+    this.textEditNode.style.marginLeft = `-${paddingX * scaleX}px`
+    this.textEditNode.style.marginTop = `-${paddingY * scaleY}px`
     this.textEditNode.style.zIndex = nodeTextEditZIndex
     if (!openRealtimeRenderOnNodeTextEdit) {
       this.textEditNode.style.background =
         this.mindMap.renderer.textEdit.getBackground(node)
     }
-    this.applyRenderedGeometryToTextEditNode({
-      rect,
-      originHeight
-    })
-    this.textEditNode.style.transform = ''
-    this.textEditNode.style.transformOrigin = ''
-    // 节点文本内容。Markdown 是主内容，HTML 只作为渲染缓存。
-    const renderHtml = this.getNodeEditHtml(node)
-    let nodeText = this.getNodeEditHtmlForQuill(node, renderHtml)
+    this.textEditNode.style.minWidth = originWidth + paddingX * 2 + 'px'
+    this.textEditNode.style.minHeight = originHeight + 'px'
+    this.textEditNode.style.left = rect.left + 'px'
+    this.textEditNode.style.top = rect.top + 'px'
+    this.textEditNode.style.display = 'block'
+    this.textEditNode.style.maxWidth = textAutoWrapWidth + paddingX * 2 + 'px'
+    this.textEditNode.style.transform = `scale(${scaleX}, ${scaleY})`
+    this.textEditNode.style.transformOrigin = 'left top'
+    // 节点文本内容
+    let nodeText = node.getData('text')
     if (typeof transformRichTextOnEnterEdit === 'function') {
       nodeText = transformRichTextOnEnterEdit(nodeText)
     }
-    debugMindMap('mindmap-richtext', 'showEditText before initQuill', {
-      node: summarizeNodeForDebug(node),
-      flags: { isInserting, isFromKeyDown, isFromScale },
-      openRealtimeRenderOnNodeTextEdit,
-      origin: { width: originWidth, height: originHeight },
-      rect: {
-        left: Math.round(rect.left),
-        top: Math.round(rect.top),
-        width: Math.round(rect.width),
-        height: Math.round(rect.height)
-      },
-      renderHtml: summarizeHtml(renderHtml),
-      text: summarizeHtml(nodeText)
-    })
     // 是否是空文本
     const isEmptyText = isUndef(nodeText)
     // 是否是非空的非富文本
@@ -493,143 +298,15 @@ class RichText {
       // 已经是富文本
       this.textEditNode.innerHTML = this.cacheEditingText || nodeText
     }
-    debugMindMap('mindmap-richtext', 'showEditText assigned edit html', {
-      node: summarizeNodeForDebug(node),
-      assignedHtml: summarizeHtml(this.textEditNode.innerHTML)
-    })
-    this.isInitializingQuill = true
     this.initQuillEditor()
-    this.isInitializingQuill = false
-    debugMindMap('mindmap-richtext', 'showEditText after initQuill', {
-      node: summarizeNodeForDebug(node),
-      quillLength: this.quill ? this.quill.getLength() : null,
-      quillHtml: summarizeHtml(this.getEditText())
-    })
     this.setQuillContainerMinHeight(originHeight)
-    this.editStartHtml = this.getEditText()
-    this.hasUserEdited = false
     this.setIsShowTextEdit(true)
-    this.textEditNode.style.visibility = 'visible'
     // 如果是刚创建的节点，那么默认全选，否则普通激活不全选，除非selectTextOnEnterEditText配置为true
     // 在selectTextOnEnterEditText时，如果是在keydown事件进入的节点编辑，也不需要全选
-    if (isInserting || (selectTextOnEnterEditText && !isFromKeyDown)) {
-      this.focus(0)
-    } else if (e) {
-      this.focusQuillAtPoint(e)
-    } else {
-      this.focus(null)
-    }
-    this.cacheEditingText = ''
-    debugMindMap('mindmap-richtext', 'showEditText done', {
-      elapsed: Math.round(performance.now() - start),
-      editor: {
-        minWidth: this.textEditNode.style.minWidth,
-        minHeight: this.textEditNode.style.minHeight,
-        left: this.textEditNode.style.left,
-        top: this.textEditNode.style.top,
-        transform: this.textEditNode.style.transform
-      },
-      quillLength: this.quill ? this.quill.getLength() : null,
-      html: summarizeHtml(this.textEditNode.innerHTML)
-    })
-  }
-
-  getNodeEditHtml(node) {
-    const markdown = node.getData('markdown')
-    const cachedHtml = node.getData('text')
-    const html = resolveMarkdownNodeHtml({
-      markdown,
-      html: cachedHtml
-    })
-    if (typeof markdown === 'string') {
-      debugMindMap('mindmap-markdown', 'getNodeEditHtml markdown source', {
-        node: summarizeNodeForDebug(node),
-        markdown: summarizeMarkdown(markdown),
-        html: summarizeHtml(html)
-      })
-      return html
-    }
-    debugMindMap('mindmap-markdown', 'getNodeEditHtml html cache', {
-      node: summarizeNodeForDebug(node),
-      html: summarizeHtml(html)
-    })
-    return html
-  }
-
-  getNodeEditHtmlForQuill(node, html = this.getNodeEditHtml(node)) {
-    return html
-  }
-
-  preventDefaultRichTextSelection = e => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (this.showTextEdit && this.quill) {
-      this.focusQuillAtPoint(e)
-    }
-  }
-
-  handleRichTextEditMousedown = e => {
-    e.stopPropagation()
-    if (e.detail > 1) {
-      e.preventDefault()
-      this.clearBrowserSelection()
-      requestAnimationFrame(() => this.focusQuillAtPoint(e))
-    }
-  }
-
-  clearBrowserSelection() {
-    const selection = window.getSelection && window.getSelection()
-    if (selection && selection.removeAllRanges) {
-      selection.removeAllRanges()
-    }
-  }
-
-  setCollapsedQuillSelection(index) {
-    if (!this.quill) return
-    this.clearBrowserSelection()
-    const maxIndex = Math.max(this.quill.getLength() - 1, 0)
-    index = Math.min(Math.max(index, 0), maxIndex)
-    this.quill.setSelection(index, 0, Quill.sources.SILENT)
-    this.quill.focus()
-    this.range = null
-    this.mindMap.emit('rich_text_selection_change', false, null, null)
-    debugMindMap('mindmap-richtext', 'setCollapsedQuillSelection', {
-      node: summarizeNodeForDebug(this.node),
-      index,
-      maxIndex
-    })
-  }
-
-  focusQuillAtPoint(e) {
-    const range = document.caretRangeFromPoint
-      ? document.caretRangeFromPoint(e.clientX, e.clientY)
-      : null
-    if (!range || !this.textEditNode.contains(range.startContainer)) {
-      this.focus(null)
-      return
-    }
-    const blot = Quill.find(range.startContainer, true)
-    if (!blot || typeof blot.offset !== 'function') {
-      this.focus(null)
-      return
-    }
-    const index = blot.offset(this.quill.scroll) + range.startOffset
-    this.setCollapsedQuillSelection(
-      Math.min(index, Math.max(this.quill.getLength() - 1, 0))
+    this.focus(
+      isInserting || (selectTextOnEnterEditText && !isFromKeyDown) ? 0 : null
     )
-  }
-
-  applyRenderedGeometryToTextEditNode({ rect, originHeight }) {
-    const viewportWidth = Math.ceil(rect.width)
-    this.textEditNode.style.marginLeft = ''
-    this.textEditNode.style.marginTop = ''
-    this.textEditNode.style.width = viewportWidth + 'px'
-    this.textEditNode.style.minWidth = viewportWidth + 'px'
-    this.textEditNode.style.maxWidth = viewportWidth + 'px'
-    this.textEditNode.style.minHeight = Math.ceil(rect.height || originHeight) + 'px'
-    this.textEditNode.style.left = rect.left + 'px'
-    this.textEditNode.style.top = rect.top + 'px'
-    this.textEditNode.style.display = 'block'
+    this.cacheEditingText = ''
   }
 
   // 当openRealtimeRenderOnNodeTextEdit配置更新后需要更新编辑框样式
@@ -668,10 +345,11 @@ class RichText {
     const rect = g.node.getBoundingClientRect()
     const originWidth = g.attr('data-width')
     const originHeight = g.attr('data-height')
-    this.applyRenderedGeometryToTextEditNode({
-      rect,
-      originHeight
-    })
+    this.textEditNode.style.minWidth =
+      originWidth + this.textNodePaddingX * 2 + 'px'
+    this.textEditNode.style.minHeight = originHeight + 'px'
+    this.textEditNode.style.left = rect.left + 'px'
+    this.textEditNode.style.top = rect.top + 'px'
     this.setQuillContainerMinHeight(originHeight)
   }
 
@@ -685,98 +363,22 @@ class RichText {
   // 获取当前正在编辑的内容
   getEditText() {
     // https://github.com/slab/quill/issues/4509
-    const html = this.quill.container.firstChild.innerHTML.replace(/  +/g, match =>
+    return this.quill.container.firstChild.innerHTML.replace(/  +/g, match =>
       '&nbsp;'.repeat(match.length)
     )
-    return this.normalizeRichTextSaveHtml(html)
-  }
-
-  getRealtimeEditText(html = this.getEditText()) {
-    if (this.pendingMarkdownSource) {
-      const markdownHtml = resolveMarkdownNodeHtml({
-        markdown: this.pendingMarkdownSource,
-        html
-      })
-      debugMindMap(
-        'mindmap-markdown',
-        'getRealtimeEditText pending markdown',
-        {
-          node: summarizeNodeForDebug(this.node),
-          markdown: summarizeMarkdown(this.pendingMarkdownSource),
-          html: summarizeHtml(markdownHtml)
-        },
-        { verbose: true }
-      )
-      return markdownHtml
-    }
-    const markdownSource = this.getCurrentMarkdownSource()
-    if (markdownSource) {
-      const markdownHtml = resolveMarkdownNodeHtml({
-        markdown: markdownSource,
-        html
-      })
-      debugMindMap(
-        'mindmap-markdown',
-        'getRealtimeEditText existing markdown',
-        {
-          node: summarizeNodeForDebug(this.node),
-          markdown: summarizeMarkdown(markdownSource),
-          html: summarizeHtml(markdownHtml)
-        },
-        { verbose: true }
-      )
-      return markdownHtml
-    }
-    return html
-  }
-
-  getCurrentMarkdownSource() {
-    if (
-      this.node &&
-      !this.hasUserEdited &&
-      typeof this.node.getData('markdown') === 'string'
-    ) {
-      return this.node.getData('markdown')
-    }
-    return ''
-  }
-
-  getEditMarkdown(html = this.getEditText()) {
-    const markdown = createMarkdownNodeDataFromHtml({ html }).markdown
-    debugMindMap('mindmap-markdown', 'getEditMarkdown html to markdown', {
-      node: summarizeNodeForDebug(this.node),
-      html: summarizeHtml(html),
-      markdown: summarizeMarkdown(markdown)
-    })
-    return markdown
-  }
-
-  getEditableMarkdownSource(html = this.getEditText()) {
-    if (this.pendingMarkdownSource) {
-      return this.pendingMarkdownSource
-    }
-    if (this.node && typeof this.node.getData('markdown') === 'string') {
-      return this.node.getData('markdown')
-    }
-    return this.getEditMarkdown(html)
-  }
-
-  normalizeRichTextSaveHtml(html) {
-    return html.replace(/<p><br><\/p>$/, '')
+    // 去除ql-cursor节点
+    // https://github.com/wanglin2/mind-map/commit/138cc4b3e824671143f0bf70e5c46796f48520d0
+    // https://github.com/wanglin2/mind-map/commit/0760500cebe8ec4e8ad84ab63f877b8b2a193aa1
+    // html = removeHtmlNodeByClass(html, '.ql-cursor')
+    // 去除最后的空行
+    // return html.replace(/<p><br><\/p>$/, '')
   }
 
   // 隐藏文本编辑控件，即完成编辑
   hideEditText(nodes) {
     if (!this.showTextEdit) {
-      debugMindMap(
-        'mindmap-richtext',
-        'hideEditText skipped: not editing',
-        {},
-        { verbose: true }
-      )
       return
     }
-    const start = performance.now()
     const { beforeHideRichTextEdit } = this.mindMap.opt
     if (typeof beforeHideRichTextEdit === 'function') {
       beforeHideRichTextEdit(this)
@@ -784,73 +386,24 @@ class RichText {
     const html = this.getEditText()
     const list = nodes && nodes.length > 0 ? nodes : [this.node]
     const node = this.node
-    const existingMarkdown = node && node.getData
-      ? node.getData('markdown')
-      : undefined
-    const htmlChanged = this.hasUserEdited
-    const markdownDecision = this.pendingMarkdownSource
-      ? 'pendingMarkdownSource'
-      : !htmlChanged && typeof existingMarkdown === 'string'
-      ? 'existingMarkdownUnchanged'
-      : 'convertedFromHtml'
-    const markdown =
-      this.pendingMarkdownSource ||
-      (!htmlChanged && typeof existingMarkdown === 'string'
-        ? existingMarkdown
-        : this.getEditMarkdown(html))
-    const renderHtml =
-      typeof markdown === 'string' ? createMarkdownRenderCache(markdown) : html
-    debugMindMap('mindmap-markdown', 'hideEditText save decision', {
-      node: summarizeNodeForDebug(node),
-      targetCount: list.length,
-      htmlChanged,
-      markdownDecision,
-      editStartHtml: summarizeHtml(this.editStartHtml),
-      html: summarizeHtml(html),
-      renderHtml: summarizeHtml(renderHtml),
-      existingMarkdown: summarizeMarkdown(existingMarkdown),
-      pendingMarkdownSource: summarizeMarkdown(this.pendingMarkdownSource),
-      savedMarkdown: summarizeMarkdown(markdown)
-    })
     this.textEditNode.style.display = 'none'
     this.setIsShowTextEdit(false)
     this.mindMap.emit('rich_text_selection_change', false)
-    this.restoreRenderedNodeVisibility()
     this.node = null
     this.isInserting = false
-    this.pendingMarkdownSource = ''
-    this.editStartHtml = ''
-    this.hasUserEdited = false
-    this.isProgrammaticChange = false
     list.forEach(node => {
-      this.mindMap.execCommand(
-        'SET_NODE_DATA',
-        node,
-        createMarkdownNodeData({
-          markdown,
-          html: renderHtml
-        })
-      )
+      this.mindMap.execCommand('SET_NODE_TEXT', node, html, true)
+      // if (node.isGeneralization) {
+      // 概要节点
+      // node.generalizationBelongNode.updateGeneralization()
+      // }
       this.mindMap.render()
     })
     this.mindMap.emit('hide_text_edit', this.textEditNode, list, node)
-    debugMindMap('mindmap-richtext', 'hideEditText done', {
-      elapsed: Math.round(performance.now() - start),
-      node: summarizeNodeForDebug(node),
-      targetCount: list.length,
-      html: summarizeHtml(html)
-    })
-  }
-
-  restoreRenderedNodeVisibility() {
-    if (this.node && this.node._textData && this.node._textData.node) {
-      this.node._textData.node.show()
-    }
   }
 
   // 初始化Quill富文本编辑器
   initQuillEditor() {
-    const start = performance.now()
     this.quill = new Quill(this.textEditNode, {
       modules: {
         toolbar: false,
@@ -858,8 +411,8 @@ class RichText {
           bindings: {
             enter: {
               key: 'Enter',
-              handler: function (range, context) {
-                return handleEnterKey.call(this, range, context)
+              handler: function () {
+                // 覆盖默认的回车键，禁止换行
               }
             },
             shiftEnter: {
@@ -867,7 +420,35 @@ class RichText {
               shiftKey: true,
               handler: function (range, context) {
                 // 覆盖默认的换行，默认情况下新行的样式会丢失
-                insertLineBreak.call(this, range, context)
+                const lineFormats = Object.keys(context.format).reduce(
+                  (formats, format) => {
+                    if (
+                      this.quill.scroll.query(format, Scope.BLOCK) &&
+                      !Array.isArray(context.format[format])
+                    ) {
+                      formats[format] = context.format[format]
+                    }
+                    return formats
+                  },
+                  {}
+                )
+                const delta = new Delta()
+                  .retain(range.index)
+                  .delete(range.length)
+                  .insert('\n', lineFormats)
+                this.quill.updateContents(delta, Quill.sources.USER)
+                this.quill.setSelection(range.index + 1, Quill.sources.SILENT)
+                this.quill.focus()
+                Object.keys(context.format).forEach(name => {
+                  if (lineFormats[name] != null) return
+                  if (Array.isArray(context.format[name])) return
+                  if (name === 'code' || name === 'link') return
+                  this.quill.format(
+                    name,
+                    context.format[name],
+                    Quill.sources.USER
+                  )
+                })
               }
             },
             tab: {
@@ -877,14 +458,6 @@ class RichText {
               }
             }
           }
-        },
-        markdownShortcuts: {},
-        [TableUp.moduleName]: {
-          modules: [
-            { module: TableSelection },
-            { module: TableResizeBox },
-            { module: TableMenuContextmenu }
-          ]
         }
       },
       formats: [
@@ -897,43 +470,9 @@ class RichText {
         'font',
         'size',
         'formula',
-        'align',
-        'header',
-        'list',
-        'blockquote',
-        'code-block',
-        'code',
-        'link',
-        'indent',
-        'image',
-        'divider',
-        'table',
-        'table-up',
-        'table-up-container',
-        'table-up-main',
-        'table-up-head',
-        'table-up-body',
-        'table-up-foot',
-        'table-up-colgroup',
-        'table-up-col',
-        'table-up-row',
-        'table-up-cell',
-        'table-up-cell-inner',
-        'table-up-caption'
-      ],
+        'align'
+      ], // 明确指定允许的格式，不包含有序列表，无序列表等
       theme: 'snow'
-    })
-    debugMindMap('mindmap-richtext', 'initQuillEditor done', {
-      elapsed: Math.round(performance.now() - start),
-      formats: this.quill ? this.quill.getFormat() : null,
-      length: this.quill ? this.quill.getLength() : null
-    })
-    this.quill.clipboard.addMatcher('MARK', (node, delta) => {
-      return delta.compose(
-        new Delta().retain(delta.length(), {
-          background: MARK_BACKGROUND
-        })
-      )
     })
     // 拦截复制事件，即Ctrl + c，去除多余的空行
     this.quill.root.addEventListener('copy', event => {
@@ -944,20 +483,8 @@ class RichText {
         const range = sel.getRangeAt(0)
         const div = document.createElement('div')
         div.appendChild(range.cloneContents())
-        const quillRange = this.quill.getSelection()
-        const fullSelection = isFullQuillSelection(
-          quillRange,
-          this.quill.getLength()
-        )
-        const markdown = getClipboardMarkdownFromNode({
-          pendingMarkdownSource: this.pendingMarkdownSource,
-          node: this.node,
-          html: this.getEditText(),
-          selectedHtml: div.innerHTML,
-          fullSelection
-        })
-        event.clipboardData.setData('text/plain', markdown)
-        event.clipboardData.setData('text/html', div.innerHTML)
+        const text = nodeRichTextToTextWithWrap(div.innerHTML)
+        event.clipboardData.setData('text/plain', text)
       } catch (e) {
         event.clipboardData.setData('text/plain', originStr)
       }
@@ -999,59 +526,11 @@ class RichText {
         this.mindMap.emit('rich_text_selection_change', false, null, null)
       }
     })
-    this.quill.on('text-change', (delta, oldDelta, source) => {
-      const isUserChange =
-        source === Quill.sources.USER &&
-        !this.isInitializingQuill &&
-        !this.isProgrammaticChange &&
-        !this.isPastingMarkdown
-      if (isUserChange) {
-        this.hasUserEdited = true
-      }
-      if (!this.isPastingMarkdown && isUserChange) {
-        this.pendingMarkdownSource = ''
-      }
-      const isMarkdownNode =
-        this.node &&
-        this.node.getData &&
-        (this.node.getData('richText') ||
-          typeof this.node.getData('markdown') === 'string')
-      const html = this.getRealtimeEditText()
-      debugMindMap('mindmap-richtext', 'text-change', {
-        node: summarizeNodeForDebug(this.node),
-        source,
-        isUserChange,
-        isMarkdownNode,
-        hasUserEdited: this.hasUserEdited,
-        isInitializingQuill: this.isInitializingQuill,
-        isProgrammaticChange: this.isProgrammaticChange,
-        editLayerHtml: summarizeHtml(this.getEditText()),
-        realtimeHtml: summarizeHtml(html)
-      })
-      if (isMarkdownNode) {
-        debugMindMap(
-          'mindmap-richtext',
-          'text-change skipped markdown realtime render',
-          {
-            node: summarizeNodeForDebug(this.node),
-            source,
-            isUserChange,
-            isPastingMarkdown: this.isPastingMarkdown,
-            pendingMarkdownSource: summarizeMarkdown(this.pendingMarkdownSource),
-            editLayerHtml: summarizeHtml(this.getEditText())
-          }
-        )
-        return
-      }
-      if (!isUserChange) {
-        return
-      }
+    this.quill.on('text-change', () => {
       this.mindMap.emit('node_text_edit_change', {
         node: this.node,
-        text: html,
-        richText: true,
-        shouldRealtimeRender: true,
-        source
+        text: this.getEditText(),
+        richText: true
       })
     })
     // 拦截粘贴，只允许粘贴纯文本
@@ -1061,9 +540,6 @@ class RichText {
     // })
     // 剪贴板里只要存在文本就会走这里，所以当剪贴板里是纯文本，或文本+图片都可以监听到和拦截，但是只有纯图片时不会走这里，所以无法拦截
     this.quill.clipboard.addMatcher(Node.ELEMENT_NODE, (node, delta) => {
-      if (this.isPastingMarkdown) {
-        return delta
-      }
       let ops = []
       let style = this.getPasteTextStyle()
       delta.ops.forEach(op => {
@@ -1078,7 +554,7 @@ class RichText {
       delta.ops = ops
       return delta
     })
-    // 拦截图片的粘贴：将图片转换为 base64 内联插入
+    // 拦截图片的粘贴，当剪贴板里是纯图片，或文本+图片都可以拦截到，但是带来的问题是文本+图片时里面的文本也无法粘贴
     this.quill.root.addEventListener(
       'paste',
       e => {
@@ -1087,147 +563,11 @@ class RichText {
           e.clipboardData.files &&
           e.clipboardData.files.length
         ) {
-          let img = null
-          Array.from(e.clipboardData.items || []).forEach(item => {
-            if (item.type.indexOf('image') > -1) {
-              img = item.getAsFile()
-            }
-          })
-          if (img) {
-            e.preventDefault()
-            const reader = new FileReader()
-            reader.onload = () => {
-              const base64 = reader.result
-              const range = this.quill.getSelection(true)
-              const index = range ? range.index : this.quill.getLength()
-              this.quill.insertEmbed(index, 'image', base64, Quill.sources.USER)
-              this.quill.setSelection(index + 1, Quill.sources.SILENT)
-              this.hasUserEdited = true
-              this.pendingMarkdownSource = ''
-            }
-            reader.readAsDataURL(img)
-            debugMindMap('mindmap-richtext', 'paste image inserted inline', {
-              imageType: img.type || null,
-              imageSize: img.size || 0
-            })
-          }
-          return
-        }
-        if (this.handleStructuredHtmlPaste(e)) {
-          return
-        }
-        if (this.handleMarkdownPaste(e)) {
-          return
+          e.preventDefault()
         }
       },
       true
     )
-  }
-
-  looksLikeStructuredHtml(html) {
-    return /<(h[1-6]|strong|b|em|i|s|del|code|pre|blockquote|ol|ul|li|table|thead|tbody|tr|th|td|mark|a|img|hr)\b/i.test(
-      html || ''
-    )
-  }
-
-  pasteHtmlIntoQuill(html, range = this.quill.getSelection(true)) {
-    const index = range ? range.index : this.quill.getLength()
-    debugMindMap('mindmap-markdown', 'pasteHtmlIntoQuill start', {
-      node: summarizeNodeForDebug(this.node),
-      range,
-      index,
-      html: summarizeHtml(html)
-    })
-    this.isPastingMarkdown = true
-    try {
-      this.quill.clipboard.dangerouslyPasteHTML(index, html, Quill.sources.USER)
-    } finally {
-      this.isPastingMarkdown = false
-    }
-    debugMindMap('mindmap-markdown', 'pasteHtmlIntoQuill done', {
-      node: summarizeNodeForDebug(this.node),
-      quillLength: this.quill ? this.quill.getLength() : null,
-      currentHtml: summarizeHtml(this.quill?.container?.firstChild?.innerHTML)
-    })
-    return true
-  }
-
-  handleStructuredHtmlPaste(e) {
-    const html = e.clipboardData && e.clipboardData.getData('text/html')
-    const text = e.clipboardData && e.clipboardData.getData('text/plain')
-    if (!this.looksLikeStructuredHtml(html) || looksLikeMarkdown(text)) {
-      return false
-    }
-    e.preventDefault()
-    const range = this.quill.getSelection(true)
-    debugMindMap('mindmap-richtext', 'handleStructuredHtmlPaste convert', {
-      range,
-      text: summarizeHtml(text),
-      html: summarizeHtml(html)
-    })
-    debugMindMap('mindmap-markdown', 'handleStructuredHtmlPaste decision', {
-      node: summarizeNodeForDebug(this.node),
-      text: summarizeMarkdown(text),
-      html: summarizeHtml(html),
-      useStructuredHtml: true
-    })
-    return this.pasteHtmlIntoQuill(html, range)
-  }
-
-  // 粘贴 Markdown 文本时转换为 Quill 可编辑的富文本 HTML
-  handleMarkdownPaste(e) {
-    const text = e.clipboardData && e.clipboardData.getData('text/plain')
-    if (!looksLikeMarkdown(text)) {
-      debugMindMap('mindmap-richtext', 'handleMarkdownPaste skipped', {
-        text: summarizeHtml(text)
-      })
-      return false
-    }
-    e.preventDefault()
-    const range = this.quill.getSelection(true)
-    const index = range ? range.index : this.quill.getLength()
-    const currentMarkdown = this.getEditableMarkdownSource()
-    const nextMarkdown = appendMarkdownBlockToSource(currentMarkdown, text)
-    const html = resolveMarkdownNodeHtml({
-      markdown: nextMarkdown
-    })
-    this.pendingMarkdownSource = nextMarkdown
-    debugMindMap('mindmap-richtext', 'handleMarkdownPaste convert', {
-      range,
-      index,
-      markdown: summarizeHtml(text),
-      html: summarizeHtml(html)
-    })
-    debugMindMap('mindmap-markdown', 'handleMarkdownPaste decision', {
-      node: summarizeNodeForDebug(this.node),
-      range,
-      index,
-      markdown: summarizeMarkdown(text),
-      nextMarkdown: summarizeMarkdown(nextMarkdown),
-      html: summarizeHtml(html)
-    })
-    return this.replaceQuillWithMarkdownHtml(html)
-  }
-
-  replaceQuillWithMarkdownHtml(html) {
-    debugMindMap('mindmap-markdown', 'replaceQuillWithMarkdownHtml start', {
-      node: summarizeNodeForDebug(this.node),
-      html: summarizeHtml(html)
-    })
-    this.isPastingMarkdown = true
-    try {
-      this.quill.setContents([], Quill.sources.SILENT)
-      this.quill.clipboard.dangerouslyPasteHTML(0, html, Quill.sources.USER)
-      this.quill.setSelection(this.quill.getLength() - 1, 0, Quill.sources.SILENT)
-    } finally {
-      this.isPastingMarkdown = false
-    }
-    debugMindMap('mindmap-markdown', 'replaceQuillWithMarkdownHtml done', {
-      node: summarizeNodeForDebug(this.node),
-      quillLength: this.quill ? this.quill.getLength() : null,
-      currentHtml: summarizeHtml(this.quill?.container?.firstChild?.innerHTML)
-    })
-    return true
   }
 
   // 获取粘贴的文本的样式
@@ -1264,28 +604,10 @@ class RichText {
   // 中文输入中
   onCompositionUpdate() {
     if (!this.showTextEdit || !this.node) return
-    const isMarkdownNode =
-      this.node &&
-      this.node.getData &&
-      (this.node.getData('richText') ||
-        typeof this.node.getData('markdown') === 'string')
-    if (isMarkdownNode) {
-      debugMindMap(
-        'mindmap-richtext',
-        'composition skipped markdown realtime render',
-        {
-          node: summarizeNodeForDebug(this.node),
-          editLayerHtml: summarizeHtml(this.getEditText())
-        }
-      )
-      return
-    }
     this.mindMap.emit('node_text_edit_change', {
       node: this.node,
       text: this.getEditText(),
-      richText: true,
-      shouldRealtimeRender: true,
-      source: 'composition'
+      richText: true
     })
   }
 
@@ -1315,7 +637,7 @@ class RichText {
   // 聚焦
   focus(start) {
     const len = this.quill.getLength()
-    this.setCollapsedQuillSelection(typeof start === 'number' ? start : len)
+    this.quill.setSelection(typeof start === 'number' ? start : len, len)
   }
 
   // 格式化当前选中的文本

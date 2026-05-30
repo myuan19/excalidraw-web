@@ -148,10 +148,8 @@
 import { mapState, mapMutations } from 'vuex'
 import { downTypeList } from '@/config'
 import { isMobile } from 'simple-mind-map/src/utils/index'
-import MarkdownIt from 'markdown-it'
 
 // 导出
-let md = null
 export default {
   data() {
     return {
@@ -184,9 +182,8 @@ export default {
         }
         if (item.type === 'xlsx') {
           return false
-        } else {
-          return true
         }
+        return true
       })
     },
 
@@ -202,7 +199,7 @@ export default {
     },
 
     noOptions() {
-      return ['md', 'xmind', 'txt', 'xlsx', 'mm'].includes(this.exportType)
+      return ['xmind', 'txt', 'xlsx', 'mm'].includes(this.exportType)
     }
   },
   created() {
@@ -511,10 +508,6 @@ export default {
 
             &.pdf {
               background-image: url('../../../assets/img/foramt/4.png');
-            }
-
-            &.md {
-              background-image: url('../../../assets/img/foramt/5.png');
             }
 
             &.json {

@@ -130,7 +130,6 @@ export default {
     copyToClipboard: 'Copy to clipboard',
     copyToSmm: 'SMM',
     copyToJson: 'JSON',
-    copyToMarkdown: 'Markdown',
     copyToTxt: 'Txt',
     copyToPng: 'Png',
     copySuccess: 'Copy success',
@@ -162,7 +161,6 @@ export default {
     imageFile: 'Image file',
     svgFile: 'svg file',
     pdfFile: 'pdf file',
-    markdownFile: 'markdown file',
     isTransparent: 'Background is transparent',
     transformingDomToImages: 'Converting nodes: ',
     notifyTitle: 'Info',
@@ -199,10 +197,7 @@ export default {
     fileContentError: 'The file content is incorrect',
     importSuccess: 'Import success',
     fileParsingFailed: 'File parsing failed',
-    xmindCanvasSelectDialogTitle: 'Select the canvas to import',
-    mdImportDialogTitle: 'Paste Markdown content to import',
-    mdPlaceholder: 'Please enter the content in Markdown format',
-    mdEmptyTip: 'The content cannot be empty'
+    xmindCanvasSelectDialogTitle: 'Select the canvas to import'
   },
   navigatorToolbar: {
     openMiniMap: 'Open mini map',
@@ -534,13 +529,13 @@ export default {
     configurationMissing: 'Configuration missing',
     aiCreateMsgPrefix: 'Help me write one【',
     aiCreateMsgPostfix:
-      '】. It needs to be returned in Markdown format and can only use two syntax: Markdown title and unordered list. It can support multiple layers of nesting. Just return the content.',
+      '】. Return only one JSON object like {"data":{"text":"Topic"},"children":[{"data":{"text":"Child"},"children":[]}]}. Do not include any other text.',
     aiCreatePartMsgPrefix: 'I have a theme for【',
     aiCreatePartMsgCenter:
       '】Can you help me continue writing one of the contents of the mind map【',
     aiCreatePartMsgPostfix: '】The subordinate content of the node',
     aiCreatePartMsgHelp:
-      '. Needs to be returned in Markdown format and can only use two syntax: Markdown title and unordered list. It can support multi-level nesting. Just return the content.',
+      '. Return only JSON like {"data":{"text":"Node title"},"children":[{"data":{"text":"Child"},"children":[]}]}, where children are the nodes to append. Do not include any other text.',
     aiCreatePart: 'AI Continuation'
   },
   note: {

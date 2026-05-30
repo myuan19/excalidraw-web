@@ -1,8 +1,35 @@
-import type { EditorDefinition } from "../types";
+import { MindMapAdapter } from "../../data/formats/MindMapAdapter";
+import {
+  buildMindMapEmbedBridgePayload,
+  prepareMindMapEmbedData,
+} from "./embed";
+import {
+  createMindMapFile,
+  importMindMapFile,
+} from "./hostActions";
 
-export const mindMapEditorDefinition: EditorDefinition = {
+import type { EditorPlugin } from "../types";
+
+export const mindMapPlugin: EditorPlugin = {
   kind: "mindmap",
   displayName: "MindMap",
-  supportedExtensions: [".smm"],
-  loadComponent: () => import("./MindMapEditorShell"),
+  icon: "/icons/mindmap.ico",
+  downloadExtension: "smm",
+  adapter: MindMapAdapter,
+  loadEditorShell: () => import("./MindMapEditorShell"),
+  loadEmbedViewer: () => import("../../embed/MindMapEmbedViewer"),
+  createFile: createMindMapFile,
+  importFile: importMindMapFile,
+  prepareEmbedData: prepareMindMapEmbedData,
+  buildEmbedPayload: (data) =>
+    buildMindMapEmbedBridgePayload(data as ReturnType<typeof prepareMindMapEmbedData>),
+  importMimeTypes: ["application/vnd.simple-mind-map+json"],
+};
+
+/** @deprecated Use mindMapPlugin */
+export const mindMapEditorDefinition = {
+  kind: mindMapPlugin.kind,
+  displayName: mindMapPlugin.displayName,
+  supportedExtensions: mindMapPlugin.adapter.extensions,
+  loadComponent: mindMapPlugin.loadEditorShell,
 };

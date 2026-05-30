@@ -35,7 +35,7 @@ Local storage, privacy-first, data security. The software can be used without an
 - [x] 3. Supports various structure types: mind maps, logical structure diagrams, directory organization charts, organizational charts, timelines, fishbone diagrams, tables, etc.
 - [x] 4. Built-in hundreds of rich and beautiful themes, also supports custom themes and AI-generated themes.
 - [x] 5. Nodes support adding rich content: text, images, links, icons, notes, attachments, tags, summary nodes, association lines, borders, markers, to-dos, descriptions, numbering, mathematical formulas, etc.
-- [x] 6. Supports importing files in XMind, FreeMind, Markdown, Txt, Xlsx, etc.; supports exporting to PNG, XMind, SVG, PDF, Markdown, Txt, Xlsx, FreeMind, Mermaid, Html, etc.
+- [x] 6. Supports importing files in XMind, FreeMind, Txt, Xlsx, etc.; supports exporting to PNG, XMind, SVG, PDF, Txt, Xlsx, FreeMind, Mermaid, Html, etc.
 - [x] 7. Rich style settings: text, borders, background, shape, lines, inner/outer margins, image tag layout, etc.
 - [x] 8. Supports practical and interesting features: historical version management, presentation mode, AI generation, hand-drawn style, outline editing, watermark, scrollbars, sibling node alignment, minimap, entering specific nodes, rainbow lines, bidirectional node linking, search and replace, etc.
 

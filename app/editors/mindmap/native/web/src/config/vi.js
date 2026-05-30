@@ -507,12 +507,6 @@ export const downTypeList = [
     desc: 'Thích hợp để xem trình duyệt và in'
   },
   {
-    name: 'Markdown',
-    type: 'md',
-    icon: 'iconmarkdown',
-    desc: 'Định dạng văn bản md để dễ dàng mở phần mềm khác'
-  },
-  {
     name: 'XMind',
     type: 'xmind',
     icon: 'iconxmind',

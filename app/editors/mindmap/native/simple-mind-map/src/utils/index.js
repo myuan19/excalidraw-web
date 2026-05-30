@@ -8,7 +8,6 @@ import MersenneTwister from './mersenneTwister'
 import { ForeignObject } from '@svgdotjs/svg.js'
 import merge from 'deepmerge'
 import { lineStyleProps } from '../theme/default'
-import { debugMindMap } from './mindMapDebug'
 
 //  深度优先遍历树
 export const walk = (
@@ -311,13 +310,6 @@ export const asyncRun = (taskList, callback = () => {}) => {
   let len = taskList.length
   if (len <= 0) {
     return callback()
-  }
-  if (typeof window !== 'undefined' && window.__mindMapSyncLayout) {
-    for (let i = 0; i < len; i++) {
-      taskList[i]()
-    }
-    callback()
-    return
   }
   let loop = () => {
     if (index >= len) {
@@ -1135,18 +1127,11 @@ export const isSameObject = (a, b) => {
 
 // 检查navigator.clipboard对象的读取是否可用
 export const checkClipboardReadEnable = () => {
-  if (window.takeOverAppMethods?.readClipboardItems) {
-    return true
-  }
   return navigator.clipboard && typeof navigator.clipboard.read === 'function'
 }
 
 // 将数据设置到用户剪切板中
 export const setDataToClipboard = data => {
-  if (window.takeOverAppMethods?.writeClipboardText) {
-    window.takeOverAppMethods.writeClipboardText(JSON.stringify(data))
-    return
-  }
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(JSON.stringify(data))
   }
@@ -1156,7 +1141,7 @@ export const setDataToClipboard = data => {
 export const getDataFromClipboard = async () => {
   let text = null
   let img = null
-  const readBrowserClipboard = async () => {
+  if (checkClipboardReadEnable()) {
     const items = await navigator.clipboard.read()
     if (items && items.length > 0) {
       for (const clipboardItem of items) {
@@ -1170,61 +1155,6 @@ export const getDataFromClipboard = async () => {
         }
       }
     }
-  }
-  if (navigator.clipboard && typeof navigator.clipboard.read === 'function') {
-    try {
-      await readBrowserClipboard()
-      debugMindMap('mindmap-paste', 'browser clipboard read', {
-        hasText: !!text,
-        textLength: text ? text.length : 0,
-        hasImage: !!img,
-        imageType: img?.type || null,
-        imageSize: img?.size || 0
-      })
-      if (text || img) {
-        return {
-          text,
-          img
-        }
-      }
-    } catch (error) {
-      debugMindMap('mindmap-paste', 'browser clipboard read failed', {
-        name: error?.name,
-        message: error?.message
-      })
-    }
-  }
-  if (window.takeOverAppMethods?.readClipboardItems) {
-    const res = await window.takeOverAppMethods.readClipboardItems()
-    const items = Array.isArray(res.items) ? res.items : []
-    for (const clipboardItem of items) {
-      const entries = clipboardItem.entries || {}
-      const types = Array.isArray(clipboardItem.types)
-        ? clipboardItem.types
-        : Object.keys(entries)
-      for (const type of types) {
-        if (/^image\//.test(type) && entries[type]) {
-          img = await fetch(entries[type]).then(res => res.blob())
-        } else if (type === 'text/plain' && entries[type]) {
-          text = entries[type]
-        }
-      }
-    }
-    debugMindMap('mindmap-paste', 'host clipboard read', {
-      itemCount: items.length,
-      hasText: !!text,
-      textLength: text ? text.length : 0,
-      hasImage: !!img,
-      imageType: img?.type || null,
-      imageSize: img?.size || 0
-    })
-    return {
-      text,
-      img
-    }
-  }
-  if (checkClipboardReadEnable()) {
-    await readBrowserClipboard()
   }
   return {
     text,

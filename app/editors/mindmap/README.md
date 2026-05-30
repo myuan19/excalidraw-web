@@ -17,5 +17,7 @@ NODE_OPTIONS=--openssl-legacy-provider yarn build
 
 Dev / prod use the **same iframe URL**: `/mind-map/index.html` on the main app origin (Vite in dev, static host in prod). There is no separate MindMap dev port.
 
+Node content uses **Quill rich text (HTML in `data.text`)** — Markdown import/export and per-node Markdown editing are not supported.
+
 - `./_scripts/dev.sh --all` — ensures `public/mind-map/` is built, then starts API + Vite
 - `./_scripts/dev.sh --mindmap` — build + watch native sources (rebuilds `public/mind-map/` on change)

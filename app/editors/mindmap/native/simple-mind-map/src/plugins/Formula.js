@@ -1,7 +1,6 @@
 import katex from 'katex'
 import Quill from 'quill'
 import { getChromeVersion, htmlEscape } from '../utils/index'
-import { debugMindMap, summarizeHtml, summarizeNodeForDebug } from '../utils/mindMapDebug'
 import { getBaseStyleText, getFontStyleText } from './FormulaStyle'
 
 let extended = false
@@ -120,11 +119,7 @@ class Formula {
 
   // 将公式富文本转换为公式源码
   latexRichToText(nodeText) {
-    const start = performance.now()
     if (nodeText.indexOf('class="ql-formula"') !== -1) {
-      debugMindMap('mindmap-formula', 'latexRichToText start', {
-        html: summarizeHtml(nodeText)
-      })
       const parser = new DOMParser()
       const doc = parser.parseFromString(nodeText, 'text/html')
       const els = doc.getElementsByClassName('ql-formula')
@@ -144,23 +139,14 @@ class Formula {
         }, 0)
       }
     }
-    debugMindMap('mindmap-formula', 'latexRichToText done', {
-      elapsed: Math.round(performance.now() - start),
-      html: summarizeHtml(nodeText)
-    })
     return nodeText
   }
 
   // 使用格式化的 latex 字符串内容更新 quill 内容：输入 $*****$
   formatLatex(richText) {
-    const start = performance.now()
     const contents = richText.quill.getContents()
     const ops = contents.ops
     let mod = false
-    debugMindMap('mindmap-formula', 'formatLatex start', {
-      node: summarizeNodeForDebug(richText.node),
-      opCount: ops.length
-    })
     for (let i = ops.length - 1; i >= 0; i--) {
       const op = ops[i]
       const insert = op.insert
@@ -172,10 +158,6 @@ class Formula {
             const exp = m[j] && m[j][0] ? m[j][0].slice(1, -1) || null : null // $...$ 之间的表达式
             if (exp !== null && exp.trim().length > 0) {
               const isLegal = this.checkFormulaIsLegal(exp)
-              debugMindMap('mindmap-formula', 'formatLatex candidate', {
-                exp,
-                isLegal
-              })
               if (isLegal) {
                 arr.splice(j + 1, 0, { insert: { formula: exp } }) // 添加到对应位置之后
                 mod = true
@@ -197,19 +179,7 @@ class Formula {
         }
       }
     }
-    if (mod) {
-      richText.isProgrammaticChange = true
-      try {
-        richText.quill.setContents(contents)
-      } finally {
-        richText.isProgrammaticChange = false
-      }
-    }
-    debugMindMap('mindmap-formula', 'formatLatex done', {
-      elapsed: Math.round(performance.now() - start),
-      changed: mod,
-      opCount: contents.ops.length
-    })
+    if (mod) richText.quill.setContents(contents)
   }
 
   checkFormulaIsLegal(str) {

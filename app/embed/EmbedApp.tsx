@@ -1,38 +1,10 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 
 import { buildEmbedEditUrl } from "../data/embedDocument";
+import { editorRegistry } from "../editors";
+import { getLazyEmbedViewer } from "../editors/lazyViews";
 import { embedDebug, embedMark, embedMeasure } from "./embedDebug";
 import { getEmbedBootstrap } from "./embedMode";
-
-import type { EmbedDocumentKind } from "./embedMode";
-
-const LazyExcalidrawEmbedViewer = lazy(async () => {
-  embedMark("excalidraw-viewer-import-start");
-  const mod = await import("./ExcalidrawEmbedViewer");
-  embedMark("excalidraw-viewer-imported");
-  embedMeasure(
-    "excalidraw-viewer-import",
-    "excalidraw-viewer-import-start",
-    "excalidraw-viewer-imported",
-  );
-  return mod;
-});
-
-const LazyMindMapEmbedViewer = lazy(async () => {
-  embedMark("mindmap-viewer-import-start");
-  const mod = await import("./MindMapEmbedViewer");
-  embedMark("mindmap-viewer-imported");
-  embedMeasure(
-    "mindmap-viewer-import",
-    "mindmap-viewer-import-start",
-    "mindmap-viewer-imported",
-  );
-  return mod;
-});
-
-function normalizeKind(kind: unknown): EmbedDocumentKind {
-  return kind === "mindmap" ? "mindmap" : "excalidraw";
-}
 
 function EmbedFallback() {
   return (
@@ -88,7 +60,9 @@ function summarizePayload(payload: unknown) {
 
 export default function EmbedApp() {
   const bootstrap = useMemo(() => getEmbedBootstrap(), []);
-  const kind = normalizeKind(bootstrap.kind);
+  const kind = editorRegistry.resolveKind(bootstrap.kind);
+  const plugin = editorRegistry.getByKind(kind);
+  const LazyViewer = useMemo(() => getLazyEmbedViewer(plugin), [plugin]);
   const [data, setData] = useState<unknown>(() =>
     bootstrap.dataUrl ? null : window.__EXCALIDRAW_EMBED_DATA__ ?? null,
   );
@@ -109,13 +83,6 @@ export default function EmbedApp() {
       initialDataSummary: summarizePayload(window.__EXCALIDRAW_EMBED_DATA__),
     });
   }, [bootstrap, kind]);
-
-  embedDebug("render state", {
-    kind,
-    hasData: !!data,
-    hasError: !!error,
-    dataSummary: summarizePayload(data),
-  });
 
   useEffect(() => {
     if (!bootstrap.dataUrl) {
@@ -186,17 +153,21 @@ export default function EmbedApp() {
     return <EmbedFallback />;
   }
 
+  if (!LazyViewer) {
+    return <EmbedError message={`暂不支持嵌入预览：${kind}`} />;
+  }
+
+  const preparedData = plugin?.prepareEmbedData
+    ? plugin.prepareEmbedData(data)
+    : data;
+
   embedDebug("render viewer", {
     kind,
     dataSummary: summarizePayload(data),
   });
   return (
     <Suspense fallback={<EmbedFallback />}>
-      {kind === "mindmap" ? (
-        <LazyMindMapEmbedViewer data={data} editUrl={editUrl} />
-      ) : (
-        <LazyExcalidrawEmbedViewer data={data} editUrl={editUrl} />
-      )}
+      <LazyViewer data={preparedData} editUrl={editUrl} />
     </Suspense>
   );
 }

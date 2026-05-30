@@ -16,11 +16,10 @@ import { FileSyncState } from "../data/FileSyncState";
 import { chooseFileCardThumbnail } from "../data/fileCardThumbnail";
 import {
   formatImportErrorMessage,
-  loadExcalidrawFileAsServerSceneData,
 } from "../data/importExcalidrawScene";
 import { LocalThumbnailCache, LOCAL_THUMB_UPDATED_EVENT } from "../data/localThumbnailCache";
 import { detectFormat } from "../data/formats/detectFormat";
-import { generateExcalidrawThumbnailAndCache } from "../data/excalidrawThumbnail";
+import { editorRegistry } from "../editors";
 import {
   ServerSync,
   type FileOrderItem,
@@ -28,23 +27,15 @@ import {
   type ServerFolder,
 } from "../data/ServerSync";
 import {
-  getDocumentFormatAdapter,
-  MindMapAdapter,
-} from "../data/formats/registry";
-import { generateMindMapThumbnailAndCache } from "../data/mindMapThumbnail";
-import type { MindMapDocumentData } from "../data/formats/MindMapAdapter";
-import {
   extractThumbBg,
   patchThumbnailSvgForCard,
 } from "../data/thumbnailSvg";
-import { saveMindMapBrowserViewFromData } from "../data/mindMapBrowserViewStorage";
 import {
   ensureAIConfigLoaded,
   isAIConfigured,
   subscribeAIConfig,
 } from "../data/aiConfig";
 import { computeThumbFetchAllowIds } from "../data/thumbCoverage";
-import { createBlankExcalidrawInitialScene } from "../data/forkFileScene";
 import { AISettings } from "./AISettings";
 import { EmbedTokenManager } from "./EmbedTokenManager";
 
@@ -58,8 +49,6 @@ const logPipe = createLogger({ module: "thumbPipeline" });
 
 const HOME_APP_TITLE = "绘图空间";
 const DRAWING_SPACE_ICON = "/icons/drawing-space.svg";
-const EXCALIDRAW_EDITOR_ICON = "/icons/excalidraw.svg";
-const MINDMAP_EDITOR_ICON = "/icons/mindmap.ico";
 
 function getDebugSvgAttr(svgMarkup: string | null, name: string): string | null {
   if (!svgMarkup) {
@@ -179,7 +168,6 @@ interface FileListProps {
 }
 
 type SortKey = "updated_at" | "created_at" | "name";
-type NewDocumentKind = "excalidraw" | "mindmap";
 type FolderDraft =
   | { mode: "create"; parentId: string | null }
   | { mode: "rename"; folder: ServerFolder };
@@ -351,7 +339,11 @@ function ImageIcon({
 }
 
 function editorIconSrc(kind: string): string {
-  return kind === "mindmap" ? MINDMAP_EDITOR_ICON : EXCALIDRAW_EDITOR_ICON;
+  return (
+    editorRegistry.getByKind(kind)?.icon ??
+    editorRegistry.getDefaultPlugin()?.icon ??
+    "/icons/excalidraw.svg"
+  );
 }
 
 /**
@@ -506,8 +498,10 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
   const [aiDotOk, setAiDotOk] = useState(false);
   const [newFileDialogOpen, setNewFileDialogOpen] = useState(false);
   const [newFileName, setNewFileName] = useState("未命名");
-  const [newDocumentKind, setNewDocumentKind] =
-    useState<NewDocumentKind>("excalidraw");
+  const creatableEditors = useMemo(() => editorRegistry.listCreatable(), []);
+  const [newDocumentKind, setNewDocumentKind] = useState(() =>
+    editorRegistry.getDefaultKind(),
+  );
 
   const [moveDialogFile, setMoveDialogFile] = useState<ServerFile | null>(null);
   const [moveTargetFolderId, setMoveTargetFolderId] = useState<string | null>(null);
@@ -945,48 +939,9 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
     setFetchedThumbs: setFetchedThumbsWithLayoutDebug,
   });
 
-  const createFileOnServer = useCallback(
-    async (
-      name: string,
-      initialScene?: { elements: unknown[]; appState: unknown; files: unknown },
-    ): Promise<string> => {
-      logList.debug("createFileOnServer", {
-        name,
-        folderId: currentFolderId,
-        hasScene: !!initialScene,
-        elements: initialScene ? (initialScene.elements as unknown[]).length : 0,
-      });
-      const created = await ServerSync.createFile(
-        name,
-        currentFolderId,
-        "excalidraw",
-      );
-      const id = created.id;
-
-      if (initialScene) {
-        const thumbnail = await generateExcalidrawThumbnailAndCache(id, initialScene);
-
-        await ServerSync.saveFileImmediate(id, initialScene, name, thumbnail);
-
-        FileSyncState.setLocalCache(id, {
-          elements: initialScene.elements,
-          appState: initialScene.appState,
-          files: initialScene.files,
-          deltas: [],
-        });
-        logList.debug(
-          `createFileOnServer ${id.slice(0, 8)} saved, thumb=${!!thumbnail}`,
-        );
-      }
-
-      return id;
-    },
-    [currentFolderId],
-  );
-
   const openNewFileDialog = useCallback(() => {
     setNewFileName("未命名");
-    setNewDocumentKind("excalidraw");
+    setNewDocumentKind(editorRegistry.getDefaultKind());
     setNewFileDialogOpen(true);
   }, []);
 
@@ -994,27 +949,16 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
     const name = newFileName.trim() || "未命名";
     setNewFileDialogOpen(false);
     try {
-      if (newDocumentKind === "mindmap") {
-        const created = await ServerSync.createFile(
-          name,
-          currentFolderId,
-          "mindmap",
-        );
-        const mindMapData = MindMapAdapter.createEmpty();
-        const document = MindMapAdapter.toDocument(mindMapData);
-        let thumbnail: string | undefined;
-        thumbnail = await generateMindMapThumbnailAndCache(created.id, mindMapData);
-        await ServerSync.saveFileImmediate(created.id, document, name, thumbnail);
-        await refresh({ silent: true, noErrorOnFailure: true });
-        onOpenFile({ id: created.id, kind: "mindmap" });
-        return;
+      const plugin = editorRegistry.getByKind(newDocumentKind);
+      if (!plugin?.createFile) {
+        throw new Error(`暂不支持创建 ${newDocumentKind} 文档`);
       }
-
-      const id = await createFileOnServer(
+      const { id } = await plugin.createFile({
         name,
-        createBlankExcalidrawInitialScene(name),
-      );
-      onOpenFile({ id, kind: "excalidraw" });
+        folderId: currentFolderId,
+      });
+      await refresh({ silent: true, noErrorOnFailure: true });
+      onOpenFile({ id, kind: plugin.kind });
     } catch (e: any) {
       setError(e.message);
     }
@@ -1022,7 +966,6 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
     newFileName,
     newDocumentKind,
     currentFolderId,
-    createFileOnServer,
     onOpenFile,
     refresh,
   ]);
@@ -1070,60 +1013,16 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
             folderId: currentFolderId,
           });
           const detected = await detectFormat(file);
-          if (detected.kind !== "excalidraw") {
-            const adapter = getDocumentFormatAdapter(detected.kind);
-            if (!adapter || detected.kind === "unknown") {
-              throw new Error(
-                `无法识别「${file.name}」的文档格式，请确认它是 excalidraw 或 mindmap 文件。`,
-              );
-            }
-            let rawMindMapData: unknown = null;
-            let data: unknown;
-            if (adapter.kind === "mindmap") {
-              try {
-                rawMindMapData = JSON.parse(await file.text());
-              } catch {
-                throw new Error("Invalid MindMap JSON");
-              }
-              data = await MindMapAdapter.parse(rawMindMapData);
-            } else {
-              data = await adapter.parse(file);
-            }
-            const created = await ServerSync.createFile(
-              sanitizeFileBaseName(file.name),
-              currentFolderId,
-              adapter.kind,
+          const plugin = editorRegistry.getByKind(detected.kind);
+          if (!plugin?.importFile || detected.kind === "unknown") {
+            throw new Error(
+              `无法识别「${file.name}」的文档格式，请确认它是 ${editorRegistry.importableEditorNames()} 文件。`,
             );
-            createdIds.push(created.id);
-            if (adapter.kind === "mindmap") {
-              saveMindMapBrowserViewFromData(created.id, rawMindMapData);
-            }
-            const document = adapter.toDocument(data);
-            let thumbnail: string | undefined;
-            if (adapter.kind === "mindmap" && MindMapAdapter.validate(data)) {
-              thumbnail = await generateMindMapThumbnailAndCache(
-                created.id,
-                data as MindMapDocumentData,
-              );
-            }
-            await ServerSync.saveFileImmediate(
-              created.id,
-              document,
-              sanitizeFileBaseName(file.name),
-              thumbnail,
-            );
-            continue;
           }
-          const { elements, appState, files: sceneFiles } =
-            await loadExcalidrawFileAsServerSceneData(file);
-          logList.debug("import parsed", {
-            elements: elements.length,
-            files: Object.keys(sceneFiles).length,
-          });
-          const id = await createFileOnServer(sanitizeFileBaseName(file.name), {
-            elements,
-            appState,
-            files: sceneFiles,
+          const { id } = await plugin.importFile({
+            file,
+            fileName: sanitizeFileBaseName(file.name),
+            folderId: currentFolderId,
           });
           createdIds.push(id);
         }
@@ -1148,7 +1047,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
         setImporting(false);
       }
     },
-    [createFileOnServer, currentFolderId, refresh],
+    [currentFolderId, refresh],
   );
 
   const onSceneImportInputChange = (
@@ -1725,7 +1624,7 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
       fetchedThumb: fetchedThumbs[f.id] ?? null,
     });
     const thumbSvg = thumbnailChoice.thumbSvg;
-    const kind = f.kind ?? "excalidraw";
+    const kind = editorRegistry.resolveKind(f.kind);
     const cardThumbSvg = thumbSvg ? patchThumbnailSvgForCard(thumbSvg) : null;
     if (syncState === "draft" || !thumbSvg) {
       debugFileListThumbnail("thumbnail choice", {
@@ -1799,11 +1698,11 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
           }
           logFileListOpen("card click → onOpenFile", {
             fileId8: f.id.slice(0, 8),
-            kind: f.kind ?? "excalidraw",
+            kind,
             targetTag: t?.tagName,
             targetClass: String(t?.className || "").slice(0, 100),
           });
-          onOpenFile({ id: f.id, kind: f.kind ?? "excalidraw" });
+          onOpenFile({ id: f.id, kind });
         }}
       >
         <div
@@ -2066,12 +1965,12 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
                 ref={sceneImportInputRef}
                 type="file"
                 multiple
-                accept=".excalidraw,.smm,.txt,.json,.png,.svg,application/vnd.excalidraw+json,application/vnd.simple-mind-map+json,application/json,text/plain,image/png,image/svg+xml"
+                accept={editorRegistry.buildImportAccept()}
                 className="filelist__file-input-overlay"
                 onChange={onSceneImportInputChange}
                 disabled={importing}
                 tabIndex={-1}
-                title="导入 excalidraw 或 mindmap 文档"
+                title={`导入 ${editorRegistry.importableEditorNames()} 文档`}
               />
             </label>
             <button className="filelist__new-btn" onClick={openNewFileDialog}>
@@ -2272,36 +2171,24 @@ export const FileList: React.FC<FileListProps> = ({ onOpenFile, onReady }) => {
               选择文件类型并起个名字，稍后在列表里也可以随时重命名
             </p>
             <div className="filelist__new-file-kind">
-              <button
-                type="button"
-                className={[
-                  "filelist__kind-option",
-                  newDocumentKind === "excalidraw"
-                    ? "filelist__kind-option--active"
-                    : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                onClick={() => setNewDocumentKind("excalidraw")}
-              >
-                <ImageIcon src={EXCALIDRAW_EDITOR_ICON} alt="" size={18} />
-                <span>excalidraw</span>
-              </button>
-              <button
-                type="button"
-                className={[
-                  "filelist__kind-option",
-                  newDocumentKind === "mindmap"
-                    ? "filelist__kind-option--active"
-                    : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                onClick={() => setNewDocumentKind("mindmap")}
-              >
-                <ImageIcon src={MINDMAP_EDITOR_ICON} alt="" size={18} />
-                <span>mindmap</span>
-              </button>
+              {creatableEditors.map((plugin) => (
+                <button
+                  key={plugin.kind}
+                  type="button"
+                  className={[
+                    "filelist__kind-option",
+                    newDocumentKind === plugin.kind
+                      ? "filelist__kind-option--active"
+                      : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  onClick={() => setNewDocumentKind(plugin.kind)}
+                >
+                  <ImageIcon src={plugin.icon} alt="" size={18} />
+                  <span>{plugin.displayName}</span>
+                </button>
+              ))}
             </div>
             <input
               className="filelist__folder-input filelist__new-file-input"

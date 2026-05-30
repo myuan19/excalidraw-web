@@ -126,7 +126,6 @@ export default {
     copyToClipboard: '复制到剪贴板',
     copyToSmm: 'SMM',
     copyToJson: 'JSON',
-    copyToMarkdown: 'Markdown',
     copyToTxt: 'Txt',
     copyToPng: '图片',
     copySuccess: '复制成功',
@@ -158,7 +157,6 @@ export default {
     imageFile: '图片文件',
     svgFile: 'svg文件',
     pdfFile: 'pdf文件',
-    markdownFile: 'markdown文件',
     isTransparent: '背景是否透明',
     transformingDomToImages: '正在转换节点：',
     notifyTitle: '消息',
@@ -193,10 +191,7 @@ export default {
     fileContentError: '文件内容有误',
     importSuccess: '导入成功',
     fileParsingFailed: '文件解析失败',
-    xmindCanvasSelectDialogTitle: '选择要导入的画布',
-    mdImportDialogTitle: '粘贴Markdown内容导入',
-    mdPlaceholder: '请输入Markdown格式的内容',
-    mdEmptyTip: '内容不能为空'
+    xmindCanvasSelectDialogTitle: '选择要导入的画布'
   },
   navigatorToolbar: {
     openMiniMap: '开启小地图',
@@ -515,12 +510,12 @@ export default {
     configurationMissing: '配置缺失',
     aiCreateMsgPrefix: '帮我写一个【',
     aiCreateMsgPostfix:
-      '】，需要以Markdown格式返回，并且只能使用Markdown的标题和无序列表两种语法，可以支持多层嵌套。只需返回内容即可。',
+      '】。请只返回一个 JSON 对象，格式为 {"data":{"text":"主题"},"children":[{"data":{"text":"子节点"},"children":[]}]}，不要输出其它说明文字。',
     aiCreatePartMsgPrefix: '我有一个主题为【',
     aiCreatePartMsgCenter: '】的思维导图，帮我续写其中一个内容为【',
     aiCreatePartMsgPostfix: '】的节点的下级内容',
     aiCreatePartMsgHelp:
-      '。需要以Markdown格式返回，并且只能使用Markdown的标题和无序列表两种语法，可以支持多层嵌套。只需返回内容即可。',
+      '。请只返回 JSON，格式为 {"data":{"text":"节点标题"},"children":[{"data":{"text":"子节点"},"children":[]}]}，其中 children 为要追加的子节点，不要输出其它说明文字。',
     aiCreatePart: 'AI续写'
   },
   note: {

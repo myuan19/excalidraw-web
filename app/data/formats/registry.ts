@@ -1,25 +1,29 @@
-import { ExcalidrawAdapter } from "./ExcalidrawAdapter";
-import { MindMapAdapter } from "./MindMapAdapter";
+import { editorRegistry } from "../../editors/registry";
 import { TextAdapter } from "./TextAdapter";
 
 import type { DocumentKind } from "../documentTypes";
 import type { DocumentFormatAdapter } from "./types";
 
-const adapters = new Map<DocumentKind, DocumentFormatAdapter>([
-  [ExcalidrawAdapter.kind, ExcalidrawAdapter],
-  [MindMapAdapter.kind, MindMapAdapter],
-  [TextAdapter.kind, TextAdapter],
-]);
+const formatOnlyAdapters: DocumentFormatAdapter[] = [TextAdapter];
 
 export function getDocumentFormatAdapter(
   kind: DocumentKind,
 ): DocumentFormatAdapter | null {
-  return adapters.get(kind) ?? null;
+  return (
+    editorRegistry.getByKind(kind)?.adapter ??
+    formatOnlyAdapters.find((adapter) => adapter.kind === kind) ??
+    null
+  );
 }
 
 export function listDocumentFormatAdapters(): DocumentFormatAdapter[] {
-  return Array.from(adapters.values());
+  return [
+    ...editorRegistry.list().map((plugin) => plugin.adapter),
+    ...formatOnlyAdapters,
+  ];
 }
 
-export { ExcalidrawAdapter, MindMapAdapter, TextAdapter };
+export { ExcalidrawAdapter } from "./ExcalidrawAdapter";
+export { MindMapAdapter } from "./MindMapAdapter";
+export { TextAdapter };
 export type { DocumentFormatAdapter };

@@ -9,6 +9,7 @@ import { FileList } from "./components/FileList";
 import { logFileListOpen } from "./lib/logger";
 import { isEmbedMode } from "./embed/embedMode";
 import { editorRegistry } from "./editors";
+import { getLazyEditorShell } from "./editors/lazyViews";
 
 import "./index.scss";
 
@@ -37,7 +38,7 @@ function useDeferredEditorPrefetch() {
     firedRef.current = true;
     // Small delay so thumbnails can start loading first.
     setTimeout(() => {
-      editorRegistry.getByKind("excalidraw")?.loadComponent().catch(() => {});
+      editorRegistry.prefetchOnFileListReady();
     }, 150);
   }, []);
 
@@ -52,16 +53,11 @@ function hashNeedsEditor(): boolean {
 
 function getDocumentKindFromHash(): string {
   const params = new URLSearchParams(window.location.hash.slice(1));
-  return params.get("kind") || "excalidraw";
+  return editorRegistry.resolveKind(params.get("kind"));
 }
 
-function buildFileHash(id: string, kind = "excalidraw"): string {
-  const params = new URLSearchParams();
-  params.set("file", id);
-  if (kind !== "excalidraw") {
-    params.set("kind", kind);
-  }
-  return `#${params.toString()}`;
+function buildFileHash(id: string, kind?: string): string {
+  return editorRegistry.buildFileHash(id, kind);
 }
 
 function debugMindMapOpen(label: string, data?: Record<string, unknown>) {
@@ -120,9 +116,10 @@ const ForkRoot = () => {
     return (
       <div className="excalidraw-app" style={{ height: "100%" }}>
         <FileList
-          onOpenFile={({ id, kind = "excalidraw" }) => {
-            const next = buildFileHash(id, kind);
-            if (kind === "mindmap") {
+          onOpenFile={({ id, kind }) => {
+            const resolvedKind = editorRegistry.resolveKind(kind);
+            const next = buildFileHash(id, resolvedKind);
+            if (resolvedKind === "mindmap") {
               debugMindMapOpen("App onOpenFile mindmap", {
                 id8: id.slice(0, 8),
                 nextHash: next,
@@ -130,7 +127,7 @@ const ForkRoot = () => {
             }
             logFileListOpen("App onOpenFile → assign location.hash", {
               id8: id.slice(0, 8),
-              kind,
+              kind: resolvedKind,
               nextHash: next,
             });
             window.location.hash = next;
@@ -153,13 +150,10 @@ const ForkRoot = () => {
     return <UnsupportedDocumentFallback kind={documentKind} />;
   }
 
-  if (editorDefinition.kind === "mindmap") {
-    debugMindMapOpen("App render LazyMindMapEditorShell", {
-      hash: window.location.hash,
-    });
+  const LazyEditor = getLazyEditorShell(editorDefinition);
+  if (!LazyEditor) {
+    return <UnsupportedDocumentFallback kind={documentKind} />;
   }
-
-  const LazyEditor = lazy(editorDefinition.loadComponent);
 
   return (
     <Suspense fallback={<EditorFallback />}>
