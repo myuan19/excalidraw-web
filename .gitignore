@@ -31,7 +31,13 @@ meta*.json
 # Local dev persistence (SQLite + canvas JSON) — never commit or Docker-pack
 _dev_data/*
 !_dev_data/.gitkeep
+
+# Legacy API data dir (migrated to _dev_data on first start)
 server/data/
+
+# Generated MindMap bundles (build → public/mind-map/dist for serve; not in git)
+# Covered by `dist` below; native source build output:
+# app/editors/mindmap/native/dist/
 
 # Local-only dev/deploy helpers (not part of source)
 _scripts/
