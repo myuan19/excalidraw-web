@@ -1,5 +1,3 @@
-// @ts-expect-error Tailwind Vite plugin types require bundler moduleResolution
-import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
 import { defineConfig, loadEnv } from "vite";
@@ -165,7 +163,6 @@ export default defineConfig(({ mode }) => {
       assetsInlineLimit: 0,
     },
     plugins: [
-      tailwindcss(),
       Sitemap({
         hostname: "https://excalidraw.com",
         outDir: "build",

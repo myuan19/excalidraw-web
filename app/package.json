@@ -28,14 +28,12 @@
   "dependencies": {
     "@excalidraw/random-username": "1.0.0",
     "callsites": "4.2.0",
-    "clsx": "2.1.1",
     "i18next-browser-languagedetector": "6.1.4",
     "idb-keyval": "6.0.3",
     "jotai": "2.11.0",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "simple-mind-map": "file:./editors/mindmap/native/simple-mind-map",
-    "tailwind-merge": "3.6.0",
     "uqr": "0.1.2",
     "vite-plugin-html": "3.2.2"
   },

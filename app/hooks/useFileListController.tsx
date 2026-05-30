@@ -1911,7 +1911,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     : false;
 
   return (
-    <div className="relative flex h-screen flex-col bg-background">
+    <div className="filelist">
       {importing && (
         <div className="filelist__import-blocking" aria-busy>
           <span>正在导入…</span>
@@ -1932,7 +1932,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
             <Icon type="menu" size={20} />
           </button>
           <ImageIcon src={DRAWING_SPACE_ICON} alt="" size={22} />
-          <h1 className="m-0 text-lg font-semibold">{HOME_APP_TITLE}</h1>
+          <h1 className="filelist__title">{HOME_APP_TITLE}</h1>
         </div>
         <div className="filelist__header-right">
           <div className="filelist__search-wrap">
@@ -2019,7 +2019,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       {error && <div className="filelist__error">{error}</div>}
 
       <div
-        className="flex flex-1 overflow-hidden"
+        className="filelist__shell"
         onDragOver={onFileListImportDragOver}
         onDrop={onFileListImportDrop}
       >
@@ -2047,7 +2047,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
             </div>
           </div>
           {loading ? (
-            <div className="file-grid" ref={gridRef}>
+            <div className="filelist__grid" ref={gridRef}>
               {Array.from({ length: 6 }, (_, i) => (
                 <div
                   key={i}
@@ -2103,7 +2103,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
             </div>
           ) : (
             <div
-              className="file-grid"
+              className="filelist__grid"
               ref={gridRef}
               key={`${currentFolderId ?? "root"}:${sortKey}:${searchQuery.trim()}`}
             >

@@ -16,7 +16,7 @@ describe("File list branding source contract", () => {
 
     expect(source).toContain('const HOME_APP_TITLE = "绘图空间"');
     expect(source).toContain(
-      '<h1 className="m-0 text-lg font-semibold">{HOME_APP_TITLE}</h1>',
+      '<h1 className="filelist__title">{HOME_APP_TITLE}</h1>',
     );
     expect(htmlSource).toContain("<title>绘图空间</title>");
     expect(htmlSource).toContain('content="绘图空间"');
