@@ -1,6 +1,7 @@
 import Base from './Base'
 import { walk, asyncRun, getNodeIndexInNodeList } from '../utils'
 import { CONSTANTS } from '../constants/constant'
+import { getExpandBtnHitExtend, getExpandBtnStripWidth } from '../utils/expandBtnLayout.js'
 
 //  逻辑结构图
 class LogicalStructure extends Base {
@@ -350,12 +351,25 @@ class LogicalStructure extends Base {
     })
   }
 
-  // 渲染展开收起按钮的隐藏占位元素
+  // 渲染展开收起按钮的隐藏占位元素（含按钮后方延伸区，无需先悬停圆钮）
   renderExpandBtnRect(rect, expandBtnSize, width, height) {
+    const strip = getExpandBtnStripWidth(expandBtnSize, this.mindMap.opt)
     if (this.isUseLeft) {
-      rect.size(expandBtnSize, height).x(-expandBtnSize).y(0)
+      rect.size(strip, height).x(-strip).y(0)
     } else {
-      rect.size(expandBtnSize, height).x(width).y(0)
+      rect.size(strip, height).x(width).y(0)
+    }
+  }
+
+  // 按钮后方沿分支线延伸的可点击区域
+  renderExpandBtnHitPad(node, rect, expandBtnSize) {
+    const extend = getExpandBtnHitExtend(this.mindMap.opt)
+    const hitHeight = expandBtnSize + 4
+    const y = -hitHeight / 2
+    if (this.isUseLeft) {
+      rect.size(extend, hitHeight).x(-extend).y(y)
+    } else {
+      rect.size(extend, hitHeight).x(expandBtnSize).y(y)
     }
   }
 }

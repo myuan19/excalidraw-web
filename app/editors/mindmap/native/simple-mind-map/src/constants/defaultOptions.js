@@ -99,6 +99,8 @@ export const defaultOpt = {
   alwaysShowExpandBtn: false,
   // 不显示展开收起按钮，优先级比alwaysShowExpandBtn配置高
   notShowExpandBtn: false,
+  // 展开收起按钮后方沿分支线延伸的可点击区域长度（像素）
+  expandBtnHitExtend: 16,
   // 扩展节点可插入的图标
   iconList: [
     // {

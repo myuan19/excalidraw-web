@@ -593,6 +593,7 @@ export default {
         expandBtnNumHandler: num => {
           return num >= 100 ? '…' : num
         },
+        expandBtnHitExtend: 16,
         beforeDeleteNodeImg: node => {
           return new Promise(resolve => {
             this.$confirm(

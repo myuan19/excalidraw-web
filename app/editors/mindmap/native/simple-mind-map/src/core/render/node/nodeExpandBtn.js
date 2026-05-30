@@ -1,5 +1,5 @@
 import btnsSvg from '../../../svg/btns'
-import { SVG, Circle, G, Text } from '@svgdotjs/svg.js'
+import { SVG, Circle, G, Text, Rect } from '@svgdotjs/svg.js'
 import { isUndef } from '../../../utils'
 
 // 创建展开收起按钮的内容节点
@@ -92,8 +92,24 @@ function updateExpandBtnNode() {
         this._fillExpandNode.stroke('none')
       }
     }
-    this._expandBtn.add(this._fillExpandNode).add(node)
+    this._expandBtn
+      .add(this._expandBtnHitPad)
+      .add(this._fillExpandNode)
+      .add(node)
+    this.updateExpandBtnHitPad()
   }
+}
+
+function updateExpandBtnHitPad() {
+  if (!this._expandBtnHitPad) {
+    return
+  }
+  const { expandBtnSize } = this.mindMap.opt
+  this.renderer.layout.renderExpandBtnHitPad(
+    this,
+    this._expandBtnHitPad,
+    expandBtnSize
+  )
 }
 
 //  更新展开收缩按钮位置
@@ -102,6 +118,7 @@ function updateExpandBtnPos() {
     return
   }
   this.renderer.layout.renderExpandBtn(this, this._expandBtn)
+  this.updateExpandBtnHitPad()
 }
 
 //  创建展开收缩按钮
@@ -113,6 +130,8 @@ function renderExpandBtn() {
     this.group.add(this._expandBtn)
   } else {
     this._expandBtn = new G()
+    this._expandBtnHitPad = new Rect().fill({ color: 'transparent' })
+    this._expandBtn.add(this._expandBtnHitPad)
     this._expandBtn.on('mouseover', e => {
       e.stopPropagation()
       this._expandBtn.css({
@@ -127,9 +146,7 @@ function renderExpandBtn() {
     })
     this._expandBtn.on('click', e => {
       e.stopPropagation()
-      // 展开收缩
-      this.mindMap.execCommand('SET_NODE_EXPAND', this, !this.getData('expand'))
-      this.mindMap.emit('expand_btn_click', this)
+      this.handleExpandBtnZoneClick(e)
     })
     this._expandBtn.on('dblclick', e => {
       e.stopPropagation()
@@ -150,13 +167,24 @@ function removeExpandBtn() {
   }
 }
 
-// 显示展开收起按钮
-function showExpandBtn() {
+// 立即显示展开按钮（占位区 / 延伸热区悬停时同步渲染）
+function showExpandBtnNow() {
   const { alwaysShowExpandBtn, notShowExpandBtn } = this.mindMap.opt
   if (alwaysShowExpandBtn || notShowExpandBtn) return
-  setTimeout(() => {
-    this.renderExpandBtn()
-  }, 0)
+  this.renderExpandBtn()
+}
+
+function handleExpandBtnZoneClick(e) {
+  const { notShowExpandBtn } = this.mindMap.opt
+  if (notShowExpandBtn) return
+  this.showExpandBtnNow()
+  this.mindMap.execCommand('SET_NODE_EXPAND', this, !this.getData('expand'))
+  this.mindMap.emit('expand_btn_click', this)
+}
+
+// 显示展开收起按钮
+function showExpandBtn() {
+  this.showExpandBtnNow()
 }
 
 // 隐藏展开收起按钮
@@ -175,9 +203,12 @@ function hideExpandBtn() {
 export default {
   createExpandNodeContent,
   updateExpandBtnNode,
+  updateExpandBtnHitPad,
   updateExpandBtnPos,
   renderExpandBtn,
   removeExpandBtn,
+  showExpandBtnNow,
+  handleExpandBtnZoneClick,
   showExpandBtn,
   hideExpandBtn,
   sumNode

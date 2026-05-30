@@ -29,12 +29,24 @@ export function isFileLogEnabled() {
 }
 
 export function logRotateOptions() {
+  const intervalRaw = process.env.LOG_ROTATE_INTERVAL?.trim();
   return {
+    /** Single-file size before split within one session. */
     size: process.env.LOG_ROTATE_SIZE?.trim() || "10M",
-    interval: process.env.LOG_ROTATE_INTERVAL?.trim() || "1d",
+    /** Optional time-based rotation (empty = disabled; each startup gets its own file). */
+    interval: intervalRaw && intervalRaw !== "0" ? intervalRaw : null,
+    /** Max rotated chunks kept per session file (size splits). */
     maxFiles: Number.parseInt(process.env.LOG_MAX_FILES ?? "14", 10) || 14,
-    maxSize: process.env.LOG_MAX_TOTAL_SIZE?.trim() || "200M",
-    compress: "gzip",
+    /** Max bytes for all log files in the directory; oldest files removed on startup. */
+    maxTotalSize: process.env.LOG_MAX_TOTAL_SIZE?.trim() || "200M",
+    /** Max session log files (server-* / client-*) before deleting oldest. */
+    maxSessionFiles:
+      Number.parseInt(process.env.LOG_MAX_SESSION_FILES ?? "30", 10) || 30,
+    /** Plain rotated files by default; set LOG_COMPRESS=gzip to enable. */
+    compress:
+      process.env.LOG_COMPRESS?.trim().toLowerCase() === "gzip"
+        ? "gzip"
+        : false,
   };
 }
 

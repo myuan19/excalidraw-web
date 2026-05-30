@@ -9,7 +9,7 @@ module.exports = {
   outputDir: '../dist',
   lintOnSave: false,
   productionSourceMap: false,
-  filenameHashing: false,
+  filenameHashing: true,
   transpileDependencies: ['yjs', 'lib0', 'quill', 'quill-table-up', '@floating-ui'],
   chainWebpack: config => {
     // 开发时去掉 cache-loader，避免本机曾指向已删除路径的绝对路径缓存导致「找不到 babel-loader」

@@ -1,4 +1,5 @@
 import { Logger, LEVEL_VALUE } from "../../lib/logger/core.js";
+import { formatLogTimestamp } from "../config/logNaming.js";
 import {
   getClientFileTransport,
   getServerFileTransport,
@@ -12,7 +13,9 @@ class StdoutTransport {
     const lvl = entry.level.toUpperCase().padEnd(5);
     const src = `${entry.source}:${entry.module}`;
     const data = entry.data ? " " + JSON.stringify(entry.data) : "";
-    process.stdout.write(`${entry.ts} [${lvl}] [${src}] ${entry.msg}${data}\n`);
+    process.stdout.write(
+      `${formatLogTimestamp(new Date(entry.ts))} [${lvl}] [${src}] ${entry.msg}${data}\n`,
+    );
   }
 }
 

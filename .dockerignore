@@ -1,8 +1,8 @@
 *
 !.env.development
 !.env.production
-!.eslintrc.json
 !.npmrc
+!.eslintrc.json
 !.prettierrc
 !app/
 !package.json
@@ -19,9 +19,13 @@
 # keep (sub)sub directories at the end to exclude from explicit included
 # e.g. ./packages/excalidraw/{dist,node_modules}
 **/build
+!app/build/
+!app/build/**
 **/dist
 !public/mind-map/dist/
 !public/mind-map/dist/**
+!app/build/mind-map/dist/
+!app/build/mind-map/dist/**
 **/node_modules
 
 # 运行时 / 开发数据不打包进镜像（通过卷挂载或使用 _dev_data 本地目录）

@@ -36,6 +36,11 @@ class Base {
     throw new Error('【renderExpandBtn】方法为必要方法，需要子类进行重写！')
   }
 
+  // 展开收起按钮后方沿分支线的可点击区域（子类按需重写）
+  renderExpandBtnHitPad(node, rect, expandBtnSize) {
+    rect.size(0, 0)
+  }
+
   //  概要节点
   renderGeneralization() {}
 

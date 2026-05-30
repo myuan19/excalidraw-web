@@ -1,58 +1,82 @@
 # 三阶段最小化构建：前端静态 + Node API + nginx 反代
-# 最终镜像基于 nginx:alpine (~8MB)，总体 ~80-100MB
+# PREBUILT=1（deploy.sh ship 默认）：使用宿主机 yarn build:production 产物，跳过容器内 yarn
+#   构建目标: --target final-prebuilt
+# PREBUILT=0：在容器内完整安装依赖并构建（需稳定 registry 网络）
+#   构建目标: --target final-full
 
-# ── Stage 1: 前端构建 ──────────────────────────────────────
-FROM node:20-bookworm AS frontend
+# ── Stage 1a: 宿主机预构建前端（仅 COPY app/build，避免 COPY . . 与 .dockerignore 冲突） ──
+FROM node:20-bookworm AS frontend-prebuilt
+WORKDIR /opt/node_app
+COPY app/build ./app/build
+RUN set -eux; \
+    test -f app/build/index.html || { echo "缺少 app/build/index.html，请先运行 yarn build:production"; exit 1; }; \
+    test -d app/build/mind-map/dist || { echo "缺少 app/build/mind-map/dist，请先运行 yarn build:production（MindMap 未同步进 app/build）"; exit 1; }; \
+    test -f app/build/mind-map/index.html || { echo "缺少 app/build/mind-map/index.html"; exit 1; }
+
+# ── Stage 1b: 容器内完整构建 ─────────────────────────────────
+FROM node:20-bookworm AS frontend-full
 ARG HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy all_proxy ALL_PROXY
+ARG YARN_REGISTRY=https://registry.yarnpkg.com
+ARG NPM_REGISTRY=https://registry.npmjs.org
+ARG USE_NPM_MIRROR=0
+ARG NODE_ENV=production
 WORKDIR /opt/node_app
 
-# 1a) 先只复制依赖定义 → yarn install 层在代码不变时直接命中缓存
-COPY package.json yarn.lock ./
-COPY app/package.json app/
-COPY packages/common/package.json packages/common/
-COPY packages/element/package.json packages/element/
-COPY packages/excalidraw/package.json packages/excalidraw/
-COPY packages/math/package.json packages/math/
-COPY packages/utils/package.json packages/utils/
-COPY app/editors/mindmap/native/simple-mind-map/package.json app/editors/mindmap/native/simple-mind-map/
-RUN sed -i 's|https://registry.yarnpkg.com|https://registry.npmmirror.com|g' yarn.lock && \
-    yarn --network-timeout 600000 --registry https://registry.npmmirror.com
-
-# 1b) 再复制全部源码 → 只有代码变了才重新 build
 COPY . .
-ARG NODE_ENV=production
-RUN yarn build:app:docker
+
+RUN set -eux; \
+    echo "[docker] 容器内 yarn install + build"; \
+    registry="${YARN_REGISTRY}"; \
+    if [ "${USE_NPM_MIRROR}" = "1" ]; then \
+      sed -i 's|https://registry.yarnpkg.com|https://registry.npmmirror.com|g' yarn.lock || true; \
+      registry="https://registry.npmmirror.com"; \
+    fi; \
+    yarn config set registry "${registry}"; \
+    yarn config set network-timeout 600000; \
+    yarn install \
+      || (echo "[docker] yarn retry: registry.npmmirror.com" >&2; yarn config set registry https://registry.npmmirror.com; yarn install) \
+      || (echo "[docker] yarn retry: registry.yarnpkg.com" >&2; yarn config set registry https://registry.yarnpkg.com; yarn install); \
+    export NPM_CONFIG_REGISTRY="${NPM_REGISTRY}"; \
+    chmod +x scripts/build-production.sh; \
+    ./scripts/build-production.sh docker
 
 # ── Stage 2: server 依赖编译（better-sqlite3 需要原生编译） ──
 FROM node:20-alpine AS server-deps
 ARG HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy all_proxy ALL_PROXY
+ARG NPM_REGISTRY=https://registry.npmjs.org
+ARG USE_NPM_MIRROR=0
 RUN apk add --no-cache python3 make g++
 WORKDIR /opt/server
 COPY server/package.json server/package-lock.json ./
-RUN npm ci --omit=dev --registry https://registry.npmmirror.com && rm -rf /root/.npm
+COPY server/scripts ./scripts
+RUN set -eux; \
+    registry="${NPM_REGISTRY}"; \
+    if [ "${USE_NPM_MIRROR}" = "1" ]; then registry="https://registry.npmmirror.com"; fi; \
+    npm config set fetch-retries 5; \
+    npm config set fetch-retry-mintimeout 20000; \
+    npm config set fetch-retry-maxtimeout 120000; \
+    npm ci --omit=dev --registry "${registry}" \
+    || (echo "[docker] npm retry: registry.npmmirror.com" >&2; npm ci --omit=dev --registry https://registry.npmmirror.com) \
+    || (echo "[docker] npm retry: registry.npmjs.org" >&2; npm ci --omit=dev --registry https://registry.npmjs.org); \
+    rm -rf /root/.npm
 
-# ── Stage 3: 最终运行镜像 ─────────────────────────────────
-FROM nginx:1.27-alpine
+# ── Stage 3: 运行镜像公共层 ─────────────────────────────────
+FROM nginx:1.27-alpine AS runtime-base
 
 COPY --from=server-deps /usr/local/bin/node /usr/local/bin/node
 RUN apk add --no-cache libstdc++ libgcc
 
 WORKDIR /opt/excalidraw
 
-# 前端静态资源
-COPY --from=frontend /opt/node_app/app/build /var/www/excalidraw-static
-
-# server 代码 + 已编译的 node_modules
 COPY --from=server-deps /opt/server/node_modules ./server/node_modules
-COPY server/index.js server/db.js server/logger.js ./server/
+COPY server/index.js server/db.js server/logger.js server/loadEnv.mjs server/initLogging.mjs ./server/
+COPY server/config ./server/config
 COPY server/lib ./server/lib
 COPY server/routes ./server/routes
 COPY server/package.json ./server/
 
-# 共享日志核心（server 运行时 require）
 COPY lib ./lib
 
-# nginx 配置 + entrypoint
 COPY deploy/full/nginx.conf /etc/nginx/nginx-excalidraw.conf
 COPY deploy/full/entrypoint.sh /usr/local/bin/entrypoint-excalidraw.sh
 RUN chmod +x /usr/local/bin/entrypoint-excalidraw.sh
@@ -74,3 +98,14 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD wget -q -O- http://127.0.0.1/api/health >/dev/null || exit 1
 
 ENTRYPOINT ["/usr/local/bin/entrypoint-excalidraw.sh"]
+
+# ── 最终镜像：宿主机预构建 ───────────────────────────────────
+FROM runtime-base AS final-prebuilt
+COPY --from=frontend-prebuilt /opt/node_app/app/build /var/www/excalidraw-static
+
+# ── 最终镜像：容器内构建 ─────────────────────────────────────
+FROM runtime-base AS final-full
+COPY --from=frontend-full /opt/node_app/app/build /var/www/excalidraw-static
+
+# 默认 target（无 PREBUILT 时走完整构建）
+FROM final-full AS final

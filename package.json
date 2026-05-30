@@ -50,6 +50,8 @@
   "scripts": {
     "build-node": "node ./scripts/build-node.js",
     "build:app:docker": "yarn --cwd ./app build:app:docker",
+    "build:production": "bash scripts/build-production.sh all",
+    "build:production:docker": "bash scripts/build-production.sh docker",
     "build:app": "yarn --cwd ./app build:app",
     "build:common": "yarn --cwd ./packages/common build:esm",
     "build:element": "yarn --cwd ./packages/element build:esm",

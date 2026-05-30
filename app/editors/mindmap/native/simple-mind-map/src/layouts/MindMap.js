@@ -1,6 +1,7 @@
 import Base from './Base'
 import { walk, asyncRun, getNodeIndexInNodeList } from '../utils'
 import { CONSTANTS } from '../constants/constant'
+import { getExpandBtnHitExtend, getExpandBtnStripWidth } from '../utils/expandBtnLayout.js'
 
 //  思维导图
 class MindMap extends Base {
@@ -406,10 +407,23 @@ class MindMap extends Base {
 
   // 渲染展开收起按钮的隐藏占位元素
   renderExpandBtnRect(rect, expandBtnSize, width, height, node) {
+    const strip = getExpandBtnStripWidth(expandBtnSize, this.mindMap.opt)
     if (node.dir === CONSTANTS.LAYOUT_GROW_DIR.LEFT) {
-      rect.size(expandBtnSize, height).x(-expandBtnSize).y(0)
+      rect.size(strip, height).x(-strip).y(0)
     } else {
-      rect.size(expandBtnSize, height).x(width).y(0)
+      rect.size(strip, height).x(width).y(0)
+    }
+  }
+
+  // 按钮后方沿分支线延伸的可点击区域
+  renderExpandBtnHitPad(node, rect, expandBtnSize) {
+    const extend = getExpandBtnHitExtend(this.mindMap.opt)
+    const hitHeight = expandBtnSize + 4
+    const y = -hitHeight / 2
+    if (node.dir === CONSTANTS.LAYOUT_GROW_DIR.LEFT) {
+      rect.size(extend, hitHeight).x(-extend).y(y)
+    } else {
+      rect.size(extend, hitHeight).x(expandBtnSize).y(y)
     }
   }
 }

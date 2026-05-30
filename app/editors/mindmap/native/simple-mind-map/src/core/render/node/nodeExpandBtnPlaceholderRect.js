@@ -1,5 +1,34 @@
 import { Rect } from '@svgdotjs/svg.js'
 
+function bindExpandBtnPlaceholderEvents() {
+  if (this._expandBtnPlaceholderEventsBound || !this._unVisibleRectRegionNode) {
+    return
+  }
+  this._expandBtnPlaceholderEventsBound = true
+  const zone = this._unVisibleRectRegionNode
+  zone.on('mouseenter', e => {
+    if (this.isDrag) return
+    e.stopPropagation()
+    this._isMouseenter = true
+    this.showExpandBtnNow()
+  })
+  zone.on('mouseover', e => {
+    e.stopPropagation()
+    zone.css({ cursor: 'pointer' })
+  })
+  zone.on('mouseout', e => {
+    e.stopPropagation()
+    zone.css({ cursor: 'auto' })
+  })
+  zone.on('click', e => {
+    e.stopPropagation()
+    this.handleExpandBtnZoneClick(e)
+  })
+  zone.on('dblclick', e => {
+    e.stopPropagation()
+  })
+}
+
 // 渲染展开收起按钮的隐藏占位元素
 function renderExpandBtnPlaceholderRect() {
   // 根节点或没有子节点不需要渲染
@@ -16,6 +45,7 @@ function renderExpandBtnPlaceholderRect() {
       this._unVisibleRectRegionNode.fill({
         color: 'transparent'
       })
+      this._expandBtnPlaceholderEventsBound = false
     }
     this.group.add(this._unVisibleRectRegionNode)
     this.renderer.layout.renderExpandBtnRect(
@@ -25,6 +55,7 @@ function renderExpandBtnPlaceholderRect() {
       height,
       this
     )
+    this.bindExpandBtnPlaceholderEvents()
   }
 }
 
@@ -35,6 +66,7 @@ function clearExpandBtnPlaceholderRect() {
   }
   this._unVisibleRectRegionNode.remove()
   this._unVisibleRectRegionNode = null
+  this._expandBtnPlaceholderEventsBound = false
 }
 
 // 更新展开收起按钮的隐藏占位元素
@@ -58,6 +90,7 @@ function updateExpandBtnPlaceholderRect() {
 }
 
 export default {
+  bindExpandBtnPlaceholderEvents,
   renderExpandBtnPlaceholderRect,
   clearExpandBtnPlaceholderRect,
   updateExpandBtnPlaceholderRect

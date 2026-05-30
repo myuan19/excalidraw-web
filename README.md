@@ -70,7 +70,7 @@ _dev_data/
 - **Git**：`_dev_data/*` 已 gitignore（仅保留 `.gitkeep` 占位）
 - **Docker / 生产构建**：`.dockerignore` 排除 `_dev_data`，不会打进镜像
 - **实现**：`server/config/dataDir.js` + `server/loadEnv.mjs`；`./_scripts/dev.sh` 启动 API 时注入 `EXCALIDRAW_DATA_DIR`
-- **日志**：统一写入 `_dev_data/logs/`（`rotating-file-stream`：单文件超 `10M` 或每日轮转，保留 14 份 / 总量 200M 自动清理 gzip 归档）；浏览器日志经 `/api/logs` 进入 `client.log`
+- **日志**：统一写入 `_dev_data/logs/`（每次启动独立 session 文件；单文件超 `10M` 拆分为 `.1`、`.2`…，保留 14 份 / 总量 200M 自动清理）；浏览器日志经 `/api/logs` 进入 `client-*.log`
 
 若存在旧目录 `server/data/` 或 `~/.local/share/excalidraw-web/`，首次启动会自动迁移到 `_dev_data/`。
 
@@ -98,6 +98,7 @@ yarn docker:full              # deploy/docker-compose.full.yml
 | `yarn test:app` | Vitest unit tests |
 | `yarn docker:full` | Full-stack Docker compose |
 | `./_scripts/deploy.sh ship` | Build + Docker deploy |
+| `DEPLOY_DEBUG=1 ./_scripts/deploy.sh ship` | Debug deploy (verbose logs, API :13033) |
 
 ## License
 
