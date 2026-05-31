@@ -318,7 +318,7 @@ export const EmbedTokenManager: React.FC<Props> = ({
                 <div className="embed-mgr__create-form">
                   <h3 className="embed-mgr__create-title">创建嵌入令牌</h3>
                   <label className="embed-mgr__field">
-                    <span>允许嵌入的域名 <span className="embed-mgr__field-tooltip" title="* 表示不限制，多个域名用逗号分隔">?</span></span>
+                    <span>允许嵌入的域名 <span className="embed-mgr__field-tooltip" title="填写父页面站点（如在 Notion 中嵌入则填 Notion 域名），非 excalidraw 服务本身；* 表示不限制">?</span></span>
                     <input
                       type="text"
                       value={newDomains}
@@ -327,7 +327,7 @@ export const EmbedTokenManager: React.FC<Props> = ({
                       className="embed-mgr__input"
                     />
                     <span className="embed-mgr__field-hint">
-                      * 表示不限制，多个域名用逗号分隔
+                      父页面域名，逗号分隔；* 表示不限制（链接可直接打开）
                     </span>
                   </label>
                   <div className="embed-mgr__create-actions">

@@ -53,3 +53,9 @@ Verify after deploy (replace host):
 curl -sI 'https://YOUR_HOST/mind-map/dist/js/app.9d1741a9.js' | head -5
 # Expect: HTTP/1.1 200  and  Content-Type: application/javascript
 ```
+
+### Embed security (`/embed`)
+
+- Access control lives in `server/lib/embedAccess.js` (domain context → token → allowlist).
+- Set a stable `EMBED_SESSION_SECRET` in production (same value on all API instances).
+- Outer nginx: prefer passing through app `Content-Security-Policy` `frame-ancestors` from the embed response; avoid overriding with global `frame-ancestors *` if tokens use domain allowlists.

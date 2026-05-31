@@ -1,3 +1,6 @@
+/**
+ * Embed HTTP routes — thin layer over embedAccess + static/asset helpers.
+ */
 import { Router } from "express";
 import { randomUUID } from "crypto";
 import { existsSync, readFileSync, statSync } from "fs";
@@ -6,27 +9,51 @@ import { fileURLToPath } from "url";
 import db, { DATA_DIR } from "../db.js";
 import { createLogger } from "../lib/logger.js";
 import {
+  buildFrameAncestors,
+  captureEmbeddingHostForSession,
+  createRequireEmbedAccess,
+  getEmbedRequestToken,
+  getRequestHost,
+  isSameOriginAdminRequest,
+  isWildcardAllowedDomains,
+  issueEmbedSessionCookies,
+  parseAllowedDomainsInput,
+  validateEmbedAccess,
+} from "../lib/embedAccess.js";
+import {
   isAllowedMindMapEmbedAssetPath,
   rewriteMindMapCssForEmbed,
   rewriteMindMapHtmlForEmbed,
 } from "../lib/embedMindMapAssets.js";
 import { buildEmbedRuntimeAssetInterceptor } from "../lib/embedRuntimeAssets.js";
-import { createEmbedTokenActiveCache } from "../lib/embedTokenCache.js";
 import { injectEmbedBootstrap } from "../lib/embedPageHtml.js";
-import {
-  isPublicEmbedStaticAssetPath,
-  isTokenProtectedEmbedPath,
-} from "../lib/embedStaticPolicy.js";
 
 const log = createLogger({ module: "embed" });
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const tokenRouter = Router();
-const pageRouter = Router();
 const TOKEN_SELECT =
   "id, token, file_id, allowed_domains, created_at, usage_count";
-const TOKEN_ACTIVE_CACHE_TTL_MS = 10_000;
+
+const tokenRouter = Router();
+const pageRouter = Router();
+
+function lookupEmbedToken(token, fileId) {
+  return db
+    .prepare(
+      `SELECT ${TOKEN_SELECT} FROM embed_tokens WHERE token = ? AND file_id = ?`,
+    )
+    .get(token, fileId);
+}
+
+const requireEmbedAccess = createRequireEmbedAccess({
+  lookupToken: lookupEmbedToken,
+});
+
+const requireEmbedAccessForFile = createRequireEmbedAccess({
+  lookupToken: lookupEmbedToken,
+  requireFileId: true,
+});
 
 function currentPath(fileId) {
   return join(DATA_DIR, "files", fileId, "current.excalidraw");
@@ -34,9 +61,7 @@ function currentPath(fileId) {
 
 function summarizeEmbedData(data) {
   if (!data || typeof data !== "object") {
-    return {
-      type: data === null ? "null" : typeof data,
-    };
+    return { type: data === null ? "null" : typeof data };
   }
   const inner =
     data.data && typeof data.data === "object" && !Array.isArray(data.data)
@@ -45,14 +70,7 @@ function summarizeEmbedData(data) {
   return {
     keys: Object.keys(data).slice(0, 12),
     kind: typeof data.kind === "string" ? data.kind : null,
-    containerVersion:
-      typeof data.containerVersion === "number" ? data.containerVersion : null,
-    formatVersion: typeof data.formatVersion === "number" ? data.formatVersion : null,
     topElements: Array.isArray(data.elements) ? data.elements.length : null,
-    topRootChildren:
-      data.root && Array.isArray(data.root.children) ? data.root.children.length : null,
-    dataKeys: inner ? Object.keys(inner).slice(0, 12) : null,
-    dataElements: inner && Array.isArray(inner.elements) ? inner.elements.length : null,
     dataRootChildren:
       inner && inner.root && Array.isArray(inner.root.children)
         ? inner.root.children.length
@@ -60,82 +78,15 @@ function summarizeEmbedData(data) {
   };
 }
 
-function normalizeHost(value) {
-  const host = String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\.$/, "");
-  if (!host) {
-    return "";
-  }
-  if (!/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(host)) {
-    return "";
-  }
-  return host;
-}
-
-function parseAllowedDomainsInput(value) {
-  if (typeof value !== "string") {
-    return "*";
-  }
-  const trimmed = value.trim();
-  if (!trimmed || trimmed === "*") {
-    return "*";
-  }
-  const domains = [];
-  for (const part of trimmed.split(",")) {
-    const raw = part.trim();
-    const host = normalizeHost(raw);
-    if (!raw || !host) {
-      return null;
-    }
-    if (!domains.includes(host)) {
-      domains.push(host);
-    }
-  }
-  return domains.length ? domains.join(",") : null;
-}
-
-function getRequestHost(req) {
-  const rawHost = req.get("host") || "";
-  return normalizeHost(rawHost.split(",")[0].split(":")[0]);
-}
-
-function getRequestOriginHost(req) {
-  const origin = req.get("origin");
-  if (origin) {
-    try {
-      return normalizeHost(new URL(origin).hostname);
-    } catch {
-      return "";
-    }
-  }
-  const referer = req.get("referer");
-  if (referer) {
-    try {
-      return normalizeHost(new URL(referer).hostname);
-    } catch {
-      return "";
-    }
-  }
-  return "";
-}
-
-function isSameOriginRequest(req) {
-  const sourceHost = getRequestOriginHost(req);
-  const targetHost = getRequestHost(req);
-  return !!sourceHost && !!targetHost && sourceHost === targetHost;
-}
-
 function requireSameOrigin(req, res, next) {
-  if (!isSameOriginRequest(req)) {
+  if (!isSameOriginAdminRequest(req)) {
     return res.status(403).json({ error: "same_origin_required" });
   }
   next();
 }
 
 // ---------------------------------------------------------------------------
-// Token management API  (/api/embed-tokens)
+// Token management API  (/api/embed-tokens) — admin same-origin only
 // ---------------------------------------------------------------------------
 
 tokenRouter.use(requireSameOrigin);
@@ -162,10 +113,7 @@ tokenRouter.post("/", (req, res) => {
      VALUES (?, ?, ?, ?)`,
   ).run(id, token, fileId, allowedDomains);
 
-  log.info("token created", {
-    id: id.slice(0, 8),
-    fileId: fileId.slice(0, 8),
-  });
+  log.info("token created", { id: id.slice(0, 8), fileId: fileId.slice(0, 8) });
 
   res.status(201).json({
     id,
@@ -193,7 +141,6 @@ tokenRouter.patch("/:id", (req, res) => {
     allowedDomains,
     req.params.id,
   );
-  embedTokenActiveCache.clear(row.token);
 
   log.info("token domains updated", { id: req.params.id.slice(0, 8) });
   res.json({ ...row, allowed_domains: allowedDomains });
@@ -219,73 +166,14 @@ tokenRouter.delete("/:id", (req, res) => {
   if (!row) {
     return res.status(404).json({ error: "token not found" });
   }
-  const tokenRow = db
-    .prepare("SELECT token FROM embed_tokens WHERE id = ?")
-    .get(req.params.id);
   db.prepare("DELETE FROM embed_tokens WHERE id = ?").run(req.params.id);
-  embedTokenActiveCache.clear(tokenRow?.token);
   log.info("token deleted", { id: req.params.id.slice(0, 8) });
   res.json({ ok: true });
 });
 
 // ---------------------------------------------------------------------------
-// Embed page  (/embed/:fileId?token=xxx)
-//
-// Strategy: read the SPA's built index.html, inject scene data + embed flag
-// so the same React bundle renders in embed mode — no separate build needed.
+// Static roots & path helpers
 // ---------------------------------------------------------------------------
-
-function validateEmbedToken(req, token = req.query.token) {
-  if (!token) {
-    return { ok: false, status: 403, error: "Missing embed token" };
-  }
-
-  const fileId = req.params.fileId;
-  const row = db
-    .prepare(`SELECT ${TOKEN_SELECT} FROM embed_tokens WHERE token = ? AND file_id = ?`)
-    .get(token, fileId);
-
-  if (!row) {
-    return { ok: false, status: 403, error: "Invalid token" };
-  }
-
-  if (row.allowed_domains && row.allowed_domains !== "*") {
-    const allowed = row.allowed_domains
-      .split(",")
-      .map(normalizeHost)
-      .filter(Boolean);
-    const sourceHost = getRequestOriginHost(req);
-    if (
-      !sourceHost ||
-      !allowed.some((d) => sourceHost === d || sourceHost.endsWith(`.${d}`))
-    ) {
-      return { ok: false, status: 403, error: "Domain not allowed" };
-    }
-  }
-
-  return { ok: true, row };
-}
-
-function buildFrameAncestors(allowedDomains) {
-  // CSP `frame-ancestors *` only matches network schemes (http/https/ws/wss);
-  // chrome-extension: must be listed explicitly for browser extension iframes.
-  const extensionSchemes = "chrome-extension: moz-extension:";
-  if (!allowedDomains || allowedDomains === "*") {
-    return `* ${extensionSchemes}`;
-  }
-  const hosts = allowedDomains
-    .split(",")
-    .map(normalizeHost)
-    .filter(Boolean);
-  if (hosts.length === 0) {
-    return `* ${extensionSchemes}`;
-  }
-  return hosts.map((h) => `https://${h} http://${h}`).join(" ") + ` ${extensionSchemes}`;
-}
-
-function escapeForScript(s) {
-  return s.replace(/<\//g, "<\\/").replace(/<!--/g, "<\\!--");
-}
 
 function findSpaIndexHtml() {
   const raw = (process.env.SERVE_SPA || "").trim();
@@ -364,78 +252,13 @@ function errorPage(message) {
 </html>`;
 }
 
-// ---------------------------------------------------------------------------
-// Embed sub-resource gating — cookie / query-param token check
-// ---------------------------------------------------------------------------
-
-function getEmbedCookie(req) {
-  const c = req.headers.cookie || "";
-  const m = c.match(/(?:^|;\s*)__embed_t=([^;]+)/);
-  return m ? decodeURIComponent(m[1]) : null;
-}
-
-function getEmbedRefererToken(req) {
-  const referer = req.get("referer");
-  if (!referer) return null;
-  try {
-    const u = new URL(referer);
-    return u.searchParams.get("_t") || u.searchParams.get("token");
-  } catch {
-    return null;
-  }
-}
-
-function getEmbedRequestToken(req) {
-  return (
-    req.query._t ||
-    req.query.token ||
-    getEmbedCookie(req) ||
-    getEmbedRefererToken(req)
-  );
-}
-
-const embedTokenActiveCache = createEmbedTokenActiveCache({
-  ttlMs: TOKEN_ACTIVE_CACHE_TTL_MS,
-  now: () => Date.now(),
-  lookup(token) {
-    if (!token) return false;
-    const row = db
-      .prepare("SELECT id FROM embed_tokens WHERE token = ?")
-      .get(token);
-    return !!row;
-  },
-});
-
-function isTokenActive(token) {
-  if (!token) return false;
-  return embedTokenActiveCache.isActive(token);
-}
-
-function embedAssetGate(req, res, next) {
-  if (isPublicEmbedStaticAssetPath(req.path)) {
-    return next();
-  }
-  const token = getEmbedRequestToken(req);
-  if (!isTokenActive(token)) {
-    return res.status(403).type("text/plain").send("Forbidden");
-  }
-  next();
-}
-
-function embedMindMapGate(req, res, next) {
-  const assetPath = routePath(req) || "index.html";
-  if (assetPath.startsWith("dist/")) {
-    return next();
-  }
-  return embedAssetGate(req, res, next);
-}
-
 function getAssetsRoot() {
   const idx = findSpaIndexHtml();
-  if (idx) return dirname(idx);
+  if (idx) {
+    return dirname(idx);
+  }
   const fallback = "/var/www/excalidraw-static";
-  if (existsSync(fallback)) return fallback;
-  return null;
+  return existsSync(fallback) ? fallback : null;
 }
 
 function getMindMapRoot() {
@@ -446,29 +269,20 @@ function getMindMapRoot() {
       return buildMindMapRoot;
     }
   }
-
   const localMindMapRoot = join(__dirname, "../../public/mind-map");
   if (existsSync(join(localMindMapRoot, "index.html"))) {
     return localMindMapRoot;
   }
-
   return null;
 }
 
 function safeJoin(base, userPath) {
   const resolved = resolve(base, userPath);
   const baseResolved = resolve(base);
-  if (!resolved.startsWith(baseResolved + "/")) return null;
+  if (!resolved.startsWith(baseResolved + "/")) {
+    return null;
+  }
   return resolved;
-}
-
-// ── Token-gated static assets  (/embed/assets/*, /embed/fonts/*) ──
-
-const _cssCache = new Map();
-
-function setImmutableEmbedAssetCache(res) {
-  res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
-  res.setHeader("X-Content-Type-Options", "nosniff");
 }
 
 function routePath(req) {
@@ -479,12 +293,23 @@ function routePath(req) {
   }
 }
 
+const _cssCache = new Map();
+
+function setImmutableEmbedAssetCache(res) {
+  res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+}
+
 function sendEmbedAsset(req, res) {
   const root = getAssetsRoot();
-  if (!root) return res.status(500).type("text/plain").send("Assets not available");
+  if (!root) {
+    return res.status(500).type("text/plain").send("Assets not available");
+  }
 
   const assetPath = routePath(req);
-  if (!assetPath) return res.status(400).type("text/plain").send("Bad request");
+  if (!assetPath) {
+    return res.status(400).type("text/plain").send("Bad request");
+  }
 
   const filePath = safeJoin(join(root, "assets"), assetPath);
   if (!filePath || !existsSync(filePath)) {
@@ -494,7 +319,9 @@ function sendEmbedAsset(req, res) {
   if (assetPath.endsWith(".css")) {
     const stat = statSync(filePath);
     const cached = _cssCache.get(filePath);
-    const encodedToken = encodeURIComponent(String(getEmbedRequestToken(req) || ""));
+    const encodedToken = encodeURIComponent(
+      String(getEmbedRequestToken(req) || ""),
+    );
     const rawCss =
       cached && cached.mtimeMs === stat.mtimeMs
         ? cached.content
@@ -517,10 +344,14 @@ function sendEmbedAsset(req, res) {
 
 function sendEmbedFont(req, res) {
   const root = getAssetsRoot();
-  if (!root) return res.status(500).type("text/plain").send("Assets not available");
+  if (!root) {
+    return res.status(500).type("text/plain").send("Assets not available");
+  }
 
   const fontPath = routePath(req);
-  if (!fontPath) return res.status(400).type("text/plain").send("Bad request");
+  if (!fontPath) {
+    return res.status(400).type("text/plain").send("Bad request");
+  }
 
   const filePath = safeJoin(join(root, "fonts"), fontPath);
   if (!filePath || !existsSync(filePath)) {
@@ -587,190 +418,144 @@ function sendEmbedMindMap(req, res) {
   res.sendFile(filePath);
 }
 
-pageRouter.use("/assets", sendEmbedAsset);
-pageRouter.use("/fonts", sendEmbedFont);
-pageRouter.use("/mind-map", embedMindMapGate, sendEmbedMindMap);
-
-pageRouter.get("/api/:fileId/data", (req, res) => {
-  const token = getEmbedRequestToken(req);
-  log.info("[DEBUG] embed.apiData | request start", {
-    fileId: req.params.fileId?.slice(0, 8),
-    hasToken: !!token,
-    tokenLength: token ? String(token).length : 0,
-    referer: req.get("referer") || null,
-    origin: req.get("origin") || null,
-  });
-  const result = validateEmbedToken(req, token);
-  if (!result.ok) {
-    log.info("[DEBUG] embed.apiData | token rejected", {
-      fileId: req.params.fileId?.slice(0, 8),
-      status: result.status,
-      error: result.error,
-    });
-    return res.status(result.status).json({ error: result.error });
+function resolveSessionEmbeddingHost(req, accessResult) {
+  let host =
+    accessResult.embeddingHost || captureEmbeddingHostForSession(req);
+  if (!host && isWildcardAllowedDomains(accessResult.row.allowed_domains)) {
+    host = getRequestHost(req);
   }
-
-  const fileId = req.params.fileId;
-  const fileRow = db.prepare("SELECT * FROM files WHERE id = ?").get(fileId);
-  if (!fileRow) {
-    log.info("[DEBUG] embed.apiData | file row missing", {
-      fileId: fileId.slice(0, 8),
-    });
-    return res.status(404).json({ error: "File not found" });
-  }
-
-  const fp = currentPath(fileId);
-  if (!existsSync(fp)) {
-    log.info("[DEBUG] embed.apiData | current file missing", {
-      fileId: fileId.slice(0, 8),
-      fp,
-    });
-    return res.status(404).json({ error: "File data missing" });
-  }
-
-  try {
-    const raw = readFileSync(fp, "utf-8");
-    const data = JSON.parse(raw);
-    log.info("[DEBUG] embed.apiData | payload ready", {
-      fileId: fileId.slice(0, 8),
-      name: fileRow.name,
-      dbKind: fileRow.kind || "excalidraw",
-      bytes: raw.length,
-      summary: summarizeEmbedData(data),
-    });
-    res.setHeader("Cache-Control", "no-store");
-    res.json({
-      id: fileId,
-      name: fileRow.name,
-      kind: fileRow.kind || "excalidraw",
-      data,
-    });
-  } catch (error) {
-    log.info("[DEBUG] embed.apiData | payload failed", {
-      fileId: fileId.slice(0, 8),
-      message: error?.message || String(error),
-      stack: error?.stack || null,
-    });
-    res.status(500).json({ error: "Corrupt scene file" });
-  }
-});
+  return host || getRequestHost(req);
+}
 
 // ---------------------------------------------------------------------------
-// Embed page  (/embed/:fileId?token=xxx)
+// Embed public surface — all paths use requireEmbedAccess (domain → token)
 // ---------------------------------------------------------------------------
+
+pageRouter.get(
+  "/api/:fileId/data",
+  requireEmbedAccessForFile,
+  (req, res) => {
+    const fileId = req.params.fileId;
+    const fileRow = db.prepare("SELECT * FROM files WHERE id = ?").get(fileId);
+    if (!fileRow) {
+      return res.status(404).json({ error: "File not found" });
+    }
+
+    const fp = currentPath(fileId);
+    if (!existsSync(fp)) {
+      return res.status(404).json({ error: "File data missing" });
+    }
+
+    try {
+      const raw = readFileSync(fp, "utf-8");
+      const data = JSON.parse(raw);
+      log.info("embed data served", {
+        fileId: fileId.slice(0, 8),
+        kind: fileRow.kind || "excalidraw",
+        summary: summarizeEmbedData(data),
+      });
+      res.setHeader("Cache-Control", "no-store");
+      res.json({
+        id: fileId,
+        name: fileRow.name,
+        kind: fileRow.kind || "excalidraw",
+        data,
+      });
+    } catch (error) {
+      log.warn("embed data corrupt", {
+        fileId: fileId.slice(0, 8),
+        message: error?.message,
+      });
+      res.status(500).json({ error: "Corrupt scene file" });
+    }
+  },
+);
+
+pageRouter.use("/assets", requireEmbedAccess, sendEmbedAsset);
+pageRouter.use("/fonts", requireEmbedAccess, sendEmbedFont);
+pageRouter.use("/mind-map", requireEmbedAccess, sendEmbedMindMap);
 
 pageRouter.get("/:fileId", (req, res) => {
-  log.info("[DEBUG] embed.page | request start", {
-    fileId: req.params.fileId?.slice(0, 8),
-    hasToken: !!req.query.token,
-    tokenLength: req.query.token ? String(req.query.token).length : 0,
-    referer: req.get("referer") || null,
-    origin: req.get("origin") || null,
-    host: req.get("host") || null,
+  const fileId = req.params.fileId;
+  const token = getEmbedRequestToken(req);
+  const result = validateEmbedAccess(req, {
+    fileId,
+    token,
+    lookupToken: lookupEmbedToken,
   });
-  const result = validateEmbedToken(req);
+
   if (!result.ok) {
-    log.info("[DEBUG] embed.page | token rejected", {
-      fileId: req.params.fileId?.slice(0, 8),
-      status: result.status,
-      error: result.error,
-    });
-    log.warn(`page rejected: ${result.error}`, {
-      fileId: req.params.fileId?.slice(0, 8),
+    log.warn(`embed page rejected: ${result.error}`, {
+      fileId: fileId.slice(0, 8),
       ip: req.ip,
     });
     return res.status(result.status).send(errorPage(result.error));
   }
 
-  const fileId = req.params.fileId;
-  const tokenRow = result.row;
-  const token = req.query.token;
-
   const fileRow = db.prepare("SELECT * FROM files WHERE id = ?").get(fileId);
   if (!fileRow) {
-    log.info("[DEBUG] embed.page | file row missing", {
-      fileId: fileId.slice(0, 8),
-    });
     return res.status(404).send(errorPage("File not found"));
   }
 
   const fp = currentPath(fileId);
   if (!existsSync(fp)) {
-    log.info("[DEBUG] embed.page | current file missing", {
-      fileId: fileId.slice(0, 8),
-      fp,
-    });
     return res.status(404).send(errorPage("File data missing"));
   }
 
   const indexPath = findEmbedIndexHtml();
   if (!indexPath) {
-    log.info("[DEBUG] embed.page | index missing", {
-      fileId: fileId.slice(0, 8),
-    });
     return res
       .status(500)
       .send(errorPage("Embed build not found — cannot serve embed page"));
   }
 
+  const tokenValue = String(token);
+  const encodedToken = encodeURIComponent(tokenValue);
   let html = readFileSync(indexPath, "utf-8");
-  const encodedToken = encodeURIComponent(String(token));
-
   html = rewriteSpaAssetRefsForEmbed(html, encodedToken);
-
-  // Intercept JS-level font/asset loads that still reference /fonts/ or /assets/
-  const fontInterceptor = buildEmbedRuntimeAssetInterceptor(encodedToken);
-
-  html = html.replace("<head>", `<head>\n${fontInterceptor}`);
+  html = html.replace(
+    "<head>",
+    `<head>\n${buildEmbedRuntimeAssetInterceptor(encodedToken)}`,
+  );
   html = injectEmbedBootstrap(html, {
     fileId,
     fileName: fileRow.name,
     kind: fileRow.kind || "excalidraw",
-    token: String(token),
-  });
-  log.info("[DEBUG] embed.page | bootstrap injected", {
-    fileId: fileId.slice(0, 8),
-    fileName: fileRow.name,
-    kind: fileRow.kind || "excalidraw",
-    indexPath,
-    htmlLength: html.length,
-    hasEmbedIndex: indexPath.includes("/embed/"),
-    dataUrl: `/embed/api/${encodeURIComponent(fileId)}/data?_t=<redacted>`,
+    token: tokenValue,
   });
 
-  // Set embed cookie for subsequent asset/font requests from this iframe
+  const sessionHost = resolveSessionEmbeddingHost(req, result);
+  issueEmbedSessionCookies(res, {
+    token: tokenValue,
+    tokenId: result.row.id,
+    fileId,
+    embeddingHost: sessionHost,
+  });
+
   res.setHeader(
-    "Set-Cookie",
-    `__embed_t=${encodeURIComponent(token)}; Path=/embed; HttpOnly; Secure; SameSite=None; Max-Age=3600`,
+    "Content-Security-Policy",
+    `frame-ancestors ${buildFrameAncestors(result.row.allowed_domains)}`,
   );
-
-  const ancestors = buildFrameAncestors(tokenRow.allowed_domains);
-  res.setHeader("Content-Security-Policy", `frame-ancestors ${ancestors}`);
   res.setHeader("Referrer-Policy", "same-origin");
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.removeHeader("X-Frame-Options");
 
-  log.info("page served", {
-    fileId: fileId.slice(0, 8),
-    tokenId: tokenRow.id.slice(0, 8),
-  });
-
   db.prepare(
     "UPDATE embed_tokens SET usage_count = usage_count + 1 WHERE id = ?",
-  ).run(tokenRow.id);
+  ).run(result.row.id);
+
+  log.info("embed page served", {
+    fileId: fileId.slice(0, 8),
+    tokenId: result.row.id.slice(0, 8),
+    embeddingHost: sessionHost,
+  });
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.setHeader("Cache-Control", "no-store");
   res.send(html);
 });
 
-pageRouter.use((req, res) => {
-  if (
-    isTokenProtectedEmbedPath(req.path) &&
-    !isTokenActive(getEmbedRequestToken(req))
-  ) {
-    return res.status(403).type("text/plain").send("Forbidden");
-  }
+pageRouter.use((_req, res) => {
   res.status(404).type("text/plain").send("Not found");
 });
 
