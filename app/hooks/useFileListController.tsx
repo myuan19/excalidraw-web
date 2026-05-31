@@ -8,6 +8,7 @@ import React, {
 } from "react";
 
 import {
+  applyMainSiteDocumentBranding,
   editorIconForKind,
   HOME_APP_TITLE,
   MAIN_SITE_ICON,
@@ -418,7 +419,7 @@ function getInitialFileListStateFromCache(): {
 
 export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   useEffect(() => {
-    document.title = HOME_APP_TITLE;
+    applyMainSiteDocumentBranding();
   }, []);
 
   const initialList = getInitialFileListStateFromCache();

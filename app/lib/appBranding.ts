@@ -2,7 +2,12 @@ import { useEffect } from "react";
 
 import { editorRegistry } from "../editors";
 
-/** 主站（文件列表 + 编辑器外壳）品牌 */
+/**
+ * 品牌分层：
+ * - 浏览器标签标题 / favicon：始终主站（本模块）
+ * - 侧边栏悬浮球、新建文件类型：各编辑器 `EditorPlugin.icon`
+ * - 文件列表顶栏、文件卡片：主站标题 + `editorIconForKind`
+ */
 export const HOME_APP_TITLE = "绘图空间";
 export const MAIN_SITE_ICON = "/icons/drawing-space.svg";
 
@@ -28,8 +33,16 @@ function collectFaviconLinks(): HTMLLinkElement[] {
   );
 }
 
+/** 将当前文档的标签标题与 favicon 设为主站品牌。 */
+export function applyMainSiteDocumentBranding(): void {
+  document.title = HOME_APP_TITLE;
+  for (const link of collectFaviconLinks()) {
+    link.href = MAIN_SITE_ICON;
+  }
+}
+
 /**
- * 编辑器会话内：浏览器标签标题与 favicon 使用主站品牌（非 excalidraw/mindmap 子品牌）。
+ * 编辑器会话内保持主站标签品牌（覆盖子编辑器可能改动的 title/favicon）。
  */
 export function useMainSiteDocumentBranding(): void {
   useEffect(() => {
@@ -37,10 +50,7 @@ export function useMainSiteDocumentBranding(): void {
     const iconLinks = collectFaviconLinks();
     const prevHrefs = new Map(iconLinks.map((link) => [link, link.href]));
 
-    document.title = HOME_APP_TITLE;
-    for (const link of iconLinks) {
-      link.href = MAIN_SITE_ICON;
-    }
+    applyMainSiteDocumentBranding();
 
     return () => {
       document.title = prevTitle;

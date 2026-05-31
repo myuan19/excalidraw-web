@@ -20,11 +20,13 @@ describe("File list branding source contract", () => {
 
     expect(brandingSource).toContain('export const HOME_APP_TITLE = "绘图空间"');
     expect(brandingSource).toContain('export const MAIN_SITE_ICON = "/icons/drawing-space.svg"');
+    expect(source).toContain("applyMainSiteDocumentBranding");
     expect(source).toContain("HOME_APP_TITLE");
     expect(source).toContain(
       '<h1 className="filelist__title">{HOME_APP_TITLE}</h1>',
     );
     expect(htmlSource).toContain("<title>绘图空间</title>");
+    expect(htmlSource).toContain('href="/icons/drawing-space.svg"');
     expect(htmlSource).toContain('content="绘图空间"');
     expect(htmlSource).toContain('content="统一管理 excalidraw 与 mindmap。"');
     expect(viteSource).toContain('short_name: "绘图空间"');
@@ -80,6 +82,13 @@ describe("File list branding source contract", () => {
     expect(mindMapSource).toContain("useMainSiteDocumentBranding");
     expect(excalidrawSource).not.toContain('document.title = "excalidraw"');
     expect(mindMapSource).not.toContain('document.title = "mindmap"');
+  });
+
+  it("uses per-editor icons in the new-file dialog", () => {
+    const source = fs.readFileSync(controllerPath, "utf8");
+
+    expect(source).toContain("plugin.icon");
+    expect(source).toContain("editorRegistry.getByKind(newDocumentKind)");
   });
 
   it("uses per-editor icons on the floating sidebar ball", () => {
