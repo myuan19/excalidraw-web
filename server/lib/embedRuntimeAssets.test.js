@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import vm from "node:vm";
 import { buildEmbedRuntimeAssetInterceptor } from "./embedRuntimeAssets.js";
 
-function createRuntime(encodedToken = "tok_123") {
-  const script = buildEmbedRuntimeAssetInterceptor(encodedToken)
+function createRuntime() {
+  const script = buildEmbedRuntimeAssetInterceptor()
     .replace(/^<script>/, "")
     .replace(/<\/script>$/, "");
   const calls = {
@@ -29,7 +29,7 @@ function createRuntime(encodedToken = "tok_123") {
 }
 
 describe("embed runtime asset interceptor", () => {
-  it("adds embed token to runtime font URLs", () => {
+  it("remaps runtime font URLs without query tokens", () => {
     const { window, calls } = createRuntime();
 
     window.fetch("/embed/fonts/Virgil/Virgil-Regular.woff2");
@@ -38,31 +38,19 @@ describe("embed runtime asset interceptor", () => {
       'url("/embed/fonts/Virgil/Virgil-Regular.woff2") format("woff2")',
     );
 
-    expect(calls.fetch[0][0]).toBe(
-      "/embed/fonts/Virgil/Virgil-Regular.woff2?_t=tok_123",
-    );
+    expect(calls.fetch[0][0]).toBe("/embed/fonts/Virgil/Virgil-Regular.woff2");
     expect(calls.fontFace[0][1]).toBe(
-      'url("/embed/fonts/Virgil/Virgil-Regular.woff2?_t=tok_123") format("woff2")',
+      'url("/embed/fonts/Virgil/Virgil-Regular.woff2") format("woff2")',
     );
   });
 
-  it("maps bare font and asset paths to token-gated embed routes", () => {
+  it("maps bare font and asset paths to embed routes", () => {
     const { window, calls } = createRuntime();
 
     window.fetch("fonts/Xiaolai/font.woff2");
     window.fetch("/assets/index.js");
 
-    expect(calls.fetch[0][0]).toBe("/embed/fonts/Xiaolai/font.woff2?_t=tok_123");
-    expect(calls.fetch[1][0]).toBe("/embed/assets/index.js?_t=tok_123");
-  });
-
-  it("does not duplicate existing embed tokens", () => {
-    const { window, calls } = createRuntime();
-
-    window.fetch("/embed/fonts/Virgil/Virgil-Regular.woff2?_t=old");
-
-    expect(calls.fetch[0][0]).toBe(
-      "/embed/fonts/Virgil/Virgil-Regular.woff2?_t=old",
-    );
+    expect(calls.fetch[0][0]).toBe("/embed/fonts/Xiaolai/font.woff2");
+    expect(calls.fetch[1][0]).toBe("/embed/assets/index.js");
   });
 });

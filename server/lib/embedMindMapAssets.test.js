@@ -6,7 +6,7 @@ import {
 } from "./embedMindMapAssets.js";
 
 describe("embed mind-map asset rewriting", () => {
-  it("rewrites iframe html resources to token-gated embed paths", () => {
+  it("rewrites iframe html resources to embed paths without query tokens", () => {
     const html = [
       '<link rel="icon" href="dist/logo.ico">',
       '<link href="dist/css/app.css?abc" rel="stylesheet">',
@@ -14,18 +14,19 @@ describe("embed mind-map asset rewriting", () => {
       '<img src="./dist/img/logo.png">',
     ].join("");
 
-    expect(rewriteMindMapHtmlForEmbed(html, "tok_123")).toContain(
-      'href="/embed/mind-map/dist/logo.ico?_t=tok_123"',
+    expect(rewriteMindMapHtmlForEmbed(html)).toContain(
+      'href="/embed/mind-map/dist/logo.ico"',
     );
-    expect(rewriteMindMapHtmlForEmbed(html, "tok_123")).toContain(
-      'href="/embed/mind-map/dist/css/app.css?abc&_t=tok_123"',
+    expect(rewriteMindMapHtmlForEmbed(html)).toContain(
+      'href="/embed/mind-map/dist/css/app.css?abc"',
     );
-    expect(rewriteMindMapHtmlForEmbed(html, "tok_123")).toContain(
-      'src="/embed/mind-map/dist/js/app.js?abc&_t=tok_123"',
+    expect(rewriteMindMapHtmlForEmbed(html)).toContain(
+      'src="/embed/mind-map/dist/js/app.js?abc"',
     );
-    expect(rewriteMindMapHtmlForEmbed(html, "tok_123")).toContain(
-      'src="/embed/mind-map/dist/img/logo.png?_t=tok_123"',
+    expect(rewriteMindMapHtmlForEmbed(html)).toContain(
+      'src="/embed/mind-map/dist/img/logo.png"',
     );
+    expect(rewriteMindMapHtmlForEmbed(html)).not.toContain("_t=");
   });
 
   it("rewrites css url references relative to the current mind-map asset", () => {
@@ -35,12 +36,10 @@ describe("embed mind-map asset rewriting", () => {
       ".inline{background:url(data:image/png;base64,abc)}",
     ].join("");
 
-    expect(
-      rewriteMindMapCssForEmbed(css, "dist/css/app.css", "tok_123"),
-    ).toBe(
+    expect(rewriteMindMapCssForEmbed(css, "dist/css/app.css")).toBe(
       [
-        "@font-face{src:url(/embed/mind-map/dist/fonts/icon.woff2?_t=tok_123)}",
-        ".logo{background:url('/embed/mind-map/dist/img/logo.png?abc&_t=tok_123')}",
+        "@font-face{src:url(/embed/mind-map/dist/fonts/icon.woff2)}",
+        ".logo{background:url('/embed/mind-map/dist/img/logo.png?abc')}",
         ".inline{background:url(data:image/png;base64,abc)}",
       ].join(""),
     );

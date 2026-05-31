@@ -5,13 +5,6 @@ import { ArchivePanel } from "../../components/ArchivePanel";
 import { APP_SHELL_GO_HOME } from "../../shell/Sidebar";
 import { buildViewHash, type AppView } from "../../shell/useAppView";
 import { EmbedTokenManager } from "../../components/EmbedTokenManager";
-import {
-  ensureAIConfigLoaded,
-  getCachedAIConfig,
-  isMindMapAIConfigured,
-  resolveMindMapAIEndpoint,
-  subscribeAIConfig,
-} from "../../data/aiConfig";
 import { FileSyncState } from "../../data/FileSyncState";
 import { readFileListTreeCache } from "../../data/fileListSessionCache";
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
@@ -57,13 +50,17 @@ import {
 import type { ManagedDocument } from "../../data/documentTypes";
 import type { MindMapDocumentData } from "../../data/formats/MindMapAdapter";
 
+import {
+  HOME_APP_TITLE,
+  useMainSiteDocumentBranding,
+} from "../../lib/appBranding";
+import { devDebug } from "../../lib/devDebug";
+import { useMindMapNativeAIConfig } from "./useMindMapNativeAIConfig";
+
 import "./MindMapEditorShell.scss";
 
 function debugMindMapOpen(label: string, data?: Record<string, unknown>) {
-  console.log(`[DEBUG] mindmap-open | ${label}`, {
-    t: Math.round(performance.now()),
-    ...(data ?? {}),
-  });
+  devDebug("mindmap-open", label, data);
 }
 
 function toBridgePayload(
@@ -271,9 +268,7 @@ const MindMapEditorShell = () => {
     [fileId, publishDocument],
   );
 
-  useEffect(() => {
-    document.title = "mindmap";
-  }, []);
+  useMainSiteDocumentBranding();
 
   useEffect(() => {
     debugMindMapOpen("MindMapEditorShell mounted", {
@@ -331,14 +326,14 @@ const MindMapEditorShell = () => {
         }
 
         if (message.type === "CLIPBOARD_READ") {
-          console.log("[DEBUG] MindMapEditorShell | CLIPBOARD_READ start", {
+          debugMindMapOpen("CLIPBOARD_READ start", {
             requestId,
             hasClipboardRead: !!navigator.clipboard?.read,
             hasClipboardReadText: !!navigator.clipboard?.readText,
             documentHasFocus: document.hasFocus(),
           });
           const items = await readClipboardItemsForNative();
-          console.log("[DEBUG] MindMapEditorShell | CLIPBOARD_READ done", {
+          debugMindMapOpen("CLIPBOARD_READ done", {
             requestId,
             itemCount: items.length,
             itemTypes: items.map((item) => item.types),
@@ -364,7 +359,7 @@ const MindMapEditorShell = () => {
           return true;
         }
       } catch (err: any) {
-        console.log("[DEBUG] MindMapEditorShell | clipboard bridge failed", {
+        debugMindMapOpen("clipboard bridge failed", {
           type: message.type,
           requestId,
           name: err?.name,
@@ -498,50 +493,7 @@ const MindMapEditorShell = () => {
     };
   }, [skipLeaveStashOnceRef]);
 
-  const postMindMapAIConfig = useCallback(
-    (reason: string) => {
-      if (!isBridgeReady) {
-        return;
-      }
-      const config = getCachedAIConfig().mindmap;
-      const configured = isMindMapAIConfigured();
-      const resolvedEndpoint = resolveMindMapAIEndpoint(config.endpoint);
-      console.log("[DEBUG] MindMapEditorShell | post mindMapAiConfig", {
-        reason,
-        configured,
-        hasEndpoint: !!config.endpoint?.trim(),
-        endpoint: config.endpoint?.trim() || "",
-        resolvedEndpoint,
-        hasKey: !!config.apiKey?.trim(),
-        keyLen: config.apiKey?.length ?? 0,
-        model: config.model || "gpt-4o",
-        hasIframeWindow: !!iframeRef.current?.contentWindow,
-        nativeAppInited: isAppReady,
-      });
-      postToNative("mindMapAiConfig", {
-        configured,
-        api: resolvedEndpoint,
-        key: config.apiKey,
-        model: config.model || "gpt-4o",
-        method: "POST",
-      });
-    },
-    [isAppReady, isBridgeReady, postToNative],
-  );
-
-  useEffect(() => {
-    const syncAiStatus = () => postMindMapAIConfig("subscribeAIConfig");
-    ensureAIConfigLoaded()
-      .then(() => postMindMapAIConfig("ensureAIConfigLoaded"))
-      .catch((error) => {
-        console.log("[DEBUG] MindMapEditorShell | ensureAIConfigLoaded failed", {
-          message: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : undefined,
-        });
-        postMindMapAIConfig("ensureAIConfigLoaded.catch");
-      });
-    return subscribeAIConfig(syncAiStatus);
-  }, [postMindMapAIConfig]);
+  useMindMapNativeAIConfig({ isBridgeReady, postToNative });
 
   useEffect(() => {
     if (!isBridgeReady) {
@@ -771,30 +723,7 @@ const MindMapEditorShell = () => {
           event.data.type === "ready" ||
           event.data.type === "appInited")
       ) {
-        if (event.data.type === "ready") {
-          void ensureAIConfigLoaded()
-            .then(() => postMindMapAIConfig("iframe-ready"))
-            .catch(() => postMindMapAIConfig("iframe-ready.catch"));
-        }
         if (event.data.type === "appInited") {
-          debugMindMapOpen("received appInited", {
-            sinceShellStart: Math.round(performance.now() - shellStartRef.current),
-            sinceInitStart: initStartRef.current
-              ? Math.round(performance.now() - initStartRef.current)
-              : null,
-            needsInitialThumbnail: needsInitialThumbnailRef.current,
-          });
-          ensureAIConfigLoaded()
-          .then(() => postMindMapAIConfig("appInited"))
-          .catch((error) => {
-            console.log(
-              "[DEBUG] MindMapEditorShell | appInited AI config load failed",
-              {
-                message: error instanceof Error ? error.message : String(error),
-                stack: error instanceof Error ? error.stack : undefined,
-              },
-            );
-          });
           if (needsInitialThumbnailRef.current) {
             needsInitialThumbnailRef.current = false;
             debugMindMapOpen("trigger initial thumbnail save");
@@ -861,15 +790,12 @@ const MindMapEditorShell = () => {
           if (savePayload.revision !== undefined) {
             latestNativeRevisionRef.current = savePayload.revision;
           }
-          console.log(
-            "[DEBUG] MindMapEditorShell | skip transient empty saveMindMapData",
-            {
-              requestId: savePayload.requestId ?? null,
-              revision: savePayload.revision ?? null,
-              previousRootChildren:
-                previousDocument.data.root.children?.length ?? 0,
-            },
-          );
+          debugMindMapOpen("skip transient empty saveMindMapData", {
+            requestId: savePayload.requestId ?? null,
+            revision: savePayload.revision ?? null,
+            previousRootChildren:
+              previousDocument.data.root.children?.length ?? 0,
+          });
           return;
         }
         void MindMapAdapter.parse(savePayload.data)
@@ -910,7 +836,7 @@ const MindMapEditorShell = () => {
                 saveTimeoutRef.current = null;
               }
             }
-            console.log("[DEBUG] MindMapEditorShell | saveMindMapData parse failed", {
+            debugMindMapOpen("saveMindMapData parse failed", {
               isCurrentSaveResponse,
               requestId: savePayload.requestId ?? null,
               revision: savePayload.revision ?? null,
@@ -1010,7 +936,6 @@ const MindMapEditorShell = () => {
     learnedOrigin,
     markDocumentChanged,
     mindMapGoHomeWithServerSave,
-    postMindMapAIConfig,
     requestNativeSave,
     saveCurrentFileToServer,
     updateLatestDocument,
@@ -1159,7 +1084,7 @@ const MindMapEditorShell = () => {
       <iframe
         ref={iframeRef}
         key={`${fileId ?? "none"}-${iframeBootKey}`}
-        title="mindmap"
+        title={HOME_APP_TITLE}
         className="mindmap-editor__native-frame"
         src={NATIVE_MINDMAP_URL}
         allow="clipboard-read; clipboard-write"

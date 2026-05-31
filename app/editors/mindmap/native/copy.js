@@ -50,17 +50,16 @@ if (fs.existsSync(bridgeSrc)) {
 }
 
 async function syncServedIndexHtml() {
-  const distJsDir = path.join(servedDir, 'dist/js')
   let html = fs.readFileSync(dest, 'utf8')
   try {
-    const { injectMindMapChunkPreloads } = await import(
+    const { normalizeMindMapIndexHtml } = await import(
       pathToFileURL(
         path.resolve(nativeDir, '../../../../scripts/mind-map-webpack-chunks.mjs')
       ).href
     )
-    html = injectMindMapChunkPreloads(html, distJsDir)
+    html = normalizeMindMapIndexHtml(html)
   } catch (error) {
-    console.warn('[mind-map copy] chunk preload injection skipped:', error.message)
+    console.warn('[mind-map copy] index.html normalize skipped:', error.message)
   }
   fs.writeFileSync(path.join(servedDir, 'index.html'), html)
   fs.writeFileSync(dest, html)

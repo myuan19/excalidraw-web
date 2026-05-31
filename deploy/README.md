@@ -59,3 +59,34 @@ curl -sI 'https://YOUR_HOST/mind-map/dist/js/app.9d1741a9.js' | head -5
 - Access control lives in `server/lib/embedAccess.js` (domain context → token → allowlist).
 - Set a stable `EMBED_SESSION_SECRET` in production (same value on all API instances).
 - Outer nginx: prefer passing through app `Content-Security-Policy` `frame-ancestors` from the embed response; avoid overriding with global `frame-ancestors *` if tokens use domain allowlists.
+
+### Browser caching (SPA + embed static)
+
+Docker nginx (`deploy/full/nginx.conf`) mirrors the app cache split:
+
+| Path | Policy |
+|------|--------|
+| `index.html`, `/build-meta.json` | `no-cache` — always revalidate shell |
+| `/assets/*`, `/mind-map/dist/*` | `immutable` + 1y — content-hashed bundles |
+| `/api/*`, `/embed` (HTML/API) | proxied to Node; document routes use `ETag` / `304` where applicable |
+
+Hashed embed chunks (`/embed/assets`, `/embed/mind-map/dist`) rely on **session cookies** for auth and long-lived cache headers from Express (`embedAccess.js`), not `?_t=` query busting.
+
+After deploy, the SPA compares `VITE_APP_GIT_SHA` (injected at build) with `build-meta.json` and reloads once if they differ (stale tab after a new release).
+
+### Performance verification (manual Network tab)
+
+| Scenario | Expected after this release |
+|----------|----------------------------|
+| Main editor refresh (local cache, server unchanged) | `GET /api/files/:id` → **304**; no large JSON parse |
+| MindMap refresh | Cache-first; background `GET /api/files/hashes` only; no second full `getFile` when hash matches |
+| Embed reload | Hashed `/embed/.../dist/*` served with **session cookie** only (no per-chunk DB in server logs); second load hits **disk cache** |
+
+Automated: `yarn vitest run server/lib/documentEtag.test.js server/lib/embedAccess.test.js scripts/mind-map-webpack-chunks.test.mjs`.
+
+**MindMap build hygiene** (source, not hand-patched `public/mind-map/`):
+
+- `native/web/vue.config.js`: `html.hash = false` (content-hash filenames only).
+- `native/copy.js` + `scripts/mind-map-webpack-chunks.mjs`: strip stray `?buildHash` query strings and remove `<link rel="preload">` for `dist/*` (avoids credentials mismatch double-fetch).
+- Host diagnostics: `app/lib/devDebug.ts` (production silent unless `VITE_APP_ENABLE_*_DEBUG=true`).
+- Native AI push: `useMindMapNativeAIConfig` (single coordinator; do not duplicate in `MindMapEditorShell`).

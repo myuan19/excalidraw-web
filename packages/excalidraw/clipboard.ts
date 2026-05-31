@@ -20,6 +20,7 @@ import { getContainingFrame } from "@excalidraw/element";
 import type { ValueOf } from "@excalidraw/common/utility-types";
 
 import type { IMAGE_MIME_TYPES, STRING_MIME_TYPES } from "@excalidraw/common";
+import { devConsoleDebug } from "@excalidraw/common";
 import type {
   ExcalidrawElement,
   NonDeletedExcalidrawElement,
@@ -136,7 +137,7 @@ export const createPasteEvent = ({
     }
   }
 
-  console.log("[DEBUG] createPasteEvent | synthetic clipboard payload", {
+  devConsoleDebug("createPasteEvent", "synthetic clipboard payload", {
     typeKeys: Object.keys(types || {}),
     inputFileCount: files?.length ?? 0,
     dataTransferFileCount: event.clipboardData?.files.length ?? 0,
@@ -266,7 +267,7 @@ export const readSystemClipboard = async () => {
   let clipboardItems: ClipboardItems;
 
   try {
-    console.log("[DEBUG] readSystemClipboard | before navigator.clipboard.read", {
+    devConsoleDebug("readSystemClipboard", "before navigator.clipboard.read", {
       hasClipboard: !!navigator.clipboard,
       hasRead: !!navigator.clipboard?.read,
       hasReadText: !!navigator.clipboard?.readText,
@@ -276,12 +277,12 @@ export const readSystemClipboard = async () => {
         typeof document !== "undefined" ? document.hasFocus() : undefined,
     });
     clipboardItems = await navigator.clipboard?.read();
-    console.log("[DEBUG] readSystemClipboard | read OK", {
+    devConsoleDebug("readSystemClipboard", "read OK", {
       itemCount: clipboardItems?.length ?? 0,
       itemTypes: Array.from(clipboardItems || []).map((item) => item.types),
     });
   } catch (error: any) {
-    console.log("[DEBUG] readSystemClipboard | read FAILED", {
+    devConsoleDebug("readSystemClipboard", "read FAILED", {
       name: error?.name,
       message: error?.message,
       stack: error?.stack,
@@ -293,14 +294,14 @@ export const readSystemClipboard = async () => {
         );
         const readText = await navigator.clipboard?.readText();
         if (readText) {
-          console.log("[DEBUG] readSystemClipboard | readText fallback OK", {
+          devConsoleDebug("readSystemClipboard", "readText fallback OK", {
             textLength: readText.length,
           });
           return { [MIME_TYPES.text]: readText };
         }
       }
     } catch (error: any) {
-      console.log("[DEBUG] readSystemClipboard | readText fallback FAILED", {
+      devConsoleDebug("readSystemClipboard", "readText fallback FAILED", {
         name: error?.name,
         message: error?.message,
         stack: error?.stack,
@@ -325,12 +326,12 @@ export const readSystemClipboard = async () => {
   }
 
   for (const item of clipboardItems) {
-    console.log("[DEBUG] readSystemClipboard | clipboard item", {
+    devConsoleDebug("readSystemClipboard", "clipboard item", {
       itemTypes: item.types,
     });
     for (const type of item.types) {
       if (!isMemberOf(ALLOWED_PASTE_MIME_TYPES, type)) {
-        console.log("[DEBUG] readSystemClipboard | skip unsupported type", {
+        devConsoleDebug("readSystemClipboard", "skip unsupported type", {
           type,
         });
         continue;
@@ -338,7 +339,7 @@ export const readSystemClipboard = async () => {
       try {
         if (type === MIME_TYPES.text || type === MIME_TYPES.html) {
           types[type] = await (await item.getType(type)).text();
-          console.log("[DEBUG] readSystemClipboard | text/html item read", {
+          devConsoleDebug("readSystemClipboard", "text/html item read", {
             type,
             textLength:
               typeof types[type] === "string" ? types[type].length : 0,
@@ -347,7 +348,7 @@ export const readSystemClipboard = async () => {
           const imageBlob = await item.getType(type);
           const file = createFile(imageBlob, type, undefined);
           types[type] = file;
-          console.log("[DEBUG] readSystemClipboard | image item read", {
+          devConsoleDebug("readSystemClipboard", "image item read", {
             type,
             blobSize: imageBlob.size,
             fileName: file.name,
@@ -358,7 +359,7 @@ export const readSystemClipboard = async () => {
           throw new ExcalidrawError(`Unsupported clipboard type: ${type}`);
         }
       } catch (error: any) {
-        console.log("[DEBUG] readSystemClipboard | item read FAILED", {
+        devConsoleDebug("readSystemClipboard", "item read FAILED", {
           type,
           name: error?.name,
           message: error?.message,
@@ -378,7 +379,7 @@ export const readSystemClipboard = async () => {
     return types;
   }
 
-  console.log("[DEBUG] readSystemClipboard | result", {
+  devConsoleDebug("readSystemClipboard", "result", {
     typeKeys: Object.keys(types),
     fileTypes: Object.entries(types)
       .filter(([, value]) => value instanceof File)

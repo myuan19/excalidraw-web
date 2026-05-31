@@ -3,6 +3,11 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { buildEmbedEditUrl } from "../data/embedDocument";
 import { editorRegistry } from "../editors";
 import { getLazyEmbedViewer } from "../editors/lazyViews";
+import {
+  formatIfNoneMatchHeader,
+  getEmbedDocumentCache,
+  setEmbedDocumentCache,
+} from "./embedDocumentCache";
 import { embedDebug, embedMark, embedMeasure } from "./embedDebug";
 import { getEmbedBootstrap } from "./embedMode";
 
@@ -96,8 +101,14 @@ export default function EmbedApp() {
           kind,
           dataUrl: bootstrap.dataUrl,
         });
+        const fileId = bootstrap.fileId ?? "";
+        const cached = fileId ? getEmbedDocumentCache(fileId) : null;
+        const headers: Record<string, string> = { Accept: "application/json" };
+        if (cached?.etag) {
+          headers["If-None-Match"] = formatIfNoneMatchHeader(cached.etag);
+        }
         const response = await fetch(bootstrap.dataUrl!, {
-          headers: { Accept: "application/json" },
+          headers,
           cache: "no-store",
         });
         embedDebug("payload fetch response", {
@@ -107,12 +118,32 @@ export default function EmbedApp() {
           status: response.status,
           contentType: response.headers.get("content-type"),
         });
+        if (response.status === 304) {
+          if (!cached?.payload) {
+            throw new Error("Embed data unchanged but no session cache");
+          }
+          if (disposed) {
+            return;
+          }
+          embedMark("payload-fetched");
+          embedMeasure("payload-fetch", "payload-fetch-start", "payload-fetched");
+          embedDebug("payload 304 reused cache", { kind, fileId: fileId.slice(0, 8) });
+          setData(cached.payload.data ?? null);
+          return;
+        }
         if (!response.ok) {
           throw new Error(`Embed data request failed: ${response.status}`);
         }
         const payload = await response.json();
         if (disposed) {
           return;
+        }
+        const etag =
+          response.headers.get("etag")?.replace(/^"|"$/g, "") ?? null;
+        if (fileId && etag) {
+          setEmbedDocumentCache(fileId, etag, {
+            data: payload?.data ?? null,
+          });
         }
         embedMark("payload-fetched");
         embedMeasure("payload-fetch", "payload-fetch-start", "payload-fetched");

@@ -50,7 +50,19 @@ if (!fs.existsSync(indexPath)) {
   );
 }
 
-const html = fs.readFileSync(indexPath, "utf8");
+let html = fs.readFileSync(indexPath, "utf8");
+
+if (html.includes('rel="preload"') && /href="dist\/(?:js|css)\//.test(html)) {
+  fail(
+    "index.html must not contain <link rel=\"preload\"> for dist/* (causes credentials mismatch / double fetch). Rebuild mind-map and run copy.js (normalizeMindMapIndexHtml).",
+  );
+}
+
+if (/dist\/(?:js|css)\/[^"']+\.[a-f0-9]+\.(?:js|css)\?[a-f0-9]{8,}/i.test(html)) {
+  fail(
+    "index.html must not append html-webpack ?hash query on content-hashed dist assets (breaks immutable cache). Set html.hash=false in vue.config.js and rebuild.",
+  );
+}
 
 const bridgeShellPath = path.join(mindMapDir, "dist/bridge/takeover-shell.js");
 

@@ -10,6 +10,7 @@ import { createHtmlPlugin } from "vite-plugin-html";
 import Sitemap from "vite-plugin-sitemap";
 
 import { woff2BrowserPlugin } from "../scripts/woff2/woff2-vite-plugins";
+import { writeBuildMetaPlugin } from "./lib/writeBuildMetaPlugin";
 
 /** Legacy in-repo dev data paths — exclude from Vite HMR if present */
 const devDataDir = path.resolve(__dirname, "../_dev_data");
@@ -163,6 +164,7 @@ export default defineConfig(({ mode }) => {
       assetsInlineLimit: 0,
     },
     plugins: [
+      writeBuildMetaPlugin(path.resolve(__dirname, "build")),
       Sitemap({
         hostname: "https://excalidraw.com",
         outDir: "build",

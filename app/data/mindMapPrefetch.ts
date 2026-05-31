@@ -1,5 +1,11 @@
 const DEFAULT_MINDMAP_URL = "/mind-map/index.html";
 
+/** Drop html-webpack ?buildHash on content-hashed filenames so prefetch hits disk cache. */
+export function normalizeMindMapAssetHref(href: string): string {
+  const withoutQuery = href.replace(/\?([a-f0-9]{8,})$/, "");
+  return withoutQuery;
+}
+
 function unique(values: string[]): string[] {
   return Array.from(new Set(values));
 }
@@ -17,8 +23,10 @@ export function extractMindMapAssetUrls(
     /<(script|link)\b[^>]*(?:src|href)=["']?([^"'\s>]+)["']?[^>]*>/gi;
   let match: RegExpExecArray | null;
   while ((match = assetPattern.exec(html))) {
-    const url = resolveMindMapAssetUrl(match[2], htmlUrl);
-    if (/\.(js|css)(?:$|\?)/.test(url)) {
+    const url = normalizeMindMapAssetHref(
+      resolveMindMapAssetUrl(match[2], htmlUrl),
+    );
+    if (/\.(js|css)$/.test(url)) {
       urls.push(url);
     }
   }

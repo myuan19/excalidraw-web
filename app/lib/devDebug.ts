@@ -1,0 +1,73 @@
+/**
+ * Central development diagnostics for the host app (MindMap shell, file list, embed).
+ * Production: silent unless an explicit VITE_APP_ENABLE_*_DEBUG flag is set.
+ */
+
+export type DevDebugChannel =
+  | "app"
+  | "mindmap-open"
+  | "mindmap-bridge"
+  | "mindmap-thumbnail"
+  | "ai-config"
+  | "embed"
+  | "file-list"
+  | "thumbnail-pipeline";
+
+const CHANNEL_ENV_FLAG: Record<DevDebugChannel, string> = {
+  app: "VITE_APP_ENABLE_APP_DEBUG",
+  "mindmap-open": "VITE_APP_ENABLE_MINDMAP_DEBUG",
+  "mindmap-bridge": "VITE_APP_ENABLE_MINDMAP_DEBUG",
+  "mindmap-thumbnail": "VITE_APP_ENABLE_MINDMAP_DEBUG",
+  "ai-config": "VITE_APP_ENABLE_AI_CONFIG_DEBUG",
+  embed: "VITE_APP_ENABLE_EMBED_DEBUG",
+  "file-list": "VITE_APP_ENABLE_FILE_LIST_DEBUG",
+  "thumbnail-pipeline": "VITE_APP_ENABLE_THUMBNAIL_DEBUG",
+};
+
+export function isDevDebugChannelEnabled(channel: DevDebugChannel): boolean {
+  if (import.meta.env.PROD) {
+    const flag = CHANNEL_ENV_FLAG[channel];
+    return import.meta.env[flag] === "true";
+  }
+  return true;
+}
+
+export function devDebug(
+  channel: DevDebugChannel,
+  label: string,
+  data?: Record<string, unknown>,
+): void {
+  if (!isDevDebugChannelEnabled(channel)) {
+    return;
+  }
+  const prefix = `[DEBUG] ${channel} | ${label}`;
+  if (data === undefined) {
+    console.log(prefix);
+    return;
+  }
+  try {
+    console.log(prefix, data);
+  } catch {
+    console.log(prefix);
+  }
+}
+
+/** @deprecated Use isDevDebugChannelEnabled("embed") */
+export function isEmbedDebugEnabled(): boolean {
+  return isDevDebugChannelEnabled("embed");
+}
+
+/** @deprecated Use isDevDebugChannelEnabled("mindmap-open") */
+export function isMindMapOpenDebugEnabled(): boolean {
+  return isDevDebugChannelEnabled("mindmap-open");
+}
+
+/** @deprecated Use isDevDebugChannelEnabled("app") */
+export function isAppDebugEnabled(): boolean {
+  return isDevDebugChannelEnabled("app");
+}
+
+/** @deprecated Use isDevDebugChannelEnabled("ai-config") */
+export function isAIConfigDebugEnabled(): boolean {
+  return isDevDebugChannelEnabled("ai-config");
+}

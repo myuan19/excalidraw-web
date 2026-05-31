@@ -8,7 +8,10 @@ import { discardLocalEditsNavigateHome } from "../../data/fileEditSession";
 import { FileSyncState } from "../../data/FileSyncState";
 import { hashSceneSnapshot } from "../../data/sceneHash";
 import { LocalData } from "../../data/LocalData";
-import { generateExcalidrawThumbnailAndCache } from "../../data/excalidrawThumbnail";
+import {
+  generateExcalidrawThumbnailAndCache,
+  scheduleExcalidrawThumbnailAndCache,
+} from "../../data/excalidrawThumbnail";
 import { resolveSaveDisplayName } from "../../data/forkFileNaming";
 import { ServerSync } from "../../data/ServerSync";
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
@@ -85,7 +88,7 @@ export function useForkFileSave(opts: {
               files: latest.files,
               deltas,
             });
-            void generateExcalidrawThumbnailAndCache(fileId, latest);
+            scheduleExcalidrawThumbnailAndCache(fileId, latest);
           } catch {
             // quota / idb
           }

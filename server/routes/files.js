@@ -4,6 +4,11 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "fs";
 import { join } from "path";
 import db, { DATA_DIR } from "../db.js";
 import { createLogger } from "../lib/logger.js";
+import {
+  formatDocumentEtag,
+  ifNoneMatchSatisfied,
+  sendNotModified,
+} from "../lib/documentEtag.js";
 import { isApiDebugEnabled, isThumbAuditLogEnabled, summarizeScenePayload, truncStr } from "../logger.js";
 
 const router = Router();
@@ -455,25 +460,36 @@ router.get("/:id", (req, res) => {
   const row = db.prepare("SELECT * FROM files WHERE id = ?").get(fid);
   const dbMs = Date.now() - dbStartedAt;
   if (!row) {
-    log.info("[DEBUG] files.getById | not found", {
-      id: fid.slice(0, 8),
-      dbMs,
-      totalMs: Date.now() - startedAt,
-    });
+    if (isApiDebugEnabled()) {
+      log.info("[DEBUG] files.getById | not found", {
+        id: fid.slice(0, 8),
+        dbMs,
+        totalMs: Date.now() - startedAt,
+      });
+    }
     log.warn("GET /:id not found", { id: fid.slice(0, 8) });
     return res.status(404).json({ error: "not found" });
   }
 
   const fp = currentPath(fid);
   if (!existsSync(fp)) {
-    log.info("[DEBUG] files.getById | disk missing", {
-      id: fid.slice(0, 8),
-      dbMs,
-      totalMs: Date.now() - startedAt,
-      path: fp,
-    });
+    if (isApiDebugEnabled()) {
+      log.info("[DEBUG] files.getById | disk missing", {
+        id: fid.slice(0, 8),
+        dbMs,
+        totalMs: Date.now() - startedAt,
+        path: fp,
+      });
+    }
     log.warn("GET /:id disk missing", { id: fid.slice(0, 8), path: fp });
     return res.status(404).json({ error: "file data missing" });
+  }
+
+  if (
+    row.content_sha256 &&
+    ifNoneMatchSatisfied(req.get("if-none-match"), row.content_sha256)
+  ) {
+    return sendNotModified(res, row.content_sha256);
   }
 
   let data;
@@ -488,30 +504,39 @@ router.get("/:id", (req, res) => {
     data = JSON.parse(raw);
     parseMs = Date.now() - parseStartedAt;
   } catch (e) {
-    log.info("[DEBUG] files.getById | JSON.parse failed", {
-      id: fid.slice(0, 8),
-      dbMs,
-      readMs,
-      parseMs,
-      bytes: Buffer.byteLength(raw || "", "utf-8"),
-      totalMs: Date.now() - startedAt,
-      message: e.message,
-    });
+    if (isApiDebugEnabled()) {
+      log.info("[DEBUG] files.getById | JSON.parse failed", {
+        id: fid.slice(0, 8),
+        dbMs,
+        readMs,
+        parseMs,
+        bytes: Buffer.byteLength(raw || "", "utf-8"),
+        totalMs: Date.now() - startedAt,
+        message: e.message,
+      });
+    }
     log.error("GET /:id JSON.parse failed", {
       id: fid.slice(0, 8),
       message: e.message,
     });
     return res.status(500).json({ error: "corrupt scene file", message: e.message });
   }
-  log.info("[DEBUG] files.getById | success", {
-    id: fid.slice(0, 8),
-    dbMs,
-    readMs,
-    parseMs,
-    bytes: Buffer.byteLength(raw, "utf-8"),
-    totalMs: Date.now() - startedAt,
-    kind: row.kind,
-  });
+  if (isApiDebugEnabled()) {
+    log.info("[DEBUG] files.getById | success", {
+      id: fid.slice(0, 8),
+      dbMs,
+      readMs,
+      parseMs,
+      bytes: Buffer.byteLength(raw, "utf-8"),
+      totalMs: Date.now() - startedAt,
+      kind: row.kind,
+    });
+  }
+  const etag = formatDocumentEtag(row.content_sha256);
+  if (etag) {
+    res.setHeader("ETag", etag);
+  }
+  res.setHeader("Cache-Control", "private, no-cache");
   res.json({ ...mapFileRow(row), data });
 });
 

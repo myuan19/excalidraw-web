@@ -10,6 +10,21 @@ export type ExcalidrawThumbnailScene = {
   files: unknown;
 };
 
+/** 空闲时再生成缩略图，避免与首屏渲染争抢字体 subset worker。 */
+export function scheduleExcalidrawThumbnailAndCache(
+  fileId: string,
+  scene: ExcalidrawThumbnailScene,
+): void {
+  const run = () => {
+    void generateExcalidrawThumbnailAndCache(fileId, scene);
+  };
+  if (typeof requestIdleCallback === "function") {
+    requestIdleCallback(run, { timeout: 4000 });
+  } else {
+    window.setTimeout(run, 200);
+  }
+}
+
 /** 生成 Excalidraw 列表缩略图并写入 sessionStorage；失败时返回 undefined。 */
 export async function generateExcalidrawThumbnailAndCache(
   fileId: string,

@@ -1,3 +1,4 @@
+import { devDebug, isDevDebugChannelEnabled } from "../lib/devDebug";
 import {
   FILE_LIST_THUMB_EXPORT_PADDING,
   FILE_LIST_THUMB_MIN_VIEWPORT_HEIGHT,
@@ -43,7 +44,7 @@ function getSvgAttr(svgMarkup: string, name: string): string {
 }
 
 export function isMindMapThumbnailDebugEnabled(): boolean {
-  return false;
+  return isDevDebugChannelEnabled("mindmap-thumbnail");
 }
 
 function roundDebugNumber(value: number): number {
@@ -72,7 +73,7 @@ function debugMindMapThumbnail(
   if (!isMindMapThumbnailDebugEnabled()) {
     return;
   }
-  console.log(`[DEBUG] mindmap-thumbnail | ${label}`, JSON.stringify(data, null, 2));
+  devDebug("mindmap-thumbnail", label, data);
 }
 
 function setOrAddSvgAttr(

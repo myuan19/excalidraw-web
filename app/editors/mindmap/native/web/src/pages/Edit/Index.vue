@@ -15,31 +15,10 @@ import Toolbar from './components/Toolbar.vue'
 import Edit from './components/Edit.vue'
 import { mapState, mapMutations } from 'vuex'
 import { getLocalConfig } from '@/api'
-
-const isMindMapDebugEnabled = () => {
-  if (window.__MINDMAP_DEBUG__ === true) return true
-  try {
-    const params = new URLSearchParams(window.location.search)
-    return (
-      params.get('mindmapDebug') === '1' ||
-      window.localStorage.getItem('mindmapDebug') === '1'
-    )
-  } catch (error) {
-    return false
-  }
-}
+import { mindmapDevDebug } from '@/utils/mindmapDevDebug'
 
 const debugMindMapOpen = (label, data = {}) => {
-  if (!isMindMapDebugEnabled()) return
-  console.log(
-    '[DEBUG] mindmap-open | vue Index ' +
-      label +
-      ' ' +
-      JSON.stringify({
-        t: Math.round(performance.now()),
-        ...data
-      })
-  )
+  mindmapDevDebug('mindmap-open', `vue Index ${label}`, data)
 }
 
 export default {
@@ -99,14 +78,12 @@ export default {
     },
 
     onHostAiConfig(config) {
-      if (isMindMapDebugEnabled()) {
-        console.log('[DEBUG] mindmap-ai | Edit.onHostAiConfig', {
-          configured: !!(config && config.configured),
-          hasApi: !!(config && config.api),
-          keyLen: config && config.key ? config.key.length : 0,
-          model: config && config.model
-        })
-      }
+      mindmapDevDebug('mindmap-ai', 'Index.onHostAiConfig', {
+        configured: !!(config && config.configured),
+        hasApi: !!(config && config.api),
+        keyLen: config && config.key ? config.key.length : 0,
+        model: config && config.model
+      })
       this.setHostAiConfig(config)
     },
 

@@ -113,6 +113,7 @@ import {
 import { mapState } from 'vuex'
 import AiConfigDialog from './AiConfigDialog.vue'
 import { isHostMode, openAISettings } from '@/utils/hostBridge'
+import { mindmapDevDebug } from '@/utils/mindmapDevDebug'
 
 export default {
   components: {
@@ -195,25 +196,12 @@ export default {
 
     // 检测ai是否可用
     async aiTest() {
-      try {
-        const params = new URLSearchParams(window.location.search)
-        if (
-          window.__MINDMAP_DEBUG__ === true ||
-          params.get('mindmapDebug') === '1' ||
-          window.localStorage.getItem('mindmapDebug') === '1'
-        ) {
-          console.log('[DEBUG] mindmap-ai | AiCreate.aiTest', {
-            isHostMode: this.isHostMode,
-            hasApi: !!this.aiConfig.api,
-            api: this.aiConfig.api,
-            hasKey: !!this.aiConfig.key,
-            keyLen: this.aiConfig.key ? this.aiConfig.key.length : 0,
-            model: this.aiConfig.model,
-            method: this.aiConfig.method,
-            port: this.aiConfig.port
-          })
-        }
-      } catch (error) {}
+      mindmapDevDebug('AiCreate', 'aiTest', {
+        isHostMode: this.isHostMode,
+        hasApi: !!this.aiConfig.api,
+        hasKey: !!this.aiConfig.key,
+        model: this.aiConfig.model
+      })
       // 检查配置
       if (
         !(

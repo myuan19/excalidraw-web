@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { devConsoleDebug } from "@excalidraw/common";
 import throttle from "lodash.throttle";
 import React, { useContext } from "react";
 import { flushSync } from "react-dom";
@@ -3827,7 +3828,7 @@ class App extends React.Component<AppProps, AppState> {
   public pasteFromClipboard = withBatchedUpdates(
     async (event: ClipboardEvent) => {
       const isPlainPaste = !!IS_PLAIN_PASTE;
-      console.log("[DEBUG] pasteFromClipboard | enter", {
+      devConsoleDebug("pasteFromClipboard", "enter", {
         hasEvent: !!event,
         isTrusted: event?.isTrusted,
         isPlainPaste,
@@ -3848,7 +3849,7 @@ class App extends React.Component<AppProps, AppState> {
       const isExcalidrawActive =
         this.excalidrawContainerRef.current?.contains(target);
       if (event && !isExcalidrawActive) {
-        console.log("[DEBUG] pasteFromClipboard | return inactive editor", {
+        devConsoleDebug("pasteFromClipboard", "return inactive editor", {
           activeElementTag: target?.tagName ?? null,
           activeElementClass:
             target instanceof HTMLElement ? target.className : null,
@@ -3865,7 +3866,7 @@ class App extends React.Component<AppProps, AppState> {
         (!(elementUnderCursor instanceof HTMLCanvasElement) ||
           isWritableElement(target))
       ) {
-        console.log("[DEBUG] pasteFromClipboard | return invalid target", {
+        devConsoleDebug("pasteFromClipboard", "return invalid target", {
           elementUnderCursorTag: elementUnderCursor?.tagName ?? null,
           elementUnderCursorClass:
             elementUnderCursor instanceof HTMLElement
@@ -3883,7 +3884,7 @@ class App extends React.Component<AppProps, AppState> {
       const dataTransferList = await parseDataTransferEvent(event);
 
       const filesList = dataTransferList.getFiles();
-      console.log("[DEBUG] pasteFromClipboard | parsed transfer", {
+      devConsoleDebug("pasteFromClipboard", "parsed transfer", {
         itemCount: dataTransferList.length,
         filesCount: filesList.length,
         itemTypes: dataTransferList.map((item) => ({
@@ -3893,7 +3894,7 @@ class App extends React.Component<AppProps, AppState> {
       });
 
       const data = await parseClipboard(dataTransferList, isPlainPaste);
-      console.log("[DEBUG] pasteFromClipboard | parsed clipboard", {
+      devConsoleDebug("pasteFromClipboard", "parsed clipboard", {
         hasText: !!data.text,
         textLength: data.text?.length ?? 0,
         hasElements: !!data.elements,
@@ -3906,11 +3907,11 @@ class App extends React.Component<AppProps, AppState> {
       if (this.props.onPaste) {
         try {
           if ((await this.props.onPaste(data, event)) === false) {
-            console.log("[DEBUG] pasteFromClipboard | onPaste returned false");
+            devConsoleDebug("pasteFromClipboard", "onPaste returned false");
             return;
           }
         } catch (error: any) {
-          console.log("[DEBUG] pasteFromClipboard | onPaste threw", {
+          devConsoleDebug("pasteFromClipboard", "onPaste threw", {
             message: error?.message,
             stack: error?.stack,
           });
@@ -3919,7 +3920,7 @@ class App extends React.Component<AppProps, AppState> {
       }
 
       await this.insertClipboardContent(data, filesList, isPlainPaste);
-      console.log("[DEBUG] pasteFromClipboard | insertClipboardContent done");
+      devConsoleDebug("pasteFromClipboard", "insertClipboardContent done");
 
       this.setActiveTool(
         { type: this.state.preferredSelectionTool.type },
@@ -12117,7 +12118,7 @@ class App extends React.Component<AppProps, AppState> {
   private handleCanvasContextMenu = (
     event: React.MouseEvent<HTMLElement | HTMLCanvasElement>,
   ) => {
-    console.log("[DEBUG] handleCanvasContextMenu | enter", {
+    devConsoleDebug("handleCanvasContextMenu", "enter", {
       clientX: event.clientX,
       clientY: event.clientY,
       button: event.button,
@@ -12143,7 +12144,7 @@ class App extends React.Component<AppProps, AppState> {
           event.button !== POINTER_BUTTON.SECONDARY)) &&
       this.state.activeTool.type !== this.state.preferredSelectionTool.type
     ) {
-      console.log("[DEBUG] handleCanvasContextMenu | return touch/pen tool gate");
+      devConsoleDebug("handleCanvasContextMenu", "return touch/pen tool gate");
       return;
     }
 
@@ -12161,7 +12162,7 @@ class App extends React.Component<AppProps, AppState> {
       );
 
     const type = element || isHittingCommonBoundBox ? "element" : "canvas";
-    console.log("[DEBUG] handleCanvasContextMenu | resolved type", {
+    devConsoleDebug("handleCanvasContextMenu", "resolved type", {
       type,
       elementId: element?.id ?? null,
       isHittingCommonBoundBox,
@@ -12202,7 +12203,7 @@ class App extends React.Component<AppProps, AppState> {
       },
       () => {
         const items = this.getContextMenuItems(type);
-        console.log("[DEBUG] handleCanvasContextMenu | set context menu", {
+        devConsoleDebug("handleCanvasContextMenu", "set context menu", {
           type,
           left,
           top,

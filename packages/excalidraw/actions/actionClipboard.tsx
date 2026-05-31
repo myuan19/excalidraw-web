@@ -2,6 +2,7 @@ import { isTextElement } from "@excalidraw/element";
 import { getTextFromElements } from "@excalidraw/element";
 
 import { CODES, KEYS, isFirefox } from "@excalidraw/common";
+import { devConsoleDebug } from "@excalidraw/common";
 
 import { CaptureUpdateAction } from "@excalidraw/element";
 
@@ -59,9 +60,9 @@ export const actionPaste = register({
   perform: async (elements, appState, data, app) => {
     let types;
     try {
-      console.log("[DEBUG] actionPaste | before readSystemClipboard");
+      devConsoleDebug("actionPaste", "before readSystemClipboard");
       types = await readSystemClipboard();
-      console.log("[DEBUG] actionPaste | readSystemClipboard result", {
+      devConsoleDebug("actionPaste", "readSystemClipboard result", {
         typeKeys: Object.keys(types || {}),
         fileEntries: Object.entries(types || {})
           .filter(([, value]) => value instanceof File)
@@ -72,7 +73,7 @@ export const actionPaste = register({
           })),
       });
     } catch (error: any) {
-      console.log("[DEBUG] actionPaste | readSystemClipboard FAILED", {
+      devConsoleDebug("actionPaste", "readSystemClipboard FAILED", {
         name: error?.name,
         message: error?.message,
         stack: error?.stack,
@@ -105,11 +106,11 @@ export const actionPaste = register({
     }
 
     try {
-      console.log("[DEBUG] actionPaste | before pasteFromClipboard");
+      devConsoleDebug("actionPaste", "before pasteFromClipboard");
       app.pasteFromClipboard(createPasteEvent({ types }));
-      console.log("[DEBUG] actionPaste | pasteFromClipboard dispatched");
+      devConsoleDebug("actionPaste", "pasteFromClipboard dispatched");
     } catch (error: any) {
-      console.log("[DEBUG] actionPaste | pasteFromClipboard FAILED", {
+      devConsoleDebug("actionPaste", "pasteFromClipboard FAILED", {
         name: error?.name,
         message: error?.message,
         stack: error?.stack,

@@ -49,6 +49,7 @@ build_mindmap() {
     node ../copy.js
   )
   log "mind-map ready"
+  node "${ROOT}/scripts/normalize-mind-map-index.mjs"
   node "${ROOT}/scripts/verify-mind-map-public.mjs"
 }
 

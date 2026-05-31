@@ -4,17 +4,6 @@ function shouldSkipUrl(url) {
   return /^(?:data:|blob:|https?:|mailto:|#)/i.test(url);
 }
 
-function appendEmbedToken(url, encodedToken) {
-  if (!encodedToken || /[?&]_t=/.test(url)) {
-    return url;
-  }
-  const hashIndex = url.indexOf("#");
-  const withoutHash = hashIndex === -1 ? url : url.slice(0, hashIndex);
-  const hash = hashIndex === -1 ? "" : url.slice(hashIndex);
-  const separator = withoutHash.includes("?") ? "&" : "?";
-  return `${withoutHash}${separator}_t=${encodedToken}${hash}`;
-}
-
 export function isAllowedMindMapEmbedAssetPath(assetPath) {
   return assetPath === "index.html" || assetPath.startsWith("dist/");
 }
@@ -26,39 +15,33 @@ function rewriteMindMapHtmlResourceUrl(url, encodedToken) {
   }
 
   if (normalized.startsWith(EMBED_MINDMAP_PREFIX)) {
-    return appendEmbedToken(normalized, encodedToken);
+    return normalized;
   }
 
   if (normalized.startsWith("/mind-map/")) {
-    return appendEmbedToken(
-      `${EMBED_MINDMAP_PREFIX}${normalized.slice("/mind-map/".length)}`,
-      encodedToken,
-    );
+    return `${EMBED_MINDMAP_PREFIX}${normalized.slice("/mind-map/".length)}`;
   }
 
   const relative = normalized.replace(/^\.\//, "");
   if (relative.startsWith("dist/")) {
-    return appendEmbedToken(`${EMBED_MINDMAP_PREFIX}${relative}`, encodedToken);
+    return `${EMBED_MINDMAP_PREFIX}${relative}`;
   }
 
   return url;
 }
 
-function rewriteMindMapCssResourceUrl(url, assetPath, encodedToken) {
+function rewriteMindMapCssResourceUrl(url, assetPath) {
   const normalized = url.trim();
   if (!normalized || shouldSkipUrl(normalized)) {
     return url;
   }
 
   if (normalized.startsWith(EMBED_MINDMAP_PREFIX)) {
-    return appendEmbedToken(normalized, encodedToken);
+    return normalized;
   }
 
   if (normalized.startsWith("/mind-map/")) {
-    return appendEmbedToken(
-      `${EMBED_MINDMAP_PREFIX}${normalized.slice("/mind-map/".length)}`,
-      encodedToken,
-    );
+    return `${EMBED_MINDMAP_PREFIX}${normalized.slice("/mind-map/".length)}`;
   }
 
   try {
@@ -68,31 +51,27 @@ function rewriteMindMapCssResourceUrl(url, assetPath, encodedToken) {
     if (!rewritten.startsWith(EMBED_MINDMAP_PREFIX)) {
       return url;
     }
-    return appendEmbedToken(rewritten, encodedToken);
+    return rewritten;
   } catch {
     return url;
   }
 }
 
-export function rewriteMindMapHtmlForEmbed(html, encodedToken) {
+export function rewriteMindMapHtmlForEmbed(html, _encodedToken = "") {
   return html.replace(
     /((?:src|href)=["'])([^"']+)(["'])/g,
     (match, prefix, url, suffix) => {
-      const rewritten = rewriteMindMapHtmlResourceUrl(url, encodedToken);
+      const rewritten = rewriteMindMapHtmlResourceUrl(url, _encodedToken);
       return rewritten === url ? match : `${prefix}${rewritten}${suffix}`;
     },
   );
 }
 
-export function rewriteMindMapCssForEmbed(css, assetPath, encodedToken) {
+export function rewriteMindMapCssForEmbed(css, assetPath, _encodedToken = "") {
   return css.replace(
     /url\(\s*(["']?)([^"')]+)\1\s*\)/g,
     (match, quote, url) => {
-      const rewritten = rewriteMindMapCssResourceUrl(
-        url,
-        assetPath,
-        encodedToken,
-      );
+      const rewritten = rewriteMindMapCssResourceUrl(url, assetPath);
       return rewritten === url ? match : `url(${quote}${rewritten}${quote})`;
     },
   );

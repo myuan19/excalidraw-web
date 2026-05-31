@@ -1,5 +1,6 @@
 import {
   extractMindMapAssetUrls,
+  normalizeMindMapAssetHref,
   prefetchMindMapNativeAssets,
   resolveMindMapAssetUrl,
 } from "./mindMapPrefetch";
@@ -28,6 +29,12 @@ describe("MindMap native asset prefetch", () => {
       "/mind-map/dist/js/app.456.js",
       "/mind-map/dist/js/chunk-vendors.js",
     ]);
+  });
+
+  it("strips html-webpack query hash from asset hrefs", () => {
+    expect(
+      normalizeMindMapAssetHref("/mind-map/dist/js/app.9d1741a9.js?020435b02593c20fdc21"),
+    ).toBe("/mind-map/dist/js/app.9d1741a9.js");
   });
 
   it("resolves relative iframe asset urls under /mind-map/", () => {

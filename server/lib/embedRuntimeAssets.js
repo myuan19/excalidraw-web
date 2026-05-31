@@ -1,24 +1,12 @@
-export function buildEmbedRuntimeAssetInterceptor(encodedToken) {
+/** Remap runtime font/asset loads to /embed/* (auth via HttpOnly session cookies). */
+export function buildEmbedRuntimeAssetInterceptor() {
   return `<script>
 (function(){
-  var token=${JSON.stringify(encodedToken)};
-  var addToken=function(u){
-    if(typeof u!=='string')return u;
-    try{
-      var url=new URL(u, window.location.origin);
-      if(url.origin===window.location.origin && /^\\/embed\\/(?:fonts|assets)\\//.test(url.pathname) && !url.searchParams.has('_t')){
-        url.searchParams.set('_t', token);
-        return url.pathname + url.search + url.hash;
-      }
-    }catch(e){}
-    return u;
-  };
   var remapOne=function(u){
     if(typeof u!=='string')return u;
-    var next=u
+    return u
       .replace(/^(?:\\.?\\/)?(?=fonts\\/|assets\\/)/,'/embed/')
       .replace(/^\\/(?=fonts\\/|assets\\/)/,'/embed/');
-    return addToken(next);
   };
   var remap=function(u){
     if(typeof u!=='string')return u;

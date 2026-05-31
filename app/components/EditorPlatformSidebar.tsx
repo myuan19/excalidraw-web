@@ -10,12 +10,15 @@ import {
 
 import { getFileIdFromHash } from "../data/fileIdFromHash";
 import { useFileDraftStatus } from "../hooks/useFileDraftStatus";
+import {
+  editorIconForKind,
+  getDocumentKindFromHash,
+} from "../lib/appBranding";
 import { APP_SHELL_GO_HOME } from "../shell/Sidebar";
 import type { AppView } from "../shell/useAppView";
 
 import "./EditorPlatformSidebar.scss";
 
-const DRAWING_SPACE_ICON = "/icons/drawing-space.svg";
 const BALL_SIZE = 52;
 const EDGE_INSET = 10;
 const PEEK_VISIBLE = 14;
@@ -316,6 +319,9 @@ function SidebarActionButton({
 export function EditorPlatformSidebar() {
   const [open, setOpen] = useState(false);
   const [fileId, setFileId] = useState<string | null>(() => getFileIdFromHash());
+  const [documentKind, setDocumentKind] = useState(() =>
+    getDocumentKindFromHash(),
+  );
   const [anchor, setAnchor] = useState<AnchorPosition>(() => readStoredAnchor());
   const [viewport, setViewport] = useState(getViewportSize);
   const [dragPoint, setDragPoint] = useState<{ x: number; y: number } | null>(
@@ -344,10 +350,15 @@ export function EditorPlatformSidebar() {
   );
 
   useEffect(() => {
-    const syncFileId = () => setFileId(getFileIdFromHash());
-    window.addEventListener("hashchange", syncFileId);
-    return () => window.removeEventListener("hashchange", syncFileId);
+    const syncFromHash = () => {
+      setFileId(getFileIdFromHash());
+      setDocumentKind(getDocumentKindFromHash());
+    };
+    window.addEventListener("hashchange", syncFromHash);
+    return () => window.removeEventListener("hashchange", syncFromHash);
   }, []);
+
+  const ballIconSrc = editorIconForKind(documentKind);
 
   useEffect(() => {
     const onResize = () => setViewport(getViewportSize());
@@ -578,7 +589,7 @@ export function EditorPlatformSidebar() {
         onPointerUp={onBallPointerUp}
         onPointerCancel={onBallPointerCancel}
       >
-        <img src={DRAWING_SPACE_ICON} alt="" width={28} height={28} draggable={false} />
+        <img src={ballIconSrc} alt="" width={28} height={28} draggable={false} />
         {draftStatusLabel ? (
           <span
             className="editor-bridge__status-dot"

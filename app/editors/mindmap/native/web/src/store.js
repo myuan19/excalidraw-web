@@ -1,21 +1,9 @@
 import Vue from 'vue'
 import Vuex from 'vuex'
 import { storeLocalConfig } from '@/api'
+import { mindmapDevDebug } from '@/utils/mindmapDevDebug'
 
 Vue.use(Vuex)
-
-const isMindMapDebugEnabled = () => {
-  if (window.__MINDMAP_DEBUG__ === true) return true
-  try {
-    const params = new URLSearchParams(window.location.search)
-    return (
-      params.get('mindmapDebug') === '1' ||
-      window.localStorage.getItem('mindmapDebug') === '1'
-    )
-  } catch (error) {
-    return false
-  }
-}
 
 const store = new Vuex.Store({
   state: {
@@ -76,20 +64,13 @@ const store = new Vuex.Store({
 
     // 使用宿主统一 AI 配置覆盖 MindMap 原生 AI 配置
     setHostAiConfig(state, data) {
-      if (isMindMapDebugEnabled()) {
-        console.log('[DEBUG] mindmap-ai | store.setHostAiConfig before', {
-          hasData: !!data,
-          configured: !!(data && data.configured),
-          hasApi: !!(data && data.api),
-          keyLen: data && data.key ? data.key.length : 0,
-          model: data && data.model,
-          before: {
-            hasApi: !!state.aiConfig.api,
-            keyLen: state.aiConfig.key ? state.aiConfig.key.length : 0,
-            model: state.aiConfig.model
-          }
-        })
-      }
+      mindmapDevDebug('mindmap-ai', 'store.setHostAiConfig before', {
+        hasData: !!data,
+        configured: !!(data && data.configured),
+        hasApi: !!(data && data.api),
+        keyLen: data && data.key ? data.key.length : 0,
+        model: data && data.model
+      })
       if (!data || typeof data !== 'object') return
       state.aiConfig = {
         ...state.aiConfig,
@@ -99,15 +80,11 @@ const store = new Vuex.Store({
         ...(data.method ? { method: data.method } : {}),
         port: null
       }
-      if (isMindMapDebugEnabled()) {
-        console.log('[DEBUG] mindmap-ai | store.setHostAiConfig after', {
-          hasApi: !!state.aiConfig.api,
-          keyLen: state.aiConfig.key ? state.aiConfig.key.length : 0,
-          model: state.aiConfig.model,
-          method: state.aiConfig.method,
-          port: state.aiConfig.port
-        })
-      }
+      mindmapDevDebug('mindmap-ai', 'store.setHostAiConfig after', {
+        hasApi: !!state.aiConfig.api,
+        keyLen: state.aiConfig.key ? state.aiConfig.key.length : 0,
+        model: state.aiConfig.model
+      })
     },
 
     // 设置当前显示的侧边栏

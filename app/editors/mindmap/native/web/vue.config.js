@@ -31,10 +31,10 @@ module.exports = {
           { externalPublicPath: 'window.externalPublicPath' }
         ])
     }
-    // 给插入html页面内的js和css添加hash参数
+    // 文件名已 content-hash；勿再给 script/link 加 ?hash 查询，否则会破坏 CDN/browser immutable 缓存
     if (!isLibrary) {
       config.plugin('html').tap(args => {
-        args[0].hash = true
+        args[0].hash = false
         return args
       })
     }

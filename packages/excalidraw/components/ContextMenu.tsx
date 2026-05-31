@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { devConsoleDebug } from "@excalidraw/common";
 import React from "react";
 
 import { getShortcutFromShortcutName } from "../actions/shortcuts";
@@ -102,7 +103,7 @@ export const ContextMenu = React.memo(
                 key={idx}
                 data-testid={actionName}
                 onClick={() => {
-                  console.log("[DEBUG] ContextMenu | item click", {
+                  devConsoleDebug("ContextMenu", "item click", {
                     actionName,
                     label,
                   });
@@ -110,7 +111,7 @@ export const ContextMenu = React.memo(
                   // the action uses the appState it's being passed (that still
                   // contains a defined contextMenu) to return the next state.
                   onClose(() => {
-                    console.log("[DEBUG] ContextMenu | execute action", {
+                    devConsoleDebug("ContextMenu", "execute action", {
                       actionName,
                     });
                     actionManager.executeAction(item, "contextMenu");

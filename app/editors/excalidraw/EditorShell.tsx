@@ -88,6 +88,7 @@ import {
   getFileIdFromHash,
   getFileIdFromHashString,
 } from "../../data/fileIdFromHash";
+import { useMainSiteDocumentBranding } from "../../lib/appBranding";
 
 import { useBeforeUnloadGuard } from "../../hooks/useBeforeUnloadGuard";
 import { useForkFileSave } from "./useForkFileSave";
@@ -283,9 +284,7 @@ const ExcalidrawWrapper = () => {
     () => !getFileIdFromHash(),
   );
 
-  useEffect(() => {
-    document.title = "excalidraw";
-  }, []);
+  useMainSiteDocumentBranding();
 
   useEffect(() => {
     setForkCanvasRevealed(!forkFileId);

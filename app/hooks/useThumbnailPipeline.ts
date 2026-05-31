@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 
 import { createLogger } from "../lib/logger";
+import { devDebug, isDevDebugChannelEnabled } from "../lib/devDebug";
 import { fetchThumbnailSvgForCard } from "../data/fetchThumbnailSvgForCard";
 import type { ServerFile } from "../data/ServerSync";
 
@@ -9,6 +10,9 @@ const logPipe = createLogger({ module: "thumbPipeline" });
 const logThumb = createLogger({ module: "thumbnail" });
 
 function isThumbnailPipelineDebugEnabled(): boolean {
+  if (isDevDebugChannelEnabled("thumbnail-pipeline")) {
+    return true;
+  }
   if (typeof window === "undefined") {
     return false;
   }
@@ -29,10 +33,7 @@ function debugThumbnailPipeline(
   if (!isThumbnailPipelineDebugEnabled()) {
     return;
   }
-  console.log(
-    `[DEBUG] useThumbnailPipeline | ${label}`,
-    JSON.stringify(data, null, 2),
-  );
+  devDebug("thumbnail-pipeline", label, data);
 }
 
 export type ThumbPipelineDraftSlot = {

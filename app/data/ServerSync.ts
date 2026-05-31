@@ -21,6 +21,50 @@ function url(path: string): string {
   return `/api${path}`;
 }
 
+function formatIfNoneMatchHeader(sha256: string): string {
+  const trimmed = sha256.trim();
+  return trimmed.startsWith('"') ? trimmed : `"${trimmed}"`;
+}
+
+function rebuildServerFileFromLocalCache(
+  fileId: string,
+  contentSha256: string | null,
+): ServerFile | null {
+  const local = FileSyncState.getLocalCache(fileId);
+  if (!local) {
+    return null;
+  }
+  const doc = (local as { document?: { kind?: string; name?: string } })
+    .document;
+  if (doc?.kind === "mindmap") {
+    return {
+      id: fileId,
+      name: doc.name ?? "",
+      kind: "mindmap",
+      created_at: "",
+      updated_at: "",
+      content_sha256: contentSha256,
+      data: doc,
+    };
+  }
+  if (Array.isArray(local.elements)) {
+    return {
+      id: fileId,
+      name: "",
+      kind: "excalidraw",
+      created_at: "",
+      updated_at: "",
+      content_sha256: contentSha256,
+      data: {
+        elements: local.elements,
+        appState: local.appState ?? {},
+        files: local.files ?? {},
+      },
+    };
+  }
+  return null;
+}
+
 async function api<T = unknown>(
   path: string,
   opts: RequestInit = {},
@@ -71,6 +115,30 @@ async function api<T = unknown>(
     logSync.debug("api PUT ok", { path, data });
   }
   return data;
+}
+
+async function parseGetFileResponse(
+  id: string,
+  res: Response,
+): Promise<ServerFile> {
+  const ct = res.headers.get("content-type") || "";
+  if (!ct.includes("application/json")) {
+    const text = await res.text();
+    throw new Error(
+      `API /files/${id} expected JSON but got ${ct || "unknown type"}.`,
+    );
+  }
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API ${res.status}: ${text}`);
+  }
+  const file = (await res.json()) as ServerFile;
+  const etag = res.headers.get("etag")?.replace(/^"|"$/g, "");
+  const sha = file.content_sha256 ?? etag;
+  if (sha) {
+    FileSyncState.setServerHash(id, sha);
+  }
+  return file;
 }
 
 // ---- File CRUD ----
@@ -199,8 +267,31 @@ export const ServerSync = {
     return api(`/files/folders/${id}`, { method: "DELETE" });
   },
 
-  getFile(id: string): Promise<ServerFile> {
-    return api(`/files/${id}`);
+  async getFile(id: string): Promise<ServerFile> {
+    const priorHash = FileSyncState.getServerHash(id);
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (priorHash) {
+      headers["If-None-Match"] = formatIfNoneMatchHeader(priorHash);
+    }
+    const res = await fetch(url(`/files/${id}`), { headers });
+    if (res.status === 304) {
+      const cached = rebuildServerFileFromLocalCache(
+        id,
+        priorHash ?? FileSyncState.getServerHash(id),
+      );
+      if (cached) {
+        logSync.debug(`getFile 304 cache hit`, { id: id.slice(0, 8) });
+        return cached;
+      }
+      logSync.debug(`getFile 304 without local cache, refetching`, {
+        id: id.slice(0, 8),
+      });
+      const full = await fetch(url(`/files/${id}`), {
+        headers: { Accept: "application/json" },
+      });
+      return parseGetFileResponse(id, full);
+    }
+    return parseGetFileResponse(id, res);
   },
 
   async saveFileImmediate(

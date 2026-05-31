@@ -8,9 +8,11 @@ import { TopErrorBoundary } from "./components/TopErrorBoundary";
 import { FileList } from "./components/FileList";
 import { EditorPlatformShell } from "./components/EditorPlatformSidebar";
 import { logFileListOpen } from "./lib/logger";
+import { devDebug } from "./lib/devDebug";
 import { isEmbedMode } from "./embed/embedMode";
 import { editorRegistry } from "./editors";
 import { getLazyEditorShell } from "./editors/lazyViews";
+import { getDocumentKindFromHash } from "./lib/appBranding";
 
 import "./index.scss";
 
@@ -52,28 +54,16 @@ function hashNeedsEditor(): boolean {
   return h.startsWith("#file=") || h.startsWith("#addLibrary=");
 }
 
-function getDocumentKindFromHash(): string {
-  const params = new URLSearchParams(window.location.hash.slice(1));
-  return editorRegistry.resolveKind(params.get("kind"));
-}
-
 function buildFileHash(id: string, kind?: string): string {
   return editorRegistry.buildFileHash(id, kind);
 }
 
 function debugMindMapOpen(label: string, data?: Record<string, unknown>) {
-  if (typeof performance === "undefined") {
-    console.log(`[DEBUG] mindmap-open | ${label}`, data ?? {});
-    return;
-  }
-  console.log(`[DEBUG] mindmap-open | ${label}`, {
-    t: Math.round(performance.now()),
-    ...(data ?? {}),
-  });
+  devDebug("mindmap-open", label, data);
 }
 
 function debugApp(label: string, data?: Record<string, unknown>) {
-  console.info(`[DEBUG] App | ${label}`, {
+  devDebug("app", label, {
     hash: window.location.hash,
     pathname: window.location.pathname,
     search: window.location.search,

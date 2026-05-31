@@ -5,6 +5,7 @@ import {
   captureEmbeddingHostForSession,
   getEmbedRequestToken,
   hasEmbeddingContextSignal,
+  isEmbeddableHashedAssetPath,
   isHostInAllowedList,
   issueEmbedSessionCookies,
   normalizeHost,
@@ -12,6 +13,7 @@ import {
   readEmbedContextCookie,
   resolveEmbeddingHost,
   validateEmbedAccess,
+  validateEmbedSession,
 } from "./embedAccess.js";
 
 function mockReq({
@@ -198,6 +200,33 @@ describe("validateEmbedAccess order and policy", () => {
       lookupToken,
     });
     expect(result.ok).toBe(true);
+  });
+});
+
+describe("embed session fast path", () => {
+  it("identifies hashed mind-map dist paths", () => {
+    expect(isEmbeddableHashedAssetPath("dist/js/app.js")).toBe(true);
+    expect(isEmbeddableHashedAssetPath("index.html")).toBe(false);
+  });
+
+  it("requires both session cookies for static", () => {
+    const value = buildEmbedContextCookieValue({
+      tokenId: "tid-1",
+      fileId: "file-1",
+      embeddingHost: "partner.com",
+    });
+    expect(
+      validateEmbedSession(
+        mockReq({
+          headers: {
+            cookie: `__embed_ctx=${encodeURIComponent(value)}; __embed_t=tok-valid`,
+          },
+        }),
+      ).ok,
+    ).toBe(true);
+    expect(
+      validateEmbedSession(mockReq({ headers: { cookie: "" } })).ok,
+    ).toBe(false);
   });
 });
 

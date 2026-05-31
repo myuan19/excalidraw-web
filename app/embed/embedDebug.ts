@@ -1,3 +1,5 @@
+import { devDebug } from "../lib/devDebug";
+
 export type DefaultViewport = {
   scrollX: number;
   scrollY: number;
@@ -21,11 +23,7 @@ export function embedMeasure(name: string, start: string, end: string): void {
 }
 
 export function embedDebug(event: string, data?: Record<string, unknown>): void {
-  try {
-    console.info(`[DEBUG] embedViewer | ${event} ${JSON.stringify(data ?? {})}`);
-  } catch {
-    console.info(`[DEBUG] embedViewer | ${event}`, data ?? {});
-  }
+  devDebug("embed", event, data);
 }
 
 export function roundViewport(

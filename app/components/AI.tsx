@@ -21,6 +21,7 @@ import {
   isAIConfigured,
   resolveAIModels,
 } from "../data/aiConfig";
+import { devDebug } from "../lib/devDebug";
 
 export const AIComponents = ({
   excalidrawAPI,
@@ -31,13 +32,13 @@ export const AIComponents = ({
     <>
       <DiagramToCodePlugin
         generate={async ({ frame, children }) => {
-          console.log("[DEBUG] AIComponents.generate | start", {
+          devDebug("ai-config", "AIComponents.generate start", {
             childCount: children.length,
             frameId: frame.id,
           });
           await ensureAIConfigLoaded();
           const configured = isAIConfigured();
-          console.log("[DEBUG] AIComponents.generate | config checked", {
+          devDebug("ai-config", "AIComponents.generate config checked", {
             configured,
           });
           if (!configured) {
@@ -82,12 +83,12 @@ export const AIComponents = ({
 
       <TTDDialog
         onTextSubmit={async (props) => {
-          console.log("[DEBUG] AIComponents.onTextSubmit | start", {
+          devDebug("ai-config", "AIComponents.onTextSubmit start", {
             messageCount: props.messages.length,
           });
           await ensureAIConfigLoaded();
           const configured = isAIConfigured();
-          console.log("[DEBUG] AIComponents.onTextSubmit | config checked", {
+          devDebug("ai-config", "AIComponents.onTextSubmit config checked", {
             configured,
           });
           if (!configured) {

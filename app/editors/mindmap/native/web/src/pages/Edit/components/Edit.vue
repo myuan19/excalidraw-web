@@ -178,34 +178,14 @@ import {
   getMindMapEmbedFocusedTargetRootScreenRatio
 } from '../../../../../../mindMapFocusedViewBox.js'
 
-const isMindMapDebugEnabled = () => {
-  if (window.__MINDMAP_DEBUG__ === true) return true
-  try {
-    const params = new URLSearchParams(window.location.search)
-    return (
-      params.get('mindmapDebug') === '1' ||
-      window.localStorage.getItem('mindmapDebug') === '1'
-    )
-  } catch (error) {
-    return false
-  }
-}
+import { isMindmapDevDebugEnabled, mindmapDevDebug } from '@/utils/mindmapDevDebug'
 
 const debugMindMapOpen = (label, data = {}) => {
-  if (!isMindMapDebugEnabled()) return
-  console.log(
-    '[DEBUG] mindmap-open | vue Edit ' +
-      label +
-      ' ' +
-      JSON.stringify({
-        t: Math.round(performance.now()),
-        ...data
-      })
-  )
+  mindmapDevDebug('vue Edit', label, data)
 }
 
 const getSlowMindMapResources = () => {
-  if (!isMindMapDebugEnabled() || !performance.getEntriesByType) return []
+  if (!isMindmapDevDebugEnabled() || !performance.getEntriesByType) return []
   return performance
     .getEntriesByType('resource')
     .filter(item => /\/mind-map\/|\/dist\//.test(item.name))

@@ -1,4 +1,9 @@
+import { devDebug, isDevDebugChannelEnabled } from "../../lib/devDebug";
+
 export function isMindMapBridgeDebugEnabled(): boolean {
+  if (isDevDebugChannelEnabled("mindmap-bridge")) {
+    return true;
+  }
   if (typeof window === "undefined") {
     return false;
   }
@@ -22,17 +27,7 @@ export function debugMindMapBridge(
   if (!isMindMapBridgeDebugEnabled()) {
     return;
   }
-  console.log(
-    `[DEBUG] mindmap-bridge | ${label}`,
-    JSON.stringify(
-      {
-        t: Math.round(performance.now()),
-        ...data,
-      },
-      null,
-      2,
-    ),
-  );
+  devDebug("mindmap-bridge", label, data);
 }
 
 /** Always logged — bridge/save hard failures. */
@@ -40,11 +35,8 @@ export function warnMindMapBridge(
   label: string,
   data: Record<string, unknown> = {},
 ): void {
-  console.warn(
-    `[DEBUG] mindmap-bridge | ${label}`,
-    {
-      t: Math.round(performance.now()),
-      ...data,
-    },
-  );
+  console.warn(`[mindmap-bridge] ${label}`, {
+    t: Math.round(performance.now()),
+    ...data,
+  });
 }

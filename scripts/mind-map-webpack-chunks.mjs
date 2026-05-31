@@ -48,19 +48,23 @@ export function listWebpackLazyChunks(distJsDir) {
     );
 }
 
-export function injectMindMapChunkPreloads(html, distJsDir) {
-  const chunks = listWebpackLazyChunks(distJsDir);
-  if (chunks.length === 0) {
-    return html;
-  }
-  const tags = chunks
-    .map(
-      (chunk) =>
-        `    <link rel="preload" href="${chunk.rel}" as="script" crossorigin>`,
-    )
-    .join("\n");
-  if (html.includes('rel="preload" href="dist/js/chunk-')) {
-    return html;
-  }
-  return html.replace("</head>", `${tags}\n  </head>`);
+/** Remove html-webpack-plugin ?buildHash query on already content-hashed dist assets. */
+export function stripWebpackHtmlQueryHashes(html) {
+  return html.replace(
+    /((?:href|src)=["'])(dist\/(?:js|css)\/[^"']+?)\?([a-f0-9]{8,})(["'])/gi,
+    "$1$2$4",
+  );
+}
+
+/** Drop script preloads — webpack dynamic import won't match crossorigin preload credentials. */
+export function stripMindMapChunkPreloads(html) {
+  return html.replace(
+    /\s*<link\b(?=[^>]*\brel=["']preload["'])(?=[^>]*\bhref=["']dist\/)[^>]*>\s*/gi,
+    "\n",
+  );
+}
+
+/** Final index.html normalization after vue build + copy. */
+export function normalizeMindMapIndexHtml(html) {
+  return stripMindMapChunkPreloads(stripWebpackHtmlQueryHashes(html));
 }

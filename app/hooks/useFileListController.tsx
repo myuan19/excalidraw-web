@@ -7,7 +7,13 @@ import React, {
   useState,
 } from "react";
 
+import {
+  editorIconForKind,
+  HOME_APP_TITLE,
+  MAIN_SITE_ICON,
+} from "../lib/appBranding";
 import { createLogger, logFileListOpen } from "../lib/logger";
+import { devDebug, isDevDebugChannelEnabled } from "../lib/devDebug";
 import {
   readFileListTreeCache,
   writeFileListTreeCache,
@@ -47,8 +53,6 @@ const logList = createLogger({ module: "fileList" });
 const logThumb = createLogger({ module: "thumbnail" });
 const logPipe = createLogger({ module: "thumbPipeline" });
 
-const HOME_APP_TITLE = "绘图空间";
-const DRAWING_SPACE_ICON = "/icons/drawing-space.svg";
 
 function getDebugSvgAttr(svgMarkup: string | null, name: string): string | null {
   if (!svgMarkup) {
@@ -62,6 +66,9 @@ function getDebugSvgAttr(svgMarkup: string | null, name: string): string | null 
 }
 
 function isFileListThumbnailDebugEnabled(): boolean {
+  if (isDevDebugChannelEnabled("file-list")) {
+    return true;
+  }
   try {
     return localStorage.getItem("excalidraw-filelist-thumbnail-debug") === "1";
   } catch {
@@ -70,6 +77,9 @@ function isFileListThumbnailDebugEnabled(): boolean {
 }
 
 function isFileListLayoutDebugEnabled(): boolean {
+  if (isDevDebugChannelEnabled("file-list")) {
+    return true;
+  }
   try {
     return localStorage.getItem("excalidraw-filelist-layout-debug") === "1";
   } catch {
@@ -84,10 +94,7 @@ function debugFileListThumbnail(
   if (!isFileListThumbnailDebugEnabled()) {
     return;
   }
-  console.log(
-    `[DEBUG] FileList.renderFileCard | ${label}`,
-    JSON.stringify(data, null, 2),
-  );
+  devDebug("file-list", `renderFileCard ${label}`, data);
 }
 
 function roundedNumber(value: number): number {
@@ -149,17 +156,7 @@ function debugFileListLayout(
   if (!isFileListLayoutDebugEnabled()) {
     return;
   }
-  const payload = {
-    t:
-      typeof performance === "undefined"
-        ? null
-        : Math.round(performance.now()),
-    ...data,
-  };
-  console.log(
-    `[DEBUG] FileList.layout | ${label}`,
-    JSON.stringify(payload, null, 2),
-  );
+  devDebug("file-list", `layout ${label}`, data);
 }
 
 export interface FileListProps {
@@ -339,11 +336,7 @@ function ImageIcon({
 }
 
 function editorIconSrc(kind: string): string {
-  return (
-    editorRegistry.getByKind(kind)?.icon ??
-    editorRegistry.getDefaultPlugin()?.icon ??
-    "/icons/excalidraw.svg"
-  );
+  return editorIconForKind(kind);
 }
 
 /**
@@ -1931,7 +1924,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
           >
             <Icon type="menu" size={20} />
           </button>
-          <ImageIcon src={DRAWING_SPACE_ICON} alt="" size={22} />
+          <ImageIcon src={MAIN_SITE_ICON} alt="" size={22} />
           <h1 className="filelist__title">{HOME_APP_TITLE}</h1>
         </div>
         <div className="filelist__header-right">

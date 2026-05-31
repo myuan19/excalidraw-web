@@ -6,7 +6,6 @@ import {
 } from "../data/embedDocument";
 import { CrosshairIcon, ExternalLinkIcon } from "./icons";
 import { embedDebug, embedMark, embedMeasure } from "./embedDebug";
-import { getEmbedResourceTokenQuery } from "./embedResourceToken";
 import { handleEmbedEditLinkClick } from "./openEmbedEditUrl";
 import { useEmbedPinState, useEmbedIframeAutoLock } from "./EmbedFocusGate";
 
@@ -393,7 +392,7 @@ export default function MindMapEmbedViewer({
         className={`mindmap-embed-viewer__frame${
           lockInteraction ? " mindmap-embed-viewer__frame--locked" : ""
         }`}
-        src={`/embed/mind-map/index.html${getEmbedResourceTokenQuery()}`}
+        src="/embed/mind-map/index.html"
         onLoad={() => embedDebug("mindmap iframe load", getFrameDebugInfo())}
       />
       {lockInteraction && (

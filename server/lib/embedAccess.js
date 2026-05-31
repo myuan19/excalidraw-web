@@ -388,6 +388,81 @@ export function createRequireEmbedAccess({ lookupToken, requireFileId = false })
   };
 }
 
+/**
+ * @typedef {{ ok: true, ctx: { tokenId: string, fileId: string, embeddingHost: string, exp: number }, token: string }} EmbedSessionOk
+ * @typedef {{ ok: false, status: number, error: string }} EmbedSessionFail
+ */
+
+/** Hashed static bundles (cookie session only — no per-request DB). */
+export function isEmbeddableHashedAssetPath(assetPath) {
+  if (!assetPath || typeof assetPath !== "string") {
+    return false;
+  }
+  return assetPath.startsWith("dist/");
+}
+
+/**
+ * Validate signed session cookies issued after a successful embed page load.
+ * @returns {EmbedSessionOk | EmbedSessionFail}
+ */
+export function validateEmbedSession(req) {
+  const ctx = readEmbedContextCookie(req);
+  if (!ctx) {
+    return { ok: false, status: 403, error: "Forbidden" };
+  }
+  const token = getEmbedTokenCookie(req);
+  if (!token) {
+    return { ok: false, status: 403, error: "Forbidden" };
+  }
+  return { ok: true, ctx, token: String(token) };
+}
+
+export function setPublicImmutableCacheHeaders(res) {
+  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+}
+
+export function setPrivateImmutableCacheHeaders(res) {
+  res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+}
+
+/**
+ * Express middleware — hashed /embed static (assets, fonts, mind-map/dist).
+ */
+export function createRequireEmbedSession() {
+  return function requireEmbedSession(req, res, next) {
+    const result = validateEmbedSession(req);
+    if (!result.ok) {
+      return res.status(result.status).type("text/plain").send(result.error);
+    }
+    req.embedSession = result;
+    next();
+  };
+}
+
+/**
+ * mind-map: dist/* uses session; index.html uses full document access.
+ */
+export function createMindMapEmbedGate({ lookupToken }) {
+  const requireDocument = createRequireEmbedAccess({ lookupToken });
+  const requireSession = createRequireEmbedSession();
+
+  return function mindMapEmbedGate(req, res, next) {
+    const assetPath = (() => {
+      try {
+        return decodeURIComponent(req.path.replace(/^\/+/, "")) || "index.html";
+      } catch {
+        return null;
+      }
+    })();
+    if (assetPath && isEmbeddableHashedAssetPath(assetPath)) {
+      return requireSession(req, res, next);
+    }
+    return requireDocument(req, res, next);
+  };
+}
+
 export function isSameOriginAdminRequest(req) {
   const targetHost = getRequestHost(req);
   if (!targetHost) {

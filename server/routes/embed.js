@@ -11,15 +11,19 @@ import { createLogger } from "../lib/logger.js";
 import {
   buildFrameAncestors,
   captureEmbeddingHostForSession,
+  createMindMapEmbedGate,
   createRequireEmbedAccess,
+  createRequireEmbedSession,
   getEmbedRequestToken,
   getRequestHost,
   isSameOriginAdminRequest,
   isWildcardAllowedDomains,
   issueEmbedSessionCookies,
   parseAllowedDomainsInput,
+  setPublicImmutableCacheHeaders,
   validateEmbedAccess,
 } from "../lib/embedAccess.js";
+import { createEmbedTokenActiveCache } from "../lib/embedTokenCache.js";
 import {
   isAllowedMindMapEmbedAssetPath,
   rewriteMindMapCssForEmbed,
@@ -27,6 +31,11 @@ import {
 } from "../lib/embedMindMapAssets.js";
 import { buildEmbedRuntimeAssetInterceptor } from "../lib/embedRuntimeAssets.js";
 import { injectEmbedBootstrap } from "../lib/embedPageHtml.js";
+import {
+  formatDocumentEtag,
+  ifNoneMatchSatisfied,
+  sendNotModified,
+} from "../lib/documentEtag.js";
 
 const log = createLogger({ module: "embed" });
 
@@ -38,7 +47,25 @@ const TOKEN_SELECT =
 const tokenRouter = Router();
 const pageRouter = Router();
 
+const TOKEN_ACTIVE_CACHE_TTL_MS = 10_000;
+
+const embedTokenActiveCache = createEmbedTokenActiveCache({
+  ttlMs: TOKEN_ACTIVE_CACHE_TTL_MS,
+  now: () => Date.now(),
+  lookup(token) {
+    if (!token) {
+      return false;
+    }
+    return !!db
+      .prepare("SELECT id FROM embed_tokens WHERE token = ?")
+      .get(token);
+  },
+});
+
 function lookupEmbedToken(token, fileId) {
+  if (!embedTokenActiveCache.isActive(token)) {
+    return undefined;
+  }
   return db
     .prepare(
       `SELECT ${TOKEN_SELECT} FROM embed_tokens WHERE token = ? AND file_id = ?`,
@@ -54,6 +81,9 @@ const requireEmbedAccessForFile = createRequireEmbedAccess({
   lookupToken: lookupEmbedToken,
   requireFileId: true,
 });
+
+const requireEmbedSession = createRequireEmbedSession();
+const mindMapEmbedGate = createMindMapEmbedGate({ lookupToken: lookupEmbedToken });
 
 function currentPath(fileId) {
   return join(DATA_DIR, "files", fileId, "current.excalidraw");
@@ -141,6 +171,7 @@ tokenRouter.patch("/:id", (req, res) => {
     allowedDomains,
     req.params.id,
   );
+  embedTokenActiveCache.clear(row.token);
 
   log.info("token domains updated", { id: req.params.id.slice(0, 8) });
   res.json({ ...row, allowed_domains: allowedDomains });
@@ -166,7 +197,11 @@ tokenRouter.delete("/:id", (req, res) => {
   if (!row) {
     return res.status(404).json({ error: "token not found" });
   }
+  const tokenRow = db
+    .prepare("SELECT token FROM embed_tokens WHERE id = ?")
+    .get(req.params.id);
   db.prepare("DELETE FROM embed_tokens WHERE id = ?").run(req.params.id);
+  embedTokenActiveCache.clear(tokenRow?.token);
   log.info("token deleted", { id: req.params.id.slice(0, 8) });
   res.json({ ok: true });
 });
@@ -208,14 +243,14 @@ function findEmbedIndexHtml() {
   return existsSync(embedIndexPath) ? embedIndexPath : spaIndexPath;
 }
 
-function rewriteSpaAssetRefsForEmbed(html, encodedToken) {
+function rewriteSpaAssetRefsForEmbed(html) {
   let out = html.replace(
     /((?:src|href)=["'])(?:\.\.\/|\.\/)?(?:\/)?assets\/([^"']+)(["'])/g,
-    `$1/embed/assets/$2?_t=${encodedToken}$3`,
+    `$1/embed/assets/$2$3`,
   );
   out = out.replace(
     /((?:src|href)=["'])(?:\.\.\/|\.\/)?(?:\/)?fonts\/([^"']+)(["'])/g,
-    `$1/embed/fonts/$2?_t=${encodedToken}$3`,
+    `$1/embed/fonts/$2$3`,
   );
   return out;
 }
@@ -295,10 +330,6 @@ function routePath(req) {
 
 const _cssCache = new Map();
 
-function setImmutableEmbedAssetCache(res) {
-  res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
-  res.setHeader("X-Content-Type-Options", "nosniff");
-}
 
 function sendEmbedAsset(req, res) {
   const root = getAssetsRoot();
@@ -319,9 +350,6 @@ function sendEmbedAsset(req, res) {
   if (assetPath.endsWith(".css")) {
     const stat = statSync(filePath);
     const cached = _cssCache.get(filePath);
-    const encodedToken = encodeURIComponent(
-      String(getEmbedRequestToken(req) || ""),
-    );
     const rawCss =
       cached && cached.mtimeMs === stat.mtimeMs
         ? cached.content
@@ -331,14 +359,14 @@ function sendEmbedAsset(req, res) {
     }
     const css = rawCss.replace(
       /url\((["']?)(?:\.\/)?(?:\/)?fonts\/([^)"']+)\1\)/g,
-      `url($1/embed/fonts/$2?_t=${encodedToken}$1)`,
+      `url($1/embed/fonts/$2$1)`,
     );
     res.setHeader("Content-Type", "text/css; charset=utf-8");
-    setImmutableEmbedAssetCache(res);
+    setPublicImmutableCacheHeaders(res);
     return res.send(css);
   }
 
-  setImmutableEmbedAssetCache(res);
+  setPublicImmutableCacheHeaders(res);
   res.sendFile(filePath);
 }
 
@@ -358,7 +386,7 @@ function sendEmbedFont(req, res) {
     return res.status(404).type("text/plain").send("Not found");
   }
 
-  setImmutableEmbedAssetCache(res);
+  setPublicImmutableCacheHeaders(res);
   res.sendFile(filePath);
 }
 
@@ -383,15 +411,8 @@ function sendEmbedMindMap(req, res) {
     return res.status(404).type("text/plain").send("Not found");
   }
 
-  const encodedToken = encodeURIComponent(
-    String(getEmbedRequestToken(req) || ""),
-  );
-
   if (assetPath.endsWith(".html")) {
-    const html = rewriteMindMapHtmlForEmbed(
-      readFileSync(filePath, "utf-8"),
-      encodedToken,
-    );
+    const html = rewriteMindMapHtmlForEmbed(readFileSync(filePath, "utf-8"));
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
@@ -408,13 +429,13 @@ function sendEmbedMindMap(req, res) {
     if (!cached || cached.mtimeMs !== stat.mtimeMs) {
       _cssCache.set(filePath, { mtimeMs: stat.mtimeMs, content: rawCss });
     }
-    const css = rewriteMindMapCssForEmbed(rawCss, assetPath, encodedToken);
+    const css = rewriteMindMapCssForEmbed(rawCss, assetPath);
     res.setHeader("Content-Type", "text/css; charset=utf-8");
-    setImmutableEmbedAssetCache(res);
+    setPublicImmutableCacheHeaders(res);
     return res.send(css);
   }
 
-  setImmutableEmbedAssetCache(res);
+  setPublicImmutableCacheHeaders(res);
   res.sendFile(filePath);
 }
 
@@ -446,6 +467,13 @@ pageRouter.get(
       return res.status(404).json({ error: "File data missing" });
     }
 
+    if (
+      fileRow.content_sha256 &&
+      ifNoneMatchSatisfied(req.get("if-none-match"), fileRow.content_sha256)
+    ) {
+      return sendNotModified(res, fileRow.content_sha256);
+    }
+
     try {
       const raw = readFileSync(fp, "utf-8");
       const data = JSON.parse(raw);
@@ -455,6 +483,10 @@ pageRouter.get(
         summary: summarizeEmbedData(data),
       });
       res.setHeader("Cache-Control", "no-store");
+      const etag = formatDocumentEtag(fileRow.content_sha256);
+      if (etag) {
+        res.setHeader("ETag", etag);
+      }
       res.json({
         id: fileId,
         name: fileRow.name,
@@ -471,9 +503,9 @@ pageRouter.get(
   },
 );
 
-pageRouter.use("/assets", requireEmbedAccess, sendEmbedAsset);
-pageRouter.use("/fonts", requireEmbedAccess, sendEmbedFont);
-pageRouter.use("/mind-map", requireEmbedAccess, sendEmbedMindMap);
+pageRouter.use("/assets", requireEmbedSession, sendEmbedAsset);
+pageRouter.use("/fonts", requireEmbedSession, sendEmbedFont);
+pageRouter.use("/mind-map", mindMapEmbedGate, sendEmbedMindMap);
 
 pageRouter.get("/:fileId", (req, res) => {
   const fileId = req.params.fileId;
@@ -510,12 +542,11 @@ pageRouter.get("/:fileId", (req, res) => {
   }
 
   const tokenValue = String(token);
-  const encodedToken = encodeURIComponent(tokenValue);
   let html = readFileSync(indexPath, "utf-8");
-  html = rewriteSpaAssetRefsForEmbed(html, encodedToken);
+  html = rewriteSpaAssetRefsForEmbed(html);
   html = html.replace(
     "<head>",
-    `<head>\n${buildEmbedRuntimeAssetInterceptor(encodedToken)}`,
+    `<head>\n${buildEmbedRuntimeAssetInterceptor()}`,
   );
   html = injectEmbedBootstrap(html, {
     fileId,

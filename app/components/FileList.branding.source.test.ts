@@ -10,11 +10,17 @@ const controllerPath = path.join(appRoot, "hooks/useFileListController.tsx");
 
 describe("File list branding source contract", () => {
   it("uses drawing space home branding and app icon", () => {
+    const brandingSource = fs.readFileSync(
+      path.join(appRoot, "lib/appBranding.ts"),
+      "utf8",
+    );
     const source = fs.readFileSync(controllerPath, "utf8");
     const htmlSource = fs.readFileSync(path.join(appRoot, "index.html"), "utf8");
     const viteSource = fs.readFileSync(path.join(appRoot, "vite.config.mts"), "utf8");
 
-    expect(source).toContain('const HOME_APP_TITLE = "绘图空间"');
+    expect(brandingSource).toContain('export const HOME_APP_TITLE = "绘图空间"');
+    expect(brandingSource).toContain('export const MAIN_SITE_ICON = "/icons/drawing-space.svg"');
+    expect(source).toContain("HOME_APP_TITLE");
     expect(source).toContain(
       '<h1 className="filelist__title">{HOME_APP_TITLE}</h1>',
     );
@@ -60,7 +66,7 @@ describe("File list branding source contract", () => {
     expect(source).not.toContain("DOCUMENT_KIND_LABELS[kind]");
   });
 
-  it("sets editor browser titles to their own document type names", () => {
+  it("uses main site document branding inside editor shells", () => {
     const excalidrawSource = fs.readFileSync(
       path.join(appRoot, "editors/excalidraw/EditorShell.tsx"),
       "utf8",
@@ -70,10 +76,20 @@ describe("File list branding source contract", () => {
       "utf8",
     );
 
-    expect(excalidrawSource).toContain('document.title = "excalidraw"');
-    expect(mindMapSource).toContain('document.title = "mindmap"');
-    expect(mindMapSource).toContain('title="mindmap"');
-    expect(excalidrawSource).not.toContain('document.title = "Excalidraw 画布"');
-    expect(mindMapSource).not.toContain('document.title = "MindMap 思维导图"');
+    expect(excalidrawSource).toContain("useMainSiteDocumentBranding");
+    expect(mindMapSource).toContain("useMainSiteDocumentBranding");
+    expect(excalidrawSource).not.toContain('document.title = "excalidraw"');
+    expect(mindMapSource).not.toContain('document.title = "mindmap"');
+  });
+
+  it("uses per-editor icons on the floating sidebar ball", () => {
+    const sidebarSource = fs.readFileSync(
+      path.join(appRoot, "components/EditorPlatformSidebar.tsx"),
+      "utf8",
+    );
+
+    expect(sidebarSource).toContain("editorIconForKind(documentKind)");
+    expect(sidebarSource).toContain("ballIconSrc");
+    expect(sidebarSource).not.toContain('src={DRAWING_SPACE_ICON}');
   });
 });

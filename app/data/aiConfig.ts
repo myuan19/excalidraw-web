@@ -1,5 +1,7 @@
 /** AI 配置：持久化在 server SQLite（/api/ai-settings），浏览器侧内存缓存 */
 
+import { devDebug } from "../lib/devDebug";
+
 export interface AIConfig {
   endpoint: string;
   apiKey: string;
@@ -156,21 +158,14 @@ function parseResponseJson(data: unknown): AISettingsConfig {
 }
 
 function debugAIConfig(label: string, config: AISettingsConfig): void {
-  console.log(`[DEBUG] ${label} | AI config`, {
+  devDebug("ai-config", label, {
     excalidraw: {
       hasEndpoint: !!config.excalidraw.endpoint?.trim(),
-      endpoint: config.excalidraw.endpoint?.trim() || "",
       hasApiKey: !!config.excalidraw.apiKey?.trim(),
-      apiKeyLen: config.excalidraw.apiKey?.length ?? 0,
-      textToDiagramModel: config.excalidraw.textToDiagramModel,
-      diagramToCodeModel: config.excalidraw.diagramToCodeModel,
-      iconTagModel: config.excalidraw.iconTagModel,
     },
     mindmap: {
       hasEndpoint: !!config.mindmap.endpoint?.trim(),
-      endpoint: config.mindmap.endpoint?.trim() || "",
       hasApiKey: !!config.mindmap.apiKey?.trim(),
-      apiKeyLen: config.mindmap.apiKey?.length ?? 0,
       model: config.mindmap.model,
     },
   });
@@ -183,16 +178,15 @@ export async function ensureAIConfigLoaded(): Promise<AISettingsConfig> {
     return cache;
   }
   if (inFlight) {
-    console.log("[DEBUG] ensureAIConfigLoaded | reuse inFlight request");
+    devDebug("ai-config", "ensureAIConfigLoaded reuse inFlight");
     return inFlight;
   }
   inFlight = (async () => {
-    console.log("[DEBUG] ensureAIConfigLoaded | GET /api/ai-settings start");
+    devDebug("ai-config", "ensureAIConfigLoaded GET start");
     const res = await fetch("/api/ai-settings");
-    console.log("[DEBUG] ensureAIConfigLoaded | GET /api/ai-settings response", {
+    devDebug("ai-config", "ensureAIConfigLoaded GET response", {
       ok: res.ok,
       status: res.status,
-      contentType: res.headers.get("content-type"),
     });
     if (!res.ok) {
       throw new Error(`AI 配置加载失败: ${res.status}`);
@@ -213,12 +207,11 @@ export async function ensureAIConfigLoaded(): Promise<AISettingsConfig> {
 
 /** 打开设置页时刷新，避免其它会话已改写 */
 export async function refetchAIConfig(): Promise<AISettingsConfig> {
-  console.log("[DEBUG] refetchAIConfig | GET /api/ai-settings start");
+  devDebug("ai-config", "refetchAIConfig GET start");
   const res = await fetch("/api/ai-settings");
-  console.log("[DEBUG] refetchAIConfig | GET /api/ai-settings response", {
+  devDebug("ai-config", "refetchAIConfig GET response", {
     ok: res.ok,
     status: res.status,
-    contentType: res.headers.get("content-type"),
   });
   if (!res.ok) {
     throw new Error(`AI 配置加载失败: ${res.status}`);
@@ -240,10 +233,9 @@ export async function saveAIConfigToServer(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(config),
   });
-  console.log("[DEBUG] saveAIConfigToServer | PUT /api/ai-settings response", {
+  devDebug("ai-config", "saveAIConfigToServer PUT response", {
     ok: res.ok,
     status: res.status,
-    contentType: res.headers.get("content-type"),
   });
   if (!res.ok) {
     const text = await res.text();
@@ -264,26 +256,10 @@ export function getCachedAIConfig(): AISettingsConfig {
 
 export function isAIConfigured(): boolean {
   const c = cache.excalidraw;
-  const configured = !!(c.endpoint?.trim() && c.apiKey?.trim());
-  console.log("[DEBUG] isAIConfigured | check", {
-    configured,
-    hasEndpoint: !!c.endpoint?.trim(),
-    endpoint: c.endpoint?.trim() || "",
-    hasApiKey: !!c.apiKey?.trim(),
-    apiKeyLen: c.apiKey?.length ?? 0,
-  });
-  return configured;
+  return !!(c.endpoint?.trim() && c.apiKey?.trim());
 }
 
 export function isMindMapAIConfigured(): boolean {
   const c = cache.mindmap;
-  const configured = !!(c.endpoint?.trim() && c.apiKey?.trim());
-  console.log("[DEBUG] isMindMapAIConfigured | check", {
-    configured,
-    hasEndpoint: !!c.endpoint?.trim(),
-    endpoint: c.endpoint?.trim() || "",
-    hasApiKey: !!c.apiKey?.trim(),
-    apiKeyLen: c.apiKey?.length ?? 0,
-  });
-  return configured;
+  return !!(c.endpoint?.trim() && c.apiKey?.trim());
 }
