@@ -1,36 +1,6 @@
 @import "../packages/excalidraw/css/variables.module.scss";
 @import "./styles/notionUiTokens.scss";
 
-// ---------------------------------------------------------------------------
-// Editor lazy-load fallback
-// ---------------------------------------------------------------------------
-.editor-loading-fallback {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100vh;
-  flex-direction: column;
-  gap: var(--nb-space-8);
-  color: var(--nb-text-muted);
-  font-family: var(--nb-font-ui), system-ui, sans-serif;
-  font-size: var(--nb-font-loading);
-}
-
-@keyframes editor-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.editor-loading-spinner {
-  width: var(--nb-space-16);
-  height: var(--nb-space-16);
-  border: var(--nb-border-width-thick) solid var(--nb-spinner-track);
-  border-top-color: var(--nb-blue);
-  border-radius: 50%;
-  animation: editor-spin 0.7s linear infinite;
-}
-
 .excalidraw {
   --color-primary-contrast-offset: var(--nb-primary-chubb-offset);
 

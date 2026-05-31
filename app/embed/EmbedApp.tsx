@@ -8,24 +8,15 @@ import {
   getEmbedDocumentCache,
   setEmbedDocumentCache,
 } from "./embedDocumentCache";
+import { logEditorOpenPhase } from "../lib/editorOpenPhases";
 import { embedDebug, embedMark, embedMeasure } from "./embedDebug";
 import { getEmbedBootstrap } from "./embedMode";
 
-function EmbedFallback() {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        height: "100%",
-        fontFamily: "system-ui, sans-serif",
-        color: "#868e96",
-      }}
-    >
-      加载嵌入画布…
-    </div>
-  );
+function EmbedChunkFallback() {
+  useEffect(() => {
+    logEditorOpenPhase("shell_chunk", { stage: "embed_viewer" });
+  }, []);
+  return null;
 }
 
 function EmbedError({ message }: { message: string }) {
@@ -181,7 +172,8 @@ export default function EmbedApp() {
       kind,
       dataUrl: bootstrap.dataUrl ?? null,
     });
-    return <EmbedFallback />;
+    embedDebug("render waiting for embed data (no UI)");
+    return null;
   }
 
   if (!LazyViewer) {
@@ -197,7 +189,7 @@ export default function EmbedApp() {
     dataSummary: summarizePayload(data),
   });
   return (
-    <Suspense fallback={<EmbedFallback />}>
+    <Suspense fallback={<EmbedChunkFallback />}>
       <LazyViewer data={preparedData} editUrl={editUrl} />
     </Suspense>
   );

@@ -1,3 +1,5 @@
+import { prefetchMindMapNativeAssets } from "../data/mindMapPrefetch";
+
 import type { EditorPlugin } from "./types";
 
 export function createEditorRegistry(plugins: EditorPlugin[]) {
@@ -132,6 +134,7 @@ export function createEditorRegistry(plugins: EditorPlugin[]) {
           plugin.loadEditorShell().catch(() => {});
         }
       }
+      void prefetchMindMapNativeAssets();
     },
   };
 }

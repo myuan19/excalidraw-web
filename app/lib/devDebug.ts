@@ -1,10 +1,12 @@
 /**
  * Central development diagnostics for the host app (MindMap shell, file list, embed).
- * Production: silent unless an explicit VITE_APP_ENABLE_*_DEBUG flag is set.
+ * Vite dev: all channels on.
+ * Production bundle: off unless debug-ship build (VITE_APP_DEPLOY_DEBUG) or per-channel VITE_APP_ENABLE_*_DEBUG.
  */
 
 export type DevDebugChannel =
   | "app"
+  | "editor-open"
   | "mindmap-open"
   | "mindmap-bridge"
   | "mindmap-thumbnail"
@@ -15,6 +17,7 @@ export type DevDebugChannel =
 
 const CHANNEL_ENV_FLAG: Record<DevDebugChannel, string> = {
   app: "VITE_APP_ENABLE_APP_DEBUG",
+  "editor-open": "VITE_APP_ENABLE_EDITOR_OPEN_DEBUG",
   "mindmap-open": "VITE_APP_ENABLE_MINDMAP_DEBUG",
   "mindmap-bridge": "VITE_APP_ENABLE_MINDMAP_DEBUG",
   "mindmap-thumbnail": "VITE_APP_ENABLE_MINDMAP_DEBUG",
@@ -24,8 +27,15 @@ const CHANNEL_ENV_FLAG: Record<DevDebugChannel, string> = {
   "thumbnail-pipeline": "VITE_APP_ENABLE_THUMBNAIL_DEBUG",
 };
 
+function isDeployDebugBuild(): boolean {
+  return import.meta.env.VITE_APP_DEPLOY_DEBUG === "true";
+}
+
 export function isDevDebugChannelEnabled(channel: DevDebugChannel): boolean {
   if (import.meta.env.PROD) {
+    if (isDeployDebugBuild()) {
+      return true;
+    }
     const flag = CHANNEL_ENV_FLAG[channel];
     return import.meta.env[flag] === "true";
   }

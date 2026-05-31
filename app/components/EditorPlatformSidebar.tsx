@@ -589,7 +589,11 @@ export function EditorPlatformSidebar() {
         onPointerUp={onBallPointerUp}
         onPointerCancel={onBallPointerCancel}
       >
-        <img src={ballIconSrc} alt="" width={28} height={28} draggable={false} />
+        <span className="editor-bridge__ball-viewport" aria-hidden="true">
+          <span className="editor-bridge__ball-icon-ring" aria-hidden="true">
+            <img src={ballIconSrc} alt="" width={28} height={28} draggable={false} />
+          </span>
+        </span>
         {draftStatusLabel ? (
           <span
             className="editor-bridge__status-dot"

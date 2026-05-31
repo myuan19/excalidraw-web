@@ -48,12 +48,17 @@ export default {
     debugMindMapOpen('created start')
     this.initLocalConfig()
     this.$bus.$on('host_ai_config', this.onHostAiConfig)
-    const loading = this.$loading({
-      lock: true,
-      text: this.$t('other.loading')
-    })
-    this.show = true
-    loading.close()
+    // Host embed: open phases are console-only; skip Vue $loading flash.
+    if (!window.takeOverApp) {
+      const loading = this.$loading({
+        lock: true,
+        text: this.$t('other.loading')
+      })
+      this.show = true
+      loading.close()
+    } else {
+      this.show = true
+    }
     this.setBodyDark()
     debugMindMapOpen('created end', {
       show: this.show,

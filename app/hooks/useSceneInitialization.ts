@@ -33,35 +33,33 @@ import {
   getFileIdFromHash,
   getFileIdFromUrl,
 } from "../data/fileIdFromHash";
+import {
+  initializeExcalidrawScene,
+  verifyExcalidrawRemoteAfterCachedOpen,
+  type ExcalidrawInitSceneResult,
+} from "../editors/excalidraw/initializeExcalidrawScene";
+import type { EditorOpenPhase } from "../lib/editorOpenPhases";
 
 import type { SaveToServerOptions, SceneData } from "./types";
 
 const logHash = createLogger({ module: "hash" });
 const logHook = createLogger({ module: "hook.sceneInit" });
 
-type InitSceneResult = {
-  scene: ExcalidrawInitialDataState | null;
-  isExternalScene: false;
-  hasBrowserViewport: boolean;
-};
-
 export function useSceneInitialization(opts: {
   excalidrawAPI: ExcalidrawImperativeAPI | null;
-  initializeScene: (opts: { excalidrawAPI: ExcalidrawImperativeAPI }) => Promise<InitSceneResult>;
+  onOpenPhase?: (phase: EditorOpenPhase) => void;
   updateDraftHashDebouncedRef: React.MutableRefObject<{ flush: () => void; cancel: () => void } & ((...args: any[]) => void)>;
   localPersistGenRef: React.MutableRefObject<number>;
   saveToServerRef: React.MutableRefObject<(opts?: SaveToServerOptions) => Promise<boolean>>;
   visibilitySaveInFlightRef: React.MutableRefObject<boolean>;
-  setForkCanvasRevealed: (v: boolean) => void;
 }) {
   const {
     excalidrawAPI,
-    initializeScene,
+    onOpenPhase,
     updateDraftHashDebouncedRef,
     localPersistGenRef,
     saveToServerRef,
     visibilitySaveInFlightRef,
-    setForkCanvasRevealed,
   } = opts;
 
   const initialStatePromiseRef = useRef<{
@@ -73,7 +71,7 @@ export function useSceneInitialization(opts: {
   }
 
   const loadImages = useCallback(
-    (data: InitSceneResult, isInitialLoad = false) => {
+    (data: ExcalidrawInitSceneResult, isInitialLoad = false) => {
       if (!data.scene || !excalidrawAPI) {
         return;
       }
@@ -175,18 +173,31 @@ export function useSceneInitialization(opts: {
     }
     logHook.info("mounted — registering hashchange / unload / visibility listeners");
 
-    initializeScene({ excalidrawAPI }).then(async (data) => {
+    const finishOpen = async (data: ExcalidrawInitSceneResult) => {
       loadImages(data, true);
       initialStatePromiseRef.current.promise.resolve(data.scene);
       await restorePersistedUndoStack(excalidrawAPI);
-      revealForkCanvasAfterFit(excalidrawAPI, () => setForkCanvasRevealed(true), { skipFit: data.hasBrowserViewport });
+      revealForkCanvasAfterFit(excalidrawAPI, () => {}, {
+        skipFit: data.hasBrowserViewport,
+      });
       setTimeout(normalizeHashesAfterLoad, 100);
       logHook.info("scene loaded", {
         hasScene: !!data.scene,
         hasBrowserViewport: data.hasBrowserViewport,
+        deferRemoteVerify: data.deferRemoteVerify,
         elementCount: data.scene?.elements?.length ?? 0,
       });
-    });
+      if (data.deferRemoteVerify) {
+        void verifyExcalidrawRemoteAfterCachedOpen({
+          excalidrawAPI,
+          onPhase: onOpenPhase,
+        });
+      } else {
+        onOpenPhase?.("ready");
+      }
+    };
+
+    initializeExcalidrawScene({ onPhase: onOpenPhase }).then(finishOpen);
 
     const onHashChange = async (event: HashChangeEvent) => {
       const newFileId = getFileIdFromUrl(event.newURL);
@@ -195,14 +206,17 @@ export function useSceneInitialization(opts: {
       const libraryUrlTokens = parseLibraryTokensFromUrl();
       if (!libraryUrlTokens) {
         excalidrawAPI.updateScene({ appState: { isLoading: true } });
-        setForkCanvasRevealed(false);
+        onOpenPhase?.("resolving");
 
-        initializeScene({ excalidrawAPI }).then(async (data) => {
+        const finishHashOpen = async (data: ExcalidrawInitSceneResult) => {
           loadImages(data, !!newFileId);
           if (data.scene) {
             excalidrawAPI.updateScene({
               elements: restoreSceneElements(data.scene.elements),
-              appState: { ...restoreSceneAppState(data.scene.appState), isLoading: false },
+              appState: {
+                ...restoreSceneAppState(data.scene.appState),
+                isLoading: false,
+              },
               captureUpdate: CaptureUpdateAction.IMMEDIATELY,
             });
             const sceneFiles = (data.scene.files ?? {}) as BinaryFiles;
@@ -216,13 +230,14 @@ export function useSceneInitialization(opts: {
             });
           }
           await restorePersistedUndoStack(excalidrawAPI);
-          revealForkCanvasAfterFit(excalidrawAPI, () =>
-            setForkCanvasRevealed(true),
-            { skipFit: data.hasBrowserViewport },
-          );
+          revealForkCanvasAfterFit(excalidrawAPI, () => {}, {
+            skipFit: data.hasBrowserViewport,
+          });
           setTimeout(() => {
             const fid = getFileIdFromHash();
-            if (!fid) return;
+            if (!fid) {
+              return;
+            }
             const b = FileSyncState.getBaselineHash(fid);
             const d = FileSyncState.getDraftHash(fid);
             if (b && d && b === d) {
@@ -232,7 +247,17 @@ export function useSceneInitialization(opts: {
               }
             }
           }, 100);
-        });
+          if (data.deferRemoteVerify) {
+            void verifyExcalidrawRemoteAfterCachedOpen({
+              excalidrawAPI,
+              onPhase: onOpenPhase,
+            });
+          } else {
+            onOpenPhase?.("ready");
+          }
+        };
+
+        initializeExcalidrawScene({ onPhase: onOpenPhase }).then(finishHashOpen);
       }
     };
 
@@ -290,9 +315,8 @@ export function useSceneInitialization(opts: {
     loadImages,
     getSceneData,
     restorePersistedUndoStack,
-    setForkCanvasRevealed,
     normalizeHashesAfterLoad,
-    initializeScene,
+    onOpenPhase,
     updateDraftHashDebouncedRef,
     saveToServerRef,
     visibilitySaveInFlightRef,

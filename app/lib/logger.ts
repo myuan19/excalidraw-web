@@ -123,6 +123,10 @@ class RemoteTransport implements LogTransport {
 // Configuration
 // ---------------------------------------------------------------------------
 
+function isDeployDebugBuild(): boolean {
+  return import.meta.env.VITE_APP_DEPLOY_DEBUG === "true";
+}
+
 function getMinLevel(): LogLevel {
   try {
     const ls = localStorage.getItem("excalidraw-log-level") as LogLevel | null;
@@ -134,7 +138,10 @@ function getMinLevel(): LogLevel {
   if (env.VITE_LOG_LEVEL && env.VITE_LOG_LEVEL in LEVEL_VALUE) {
     return env.VITE_LOG_LEVEL as LogLevel;
   }
-  return env.DEV ? "debug" : "info";
+  if (env.DEV) {
+    return "debug";
+  }
+  return isDeployDebugBuild() ? "debug" : "error";
 }
 
 function isRemoteEnabled(): boolean {
@@ -144,7 +151,13 @@ function isRemoteEnabled(): boolean {
     /* no localStorage */
   }
   const env = import.meta.env;
-  return env.VITE_LOG_REMOTE !== "0";
+  if (env.VITE_LOG_REMOTE === "0") {
+    return false;
+  }
+  if (env.PROD && !isDeployDebugBuild()) {
+    return false;
+  }
+  return true;
 }
 
 const isEmbedMode =

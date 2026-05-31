@@ -1111,6 +1111,8 @@
     font-family: inherit;
     cursor: pointer;
     text-align: left;
+    touch-action: manipulation;
+    transition: none;
 
     &:hover {
       border-color: var(--fl-border-strong);

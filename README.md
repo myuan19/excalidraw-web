@@ -98,7 +98,7 @@ yarn docker:full              # deploy/docker-compose.full.yml
 | `yarn test:app` | Vitest unit tests |
 | `yarn docker:full` | Full-stack Docker compose |
 | `./_scripts/deploy.sh ship` | Build + Docker deploy |
-| `DEPLOY_DEBUG=1 ./_scripts/deploy.sh ship` | Debug deploy (verbose logs, API :13033) |
+| `DEPLOY_DEBUG=1 ./_scripts/deploy.sh ship` | Debug deploy (verbose logs, still only :17888) |
 
 ## License
 

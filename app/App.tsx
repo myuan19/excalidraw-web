@@ -10,20 +10,16 @@ import { EditorPlatformShell } from "./components/EditorPlatformSidebar";
 import { logFileListOpen } from "./lib/logger";
 import { devDebug } from "./lib/devDebug";
 import { isEmbedMode } from "./embed/embedMode";
+import { prefetchMindMapNativeAssets } from "./data/mindMapPrefetch";
 import { editorRegistry } from "./editors";
 import { getLazyEditorShell } from "./editors/lazyViews";
 import { getDocumentKindFromHash } from "./lib/appBranding";
+import { EditorShellChunkFallback } from "./components/EditorShellChunkFallback";
+import { logEditorOpenPhase } from "./lib/editorOpenPhases";
 
 import "./index.scss";
 
 const LazyEmbedApp = lazy(() => import("./embed/EmbedApp"));
-
-const EditorFallback = () => (
-  <div className="editor-loading-fallback">
-    <div className="editor-loading-spinner" />
-    <span>加载编辑器…</span>
-  </div>
-);
 
 /**
  * Prefetch the editor chunk in the background, but only AFTER the file list
@@ -76,7 +72,17 @@ function debugApp(label: string, data?: Record<string, unknown>) {
 }
 
 const UnsupportedDocumentFallback = ({ kind }: { kind: string }) => (
-  <div className="editor-loading-fallback">
+  <div
+    style={{
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      height: "100%",
+      padding: 24,
+      color: "var(--nb-text-muted, #868e96)",
+      fontFamily: "var(--nb-font-ui, system-ui, sans-serif)",
+    }}
+  >
     <span>暂不支持打开 {kind} 文档，编辑器接入将在后续阶段完成。</span>
   </div>
 );
@@ -102,6 +108,15 @@ const ForkRoot = () => {
 
   const needsEditor = hashNeedsEditor();
   const onFileListReady = useDeferredEditorPrefetch();
+  const documentKind = getDocumentKindFromHash();
+
+  useEffect(() => {
+    if (!needsEditor || documentKind !== "mindmap") {
+      return;
+    }
+    void prefetchMindMapNativeAssets();
+    editorRegistry.getByKind("mindmap")?.loadEditorShell().catch(() => {});
+  }, [needsEditor, documentKind]);
 
   if (!needsEditor) {
     return (
@@ -135,7 +150,6 @@ const ForkRoot = () => {
     );
   }
 
-  const documentKind = getDocumentKindFromHash();
   const editorDefinition = editorRegistry.getByKind(documentKind);
   if (!editorDefinition) {
     return <UnsupportedDocumentFallback kind={documentKind} />;
@@ -148,21 +162,19 @@ const ForkRoot = () => {
 
   return (
     <EditorPlatformShell>
-      <Suspense fallback={<EditorFallback />}>
+      <Suspense fallback={<EditorShellChunkFallback editorKind={documentKind} />}>
         <LazyEditor />
       </Suspense>
     </EditorPlatformShell>
   );
 };
 
-const EmbedFallback = () => (
-  <div style={{
-    display: "flex", alignItems: "center", justifyContent: "center",
-    height: "100%", fontFamily: "system-ui, sans-serif", color: "#868e96",
-  }}>
-    加载嵌入画布…
-  </div>
-);
+const EmbedChunkFallback = () => {
+  useEffect(() => {
+    logEditorOpenPhase("shell_chunk", { stage: "embed_app" });
+  }, []);
+  return null;
+};
 
 const ExcalidrawApp = () => {
   const embedMode = isEmbedMode();
@@ -171,7 +183,7 @@ const ExcalidrawApp = () => {
     debugApp("render LazyEmbedApp");
     return (
       <TopErrorBoundary>
-        <Suspense fallback={<EmbedFallback />}>
+        <Suspense fallback={<EmbedChunkFallback />}>
           <LazyEmbedApp />
         </Suspense>
       </TopErrorBoundary>

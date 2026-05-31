@@ -82,19 +82,22 @@ import { hashSceneSnapshot } from "../../data/sceneHash";
 import { restoreSceneAppState, restoreSceneElements } from "../../data/sceneRestore";
 import { ServerSync } from "../../data/ServerSync";
 import type { ForkSceneSnapshot } from "../../data/forkFileTypes";
-import { readForkBrowserAppStateOverlay } from "../../data/forkBrowserSceneStorage";
 import { revealForkCanvasAfterFit } from "../../data/scrollEditorToFit";
 import {
   getFileIdFromHash,
   getFileIdFromHashString,
 } from "../../data/fileIdFromHash";
 import { useMainSiteDocumentBranding } from "../../lib/appBranding";
+import {
+  logEditorOpenPhase,
+  resetEditorOpenPhaseLog,
+  type EditorOpenPhase,
+} from "../../lib/editorOpenPhases";
 
 import { useBeforeUnloadGuard } from "../../hooks/useBeforeUnloadGuard";
 import { useForkFileSave } from "./useForkFileSave";
 import { useSceneInitialization } from "../../hooks/useSceneInitialization";
 
-const logInit = createLogger({ module: "init" });
 const logStash = createLogger({ module: "stash" });
 const logShell = createLogger({ module: "EditorShell" });
 
@@ -145,134 +148,6 @@ if (window.self !== window.top) {
   }
 }
 
-type InitSceneResult = {
-  scene: ExcalidrawInitialDataState | null;
-  isExternalScene: false;
-  hasBrowserViewport: boolean;
-};
-
-const EMPTY_INIT_RESULT: InitSceneResult = {
-  scene: { elements: [], appState: {}, scrollToContent: true },
-  isExternalScene: false,
-  hasBrowserViewport: false,
-};
-
-function buildInitResult(
-  data: ForkSceneSnapshot,
-  overlay: Partial<AppState> | null,
-): InitSceneResult {
-  return {
-    scene: {
-      elements: restoreSceneElements(data.elements),
-      appState: restoreSceneAppState(data.appState, overlay),
-      files: (data.files || {}) as any,
-      ...(overlay ? {} : { scrollToContent: true }),
-    },
-    isExternalScene: false,
-    hasBrowserViewport: !!overlay,
-  };
-}
-
-const initializeScene = async (opts: {
-  excalidrawAPI: ExcalidrawImperativeAPI;
-}): Promise<InitSceneResult> => {
-  const fileIdFromHash = getFileIdFromHash();
-  if (!fileIdFromHash) {
-    return EMPTY_INIT_RESULT;
-  }
-
-  const fid8 = fileIdFromHash.slice(0, 8);
-  logInit.debug(`initializeScene file=${fid8}`);
-  await DeltaStorage.setFileId(fileIdFromHash);
-  const localRecord = FileSyncState.getLocalCache(fileIdFromHash);
-  const localElements = Array.isArray((localRecord as any)?.elements)
-    ? ((localRecord as any).elements as unknown[])
-    : [];
-  const localHasContent = localElements.length > 0;
-  logInit.debug(`file=${fid8} localHasContent=${localHasContent}, localElements=${localElements.length}`);
-
-  const forkBrowserOverlay = readForkBrowserAppStateOverlay(fileIdFromHash);
-
-  let serverNewerThanLocal = false;
-  try {
-    const hashes = await ServerSync.listFileHashes();
-    const entry = hashes.find((h) => h.id === fileIdFromHash);
-    if (entry?.content_sha256) {
-      serverNewerThanLocal = FileSyncState.isServerChanged(
-        fileIdFromHash,
-        entry.content_sha256,
-      );
-      logInit.debug(`file=${fid8} serverSha=${entry.content_sha256.slice(0, 8)}, serverNewer=${serverNewerThanLocal}`);
-    } else {
-      logInit.debug(`file=${fid8} no server sha256 found`);
-    }
-  } catch {
-    logInit.debug(`file=${fid8} hash fetch failed (offline?)`);
-  }
-
-  // Priority 1: local cache is fresh (server not newer)
-  if (localHasContent && !serverNewerThanLocal) {
-    const data = localRecord!;
-    const draftH = hashSceneSnapshot(data);
-    const existingBaseline = FileSyncState.getBaselineHash(fileIdFromHash);
-    if (!existingBaseline) {
-      FileSyncState.setBaselineHash(fileIdFromHash, draftH);
-    }
-    FileSyncState.setDraftHash(fileIdFromHash, draftH);
-    logInit.debug(`file=${fid8} → use LOCAL cache, hash=${draftH.slice(0, 8)}, existingBaseline=${existingBaseline?.slice(0, 8) ?? "none"}`);
-    await DeltaStorage.restoreSnapshot(data.deltas);
-    return buildInitResult(data, forkBrowserOverlay);
-  }
-
-  // Try fetching from server (serverNewerThanLocal or no local content)
-  let serverData: ForkSceneSnapshot | null = null;
-  let serverRecord: Awaited<ReturnType<typeof ServerSync.getFile>> | null = null;
-  try {
-    serverRecord = await ServerSync.getFile(fileIdFromHash);
-    if (serverRecord.data && typeof serverRecord.data === "object") {
-      serverData = serverRecord.data as ForkSceneSnapshot;
-    }
-    logInit.debug(`file=${fid8} server fetch ok, hasData=${!!serverData}, elements=${Array.isArray(serverData?.elements) ? serverData.elements.length : 0}`);
-  } catch (err) {
-    logInit.debug(`file=${fid8} server fetch failed`, err);
-  }
-
-  // Priority 2: local cache fallback (server said newer but fetch failed)
-  if (localHasContent && !serverData) {
-    const data = localRecord!;
-    const draftH = hashSceneSnapshot(data);
-    FileSyncState.alignHashes(fileIdFromHash, draftH);
-    logInit.debug(`file=${fid8} → use LOCAL (no server data), hash=${draftH.slice(0, 8)}`);
-    await DeltaStorage.restoreSnapshot(data.deltas);
-    return buildInitResult(data, forkBrowserOverlay);
-  }
-
-  // Priority 3: server data available
-  if (serverData) {
-    const mergedAppState = {
-      ...(serverData.appState ?? {}),
-      name: serverRecord?.name ?? (serverData.appState as any)?.name ?? "",
-    };
-    const h = hashSceneSnapshot(serverData);
-    FileSyncState.alignHashes(fileIdFromHash, h);
-    if (serverRecord?.content_sha256) {
-      FileSyncState.setServerHash(fileIdFromHash, serverRecord.content_sha256);
-    }
-    FileSyncState.setLocalCache(fileIdFromHash, {
-      elements: serverData.elements,
-      appState: mergedAppState,
-      files: serverData.files,
-      deltas: [],
-    });
-    logInit.debug(`file=${fid8} → use SERVER data, hash=${h.slice(0, 8)}, baseline=draft=${h.slice(0, 8)}`);
-    await DeltaStorage.restoreSnapshot([]);
-    return buildInitResult({ ...serverData, appState: mergedAppState }, forkBrowserOverlay);
-  }
-
-  logInit.debug(`file=${fid8} → EMPTY scene (no local, no server)`);
-  return EMPTY_INIT_RESULT;
-};
-
 // ---------------------------------------------------------------------------
 // ExcalidrawWrapper — the full editor component
 // ---------------------------------------------------------------------------
@@ -280,14 +155,26 @@ const initializeScene = async (opts: {
 const ExcalidrawWrapper = () => {
   const excalidrawAPI = useExcalidrawAPI();
   const forkFileId = getFileIdFromHash();
-  const [forkCanvasRevealed, setForkCanvasRevealed] = useState(
-    () => !getFileIdFromHash(),
+  const onOpenPhase = useCallback(
+    (phase: EditorOpenPhase) => {
+      logEditorOpenPhase(phase, {
+        editor: "excalidraw",
+        fileId8: forkFileId?.slice(0, 8) ?? null,
+      });
+    },
+    [forkFileId],
   );
 
   useMainSiteDocumentBranding();
 
   useEffect(() => {
-    setForkCanvasRevealed(!forkFileId);
+    resetEditorOpenPhaseLog();
+    if (forkFileId) {
+      logEditorOpenPhase("resolving", {
+        editor: "excalidraw",
+        fileId8: forkFileId.slice(0, 8),
+      });
+    }
   }, [forkFileId]);
 
   const [errorMessage, setErrorMessage] = useState("");
@@ -383,12 +270,11 @@ const ExcalidrawWrapper = () => {
 
   const { initialDataPromise, getSceneData } = useSceneInitialization({
     excalidrawAPI,
-    initializeScene,
+    onOpenPhase,
     updateDraftHashDebouncedRef,
     localPersistGenRef,
     saveToServerRef,
     visibilitySaveInFlightRef,
-    setForkCanvasRevealed,
   });
 
   // Bridge: keep save hook's getSceneData in sync
@@ -500,7 +386,6 @@ const ExcalidrawWrapper = () => {
     const h = hashSceneSnapshot(serverData);
     FileSyncState.alignHashes(fid, h);
     await DeltaStorage.restoreSnapshot([]);
-    setForkCanvasRevealed(false);
     const restoredAppState = restoreSceneAppState(mergedAppState);
     const currentAppState = excalidrawAPI.getAppState();
     (restoredAppState as any).openSidebar = currentAppState.openSidebar;
@@ -519,9 +404,9 @@ const ExcalidrawWrapper = () => {
       files: serverData.files,
       deltas: [],
     });
-    revealForkCanvasAfterFit(excalidrawAPI, () => setForkCanvasRevealed(true));
+    revealForkCanvasAfterFit(excalidrawAPI, () => {});
     window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
-  }, [excalidrawAPI, setForkCanvasRevealed, localPersistGenRef]);
+  }, [excalidrawAPI, localPersistGenRef]);
 
   // ---------------------------------------------------------------------------
   // onChange / onIncrement handlers
@@ -680,8 +565,6 @@ const ExcalidrawWrapper = () => {
 
   const renderForkTopRightUI = useCallback(() => null, []);
 
-  const hideForkCanvasUntilFit = !!forkFileId && !forkCanvasRevealed;
-
   return (
     <div
       style={{ height: "100%" }}
@@ -689,13 +572,7 @@ const ExcalidrawWrapper = () => {
         editorTheme === THEME.DARK ? " theme--dark" : ""
       }`}
     >
-      <div
-        style={{
-          height: "100%",
-          opacity: hideForkCanvasUntilFit ? 0 : 1,
-          pointerEvents: hideForkCanvasUntilFit ? "none" : "auto",
-        }}
-      >
+      <div style={{ height: "100%" }}>
       <Excalidraw
         onChange={onChange}
         onIncrement={onIncrement}

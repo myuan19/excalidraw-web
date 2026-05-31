@@ -17,9 +17,12 @@ import {
   saveMindMapBrowserViewFromData,
 } from "../../data/mindMapBrowserViewStorage";
 import {
-  shouldFetchServerAfterCachedMindMapOpen,
-  shouldOpenCachedMindMapFirst,
-} from "../../data/mindMapOpenState";
+  logEditorOpenPhase,
+  resetEditorOpenPhaseLog,
+  shouldFetchServerAfterCachedOpen,
+  shouldOpenCachedDocumentFirst,
+  type EditorOpenPhase,
+} from "../../lib/editorOpenPhases";
 import { hashDocumentSnapshot } from "../../data/sceneHash";
 import { ServerSync } from "../../data/ServerSync";
 import { normalizeMindMapThumbnailSvg } from "../../data/thumbnailSvg";
@@ -221,9 +224,7 @@ const MindMapEditorShell = () => {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const {
     bootKey: iframeBootKey,
-    bridgeStatus,
     bridgeError,
-    isNativeReady,
     isAppReady,
     isBridgeReady,
     learnedOrigin,
@@ -238,7 +239,17 @@ const MindMapEditorShell = () => {
     iframeRef,
     debugOpen: debugMindMapOpen,
   });
-  const [status, setStatus] = useState("加载中…");
+  const [status, setStatus] = useState("");
+
+  const logMindMapOpenPhase = useCallback(
+    (phase: EditorOpenPhase) => {
+      logEditorOpenPhase(phase, {
+        editor: "mindmap",
+        fileId8: fileId?.slice(0, 8) ?? null,
+      });
+    },
+    [fileId],
+  );
   const [error, setError] = useState<string | null>(null);
   const displayError = error ?? bridgeError;
   const [fileName, setFileName] = useState("未命名 mindmap");
@@ -509,7 +520,8 @@ const MindMapEditorShell = () => {
     let disposed = false;
 
     async function init() {
-      setStatus("加载中…");
+      resetEditorOpenPhaseLog();
+      logMindMapOpenPhase("resolving");
       if (!fileId) {
         setError("缺少 mindmap 文件");
         return;
@@ -571,12 +583,12 @@ const MindMapEditorShell = () => {
             ),
             reason,
           });
-          setStatus("等待 mindmap 原生界面加载…");
+          logMindMapOpenPhase("preparing_surface");
           publishMindMapDataToNative(data, reason);
         };
 
         if (
-          shouldOpenCachedMindMapFirst({ hasCachedDocument: !!cached }) &&
+          shouldOpenCachedDocumentFirst({ hasCachedDocument: !!cached }) &&
           cached
         ) {
           setFileName(getCachedFileListName(fileId) || "未命名 mindmap");
@@ -589,8 +601,8 @@ const MindMapEditorShell = () => {
             hasUnsavedChanges,
             rootChildren: cached.data.root?.children?.length ?? 0,
           });
-          setStatus(
-            hasUnsavedChanges ? "已恢复本地草稿" : "正在校验服务器版本…",
+          logMindMapOpenPhase(
+            hasUnsavedChanges ? "restoring_draft" : "checking_remote",
           );
           publishMindMapDataToNative(cached.data, "cache-first");
 
@@ -612,34 +624,34 @@ const MindMapEditorShell = () => {
               return;
             }
             if (
-              shouldFetchServerAfterCachedMindMapOpen({
+              shouldFetchServerAfterCachedOpen({
                 hasUnsavedChanges,
                 localServerHash: FileSyncState.getServerHash(fileId),
                 remoteServerHash: remoteHash,
               })
             ) {
+              logMindMapOpenPhase("background_sync");
               await loadFromServer("remote-hash-changed-after-cache");
+              logMindMapOpenPhase("ready");
               return;
             }
             if (remoteHash) {
               FileSyncState.setServerHash(fileId, remoteHash);
             }
-            if (!hasUnsavedChanges) {
-              setStatus("等待 mindmap 原生界面加载…");
-            }
+            logMindMapOpenPhase("ready");
             return;
           } catch (err: any) {
             debugMindMapOpen("listFileHashes after cache failed", {
               message: err?.message || String(err),
             });
-            if (!hasUnsavedChanges) {
-              setStatus("等待 mindmap 原生界面加载…");
-            }
+            logMindMapOpenPhase("ready");
             return;
           }
         }
 
+        logMindMapOpenPhase("loading_remote");
         await loadFromServer("no-cache");
+        logMindMapOpenPhase("ready");
       } catch (err: any) {
         warnMindMapBridge("init failed", {
           message: err?.message || String(err),
@@ -665,7 +677,7 @@ const MindMapEditorShell = () => {
       saveResolveRef.current = null;
       savePromiseRef.current = null;
     };
-  }, [fileId, publishMindMapDataToNative]);
+  }, [fileId, logMindMapOpenPhase, publishMindMapDataToNative]);
 
   useEffect(() => {
     if (!fileId) {
@@ -1065,7 +1077,11 @@ const MindMapEditorShell = () => {
     };
   }, [isAppReady, isBridgeReady, saveToServerRef]);
 
-  const displayStatus = bridgeStatus || status;
+  useEffect(() => {
+    if (isAppReady) {
+      logMindMapOpenPhase("ready");
+    }
+  }, [isAppReady, logMindMapOpenPhase]);
 
   return (
     <main className="mindmap-editor">
@@ -1074,12 +1090,6 @@ const MindMapEditorShell = () => {
           <strong>mindmap 打开失败</strong>
           <span>{displayError}</span>
         </section>
-      ) : null}
-      {!displayError && !isNativeReady ? (
-        <div className="mindmap-editor__loading">
-          <div className="editor-loading-spinner" />
-          <span>{displayStatus}</span>
-        </div>
       ) : null}
       <iframe
         ref={iframeRef}

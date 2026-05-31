@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  editorOpenPhaseFromBridgeStatus,
+  logEditorOpenPhase,
+} from "../../lib/editorOpenPhases";
+import {
   MindMapHostBridge,
   type MindMapHostBridgeSnapshot,
 } from "./mindMapHostBridge";
@@ -26,7 +30,6 @@ export function useMindMapHostBridge({
     isAppReady: false,
     failure: null,
   });
-  const [bridgeStatus, setBridgeStatus] = useState("加载中…");
   const [bridgeError, setBridgeError] = useState<string | null>(null);
   const [isNativeReady, setIsNativeReady] = useState(false);
 
@@ -36,7 +39,13 @@ export function useMindMapHostBridge({
       debugOpen,
       callbacks: {
         onSnapshot: setSnapshot,
-        onStatus: setBridgeStatus,
+        onStatus: (status) => {
+          logEditorOpenPhase(editorOpenPhaseFromBridgeStatus(status), {
+            editor: "mindmap",
+            source: "bridge",
+            bridgeStatus: status,
+          });
+        },
         onError: setBridgeError,
         onNativeReady: setIsNativeReady,
         onBootKeyChange: (bootKey) => {
@@ -92,7 +101,6 @@ export function useMindMapHostBridge({
     bootKey: snapshot.bootKey,
     bridgePhase: snapshot.phase,
     bridgeSnapshot: snapshot,
-    bridgeStatus,
     bridgeError,
     isNativeReady,
     isAppReady: snapshot.isAppReady,

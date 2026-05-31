@@ -14,6 +14,7 @@ export const mindMapPlugin: EditorPlugin = {
   kind: "mindmap",
   displayName: "MindMap",
   icon: "/icons/mindmap.ico",
+  prefetchOnFileListReady: true,
   downloadExtension: "smm",
   adapter: MindMapAdapter,
   loadEditorShell: () => import("./MindMapEditorShell"),

@@ -11,7 +11,8 @@ COPY app/build ./app/build
 RUN set -eux; \
     test -f app/build/index.html || { echo "缺少 app/build/index.html，请先运行 yarn build:production"; exit 1; }; \
     test -d app/build/mind-map/dist || { echo "缺少 app/build/mind-map/dist，请先运行 yarn build:production（MindMap 未同步进 app/build）"; exit 1; }; \
-    test -f app/build/mind-map/index.html || { echo "缺少 app/build/mind-map/index.html"; exit 1; }
+    test -f app/build/mind-map/index.html || { echo "缺少 app/build/mind-map/index.html"; exit 1; }; \
+    test -f app/build/icons/excalidraw.svg || { echo "缺少 app/build/icons/（请 yarn build:production）"; exit 1; }
 
 # ── Stage 1b: 容器内完整构建 ─────────────────────────────────
 FROM node:20-bookworm AS frontend-full

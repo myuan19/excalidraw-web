@@ -22,21 +22,6 @@
   gap: 6px;
 }
 
-.mindmap-editor__loading {
-  position: fixed;
-  inset: 0;
-  z-index: 4100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: var(--nb-space-8);
-  background: #ffffff;
-  color: var(--nb-text-muted);
-  font-family: var(--nb-font-ui), system-ui, sans-serif;
-  font-size: var(--nb-font-loading);
-}
-
 .mindmap-editor__native-frame {
   width: 100vw;
   height: 100vh;
@@ -175,11 +160,6 @@
   background: #262a2e;
   color: rgba(255, 255, 255, 0.9);
   border-color: rgba(255, 255, 255, 0.12);
-}
-
-.excalidraw-app.theme--dark .mindmap-editor__loading {
-  background: #121212;
-  color: rgba(255, 255, 255, 0.68);
 }
 
 .excalidraw-app.theme--dark .mindmap-editor .fork-home-dialog h3 {

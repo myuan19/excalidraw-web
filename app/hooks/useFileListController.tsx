@@ -26,6 +26,7 @@ import {
 } from "../data/importExcalidrawScene";
 import { LocalThumbnailCache, LOCAL_THUMB_UPDATED_EVENT } from "../data/localThumbnailCache";
 import { detectFormat } from "../data/formats/detectFormat";
+import { NewFileDialog } from "../components/NewFileDialog";
 import { editorRegistry } from "../editors";
 import {
   ServerSync,
@@ -491,11 +492,6 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const [showAISettings, setShowAISettings] = useState(false);
   const [aiDotOk, setAiDotOk] = useState(false);
   const [newFileDialogOpen, setNewFileDialogOpen] = useState(false);
-  const [newFileName, setNewFileName] = useState("未命名");
-  const creatableEditors = useMemo(() => editorRegistry.listCreatable(), []);
-  const [newDocumentKind, setNewDocumentKind] = useState(() =>
-    editorRegistry.getDefaultKind(),
-  );
 
   const [moveDialogFile, setMoveDialogFile] = useState<ServerFile | null>(null);
   const [moveTargetFolderId, setMoveTargetFolderId] = useState<string | null>(null);
@@ -946,35 +942,29 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   });
 
   const openNewFileDialog = useCallback(() => {
-    setNewFileName("未命名");
-    setNewDocumentKind(editorRegistry.getDefaultKind());
     setNewFileDialogOpen(true);
   }, []);
 
-  const commitNewFile = useCallback(async () => {
-    const name = newFileName.trim() || "未命名";
-    setNewFileDialogOpen(false);
-    try {
-      const plugin = editorRegistry.getByKind(newDocumentKind);
-      if (!plugin?.createFile) {
-        throw new Error(`暂不支持创建 ${newDocumentKind} 文档`);
+  const commitNewFile = useCallback(
+    async (name: string, kind: string) => {
+      setNewFileDialogOpen(false);
+      try {
+        const plugin = editorRegistry.getByKind(kind);
+        if (!plugin?.createFile) {
+          throw new Error(`暂不支持创建 ${kind} 文档`);
+        }
+        const { id } = await plugin.createFile({
+          name,
+          folderId: currentFolderId,
+        });
+        await refresh({ silent: true, noErrorOnFailure: true });
+        onOpenFile({ id, kind: plugin.kind });
+      } catch (e: any) {
+        setError(e.message);
       }
-      const { id } = await plugin.createFile({
-        name,
-        folderId: currentFolderId,
-      });
-      await refresh({ silent: true, noErrorOnFailure: true });
-      onOpenFile({ id, kind: plugin.kind });
-    } catch (e: any) {
-      setError(e.message);
-    }
-  }, [
-    newFileName,
-    newDocumentKind,
-    currentFolderId,
-    onOpenFile,
-    refresh,
-  ]);
+    },
+    [currentFolderId, onOpenFile, refresh],
+  );
 
   const openMoveDialog = useCallback((e: React.MouseEvent, f: ServerFile) => {
     e.stopPropagation();
@@ -2179,74 +2169,12 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
 
       <AISettings open={showAISettings} onClose={() => setShowAISettings(false)} />
 
-      {newFileDialogOpen && (
-        <div
-          className="filelist__detail-overlay"
-          role="dialog"
-          aria-modal
-          {...newFileOverlayDismiss}
-        >
-          <div
-            className="filelist__detail-card filelist__new-file-dialog"
-            onPointerDown={(e) => e.stopPropagation()}
-          >
-            <h2 className="filelist__detail-title">新建文件</h2>
-            <p className="filelist__new-file-hint">
-              选择文件类型并起个名字，稍后在列表里也可以随时重命名
-            </p>
-            <div className="filelist__new-file-kind">
-              {creatableEditors.map((plugin) => (
-                <button
-                  key={plugin.kind}
-                  type="button"
-                  className={[
-                    "filelist__kind-option",
-                    newDocumentKind === plugin.kind
-                      ? "filelist__kind-option--active"
-                      : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  onClick={() => setNewDocumentKind(plugin.kind)}
-                >
-                  <ImageIcon src={plugin.icon} alt="" size={18} />
-                  <span>{plugin.displayName}</span>
-                </button>
-              ))}
-            </div>
-            <input
-              className="filelist__folder-input filelist__new-file-input"
-              value={newFileName}
-              autoFocus
-              onChange={(e) => setNewFileName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  void commitNewFile();
-                }
-                if (e.key === "Escape") {
-                  setNewFileDialogOpen(false);
-                }
-              }}
-            />
-            <div className="filelist__detail-actions filelist__new-file-actions">
-              <button
-                type="button"
-                className="filelist__new-btn"
-                onClick={() => void commitNewFile()}
-              >
-                创建并打开
-              </button>
-              <button
-                type="button"
-                className="filelist__import-scene-btn"
-                onClick={() => setNewFileDialogOpen(false)}
-              >
-                取消
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <NewFileDialog
+        open={newFileDialogOpen}
+        overlayDismiss={newFileOverlayDismiss}
+        onClose={dismissNewFileDialog}
+        onCommit={commitNewFile}
+      />
 
       {moveDialogFile && (
         <div

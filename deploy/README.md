@@ -14,17 +14,34 @@ Docker and compose files for this fork. Build context is always the **repository
 # Full stack (recommended for self-host)
 docker compose -f deploy/docker-compose.full.yml up -d --build
 
-# Or via helper script (gitignored local scripts)
+# Interactive menu: ./_scripts/deploy.sh
+```
+
+### `./_scripts/deploy.sh` menu
+
+| Option | Type | What it does |
+|--------|------|----------------|
+| **1) ship** | **One-click** | Host `yarn build:production` → verify `app/build` → Docker deploy → `:17888` |
+| **2) debug-ship** | **One-click (debug)** | Same as ship, debug image/container (still only `:17888`, verbose logs) |
+| **3) deploy** | **Deploy only** | Docker build + start only — **no** host `yarn build:production` (needs existing `app/build` or in-image build) |
+| **4) debug-deploy** | **Deploy only (debug)** | Same as deploy, debug profile |
+| 5) build | Other | Docker image only |
+| 6) start | Other | Start container |
+
+```bash
+# One-click production (recommended for releases)
 ./_scripts/deploy.sh ship
 
-# Debug deploy (verbose logs + direct API on host :13033)
-DEPLOY_DEBUG=1 ./_scripts/deploy.sh ship
-# or: ./_scripts/deploy.sh debug-ship
+# One-click debug (replace whatever is on :17888; data unchanged)
+./_scripts/deploy.sh debug-ship
+
+# Deploy only — after you already ran yarn build:production
+PREBUILT=1 ./_scripts/deploy.sh deploy
 ```
 
 Build pipeline (host or Docker): `yarn build:production` = MindMap iframe + SPA (`app/build/`).
 
-**`./_scripts/deploy.sh ship`** runs host build first, then Docker with `PREBUILT=1` (packages `app/build/` only — **no yarn inside Docker**, avoids registry timeouts). Use plain `deploy` / `docker compose` without host build for full in-container build (`PREBUILT=0`).
+**`ship` / `debug-ship`** always run host build first, then Docker with `PREBUILT=1` (packages `app/build/` only — **no yarn inside Docker**, avoids registry timeouts). **`deploy` / `debug-deploy`** skip host build; use when artifacts already exist or you accept a full in-container build (`PREBUILT=0`).
 
 Data volume: `excalidraw_web_data` → `/var/lib/excalidraw` in container.
 
@@ -32,7 +49,13 @@ Data volume: `excalidraw_web_data` → `/var/lib/excalidraw` in container.
 
 Deploy **the entire** `public/mind-map/dist/` (or `app/build/mind-map/dist/`) on every release. `index.html` + `app.*.js` alone are not enough: Vue lazy-loads `chunk-*.js` (~3MB). A partial copy causes `ChunkLoadError` and “原生界面未完成初始化”.
 
-If you put OAuth/auth in front of the site, **exclude** `/mind-map/dist/` (and ideally all `/mind-map/` static files) from login redirects. Otherwise JS chunk requests return HTML 302 pages and the iframe fails to boot.
+If you put OAuth/auth in front of the site, **exclude** these paths from login redirects (otherwise the browser reports **404** or loads HTML instead of JS):
+
+- `/api/*` — must reach the Node API (not static 404)
+- `/assets/*`, `/icons/*` — hashed SPA + editor icons (not `index.html` fallback)
+- `/mind-map/dist/*` (and ideally all `/mind-map/` static files)
+
+Without exclusions, authenticated sessions still break: e.g. `GET /icons/excalidraw.svg` or `GET /api/files/tree` redirect to OAuth HTML or return 404 from the wrong upstream.
 
 Large chunks over HTTP/2 through some reverse proxies may show `ERR_HTTP2_PROTOCOL_ERROR`; try HTTP/1.1 for static locations, enable `gzip` for `application/javascript`, or raise proxy buffer limits.
 
@@ -47,12 +70,25 @@ location ^~ /mind-map/dist/ {
 }
 ```
 
-Verify after deploy (replace host):
+Verify after deploy (replace host; use a logged-in cookie if your gateway requires auth):
 
 ```bash
 curl -sI 'https://YOUR_HOST/mind-map/dist/js/app.9d1741a9.js' | head -5
 # Expect: HTTP/1.1 200  and  Content-Type: application/javascript
+
+curl -sI 'https://YOUR_HOST/icons/excalidraw.svg' | head -5
+# Expect: 200, Content-Type: image/svg+xml (not 302 to oauth, not HTML)
+
+curl -sI 'https://YOUR_HOST/api/health' | head -5
+# Expect: 200 JSON from Node
+
+curl -sI 'https://YOUR_HOST/api/files/tree' | head -5
+# Expect: 200 or 401 — not 404 from a static-only upstream
 ```
+
+**Symptom: many 404 on `/assets/*.js`, `/icons/*`, `/api/files/*`**
+
+Usually **stale or partial release**: `index.html` was updated but `app/build/assets/` was not copied atomically, or the running container/image predates routes like `GET /api/files/hashes`. Fix: run `./_scripts/deploy.sh ship` on the server (full `yarn build:production` + Docker replace). Host check before ship: `node scripts/verify-app-build.mjs`.
 
 ### Embed security (`/embed`)
 
@@ -88,5 +124,5 @@ Automated: `yarn vitest run server/lib/documentEtag.test.js server/lib/embedAcce
 
 - `native/web/vue.config.js`: `html.hash = false` (content-hash filenames only).
 - `native/copy.js` + `scripts/mind-map-webpack-chunks.mjs`: strip stray `?buildHash` query strings and remove `<link rel="preload">` for `dist/*` (avoids credentials mismatch double-fetch).
-- Host diagnostics: `app/lib/devDebug.ts` (production silent unless `VITE_APP_ENABLE_*_DEBUG=true`).
+- Host diagnostics: `ship` builds with minimal logging; `debug-ship` sets `VITE_APP_DEPLOY_DEBUG=true` (all `devDebug` channels + `POST /api/logs`). Production containers set `EXCALIDRAW_CLIENT_LOG=0`; debug containers set `=1`.
 - Native AI push: `useMindMapNativeAIConfig` (single coordinator; do not duplicate in `MindMapEditorShell`).

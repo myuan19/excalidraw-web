@@ -37,11 +37,14 @@ describe("File list branding source contract", () => {
   });
 
   it("uses editor registry icons and display names for document kinds", () => {
-    const source = fs.readFileSync(controllerPath, "utf8");
+    const newFileSource = fs.readFileSync(
+      path.join(appRoot, "components/NewFileDialog.tsx"),
+      "utf8",
+    );
 
-    expect(source).toContain("editorRegistry.getByKind(newDocumentKind)");
-    expect(source).toContain("plugin.displayName");
-    expect(source).toContain("listCreatable()");
+    expect(newFileSource).toContain("listCreatable()");
+    expect(newFileSource).toContain("plugin.icon");
+    expect(newFileSource).toContain("plugin.displayName");
   });
 
   it("ships icon assets for the home app and both editors", () => {
@@ -85,10 +88,14 @@ describe("File list branding source contract", () => {
   });
 
   it("uses per-editor icons in the new-file dialog", () => {
-    const source = fs.readFileSync(controllerPath, "utf8");
+    const newFileSource = fs.readFileSync(
+      path.join(appRoot, "components/NewFileDialog.tsx"),
+      "utf8",
+    );
 
-    expect(source).toContain("plugin.icon");
-    expect(source).toContain("editorRegistry.getByKind(newDocumentKind)");
+    expect(newFileSource).toContain("plugin.icon");
+    expect(newFileSource).toContain("filelist__kind-option--active");
+    expect(newFileSource).toContain("onPointerDown");
   });
 
   it("uses per-editor icons on the floating sidebar ball", () => {
