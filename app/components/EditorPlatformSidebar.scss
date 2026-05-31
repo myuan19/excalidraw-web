@@ -319,10 +319,109 @@
 
 .editor-bridge__divider {
   flex-shrink: 0;
-  width: 2rem;
+  width: 2.25rem;
   height: 1px;
-  margin: 0.25rem auto;
-  background: var(--nb-filelist-border, rgba(0, 0, 0, 0.08));
+  margin: 0.3125rem auto;
+  background: var(--nb-filelist-border, rgba(0, 0, 0, 0.1));
+}
+
+.editor-file-info {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--nb-z-fork-home, 200000) + 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.32);
+  pointer-events: auto;
+}
+
+.editor-file-info__dialog {
+  width: min(28rem, 100%);
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  border: 1px solid var(--nb-filelist-border, rgba(0, 0, 0, 0.08));
+  border-radius: var(--nb-radius-xl, 1rem);
+  background: var(--nb-surface, #fff);
+  box-shadow: var(--nb-shadow-card, 0 10px 30px rgba(15, 23, 42, 0.12));
+}
+
+.editor-file-info__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1rem 0.75rem;
+  border-bottom: 1px solid var(--nb-filelist-border, rgba(0, 0, 0, 0.08));
+
+  h3 {
+    margin: 0;
+    font-family: var(--nb-font-ui, system-ui, sans-serif);
+    font-size: 1rem;
+    line-height: 1.5rem;
+    font-weight: 700;
+    color: var(--nb-text, #0f172a);
+  }
+}
+
+.editor-file-info__close {
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--nb-text-muted, #64748b);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--nb-filelist-muted, rgba(105, 101, 219, 0.08));
+    color: var(--nb-text, #0f172a);
+  }
+}
+
+.editor-file-info__muted,
+.editor-file-info__error {
+  margin: 0;
+  padding: 1rem;
+  font-family: var(--nb-font-ui, system-ui, sans-serif);
+  font-size: 0.875rem;
+  line-height: 1.375rem;
+}
+
+.editor-file-info__muted {
+  color: var(--nb-text-muted, #64748b);
+}
+
+.editor-file-info__error {
+  color: var(--nb-danger, #dc2626);
+}
+
+.editor-file-info__list {
+  margin: 0;
+  padding: 0.75rem 1rem 1rem;
+}
+
+.editor-file-info__row {
+  display: grid;
+  grid-template-columns: 5rem minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  font-family: var(--nb-font-ui, system-ui, sans-serif);
+  font-size: 0.875rem;
+  line-height: 1.375rem;
+
+  dt {
+    color: var(--nb-text-muted, #64748b);
+  }
+
+  dd {
+    margin: 0;
+    color: var(--nb-text, #0f172a);
+    overflow-wrap: anywhere;
+  }
 }
 
 .excalidraw-app.theme--dark {

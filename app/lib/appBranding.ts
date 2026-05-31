@@ -8,7 +8,7 @@ import { editorRegistry } from "../editors";
  * - 侧边栏悬浮球、新建文件类型：各编辑器 `EditorPlugin.icon`
  * - 文件列表顶栏、文件卡片：主站标题 + `editorIconForKind`
  */
-export const HOME_APP_TITLE = "绘图空间";
+export const HOME_APP_TITLE = "EditorHub";
 export const MAIN_SITE_ICON = "/icons/drawing-space.svg";
 
 export function getDocumentKindFromHash(): string {

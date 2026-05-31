@@ -4,7 +4,8 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { computeExcalidrawThumbnailSceneBounds } from "./thumbnailViewport";
 
 /**
- * 无浏览器视口快照时：按列表缩略图同一视野（padding + 最小 240×144）fit 进编辑器。
+ * 无浏览器视口快照时：按列表缩略图同一视野（padding + 最小 240×144）居中显示。
+ * 使用 fitToViewport=false + maxZoom=1，避免极小图形被放大到占满全屏（fitToViewport 会 zoom>100%）。
  */
 export function scrollEditorToFitContent(api: ExcalidrawImperativeAPI): void {
   const elements = api.getSceneElements();
@@ -17,8 +18,9 @@ export function scrollEditorToFitContent(api: ExcalidrawImperativeAPI): void {
   const { appState: nextAppState } = zoomToFitBounds({
     bounds,
     appState,
-    fitToViewport: true,
+    fitToViewport: false,
     viewportZoomFactor: 1,
+    maxZoom: 1,
   });
 
   api.updateScene({

@@ -6,6 +6,8 @@ const DEFAULTS = {
   minVisualScaleNodeCount: previewViewportConfig.minVisualScaleNodeCount,
   singleNodeVisualScale: previewViewportConfig.singleNodeVisualScale,
   minNodeVisualScale: previewViewportConfig.minNodeVisualScale,
+  nodeCountScaleInfluence:
+    previewViewportConfig.nodeCountScaleInfluence ?? 1,
   centerTowardOthersRatio: previewViewportConfig.centerTowardOthersRatio,
   rootCenterLimitRatio: previewViewportConfig.rootCenterLimitRatio,
 };
@@ -49,15 +51,23 @@ export function computeMindMapNodeVisualScale(nodeCount, options = {}) {
     options.singleNodeVisualScale ?? DEFAULTS.singleNodeVisualScale;
   const minNodeVisualScale =
     options.minNodeVisualScale ?? DEFAULTS.minNodeVisualScale;
+  const influence = clamp(
+    options.nodeCountScaleInfluence ?? DEFAULTS.nodeCountScaleInfluence,
+    0,
+    1,
+  );
 
+  let rawScale = 1;
   if (nodeCount <= baselineNodeCount) {
     const t = (baselineNodeCount - nodeCount) / (baselineNodeCount - 1);
-    return 1 + clamp(t, 0, 1) * (singleNodeVisualScale - 1);
+    rawScale = 1 + clamp(t, 0, 1) * (singleNodeVisualScale - 1);
+  } else {
+    const t =
+      (nodeCount - baselineNodeCount) /
+      (minVisualScaleNodeCount - baselineNodeCount);
+    rawScale = 1 - clamp(t, 0, 1) * (1 - minNodeVisualScale);
   }
-  const t =
-    (nodeCount - baselineNodeCount) /
-    (minVisualScaleNodeCount - baselineNodeCount);
-  return 1 - clamp(t, 0, 1) * (1 - minNodeVisualScale);
+  return 1 + (rawScale - 1) * influence;
 }
 
 export function computeMindMapFocusedViewBoxFromNodeBounds(

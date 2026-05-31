@@ -1,6 +1,6 @@
-# Excalidraw Web (Fork)
+# EditorHub
 
-Self-hosted drawing space: file list, Excalidraw canvas, MindMap editor, embed sharing.
+Self-hosted multi-editor hub: file list, Excalidraw canvas, MindMap editor, embed sharing.
 
 ## Repository layout
 
@@ -55,7 +55,7 @@ Yarn workspaces、TypeScript、ESLint、Vitest、Prettier、Husky 等只能从�
 |------|------|
 | **本地开发（默认）** | `<repo>/_dev_data/` |
 | **自定义** | `.env.development.local` 中 `EXCALIDRAW_DATA_DIR`（相对路径相对仓库根） |
-| **Docker 部署** | 宿主机 `/opt/excalidraw-web/data` → 容器 `/var/lib/excalidraw` |
+| **Docker 部署** | 宿主机 `/opt/editorhub-web/data` → 容器 `/var/lib/excalidraw` |
 
 ```text
 _dev_data/
@@ -72,7 +72,7 @@ _dev_data/
 - **实现**：`server/config/dataDir.js` + `server/loadEnv.mjs`；`./_scripts/dev.sh` 启动 API 时注入 `EXCALIDRAW_DATA_DIR`
 - **日志**：统一写入 `_dev_data/logs/`（每次启动独立 session 文件；单文件超 `10M` 拆分为 `.1`、`.2`…，保留 14 份 / 总量 200M 自动清理）；浏览器日志经 `/api/logs` 进入 `client-*.log`
 
-若存在旧目录 `server/data/` 或 `~/.local/share/excalidraw-web/`，首次启动会自动迁移到 `_dev_data/`。
+若存在旧目录 `server/data/`、`~/.local/share/excalidraw-web/` 或 `~/.local/share/editorhub-web/`，首次启动会自动迁移到 `_dev_data/`。
 
 ## Quick start
 

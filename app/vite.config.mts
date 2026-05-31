@@ -253,10 +253,10 @@ export default defineConfig(({ mode }) => {
                 maximumFileSizeToCacheInBytes: 2.3 * 1024 ** 2,
               },
               manifest: {
-                short_name: "绘图空间",
-                name: "绘图空间",
+                short_name: "EditorHub",
+                name: "EditorHub",
                 description:
-                  "统一管理 excalidraw 与 mindmap。",
+                  "统一管理多种编辑器与文档。",
                 icons: [
                   {
                     src: "android-chrome-192x192.png",

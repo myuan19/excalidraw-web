@@ -28,6 +28,7 @@ import { newElementWith, StoreIncrement, type StoreDelta } from "@excalidraw/ele
 import {
   useHandleLibrary,
 } from "@excalidraw/excalidraw/data/library";
+import { fileOpen } from "@excalidraw/excalidraw/data/filesystem";
 
 import type {
   NonDeletedExcalidrawElement,
@@ -79,6 +80,10 @@ import { mountLibraryAIActions } from "../../data/libraryAIMount";
 import { DeltaStorage } from "../../data/DeltaStorage";
 import { FileSyncState } from "../../data/FileSyncState";
 import { hashSceneSnapshot } from "../../data/sceneHash";
+import {
+  formatImportErrorMessage,
+  loadExcalidrawFileAsServerSceneData,
+} from "../../data/importExcalidrawScene";
 import { restoreSceneAppState, restoreSceneElements } from "../../data/sceneRestore";
 import { ServerSync } from "../../data/ServerSync";
 import type { ForkSceneSnapshot } from "../../data/forkFileTypes";
@@ -228,8 +233,43 @@ const ExcalidrawWrapper = () => {
     };
   }, [skipLeaveStashOnceRef]);
 
+  const importLocalExcalidrawFile = useCallback(async () => {
+    if (!excalidrawAPI) {
+      return;
+    }
+    try {
+      const file = await fileOpen({
+        description: "Excalidraw files",
+        extensions: ["excalidraw", "json", "png", "svg"],
+      });
+      const scene = await loadExcalidrawFileAsServerSceneData(file);
+      const files = Object.values(scene.files ?? {});
+      if (files.length > 0) {
+        excalidrawAPI.addFiles(files);
+      }
+      excalidrawAPI.updateScene({
+        elements: scene.elements as OrderedExcalidrawElement[],
+        appState: {
+          ...((scene.appState ?? {}) as Partial<AppState>),
+          isLoading: false,
+        } as AppState,
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+      excalidrawAPI.setToast({ message: "导入成功" });
+    } catch (err: any) {
+      if (err?.name === "AbortError") {
+        return;
+      }
+      excalidrawAPI.setToast({ message: formatImportErrorMessage(err) });
+    }
+  }, [excalidrawAPI]);
+
   useEffect(() => {
     const onSave = () => void saveCurrentFileToServer({ source: "sidebar" });
+    const onExport = () => {
+      excalidrawAPI?.setOpenDialog({ name: "imageExport" });
+    };
+    const onImport = () => void importLocalExcalidrawFile();
     const onHistory = () => setShowHistoryPanel(true);
     const onEmbed = () => setShowEmbedManager(true);
     const onShellGoHome = (event: Event) => {
@@ -243,6 +283,8 @@ const ExcalidrawWrapper = () => {
       void forkGoHomeWithServerSave();
     };
     window.addEventListener("excalidraw-host-request-save", onSave);
+    window.addEventListener("excalidraw-host-open-export", onExport);
+    window.addEventListener("excalidraw-host-open-import", onImport);
     window.addEventListener("excalidraw-host-open-history", onHistory);
     window.addEventListener("excalidraw-host-open-embed", onEmbed);
     window.addEventListener("mindmap-host-request-save", onSave);
@@ -251,6 +293,8 @@ const ExcalidrawWrapper = () => {
     window.addEventListener(APP_SHELL_GO_HOME, onShellGoHome);
     return () => {
       window.removeEventListener("excalidraw-host-request-save", onSave);
+      window.removeEventListener("excalidraw-host-open-export", onExport);
+      window.removeEventListener("excalidraw-host-open-import", onImport);
       window.removeEventListener("excalidraw-host-open-history", onHistory);
       window.removeEventListener("excalidraw-host-open-embed", onEmbed);
       window.removeEventListener("mindmap-host-request-save", onSave);
@@ -259,7 +303,9 @@ const ExcalidrawWrapper = () => {
       window.removeEventListener(APP_SHELL_GO_HOME, onShellGoHome);
     };
   }, [
+    excalidrawAPI,
     forkGoHomeWithServerSave,
+    importLocalExcalidrawFile,
     saveCurrentFileToServer,
     skipLeaveStashOnceRef,
   ]);

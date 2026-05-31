@@ -43,7 +43,7 @@ Build pipeline (host or Docker): `yarn build:production` = MindMap iframe + SPA 
 
 **`ship` / `debug-ship`** always run host build first, then Docker with `PREBUILT=1` (packages `app/build/` only — **no yarn inside Docker**, avoids registry timeouts). **`deploy` / `debug-deploy`** skip host build; use when artifacts already exist or you accept a full in-container build (`PREBUILT=0`).
 
-Data volume: `excalidraw_web_data` → `/var/lib/excalidraw` in container.
+Data volume: `editorhub_web_data` → `/var/lib/excalidraw` in container (bind mount default: `/opt/editorhub-web/data`).
 
 ### MindMap static assets (`/mind-map/dist/`)
 
@@ -61,7 +61,7 @@ Large chunks over HTTP/2 through some reverse proxies may show `ERR_HTTP2_PROTOC
 
 **Symptom: JS 404 or `MIME type ('text/html')` on `/mind-map/dist/js/*.js`**
 
-The SPA `try_files … /index.html` fallback must **not** apply to MindMap chunks. Docker nginx (`deploy/full/nginx.conf`) uses `location ^~ /mind-map/dist/` with `try_files $uri =404`. If you terminate TLS on an outer gateway (e.g. `excalidraw.yuanyuan19.top`), mirror the same rule there:
+The SPA `try_files … /index.html` fallback must **not** apply to MindMap chunks. Docker nginx (`deploy/full/nginx.conf`) uses `location ^~ /mind-map/dist/` with `try_files $uri =404`. If you terminate TLS on an outer gateway (e.g. `editorhub.yuanyuan19.top`), mirror the same rule there:
 
 ```nginx
 location ^~ /mind-map/dist/ {

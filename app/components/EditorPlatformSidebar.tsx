@@ -9,6 +9,12 @@ import {
 } from "react";
 
 import { getFileIdFromHash } from "../data/fileIdFromHash";
+import { readFileListTreeCache } from "../data/fileListSessionCache";
+import {
+  ServerSync,
+  type ServerFile,
+  type ServerFolder,
+} from "../data/ServerSync";
 import { useFileDraftStatus } from "../hooks/useFileDraftStatus";
 import {
   editorIconForKind,
@@ -27,12 +33,20 @@ const DRAG_THRESHOLD_PX = 6;
 const PANEL_GAP = 6;
 /** 面板展开时，小球沿边缘方向再退后一点，避免与卡片贴太紧 */
 const BALL_PANEL_SEPARATION = 4;
-const PANEL_HEIGHT = 228;
+/** 竖向分组：保存/嵌入/历史 | 信息/导入/导出 | 文件 */
+const PANEL_HEIGHT = 390;
 const PANEL_WIDTH = 72;
 const ANCHOR_STORAGE_KEY = "excalidraw-editor-bridge-anchor-v1";
 
 type SnapEdge = "left" | "right" | "top" | "bottom";
-type ActionIcon = "save" | "embed" | "history" | "files";
+type ActionIcon =
+  | "save"
+  | "export"
+  | "import"
+  | "info"
+  | "embed"
+  | "history"
+  | "files";
 
 type AnchorPosition = {
   edge: SnapEdge;
@@ -45,6 +59,12 @@ const DEFAULT_ANCHOR: AnchorPosition = { edge: "left", ratio: 0.38 };
 const ACTION_ICONS: Record<ActionIcon, string> = {
   save:
     "M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z",
+  export:
+    "M5 20h14v-2H5v2zm7-18l-5 5h3v6h4V7h3l-5-5z",
+  import:
+    "M5 20h14v-2H5v2zm7-18v6H9l3 3 3-3h-3V2zm-6 9h2v4h8v-4h2v6H6v-6z",
+  info:
+    "M11 17h2v-6h-2v6zm1-14a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 16a7 7 0 1 1 0-14 7 7 0 0 1 0 14zm-1-10h2V7h-2v2z",
   embed:
     "M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0L19.2 12l-4.6-4.6L16 6l6 6-6 6-1.4-1.4z",
   history:
@@ -262,6 +282,16 @@ function dispatchHostSave() {
   window.dispatchEvent(new Event("mindmap-host-request-save"));
 }
 
+function dispatchHostExport() {
+  window.dispatchEvent(new Event("excalidraw-host-open-export"));
+  window.dispatchEvent(new Event("mindmap-host-open-export"));
+}
+
+function dispatchHostImport() {
+  window.dispatchEvent(new Event("excalidraw-host-open-import"));
+  window.dispatchEvent(new Event("mindmap-host-open-import"));
+}
+
 function isEditableTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
   const tag = el?.tagName;
@@ -286,6 +316,10 @@ function dispatchShellNavigate(target: Exclude<AppView, "editor">) {
   window.dispatchEvent(
     new CustomEvent(APP_SHELL_GO_HOME, { detail: { target } }),
   );
+}
+
+function SidebarDivider() {
+  return <div className="editor-bridge__divider" role="separator" />;
 }
 
 function SidebarActionButton({
@@ -316,8 +350,193 @@ function SidebarActionButton({
   );
 }
 
+type FileInfo = {
+  file: ServerFile;
+  folders: ServerFolder[];
+};
+
+function getFileExtension(kind?: string): string {
+  if (kind === "mindmap") {
+    return "smm";
+  }
+  return "excalidraw";
+}
+
+function getKindLabel(kind?: string): string {
+  if (kind === "mindmap") {
+    return "MindMap";
+  }
+  return "Excalidraw";
+}
+
+function buildFolderPath(
+  folderId: string | null | undefined,
+  folders: ServerFolder[],
+): string {
+  if (!folderId) {
+    return "全部文件";
+  }
+  const foldersById = new Map(folders.map((folder) => [folder.id, folder]));
+  const path: string[] = [];
+  const seen = new Set<string>();
+  let current: string | null | undefined = folderId;
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    const folder = foldersById.get(current);
+    if (!folder) {
+      return "未知文件夹";
+    }
+    path.unshift(folder.name);
+    current = folder.parent_id;
+  }
+  return path.length > 0 ? path.join(" / ") : "全部文件";
+}
+
+function formatFileTime(value?: string): string {
+  if (!value) {
+    return "未知";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
+async function loadFileInfo(fileId: string): Promise<FileInfo> {
+  const cached = readFileListTreeCache();
+  let folders = cached?.folders ?? [];
+  let file = cached?.files.find((item) => item.id === fileId);
+
+  if (!file) {
+    const tree = await ServerSync.listFileTree();
+    folders = tree.folders;
+    file = tree.files.find((item) => item.id === fileId);
+  }
+
+  if (!file) {
+    file = await ServerSync.getFile(fileId);
+  }
+
+  return { file, folders };
+}
+
+function FileInfoDialog({
+  fileId,
+  open,
+  onClose,
+}: {
+  fileId: string | null;
+  open: boolean;
+  onClose(): void;
+}) {
+  const [info, setInfo] = useState<FileInfo | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open || !fileId) {
+      return;
+    }
+    let disposed = false;
+    setLoading(true);
+    setError(null);
+    setInfo(null);
+    loadFileInfo(fileId)
+      .then((nextInfo) => {
+        if (!disposed) {
+          setInfo(nextInfo);
+        }
+      })
+      .catch((err: any) => {
+        if (!disposed) {
+          setError(err?.message || "文件信息加载失败");
+        }
+      })
+      .finally(() => {
+        if (!disposed) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [fileId, open]);
+
+  if (!open) {
+    return null;
+  }
+
+  const rows = info
+    ? [
+        ["名称", info.file.name || "未命名"],
+        ["类型", getKindLabel(info.file.kind)],
+        ["后缀名", `.${getFileExtension(info.file.kind)}`],
+        ["所属文件夹", buildFolderPath(info.file.folder_id, info.folders)],
+        ["创建时间", formatFileTime(info.file.created_at)],
+        ["编辑时间", formatFileTime(info.file.updated_at)],
+        ["文件 ID", info.file.id],
+      ]
+    : [];
+
+  return (
+    <div
+      className="editor-file-info"
+      role="presentation"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <section
+        className="editor-file-info__dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="editor-file-info-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="editor-file-info__header">
+          <h3 id="editor-file-info-title">文件信息</h3>
+          <button
+            type="button"
+            className="editor-file-info__close"
+            aria-label="关闭文件信息"
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
+        {loading ? (
+          <p className="editor-file-info__muted">正在加载文件信息...</p>
+        ) : error ? (
+          <p className="editor-file-info__error">{error}</p>
+        ) : (
+          <dl className="editor-file-info__list">
+            {rows.map(([label, value]) => (
+              <div className="editor-file-info__row" key={label}>
+                <dt>{label}</dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+      </section>
+    </div>
+  );
+}
+
 export function EditorPlatformSidebar() {
   const [open, setOpen] = useState(false);
+  const [showFileInfo, setShowFileInfo] = useState(false);
   const [fileId, setFileId] = useState<string | null>(() => getFileIdFromHash());
   const [documentKind, setDocumentKind] = useState(() =>
     getDocumentKindFromHash(),
@@ -530,7 +749,7 @@ export function EditorPlatformSidebar() {
         .filter(Boolean)
         .join(" ")}
       style={bridgeStyle}
-      aria-label="绘图空间"
+      aria-label="EditorHub"
     >
       <div className="editor-bridge__peel-zone" aria-hidden="true" />
       {open ? (
@@ -539,6 +758,7 @@ export function EditorPlatformSidebar() {
           style={panelStyle}
           aria-label="文档操作"
         >
+          {/* 保存与嵌入、历史 */}
           <SidebarActionButton
             label="保存"
             icon="save"
@@ -560,7 +780,34 @@ export function EditorPlatformSidebar() {
             title={fileActionsEnabled ? "历史版本" : "保存后可查看历史"}
             onClick={() => closeAndRun(dispatchHostHistory)}
           />
-          <div className="editor-bridge__divider" role="presentation" />
+          <SidebarDivider />
+          {/* 信息 / 导入 / 导出 */}
+          <SidebarActionButton
+            label="信息"
+            icon="info"
+            disabled={!fileActionsEnabled}
+            title={fileActionsEnabled ? "文件信息" : "打开文档后可查看信息"}
+            onClick={() => {
+              setOpen(false);
+              setShowFileInfo(true);
+            }}
+          />
+          <SidebarActionButton
+            label="导入"
+            icon="import"
+            disabled={!fileActionsEnabled}
+            title={fileActionsEnabled ? "导入" : "打开文档后可导入"}
+            onClick={() => closeAndRun(dispatchHostImport)}
+          />
+          <SidebarActionButton
+            label="导出"
+            icon="export"
+            disabled={!fileActionsEnabled}
+            title={fileActionsEnabled ? "导出" : "打开文档后可导出"}
+            onClick={() => closeAndRun(dispatchHostExport)}
+          />
+          <SidebarDivider />
+          {/* 返回文件列表 */}
           <SidebarActionButton
             label="文件"
             icon="files"
@@ -602,6 +849,11 @@ export function EditorPlatformSidebar() {
           />
         ) : null}
       </button>
+      <FileInfoDialog
+        fileId={fileId}
+        open={showFileInfo}
+        onClose={() => setShowFileInfo(false)}
+      />
     </div>
   );
 }

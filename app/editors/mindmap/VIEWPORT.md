@@ -19,7 +19,7 @@ Effective root screen ratio:
 targetRootScreenRatio = baselineRootScreenRatio × <strategyMultiplier>
 ```
 
-Defaults live in `native/previewViewportConfig.json`.
+Defaults live in `native/previewViewportConfig.json` (`editorRootScreenRatioMultiplier` currently `0.36` for editor default zoom).
 
 ## File map
 
@@ -72,6 +72,7 @@ Edit.vue applyEmbedFocusedViewport → embed_preview_viewport_applied → Host
 | Editor initial zoom (no saved view) | `editorRootScreenRatioMultiplier` |
 | Thumbnail crop | `thumbnailRootScreenRatioMultiplier` |
 | Shared offset toward children | `centerTowardOthersRatio`, `rootCenterLimitRatio` |
+| Node count vs zoom (0–1, default 1) | `nodeCountScaleInfluence` — `0.5` halves how many nodes shrink/grow the frame |
 
 ## Tests
 

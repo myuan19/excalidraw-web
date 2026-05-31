@@ -770,6 +770,7 @@ class App extends React.Component<AppProps, AppState> {
       setToast: this.setToast,
       id: this.id,
       setActiveTool: this.setActiveTool,
+      setOpenDialog: this.setOpenDialog,
       setCursor: this.setCursor,
       resetCursor: this.resetCursor,
       getEditorInterface: () => this.editorInterface,

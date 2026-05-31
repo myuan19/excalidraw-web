@@ -548,6 +548,16 @@
             debugMindMapOpen('mindMapHostSaveStatus skipped: bus unavailable')
           }
         }
+        if (message.type === 'mindMapHostOpenExport') {
+          if (!emitOnBus('showExport')) {
+            debugMindMapOpen('mindMapHostOpenExport skipped: bus unavailable')
+          }
+        }
+        if (message.type === 'mindMapHostOpenImport') {
+          if (!emitOnBus('showImport')) {
+            debugMindMapOpen('mindMapHostOpenImport skipped: bus unavailable')
+          }
+        }
         if (message.type === 'requestMindMapSave') {
           const requestId = message.payload && message.payload.requestId
           debugMindMapOpen('received requestMindMapSave', {

@@ -978,6 +978,12 @@ const MindMapEditorShell = () => {
 
   useEffect(() => {
     const onSave = () => void saveToServerRef.current({ source: "sidebar" });
+    const onExport = () => {
+      postToNative("mindMapHostOpenExport");
+    };
+    const onImport = () => {
+      postToNative("mindMapHostOpenImport");
+    };
     const onHistory = () => setShowHistoryPanel(true);
     const onEmbed = () => setShowEmbedManager(true);
     const onShellGoHome = (event: Event) => {
@@ -992,6 +998,8 @@ const MindMapEditorShell = () => {
     };
     window.addEventListener("mindmap-host-request-save", onSave);
     window.addEventListener("excalidraw-host-request-save", onSave);
+    window.addEventListener("mindmap-host-open-export", onExport);
+    window.addEventListener("mindmap-host-open-import", onImport);
     window.addEventListener("mindmap-host-open-history", onHistory);
     window.addEventListener("excalidraw-host-open-history", onHistory);
     window.addEventListener("mindmap-host-open-embed", onEmbed);
@@ -1000,13 +1008,20 @@ const MindMapEditorShell = () => {
     return () => {
       window.removeEventListener("mindmap-host-request-save", onSave);
       window.removeEventListener("excalidraw-host-request-save", onSave);
+      window.removeEventListener("mindmap-host-open-export", onExport);
+      window.removeEventListener("mindmap-host-open-import", onImport);
       window.removeEventListener("mindmap-host-open-history", onHistory);
       window.removeEventListener("excalidraw-host-open-history", onHistory);
       window.removeEventListener("mindmap-host-open-embed", onEmbed);
       window.removeEventListener("excalidraw-host-open-embed", onEmbed);
       window.removeEventListener(APP_SHELL_GO_HOME, onShellGoHome);
     };
-  }, [mindMapGoHomeWithServerSave, saveToServerRef, skipLeaveStashOnceRef]);
+  }, [
+    mindMapGoHomeWithServerSave,
+    postToNative,
+    saveToServerRef,
+    skipLeaveStashOnceRef,
+  ]);
 
   useEffect(() => {
     if (!fileId) {

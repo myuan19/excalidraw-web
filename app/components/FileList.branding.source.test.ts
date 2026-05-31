@@ -9,7 +9,7 @@ const appRoot = path.resolve(__dirname, "..");
 const controllerPath = path.join(appRoot, "hooks/useFileListController.tsx");
 
 describe("File list branding source contract", () => {
-  it("uses drawing space home branding and app icon", () => {
+  it("uses EditorHub home branding and app icon", () => {
     const brandingSource = fs.readFileSync(
       path.join(appRoot, "lib/appBranding.ts"),
       "utf8",
@@ -18,20 +18,20 @@ describe("File list branding source contract", () => {
     const htmlSource = fs.readFileSync(path.join(appRoot, "index.html"), "utf8");
     const viteSource = fs.readFileSync(path.join(appRoot, "vite.config.mts"), "utf8");
 
-    expect(brandingSource).toContain('export const HOME_APP_TITLE = "绘图空间"');
+    expect(brandingSource).toContain('export const HOME_APP_TITLE = "EditorHub"');
     expect(brandingSource).toContain('export const MAIN_SITE_ICON = "/icons/drawing-space.svg"');
     expect(source).toContain("applyMainSiteDocumentBranding");
     expect(source).toContain("HOME_APP_TITLE");
     expect(source).toContain(
       '<h1 className="filelist__title">{HOME_APP_TITLE}</h1>',
     );
-    expect(htmlSource).toContain("<title>绘图空间</title>");
+    expect(htmlSource).toContain("<title>EditorHub</title>");
     expect(htmlSource).toContain('href="/icons/drawing-space.svg"');
-    expect(htmlSource).toContain('content="绘图空间"');
-    expect(htmlSource).toContain('content="统一管理 excalidraw 与 mindmap。"');
-    expect(viteSource).toContain('short_name: "绘图空间"');
-    expect(viteSource).toContain('name: "绘图空间"');
-    expect(viteSource).toContain('"统一管理 excalidraw 与 mindmap。"');
+    expect(htmlSource).toContain('content="EditorHub"');
+    expect(htmlSource).toContain('content="统一管理多种编辑器与文档。"');
+    expect(viteSource).toContain('short_name: "EditorHub"');
+    expect(viteSource).toContain('name: "EditorHub"');
+    expect(viteSource).toContain('"统一管理多种编辑器与文档。"');
     expect(source).not.toContain("可视化文档私有部署");
     expect(source).not.toContain("Excalidraw 私有部署");
   });
