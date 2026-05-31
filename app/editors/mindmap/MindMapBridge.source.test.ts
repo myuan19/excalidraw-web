@@ -12,28 +12,35 @@ function readBridgeShell(relativePath: string): string {
 }
 
 describe("MindMap bridge source contract", () => {
-  it.each([
-    "editors/mindmap/native/web/public/index.html",
-    "editors/mindmap/native/index.html",
-    "../public/mind-map/index.html",
-  ])("%s treats viewport changes as view state only", (relativePath) => {
-    const source = readBridgeShell(relativePath);
-    const dataChangeBlock = source.slice(
-      source.indexOf("window.$bus.$on('data_change'"),
-      source.indexOf("window.$bus.$on('view_data_change'"),
-    );
-    const viewChangeBlock = source.slice(
-      source.indexOf("window.$bus.$on('view_data_change'"),
-      source.indexOf("// 思维导图实例创建完成事件"),
-    );
+  it.each(["editors/mindmap/native/web/src/bridge/takeoverShell.js"])(
+    "%s treats viewport changes as view state only",
+    (relativePath) => {
+      const source = readBridgeShell(relativePath);
+      const dataChangeBlock = source.slice(
+        source.indexOf("window.$bus.$on('data_change'"),
+        source.indexOf("window.$bus.$on('view_data_change'"),
+      );
+      const viewChangeBlock = source.slice(
+        source.indexOf("window.$bus.$on('view_data_change'"),
+        source.indexOf("// 思维导图实例创建完成事件"),
+      );
 
-    expect(dataChangeBlock).toContain("postToHost('mindMapDirtyState'");
-    expect(viewChangeBlock).toContain("postToHost('mindMapViewState'");
-    expect(viewChangeBlock).toContain("viewData =>");
-    expect(viewChangeBlock).toContain("postToHost('mindMapViewState', viewData)");
-    expect(viewChangeBlock).not.toContain("postToHost('mindMapDirtyState'");
-    expect(source).not.toContain("mindMapScaleState");
-    expect(source).toContain("saveMindMapThumbnail");
-    expect(source).toContain("scheduleDraftThumbnailExport");
+      expect(dataChangeBlock).toContain("postToHost('mindMapDirtyState'");
+      expect(viewChangeBlock).toContain("postToHost('mindMapViewState'");
+      expect(viewChangeBlock).toContain("viewData =>");
+      expect(viewChangeBlock).toContain(
+        "postToHost('mindMapViewState', viewData)",
+      );
+      expect(viewChangeBlock).not.toContain("postToHost('mindMapDirtyState'");
+      expect(source).not.toContain("mindMapScaleState");
+      expect(source).toContain("saveMindMapThumbnail");
+      expect(source).toContain("scheduleDraftThumbnailExport");
+    },
+  );
+
+  it("index.html loads external takeover bridge before vue bundles", () => {
+    const html = readBridgeShell("editors/mindmap/native/web/public/index.html");
+    expect(html).toContain('src="dist/bridge/takeover-shell.js"');
+    expect(html).not.toContain("const bridgeSource = ");
   });
 });

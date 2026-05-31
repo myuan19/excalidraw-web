@@ -487,18 +487,69 @@ export const createUid = () => {
   return uuidv4()
 }
 
-// 加载图片文件
-export const loadImage = imgFile => {
+const scaleDataUrlImage = (dataUrl, width, height) => {
   return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, width, height)
+        resolve(canvas.toDataURL())
+      } catch (error) {
+        reject(error)
+      }
+    }
+    img.onerror = error => {
+      reject(error)
+    }
+    img.src = dataUrl
+  })
+}
+
+// 加载图片文件；可选 maxWidth/maxHeight 限制存储分辨率（超出时才等比缩小）
+export const loadImage = (imgFile, options = {}) => {
+  const { maxWidth = Infinity, maxHeight = Infinity, maxBytes = Infinity } =
+    options
+  return new Promise((resolve, reject) => {
+    if (
+      imgFile &&
+      typeof imgFile.size === 'number' &&
+      Number.isFinite(maxBytes) &&
+      maxBytes > 0 &&
+      imgFile.size > maxBytes
+    ) {
+      reject(
+        new Error(
+          `Image exceeds ${Math.trunc(maxBytes / 1024 / 1024)}MB storage limit`
+        )
+      )
+      return
+    }
     let fr = new FileReader()
     fr.readAsDataURL(imgFile)
     fr.onload = async e => {
-      let url = e.target.result
-      let size = await getImageSize(url)
-      resolve({
-        url,
-        size
-      })
+      try {
+        let url = e.target.result
+        let size = await getImageSize(url)
+        const maxW = Number.isFinite(maxWidth) ? maxWidth : Infinity
+        const maxH = Number.isFinite(maxHeight) ? maxHeight : Infinity
+        if (maxW !== Infinity || maxH !== Infinity) {
+          const [w, h] = resizeImgSize(size.width, size.height, maxW, maxH)
+          if (w !== size.width || h !== size.height) {
+            url = await scaleDataUrlImage(url, w, h)
+            size = { width: w, height: h }
+          }
+        }
+        resolve({
+          url,
+          size
+        })
+      } catch (error) {
+        reject(error)
+      }
     }
     fr.onerror = error => {
       reject(error)

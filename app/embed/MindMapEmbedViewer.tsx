@@ -4,11 +4,11 @@ import {
   buildMindMapEmbedBridgePayload,
   getMindMapEmbedData,
 } from "../data/embedDocument";
-import { CrosshairIcon, PinIcon, ExternalLinkIcon } from "./icons";
+import { CrosshairIcon, ExternalLinkIcon } from "./icons";
 import { embedDebug, embedMark, embedMeasure } from "./embedDebug";
 import { getEmbedResourceTokenQuery } from "./embedResourceToken";
 import { handleEmbedEditLinkClick } from "./openEmbedEditUrl";
-import { useEmbedPinState, useEmbedAutoLock } from "./EmbedFocusGate";
+import { useEmbedPinState, useEmbedIframeAutoLock } from "./EmbedFocusGate";
 
 import "../EmbedViewer.scss";
 
@@ -17,8 +17,6 @@ export interface MindMapViewport {
   x: number;
   y: number;
 }
-
-type ViewControlState = "pinned-overview" | "free-overview" | "free-offset";
 
 function roundMmViewport(
   v: MindMapViewport | null,
@@ -125,10 +123,13 @@ export default function MindMapEmbedViewer({
     typeof buildMindMapEmbedBridgePayload
   > | null>(null);
   const [isReady, setIsReady] = useState(false);
+  const isAppInitedRef = useRef(false);
+  const pendingRestoreRef = useRef(false);
   const [isAtDefaultView, setIsAtDefaultView] = useState(true);
   const isAtDefaultViewRef = useRef(true);
   const defaultViewport = useRef<MindMapViewport | null>(null);
   const suppressViewTracking = useRef(false);
+  const awaitingPreviewViewportRef = useRef(true);
 
   useEffect(() => {
     isAtDefaultViewRef.current = isAtDefaultView;
@@ -181,6 +182,11 @@ export default function MindMapEmbedViewer({
   }, [mindMapData, getFrameDebugInfo]);
 
   const applyMindMapPreviewRange = useCallback(() => {
+    if (!isAppInitedRef.current) {
+      pendingRestoreRef.current = true;
+      embedDebug("mindmap preview range deferred: app not inited");
+      return;
+    }
     const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     embedDebug("mindmap preview range apply", {
       requestId,
@@ -200,26 +206,21 @@ export default function MindMapEmbedViewer({
 
   const pinState = useEmbedPinState();
   const containerRef = useRef<HTMLDivElement>(null);
-  useEmbedAutoLock(pinState.isPinned, pinState.pin, containerRef);
+  useEmbedIframeAutoLock(
+    pinState.isPinned,
+    pinState.pin,
+    containerRef,
+    iframeRef,
+  );
 
-  const handleViewControl = useCallback(() => {
-    const viewState: ViewControlState = !isAtDefaultView
-      ? "free-offset"
-      : pinState.isPinned
-        ? "pinned-overview"
-        : "free-overview";
-    embedDebug("mindmap view control clicked", {
-      viewState,
+  const handleResetView = useCallback(() => {
+    embedDebug("mindmap reset view clicked", {
       isAtDefaultView,
-      isPinned: pinState.isPinned,
+      isInteractionMasked: pinState.isPinned,
       defaultViewport: roundMmViewport(defaultViewport.current),
     });
-    if (viewState === "free-offset") {
-      applyMindMapPreviewRange();
-      return;
-    }
-    pinState.togglePin();
-  }, [applyMindMapPreviewRange, isAtDefaultView, pinState]);
+    applyMindMapPreviewRange();
+  }, [applyMindMapPreviewRange, isAtDefaultView, pinState.isPinned]);
 
   useEffect(() => {
     pendingInitRef.current = buildMindMapEmbedBridgePayload(mindMapData);
@@ -260,14 +261,27 @@ export default function MindMapEmbedViewer({
           "mindmap-app-inited",
         );
         embedDebug("mindmap iframe appInited", getFrameDebugInfo());
+        isAppInitedRef.current = true;
+        if (pendingRestoreRef.current) {
+          pendingRestoreRef.current = false;
+          applyMindMapPreviewRange();
+        }
         return;
       }
 
       if (message.type === "mindMapViewRestoreDone") {
+        const payload = message.payload ?? null;
+        const ok = payload?.ok !== false;
         embedDebug("mindmap iframe view restore done", {
           ...getFrameDebugInfo(),
-          payload: message.payload ?? null,
+          payload,
+          ok,
         });
+        if (!ok) {
+          suppressViewTracking.current = false;
+          return;
+        }
+        awaitingPreviewViewportRef.current = false;
         setIsAtDefaultView(true);
         return;
       }
@@ -275,6 +289,10 @@ export default function MindMapEmbedViewer({
       if (message.type === "mindMapViewState") {
         const current = getMindMapViewportFromPayload(message.payload);
         if (!current) {
+          return;
+        }
+
+        if (awaitingPreviewViewportRef.current) {
           return;
         }
 
@@ -304,10 +322,6 @@ export default function MindMapEmbedViewer({
           Math.abs(current.scale - dv.scale) > 0.01;
 
         if (moved) {
-          if (pinState.isPinnedRef.current && isAtDefaultViewRef.current) {
-            defaultViewport.current = current;
-            return;
-          }
           if (!isAtDefaultViewRef.current) {
             return;
           }
@@ -329,7 +343,7 @@ export default function MindMapEmbedViewer({
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [getFrameDebugInfo, postInit, pinState.isPinnedRef]);
+  }, [applyMindMapPreviewRange, getFrameDebugInfo, postInit]);
 
   useEffect(() => {
     const container = document.querySelector(".mindmap-embed-viewer");
@@ -369,19 +383,6 @@ export default function MindMapEmbedViewer({
     };
   }, [getFrameDebugInfo]);
 
-  const viewControlState: ViewControlState = !isAtDefaultView
-    ? "free-offset"
-    : pinState.isPinned
-      ? "pinned-overview"
-      : "free-overview";
-
-  const viewControlLabel =
-    viewControlState === "free-offset"
-      ? "定位"
-      : viewControlState === "pinned-overview"
-        ? "取消钉住"
-        : "钉住视图";
-
   const lockInteraction = pinState.isPinned;
 
   return (
@@ -389,7 +390,9 @@ export default function MindMapEmbedViewer({
       <iframe
         ref={iframeRef}
         title="MindMap"
-        className="mindmap-embed-viewer__frame"
+        className={`mindmap-embed-viewer__frame${
+          lockInteraction ? " mindmap-embed-viewer__frame--locked" : ""
+        }`}
         src={`/embed/mind-map/index.html${getEmbedResourceTokenQuery()}`}
         onLoad={() => embedDebug("mindmap iframe load", getFrameDebugInfo())}
       />
@@ -405,13 +408,13 @@ export default function MindMapEmbedViewer({
       <div className="embed-viewer-controls">
         <button
           className="embed-viewer-btn embed-viewer-btn--view"
-          data-state={viewControlState}
-          onClick={handleViewControl}
-          title={viewControlLabel}
-          aria-label={viewControlLabel}
+          data-offset={isAtDefaultView ? "false" : "true"}
+          onClick={handleResetView}
+          title="回到初始位置"
+          aria-label="回到初始位置"
           type="button"
         >
-          {viewControlState === "free-offset" ? CrosshairIcon : PinIcon}
+          {CrosshairIcon}
         </button>
         <a
           className="embed-viewer-btn embed-viewer-btn--share"

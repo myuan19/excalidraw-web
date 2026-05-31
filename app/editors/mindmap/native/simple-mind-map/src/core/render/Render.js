@@ -1335,7 +1335,11 @@ class Render {
             ) {
               imgData = await handleNodePasteImg(img)
             } else {
-              imgData = await loadImage(img)
+              imgData = await loadImage(img, {
+                maxWidth: this.mindMap.opt.maxNodeImageStorageWidth,
+                maxHeight: this.mindMap.opt.maxNodeImageStorageHeight,
+                maxBytes: this.mindMap.opt.maxNodeImageStorageBytes
+              })
             }
             if (this.activeNodeList.length > 0) {
               this.activeNodeList.forEach(node => {

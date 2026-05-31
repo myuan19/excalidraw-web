@@ -11,7 +11,7 @@ import {
 } from "@excalidraw/excalidraw/data/restore";
 
 import { getExcalidrawEmbedData } from "../data/embedDocument";
-import { CrosshairIcon, PinIcon, ExternalLinkIcon } from "./icons";
+import { CrosshairIcon, ExternalLinkIcon } from "./icons";
 import { handleEmbedEditLinkClick } from "./openEmbedEditUrl";
 import {
   embedDebug,
@@ -129,8 +129,6 @@ function viewportFromUnknownAppState(appState: unknown): DefaultViewport | null 
   }
   return { scrollX, scrollY, zoom: zoomValue };
 }
-
-type ViewControlState = "pinned-overview" | "free-overview" | "free-offset";
 
 const EmbedCanvas = ({
   initialData,
@@ -385,24 +383,14 @@ const EmbedCanvas = ({
     isAtDefaultViewRef.current = isAtDefaultView;
   }, [isAtDefaultView]);
 
-  const handleViewControl = useCallback(() => {
-    const viewState: ViewControlState = !isAtDefaultView
-      ? "free-offset"
-      : pinState.isPinned
-        ? "pinned-overview"
-        : "free-overview";
-    embedDebug("view control clicked", {
-      viewState,
+  const handleResetView = useCallback(() => {
+    embedDebug("reset view clicked", {
       isAtDefaultView,
-      isPinned: pinState.isPinned,
+      isInteractionMasked: pinState.isPinned,
       defaultViewport: roundViewport(defaultViewport.current),
     });
-    if (viewState === "free-offset") {
-      applyExcalidrawPreviewRange("button-locate");
-      return;
-    }
-    pinState.togglePin();
-  }, [applyExcalidrawPreviewRange, isAtDefaultView, pinState]);
+    applyExcalidrawPreviewRange("button-locate");
+  }, [applyExcalidrawPreviewRange, isAtDefaultView, pinState.isPinned]);
 
   const handleChange = useCallback(
     (_elements: unknown, appState: AppState) => {
@@ -468,13 +456,6 @@ const EmbedCanvas = ({
         Math.abs(appState.zoom.value - dv.zoom) > 0.005;
 
       if (moved) {
-        if (pinState.isPinnedRef.current && isAtDefaultViewRef.current) {
-          defaultViewport.current = currentViewport;
-          embedDebug("onChange recalibrated pinned overview", {
-            nextDefaultViewport: roundViewport(currentViewport),
-          });
-          return;
-        }
         if (!isAtDefaultViewRef.current) {
           return;
         }
@@ -494,21 +475,8 @@ const EmbedCanvas = ({
         setIsAtDefaultView(true);
       }
     },
-    [api, applyExcalidrawPreviewRange, pinState.isPinnedRef],
+    [api, applyExcalidrawPreviewRange],
   );
-
-  const viewControlState: ViewControlState = !isAtDefaultView
-    ? "free-offset"
-    : pinState.isPinned
-      ? "pinned-overview"
-      : "free-overview";
-
-  const viewControlLabel =
-    viewControlState === "free-offset"
-      ? "定位"
-      : viewControlState === "pinned-overview"
-        ? "取消钉住"
-        : "钉住视图";
 
   const lockInteraction = pinState.isPinned;
 
@@ -547,13 +515,13 @@ const EmbedCanvas = ({
       <div className="embed-viewer-controls">
         <button
           className="embed-viewer-btn embed-viewer-btn--view"
-          data-state={viewControlState}
-          onClick={handleViewControl}
-          title={viewControlLabel}
-          aria-label={viewControlLabel}
+          data-offset={isAtDefaultView ? "false" : "true"}
+          onClick={handleResetView}
+          title="回到初始位置"
+          aria-label="回到初始位置"
           type="button"
         >
-          {viewControlState === "free-offset" ? CrosshairIcon : PinIcon}
+          {CrosshairIcon}
         </button>
         <a
           className="embed-viewer-btn embed-viewer-btn--share"

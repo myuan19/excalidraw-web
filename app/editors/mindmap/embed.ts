@@ -62,7 +62,7 @@ function buildMindMapPreviewData(data: MindMapDocumentData): MindMapDocumentData
     __nbPreviewTargetX: computeMindMapPreviewRootTargetX(data),
     __nbPreviewTargetY: 0.5,
     __nbPreviewRootScreenRatioMultiplier:
-      previewViewportConfig.embedRootScreenRatioMultiplier,
+      previewViewportConfig.embedFocusedRootScreenRatioMultiplier,
   };
   const { view: _view, ...withoutView } = data;
   return {

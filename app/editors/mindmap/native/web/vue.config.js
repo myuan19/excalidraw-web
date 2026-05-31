@@ -20,9 +20,8 @@ module.exports = {
         /* rule 名随 CLI 版本可能不同，忽略 */
       }
     }
-    // 移除 preload 插件
+    // 与历史可用版本一致：生产也关闭 prefetch/preload，避免与 bridge 握手竞态
     config.plugins.delete('preload')
-    // 移除 prefetch 插件
     config.plugins.delete('prefetch')
     // 支持运行时设置public path
     if (!isDev) {

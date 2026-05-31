@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { embedDebug } from "./embedDebug";
 
+/** Interaction mask: blocked until user clicks the embed; not a view "pin". */
 export function useEmbedPinState() {
   const [isPinned, setIsPinned] = useState(true);
   const isPinnedRef = useRef(true);
@@ -10,28 +11,20 @@ export function useEmbedPinState() {
   }, [isPinned]);
 
   const pin = useCallback(() => {
-    embedDebug("pin state: pin");
+    embedDebug("interaction mask: show");
     setIsPinned(true);
   }, []);
 
   const unpin = useCallback(() => {
-    embedDebug("pin state: unpin");
+    embedDebug("interaction mask: dismiss");
     setIsPinned(false);
   }, []);
 
-  const togglePin = useCallback(() => {
-    setIsPinned((prev) => {
-      const next = !prev;
-      embedDebug("pin state: toggle", { from: prev, to: next });
-      return next;
-    });
-  }, []);
-
-  return { isPinned, isPinnedRef, pin, unpin, togglePin };
+  return { isPinned, isPinnedRef, pin, unpin };
 }
 
 /**
- * Auto re-lock the embed when user attention leaves the container:
+ * Re-show the interaction mask when user attention leaves the container:
  * - pointerdown outside the container element
  * - window loses focus to an ancestor frame or another tab
  * - page visibility changes (tab switch / minimize)
@@ -90,4 +83,50 @@ export function useEmbedAutoLock(
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [isPinned, pin, containerRef]);
+}
+
+/** MindMap embed: iframe steals focus; re-mask when the inner frame blurs. */
+export function useEmbedIframeAutoLock(
+  isLocked: boolean,
+  lock: () => void,
+  containerRef: { current: HTMLElement | null },
+  iframeRef: { current: HTMLIFrameElement | null },
+) {
+  useEmbedAutoLock(isLocked, lock, containerRef);
+
+  useEffect(() => {
+    if (isLocked) {
+      return;
+    }
+
+    const iframe = iframeRef.current;
+    if (!iframe) {
+      return;
+    }
+
+    let mounted = true;
+
+    const handleIframeBlur = () => {
+      requestAnimationFrame(() => {
+        if (!mounted || isLocked) {
+          return;
+        }
+        const active = document.activeElement;
+        if (
+          active instanceof HTMLElement &&
+          active.closest(".embed-viewer-controls")
+        ) {
+          return;
+        }
+        embedDebug("auto-lock: mindmap iframe blur");
+        lock();
+      });
+    };
+
+    iframe.addEventListener("blur", handleIframeBlur);
+    return () => {
+      mounted = false;
+      iframe.removeEventListener("blur", handleIframeBlur);
+    };
+  }, [isLocked, lock, iframeRef]);
 }

@@ -36,11 +36,16 @@ import {
   warnMindMapBridge,
 } from "./mindMapBridgeDebug";
 import {
+  isNativeMindMapMessage,
+  type NativeMindMapBridgePayload,
+  type NativeMindMapMessage,
+} from "./mindMapBridgeProtocol";
+import {
   describeMindMapBridgeState,
   isAllowedNativeMindMapMessageOrigin,
   NATIVE_MINDMAP_URL,
-  resolveNativePostMessageTargetOrigin,
 } from "./mindMapBridgeOrigins";
+import { useMindMapHostBridge } from "./useMindMapHostBridge";
 import {
   getCachedMindMapDocument,
   MINDMAP_SAVE_TIMEOUT_MS,
@@ -54,72 +59,11 @@ import type { MindMapDocumentData } from "../../data/formats/MindMapAdapter";
 
 import "./MindMapEditorShell.scss";
 
-const HOST_SOURCE = "excalidraw-web";
-const NATIVE_SOURCE = "simple-mind-map-native";
-const MINDMAP_APP_INIT_TIMEOUT_MS = 15000;
-
 function debugMindMapOpen(label: string, data?: Record<string, unknown>) {
   console.log(`[DEBUG] mindmap-open | ${label}`, {
     t: Math.round(performance.now()),
     ...(data ?? {}),
   });
-}
-
-type NativeMindMapBridgePayload = {
-  mindMapData: MindMapDocumentData;
-  mindMapConfig: Record<string, unknown>;
-  lang: string;
-  localConfig: Record<string, unknown> | null;
-};
-
-type NativeMindMapMessage =
-  | {
-      source: typeof NATIVE_SOURCE;
-      type: "ready" | "appInited";
-      payload?: unknown;
-    }
-  | {
-      source: typeof NATIVE_SOURCE;
-      type: "saveMindMapData";
-      payload: unknown;
-    }
-  | {
-      source: typeof NATIVE_SOURCE;
-      type: "saveMindMapThumbnail";
-      payload: unknown;
-    }
-  | {
-      source: typeof NATIVE_SOURCE;
-      type:
-        | "saveMindMapConfig"
-        | "saveLocalConfig"
-        | "saveLanguage"
-        | "mindMapDirtyState"
-        | "mindMapViewState";
-      payload: unknown;
-    }
-  | {
-      source: typeof NATIVE_SOURCE;
-      type:
-        | "hostBackToFiles"
-        | "hostRequestSave"
-        | "hostOpenEmbedManager"
-        | "hostOpenAISettings"
-        | "hostOpenHistory"
-        | "CLIPBOARD_WRITE_TEXT"
-        | "CLIPBOARD_READ_TEXT"
-        | "CLIPBOARD_READ"
-        | "CLIPBOARD_WRITE_IMAGE";
-      payload?: unknown;
-    };
-
-function isNativeMindMapMessage(value: unknown): value is NativeMindMapMessage {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    (value as { source?: unknown }).source === NATIVE_SOURCE &&
-    typeof (value as { type?: unknown }).type === "string"
-  );
 }
 
 function toBridgePayload(
@@ -278,10 +222,28 @@ async function readClipboardItemsForNative() {
 const MindMapEditorShell = () => {
   const fileId = getFileIdFromHash();
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
-  const pendingInitPayloadRef = useRef<NativeMindMapBridgePayload | null>(null);
+  const {
+    bootKey: iframeBootKey,
+    bridgeStatus,
+    bridgeError,
+    isNativeReady,
+    isAppReady,
+    isBridgeReady,
+    learnedOrigin,
+    publishDocument,
+    postToNative,
+    onIframeLoad,
+    onIframeError,
+    handleBridgeLifecycleMessage,
+    learnOrigin,
+  } = useMindMapHostBridge({
+    fileId,
+    iframeRef,
+    debugOpen: debugMindMapOpen,
+  });
   const [status, setStatus] = useState("加载中…");
-  const [isNativeReady, setIsNativeReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const displayError = error ?? bridgeError;
   const [fileName, setFileName] = useState("未命名 mindmap");
   const [showAISettings, setShowAISettings] = useState(false);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
@@ -299,51 +261,15 @@ const MindMapEditorShell = () => {
   const latestDocumentRef = useRef<ManagedDocument<MindMapDocumentData> | null>(
     null,
   );
-  const nativeAppInitedRef = useRef(false);
-  const iframeBridgeReadyRef = useRef(false);
-  const iframeLoadedRef = useRef(false);
-  const nativeLiveOriginRef = useRef<string | null>(null);
   const shellStartRef = useRef(performance.now());
   const initStartRef = useRef<number | null>(null);
-  const appInitedTimeoutRef = useRef<number | null>(null);
 
-  const clearAppInitedTimeout = useCallback(() => {
-    if (appInitedTimeoutRef.current) {
-      window.clearTimeout(appInitedTimeoutRef.current);
-      appInitedTimeoutRef.current = null;
-    }
-  }, []);
-
-  const scheduleAppInitedTimeout = useCallback(() => {
-    clearAppInitedTimeout();
-    appInitedTimeoutRef.current = window.setTimeout(() => {
-      appInitedTimeoutRef.current = null;
-      if (nativeAppInitedRef.current) {
-        return;
-      }
-      let mindMapPath = "/mind-map/index.html";
-      try {
-        mindMapPath = new URL(NATIVE_MINDMAP_URL, window.location.origin).pathname;
-      } catch {
-        // keep default
-      }
-      warnMindMapBridge("native app init timeout", {
-        timeoutMs: MINDMAP_APP_INIT_TIMEOUT_MS,
-        mindMapUrl: NATIVE_MINDMAP_URL,
-        ...describeMindMapBridgeState({
-          hostOrigin: window.location.origin,
-          iframeSrc: iframeRef.current?.src ?? NATIVE_MINDMAP_URL,
-          bridgeReady: iframeBridgeReadyRef.current,
-          appInited: nativeAppInitedRef.current,
-          learnedOrigin: nativeLiveOriginRef.current,
-          hasContentWindow: !!iframeRef.current?.contentWindow,
-        }),
-      });
-      setError(
-        `mindmap 原生界面未完成初始化：请确认 ${mindMapPath} 可访问且为 bridge 版本（运行 ./_scripts/dev.sh --all 或 build 同步 public/mind-map/）。`,
-      );
-    }, MINDMAP_APP_INIT_TIMEOUT_MS);
-  }, [clearAppInitedTimeout]);
+  const publishMindMapDataToNative = useCallback(
+    (data: MindMapDocumentData, reason: string) => {
+      publishDocument(toBridgePayload(data, fileId), reason);
+    },
+    [fileId, publishDocument],
+  );
 
   useEffect(() => {
     document.title = "mindmap";
@@ -355,110 +281,6 @@ const MindMapEditorShell = () => {
       sinceShellStart: Math.round(performance.now() - shellStartRef.current),
     });
   }, [fileId]);
-
-  const postToNative = useCallback((type: string, payload?: unknown) => {
-    const iframe = iframeRef.current;
-    const hostOrigin = window.location.origin;
-    const bridgeState = describeMindMapBridgeState({
-      hostOrigin,
-      iframeSrc: iframe?.src ?? null,
-      bridgeReady: iframeBridgeReadyRef.current,
-      appInited: nativeAppInitedRef.current,
-      learnedOrigin: nativeLiveOriginRef.current,
-      hasContentWindow: !!iframe?.contentWindow,
-    });
-    const targetOrigin = resolveNativePostMessageTargetOrigin(iframe, {
-      hostOrigin,
-      bridgeReady: iframeBridgeReadyRef.current,
-      iframeLoaded: iframeLoadedRef.current,
-      learnedOrigin: nativeLiveOriginRef.current,
-    });
-
-    if (type === "initMindMap" || type === "requestMindMapSave") {
-      debugMindMapOpen(`postToNative ${type}`, {
-        hasPayload: payload != null,
-        fileId8: getFileIdFromHash()?.slice(0, 8) ?? null,
-        iframeBridgeReady: iframeBridgeReadyRef.current,
-        nativeAppInited: nativeAppInitedRef.current,
-        targetOrigin,
-        bridgeState,
-      });
-    } else {
-      debugMindMapBridge(`postToNative ${type}`, {
-        targetOrigin,
-        bridgeState,
-      });
-    }
-
-    if (!iframe?.contentWindow || !targetOrigin) {
-      if (type === "initMindMap" || type === "requestMindMapSave") {
-        warnMindMapBridge(`postToNative skipped ${type}`, {
-          hasContentWindow: !!iframe?.contentWindow,
-          targetOrigin,
-          bridgeState,
-        });
-      }
-      return false;
-    }
-
-    iframe.contentWindow.postMessage(
-      {
-        source: HOST_SOURCE,
-        type,
-        payload,
-      },
-      targetOrigin,
-    );
-    debugMindMapBridge(`postToNative sent ${type}`, { targetOrigin });
-    return true;
-  }, []);
-
-  const sendInitPayload = useCallback(() => {
-    if (!pendingInitPayloadRef.current) {
-      debugMindMapOpen("sendInitPayload skipped: no pending payload");
-      return;
-    }
-    debugMindMapOpen("sendInitPayload", {
-      rootChildren:
-        pendingInitPayloadRef.current.mindMapData.root?.children?.length ?? 0,
-      hasView: !!pendingInitPayloadRef.current.mindMapData.view,
-    });
-    postToNative("initMindMap", pendingInitPayloadRef.current);
-  }, [postToNative]);
-
-  const markBridgeReady = useCallback(
-    (reason: string) => {
-      if (!iframeBridgeReadyRef.current) {
-        iframeBridgeReadyRef.current = true;
-        if (iframeRef.current) {
-          iframeRef.current.dataset.mindMapBridgeReady = "1";
-        }
-        debugMindMapOpen("bridge ready", { reason });
-      }
-      sendInitPayload();
-      scheduleAppInitedTimeout();
-    },
-    [scheduleAppInitedTimeout, sendInitPayload],
-  );
-
-  const publishMindMapDataToNative = useCallback(
-    (data: MindMapDocumentData) => {
-      pendingInitPayloadRef.current = toBridgePayload(data, fileId);
-      if (nativeAppInitedRef.current) {
-        debugMindMapOpen("publish setMindMapData to initialized iframe", {
-          rootChildren: data.root?.children?.length ?? 0,
-          hasView: !!pendingInitPayloadRef.current.mindMapData.view,
-        });
-        postToNative("setMindMapData", pendingInitPayloadRef.current);
-        setIsNativeReady(true);
-        return;
-      }
-      if (iframeBridgeReadyRef.current || iframeLoadedRef.current) {
-        sendInitPayload();
-      }
-    },
-    [fileId, postToNative, sendInitPayload],
-  );
 
   const updateLatestDocument = useCallback(
     (data: MindMapDocumentData): ManagedDocument<MindMapDocumentData> => {
@@ -573,9 +395,9 @@ const MindMapEditorShell = () => {
     const bridgeState = describeMindMapBridgeState({
       hostOrigin: window.location.origin,
       iframeSrc: iframeRef.current?.src ?? null,
-      bridgeReady: iframeBridgeReadyRef.current,
-      appInited: nativeAppInitedRef.current,
-      learnedOrigin: nativeLiveOriginRef.current,
+      bridgeReady: isBridgeReady,
+      appInited: isAppReady,
+      learnedOrigin,
       hasContentWindow: !!iframeRef.current?.contentWindow,
     });
     debugMindMapBridge("requestNativeSave | start", bridgeState);
@@ -594,9 +416,9 @@ const MindMapEditorShell = () => {
           bridgeState: describeMindMapBridgeState({
             hostOrigin: window.location.origin,
             iframeSrc: iframeRef.current?.src ?? null,
-            bridgeReady: iframeBridgeReadyRef.current,
-            appInited: nativeAppInitedRef.current,
-            learnedOrigin: nativeLiveOriginRef.current,
+            bridgeReady: isBridgeReady,
+            appInited: isAppReady,
+            learnedOrigin,
             hasContentWindow: !!iframeRef.current?.contentWindow,
           }),
         });
@@ -604,17 +426,16 @@ const MindMapEditorShell = () => {
         savePromiseRef.current = null;
         saveTimeoutRef.current = null;
         saveRequestIdRef.current = null;
-        const hint =
-          !iframeBridgeReadyRef.current
-            ? "mindmap 原生 iframe 未就绪（请运行 ./_scripts/dev.sh --all 构建 public/mind-map/）"
-            : !nativeAppInitedRef.current
-              ? "mindmap 原生界面未完成初始化"
-              : "mindmap 原生界面未响应保存请求";
+        const hint = !isBridgeReady
+          ? "mindmap 原生 iframe 未就绪（请运行 yarn build:production）"
+          : !isAppReady
+            ? "mindmap 原生界面未完成初始化"
+            : "mindmap 原生界面未响应保存请求";
         setError(hint);
         resolve(null);
       }, MINDMAP_SAVE_TIMEOUT_MS);
 
-      if (!nativeAppInitedRef.current) {
+      if (!isAppReady) {
         warnMindMapBridge("requestNativeSave | app not inited yet", {
           requestId,
           bridgeState,
@@ -640,7 +461,7 @@ const MindMapEditorShell = () => {
     });
     savePromiseRef.current = promise;
     return promise;
-  }, [postToNative]);
+  }, [isAppReady, isBridgeReady, learnedOrigin, postToNative]);
 
   const navigateToFileListHomeRef = useRef(() => {});
   const navigateToFileListHome = useCallback(() => {
@@ -679,7 +500,7 @@ const MindMapEditorShell = () => {
 
   const postMindMapAIConfig = useCallback(
     (reason: string) => {
-      if (!iframeBridgeReadyRef.current) {
+      if (!isBridgeReady) {
         return;
       }
       const config = getCachedAIConfig().mindmap;
@@ -695,7 +516,7 @@ const MindMapEditorShell = () => {
         keyLen: config.apiKey?.length ?? 0,
         model: config.model || "gpt-4o",
         hasIframeWindow: !!iframeRef.current?.contentWindow,
-        nativeAppInited: nativeAppInitedRef.current,
+        nativeAppInited: isAppReady,
       });
       postToNative("mindMapAiConfig", {
         configured,
@@ -705,7 +526,7 @@ const MindMapEditorShell = () => {
         method: "POST",
       });
     },
-    [postToNative],
+    [isAppReady, isBridgeReady, postToNative],
   );
 
   useEffect(() => {
@@ -723,27 +544,19 @@ const MindMapEditorShell = () => {
   }, [postMindMapAIConfig]);
 
   useEffect(() => {
-    if (!iframeBridgeReadyRef.current) {
+    if (!isBridgeReady) {
       return;
     }
     postToNative("mindMapHostSaveStatus", {
       saving: mindMapSaving,
       hint: mindMapSaveHint,
     });
-  }, [mindMapSaveHint, mindMapSaving, postToNative]);
+  }, [isBridgeReady, mindMapSaveHint, mindMapSaving, postToNative]);
 
   useEffect(() => {
     let disposed = false;
 
     async function init() {
-      setIsNativeReady(false);
-      iframeBridgeReadyRef.current = false;
-      iframeLoadedRef.current = false;
-      nativeAppInitedRef.current = false;
-      nativeLiveOriginRef.current = null;
-      if (iframeRef.current) {
-        delete iframeRef.current.dataset.mindMapBridgeReady;
-      }
       setStatus("加载中…");
       if (!fileId) {
         setError("缺少 mindmap 文件");
@@ -807,7 +620,7 @@ const MindMapEditorShell = () => {
             reason,
           });
           setStatus("等待 mindmap 原生界面加载…");
-          publishMindMapDataToNative(data);
+          publishMindMapDataToNative(data, reason);
         };
 
         if (
@@ -827,7 +640,7 @@ const MindMapEditorShell = () => {
           setStatus(
             hasUnsavedChanges ? "已恢复本地草稿" : "正在校验服务器版本…",
           );
-          publishMindMapDataToNative(cached.data);
+          publishMindMapDataToNative(cached.data, "cache-first");
 
           try {
             const hashStart = performance.now();
@@ -893,7 +706,6 @@ const MindMapEditorShell = () => {
 
     return () => {
       disposed = true;
-      clearAppInitedTimeout();
       if (saveTimeoutRef.current) {
         window.clearTimeout(saveTimeoutRef.current);
         saveTimeoutRef.current = null;
@@ -901,7 +713,7 @@ const MindMapEditorShell = () => {
       saveResolveRef.current = null;
       savePromiseRef.current = null;
     };
-  }, [fileId, publishMindMapDataToNative, clearAppInitedTimeout]);
+  }, [fileId, publishMindMapDataToNative]);
 
   useEffect(() => {
     if (!fileId) {
@@ -913,7 +725,7 @@ const MindMapEditorShell = () => {
         !isAllowedNativeMindMapMessageOrigin(event.origin, {
           hostOrigin: window.location.origin,
           iframeSrc,
-          learnedOrigin: nativeLiveOriginRef.current,
+          learnedOrigin,
         })
       ) {
         debugMindMapBridge("onMessage | rejected origin", {
@@ -928,9 +740,9 @@ const MindMapEditorShell = () => {
           allowed: describeMindMapBridgeState({
             hostOrigin: window.location.origin,
             iframeSrc,
-            bridgeReady: iframeBridgeReadyRef.current,
-            appInited: nativeAppInitedRef.current,
-            learnedOrigin: nativeLiveOriginRef.current,
+            bridgeReady: isBridgeReady,
+            appInited: isAppReady,
+            learnedOrigin,
             hasContentWindow: !!iframeRef.current?.contentWindow,
           }),
         });
@@ -939,13 +751,7 @@ const MindMapEditorShell = () => {
       if (!isNativeMindMapMessage(event.data)) {
         return;
       }
-      if (!nativeLiveOriginRef.current) {
-        nativeLiveOriginRef.current = event.origin;
-        debugMindMapBridge("onMessage | learned native origin", {
-          origin: event.origin,
-          iframeSrc,
-        });
-      }
+      learnOrigin(event.origin);
       debugMindMapBridge(`onMessage ${event.data.type}`, {
         origin: event.origin,
         hasPayload: event.data.payload != null,
@@ -959,26 +765,26 @@ const MindMapEditorShell = () => {
         void handleNativeClipboardMessage(event.data);
         return;
       }
-      if (event.data.type === "ready") {
-        markBridgeReady("iframe-ready-message");
-        void ensureAIConfigLoaded()
-          .then(() => postMindMapAIConfig("iframe-ready"))
-          .catch(() => postMindMapAIConfig("iframe-ready.catch"));
-        return;
-      }
-      if (event.data.type === "appInited") {
-        clearAppInitedTimeout();
-        nativeAppInitedRef.current = true;
-        setIsNativeReady(true);
-        debugMindMapOpen("received appInited", {
-          sinceShellStart: Math.round(performance.now() - shellStartRef.current),
-          sinceInitStart: initStartRef.current
-            ? Math.round(performance.now() - initStartRef.current)
-            : null,
-          needsInitialThumbnail: needsInitialThumbnailRef.current,
-        });
-        setStatus("已打开 mindmap 原生界面");
-        ensureAIConfigLoaded()
+      if (
+        handleBridgeLifecycleMessage(event.data, event.origin) &&
+        (event.data.type === "mindMapIframeError" ||
+          event.data.type === "ready" ||
+          event.data.type === "appInited")
+      ) {
+        if (event.data.type === "ready") {
+          void ensureAIConfigLoaded()
+            .then(() => postMindMapAIConfig("iframe-ready"))
+            .catch(() => postMindMapAIConfig("iframe-ready.catch"));
+        }
+        if (event.data.type === "appInited") {
+          debugMindMapOpen("received appInited", {
+            sinceShellStart: Math.round(performance.now() - shellStartRef.current),
+            sinceInitStart: initStartRef.current
+              ? Math.round(performance.now() - initStartRef.current)
+              : null,
+            needsInitialThumbnail: needsInitialThumbnailRef.current,
+          });
+          ensureAIConfigLoaded()
           .then(() => postMindMapAIConfig("appInited"))
           .catch((error) => {
             console.log(
@@ -989,13 +795,14 @@ const MindMapEditorShell = () => {
               },
             );
           });
-        if (needsInitialThumbnailRef.current) {
-          needsInitialThumbnailRef.current = false;
-          debugMindMapOpen("trigger initial thumbnail save");
-          void saveCurrentFileToServer({
-            source: "visibility",
-            forceThumbnail: true,
-          });
+          if (needsInitialThumbnailRef.current) {
+            needsInitialThumbnailRef.current = false;
+            debugMindMapOpen("trigger initial thumbnail save");
+            void saveCurrentFileToServer({
+              source: "visibility",
+              forceThumbnail: true,
+            });
+          }
         }
         return;
       }
@@ -1195,14 +1002,17 @@ const MindMapEditorShell = () => {
     };
   }, [
     fileId,
+    handleBridgeLifecycleMessage,
     handleNativeClipboardMessage,
-    markBridgeReady,
+    isAppReady,
+    isBridgeReady,
+    learnOrigin,
+    learnedOrigin,
     markDocumentChanged,
     mindMapGoHomeWithServerSave,
+    postMindMapAIConfig,
     requestNativeSave,
     saveCurrentFileToServer,
-    sendInitPayload,
-    postMindMapAIConfig,
     updateLatestDocument,
   ]);
 
@@ -1217,7 +1027,7 @@ const MindMapEditorShell = () => {
       : MindMapAdapter.createEmpty();
     const document = MindMapAdapter.toDocument(data);
     latestDocumentRef.current = document;
-    pendingInitPayloadRef.current = toBridgePayload(data, fileId);
+    publishMindMapDataToNative(data, "history-restore");
     FileSyncState.alignHashes(fileId, hashDocumentSnapshot(document));
     FileSyncState.clearLocalEditTime(fileId);
     FileSyncState.clearLocalCache(fileId);
@@ -1225,10 +1035,9 @@ const MindMapEditorShell = () => {
     needsInitialThumbnailRef.current = !serverFile.has_thumbnail;
     setStatus("已恢复历史版本");
     setError(null);
-    sendInitPayload();
     window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
     window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
-  }, [fileId, sendInitPayload]);
+  }, [fileId, publishMindMapDataToNative]);
 
   useEffect(() => {
     const onSave = () => void saveToServerRef.current({ source: "sidebar" });
@@ -1312,7 +1121,7 @@ const MindMapEditorShell = () => {
       if (!document.hidden || !getFileIdFromHash()) {
         return;
       }
-      if (!iframeBridgeReadyRef.current || !nativeAppInitedRef.current) {
+      if (!isBridgeReady || !isAppReady) {
         return;
       }
       visibilitySaveTimer = window.setTimeout(() => {
@@ -1329,74 +1138,33 @@ const MindMapEditorShell = () => {
       }
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [saveToServerRef]);
+  }, [isAppReady, isBridgeReady, saveToServerRef]);
 
-  useEffect(() => {
-    debugMindMapBridge("iframe mount", {
-      iframeSrc: NATIVE_MINDMAP_URL,
-      hostOrigin: window.location.origin,
-    });
-    const timer = window.setTimeout(() => {
-      if (iframeBridgeReadyRef.current) {
-        return;
-      }
-      warnMindMapBridge("iframe bridge ready timeout", {
-        iframeSrc: iframeRef.current?.src ?? NATIVE_MINDMAP_URL,
-        ...describeMindMapBridgeState({
-          hostOrigin: window.location.origin,
-          iframeSrc: iframeRef.current?.src ?? NATIVE_MINDMAP_URL,
-          bridgeReady: iframeBridgeReadyRef.current,
-          appInited: nativeAppInitedRef.current,
-          learnedOrigin: nativeLiveOriginRef.current,
-          hasContentWindow: !!iframeRef.current?.contentWindow,
-        }),
-      });
-      setError(
-        "mindmap 原生 iframe 未就绪：请确认 /mind-map/index.html 存在且为 bridge 版本（见 ./_scripts/dev.sh status）",
-      );
-    }, 20000);
-    return () => window.clearTimeout(timer);
-  }, [fileId]);
+  const displayStatus = bridgeStatus || status;
 
   return (
     <main className="mindmap-editor">
-      {error ? (
+      {displayError ? (
         <section className="mindmap-editor__error">
           <strong>mindmap 打开失败</strong>
-          <span>{error}</span>
+          <span>{displayError}</span>
         </section>
       ) : null}
-      {!error && !isNativeReady ? (
+      {!displayError && !isNativeReady ? (
         <div className="mindmap-editor__loading">
           <div className="editor-loading-spinner" />
-          <span>{status}</span>
+          <span>{displayStatus}</span>
         </div>
       ) : null}
       <iframe
         ref={iframeRef}
+        key={`${fileId ?? "none"}-${iframeBootKey}`}
         title="mindmap"
         className="mindmap-editor__native-frame"
         src={NATIVE_MINDMAP_URL}
         allow="clipboard-read; clipboard-write"
-        onLoad={() => {
-          iframeLoadedRef.current = true;
-          debugMindMapBridge("iframe onLoad", {
-            iframeSrc: iframeRef.current?.src ?? null,
-            bridgeReady: iframeBridgeReadyRef.current,
-          });
-          markBridgeReady("iframe-onload");
-          void ensureAIConfigLoaded()
-            .then(() => postMindMapAIConfig("iframe-onload"))
-            .catch(() => postMindMapAIConfig("iframe-onload.catch"));
-        }}
-        onError={() => {
-          warnMindMapBridge("iframe onError", {
-            iframeSrc: iframeRef.current?.src ?? NATIVE_MINDMAP_URL,
-          });
-          setError(
-            "mindmap iframe 加载失败：请检查 /mind-map/index.html 是否可访问",
-          );
-        }}
+        onLoad={onIframeLoad}
+        onError={onIframeError}
       />
       {fileId && (
         <EmbedTokenManager

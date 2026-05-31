@@ -1,6 +1,20 @@
 /** Same path in dev and prod — served from `public/mind-map/` via Vite/static host. */
 export const NATIVE_MINDMAP_URL = "/mind-map/index.html";
 
+/** Same-origin iframe only — used to recover bridge after host state reset. */
+export function isMindMapIframeDocumentComplete(
+  iframe: HTMLIFrameElement | null | undefined,
+): boolean {
+  if (!iframe?.contentWindow) {
+    return false;
+  }
+  try {
+    return iframe.contentDocument?.readyState === "complete";
+  } catch {
+    return false;
+  }
+}
+
 export function parseMindMapIframeOrigin(
   iframeSrc: string | null | undefined,
   hostOrigin: string,
@@ -48,7 +62,9 @@ export function resolveNativePostMessageTargetOrigin(
     options.hostOrigin ??
     (typeof window !== "undefined" ? window.location.origin : "http://localhost");
   const bridgeReady = options.bridgeReady === true;
-  const iframeLoaded = options.iframeLoaded === true;
+  const iframeLoaded =
+    options.iframeLoaded === true ||
+    isMindMapIframeDocumentComplete(iframe);
   const iframeSrc = iframe?.getAttribute("src") ?? iframe?.src ?? NATIVE_MINDMAP_URL;
   const iframeOrigin =
     options.learnedOrigin ?? parseMindMapIframeOrigin(iframeSrc, hostOrigin);

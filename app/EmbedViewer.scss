@@ -43,6 +43,10 @@
   border: 0;
   display: block;
   background: #fff;
+
+  &--locked {
+    pointer-events: none;
+  }
 }
 
 /* ── Overlay controls (Notion-Boost style) ───────────────────────────── */
@@ -90,7 +94,7 @@
     flex-shrink: 0;
   }
 
-  /* ── View control button states ── */
+  /* ── Reset view button ── */
 
   &--view:hover {
     background: #3498db;
@@ -98,28 +102,11 @@
     color: #fff;
   }
 
-  &--view[data-state="pinned-overview"] {
-    background: #e74c3c;
-    border-color: #e74c3c;
-    color: #fff;
-  }
-
-  &--view[data-state="pinned-overview"]:hover {
-    background: #c0392b;
-    border-color: #c0392b;
-  }
-
-  &--view[data-state="free-overview"]:hover {
-    background: #3498db;
-    border-color: #3498db;
-    color: #fff;
-  }
-
-  &--view[data-state="free-offset"] {
+  &--view[data-offset="true"] {
     color: #2f9e44;
   }
 
-  &--view[data-state="free-offset"]:hover {
+  &--view[data-offset="true"]:hover {
     background: #2f9e44;
     border-color: #2f9e44;
     color: #fff;
@@ -134,7 +121,7 @@
   }
 }
 
-/* ── Interaction lock (when pinned at overview) ───────────────────── */
+/* ── Interaction mask (focus gate — click once to interact) ─────────── */
 
 .embed-viewer-interaction-lock {
   position: absolute;

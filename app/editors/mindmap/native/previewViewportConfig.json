@@ -3,7 +3,7 @@
   "baselineRootScreenRatio": 0.224,
   "thumbnailRootScreenRatioMultiplier": 1,
   "editorRootScreenRatioMultiplier": 0.75,
-  "embedRootScreenRatioMultiplier": 0.75,
+  "embedFocusedRootScreenRatioMultiplier": 0.4,
   "baselineNodeCount": 10,
   "minVisualScaleNodeCount": 40,
   "singleNodeVisualScale": 1.2,

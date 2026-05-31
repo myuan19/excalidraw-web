@@ -1,5 +1,6 @@
 const fs = require('fs')
 const path = require('path')
+const { pathToFileURL } = require('url')
 
 const nativeDir = path.resolve(__dirname)
 const src = path.resolve(nativeDir, './dist/index.html')
@@ -33,4 +34,36 @@ if (fs.existsSync(servedDir)) {
 }
 fs.mkdirSync(servedDir, { recursive: true })
 copyDir(path.resolve(nativeDir, './dist'), path.join(servedDir, 'dist'))
-fs.copyFileSync(dest, path.join(servedDir, 'index.html'))
+
+const bridgeSrc = path.resolve(nativeDir, 'web/src/bridge/takeoverShell.js')
+const bridgeTargets = [
+  path.join(servedDir, 'dist/bridge/takeover-shell.js'),
+  path.join(nativeDir, 'dist/bridge/takeover-shell.js'),
+]
+if (fs.existsSync(bridgeSrc)) {
+  for (const target of bridgeTargets) {
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    fs.copyFileSync(bridgeSrc, target)
+  }
+} else {
+  console.warn('[mind-map copy] missing bridge source:', bridgeSrc)
+}
+
+async function syncServedIndexHtml() {
+  const distJsDir = path.join(servedDir, 'dist/js')
+  let html = fs.readFileSync(dest, 'utf8')
+  try {
+    const { injectMindMapChunkPreloads } = await import(
+      pathToFileURL(
+        path.resolve(nativeDir, '../../../../scripts/mind-map-webpack-chunks.mjs')
+      ).href
+    )
+    html = injectMindMapChunkPreloads(html, distJsDir)
+  } catch (error) {
+    console.warn('[mind-map copy] chunk preload injection skipped:', error.message)
+  }
+  fs.writeFileSync(path.join(servedDir, 'index.html'), html)
+  fs.writeFileSync(dest, html)
+}
+
+void syncServedIndexHtml()

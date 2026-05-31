@@ -49,20 +49,33 @@ build_mindmap() {
     node ../copy.js
   )
   log "mind-map ready"
+  node "${ROOT}/scripts/verify-mind-map-public.mjs"
+}
+
+verify_mindmap_in_app_build() {
+  local app_mm="${ROOT}/app/build/mind-map"
+  if [[ ! -f "${app_mm}/index.html" ]]; then
+    log "ERROR: missing app/build/mind-map/index.html — Vite did not copy public/mind-map/"
+    exit 1
+  fi
+  log "verify app/build/mind-map/"
+  node "${ROOT}/scripts/verify-mind-map-public.mjs" --root app/build/mind-map
 }
 
 run_app_build() {
   local mode="${1:-default}"
+  node "${ROOT}/scripts/verify-mind-map-public.mjs"
   case "$mode" in
     docker)
-      log "yarn build:app:docker"
-      (cd "$ROOT" && yarn build:app:docker)
+      log "app vite build (docker)"
+      (cd "$ROOT/app" && yarn build:app:docker)
       ;;
     *)
-      log "yarn build"
-      (cd "$ROOT" && yarn build)
+      log "app vite build"
+      (cd "$ROOT/app" && yarn build:app-only && yarn build:version)
       ;;
   esac
+  verify_mindmap_in_app_build
 }
 
 case "$TARGET" in

@@ -173,7 +173,10 @@ import NodeNoteSidebar from './NodeNoteSidebar.vue'
 import AiCreate from './AiCreate.vue'
 import AiChat from './AiChat.vue'
 import previewViewportConfig from '../../../../../previewViewportConfig.json'
-import { computeMindMapFocusedViewBoxFromNodeBounds } from '../../../../../../mindMapFocusedViewBox.js'
+import {
+  computeMindMapFocusedViewBoxFromNodeBounds,
+  getMindMapEmbedFocusedTargetRootScreenRatio
+} from '../../../../../../mindMapFocusedViewBox.js'
 
 const isMindMapDebugEnabled = () => {
   if (window.__MINDMAP_DEBUG__ === true) return true
@@ -216,12 +219,10 @@ const getSlowMindMapResources = () => {
     }))
 }
 
-const EMBED_PREVIEW_TARGET_ASPECT = previewViewportConfig.targetAspect
-const EMBED_PREVIEW_BASELINE_ROOT_SCREEN_RATIO =
+const FOCUSED_PREVIEW_TARGET_ASPECT = previewViewportConfig.targetAspect
+const FOCUSED_PREVIEW_BASELINE_ROOT_SCREEN_RATIO =
   previewViewportConfig.baselineRootScreenRatio
-const EMBED_PREVIEW_ROOT_SCREEN_RATIO_MULTIPLIER =
-  previewViewportConfig.embedRootScreenRatioMultiplier
-const EDITOR_PREVIEW_ROOT_SCREEN_RATIO_MULTIPLIER =
+const EDITOR_FOCUSED_ROOT_SCREEN_RATIO_MULTIPLIER =
   previewViewportConfig.editorRootScreenRatioMultiplier
 
 // 注册插件
@@ -295,6 +296,7 @@ export default {
       showDragMask: false,
       embedPreviewInitialApplied: false,
       editorPreviewInitialApplied: false,
+      embedBaselineViewport: null,
       hadInitialView: false,
       isEmbedMode: window.takeOverAppEmbedMode === true
     }
@@ -416,9 +418,11 @@ export default {
         }
       }
       if (this.isEmbedMode && !this.embedPreviewInitialApplied) {
-        this.embedPreviewInitialApplied = true
         this.$nextTick(() => {
-          this.applyEmbedPreviewViewport('initial-render-end')
+          const result = this.applyEmbedFocusedViewport('initial-render-end')
+          if (result && result.ok) {
+            this.embedPreviewInitialApplied = true
+          }
           hideCurrentLoading()
         })
         return
@@ -429,9 +433,11 @@ export default {
         !this.hadInitialView &&
         !this.editorPreviewInitialApplied
       ) {
-        this.editorPreviewInitialApplied = true
         this.$nextTick(() => {
-          this.applyEmbedPreviewViewport('editor-initial-render-end')
+          const result = this.applyEditorFocusedViewport('editor-initial-render-end')
+          if (result && result.ok) {
+            this.editorPreviewInitialApplied = true
+          }
           hideCurrentLoading()
         })
         return
@@ -508,17 +514,8 @@ export default {
         view = null
       }
       this.hadInitialView = !!view
-      const previewTargetX =
-        embedFit && typeof config.__nbPreviewTargetX === 'number'
-          ? `${Math.max(0, Math.min(1, config.__nbPreviewTargetX)) * 100}%`
-          : 'center'
-      const previewTargetY =
-        embedFit && typeof config.__nbPreviewTargetY === 'number'
-          ? `${Math.max(0, Math.min(1, config.__nbPreviewTargetY)) * 100}%`
-          : 'center'
-      const embedRootPosition = embedFit
-        ? [previewTargetX, previewTargetY]
-        : ['center', 'center']
+      // Layout root at center; framing offset comes from focused viewBox (same as editor/thumbnail).
+      const initRootNodePosition = ['center', 'center']
       const newMindMapStart = performance.now()
       this.mindMap = new MindMap({
         el: this.$refs.mindMapContainer,
@@ -556,7 +553,7 @@ export default {
         customHandleClipboardText: handleClipboardText,
         onlyPasteTextWhenHasImgAndText: false,
         defaultNodeImage: require('../../../assets/img/图片加载失败.svg'),
-        initRootNodePosition: embedRootPosition,
+        initRootNodePosition: initRootNodePosition,
         errorHandler: (code, err) => {
           console.error(err)
           switch (code) {
@@ -621,7 +618,7 @@ export default {
         theme: theme && theme.template,
         hasView: !!view,
         embedFit,
-        embedRootPosition,
+        initRootNodePosition,
         configKeys: Object.keys(config || {}).length
       })
       if (
@@ -686,7 +683,8 @@ export default {
       // 如果应用被接管，那么抛出事件传递思维导图实例
       if (window.takeOverApp) {
         if (this.isEmbedMode) {
-          this.mindMap.__nbApplyEmbedPreviewViewport = this.applyEmbedPreviewViewport
+          this.mindMap.__nbApplyHostViewport = (reason, options = {}) =>
+            this.applyEmbedFocusedViewport(reason, options)
         }
         debugMindMapOpen('emit app_inited', {
           totalElapsed: Math.round(performance.now() - initStart)
@@ -753,10 +751,132 @@ export default {
     },
 
     handleHostRestorePreviewView(payload = {}) {
-      this.applyEmbedPreviewViewport(payload.reason || 'host-restore')
+      try {
+        const reason = payload.reason || 'host-restore'
+        const options = { requestId: payload.requestId || null }
+        if (this.isEmbedMode) {
+          return this.applyEmbedFocusedViewport(reason, options)
+        }
+        return this.applyEditorFocusedViewport(reason, options)
+      } catch (error) {
+        console.error('[mindmap] restore preview view failed', error)
+        this.notifyEmbedPreviewViewportApplied({
+          reason: payload.reason || 'host-restore',
+          requestId: payload.requestId || null,
+          ok: false,
+          error: error && error.message ? error.message : String(error)
+        })
+        return { ok: false, applied: false }
+      }
     },
 
-    collectEmbedPreviewNodeBounds() {
+    readEmbedLayoutViewport() {
+      if (!this.mindMap || !this.mindMap.view) {
+        return null
+      }
+      return {
+        scale: this.mindMap.view.scale,
+        x: this.mindMap.view.x,
+        y: this.mindMap.view.y
+      }
+    },
+
+    applyEmbedFocusedViewport(reason, options = {}) {
+      const requestId = options.requestId || null
+      if (!this.isEmbedMode || !this.mindMap || !this.mindMap.view) {
+        this.notifyEmbedPreviewViewportApplied({
+          reason,
+          requestId,
+          ok: false,
+          error: 'embed-focused-viewport-unavailable'
+        })
+        return { ok: false, applied: false, reason }
+      }
+      debugMindMapOpen('applyEmbedFocusedViewport start', {
+        reason,
+        scaleBefore: this.mindMap.view.scale || null,
+        rootPosition: this.mindMap.opt.initRootNodePosition || null
+      })
+      if (typeof this.mindMap.resize === 'function') {
+        this.mindMap.resize()
+      }
+      const shouldRecomputeFocused =
+        reason === 'initial-render-end' ||
+        reason === 'preview-resize' ||
+        !this.embedBaselineViewport
+      if (shouldRecomputeFocused) {
+        const viewBox = this.computeEmbedFocusedViewBox()
+        if (!viewBox) {
+          this.notifyEmbedPreviewViewportApplied({
+            reason,
+            requestId,
+            ok: false,
+            error: 'embed-focused-viewport-no-viewbox'
+          })
+          return { ok: false, applied: false, reason }
+        }
+        const applied = this.applyFocusedViewBox(viewBox)
+        if (!applied) {
+          this.notifyEmbedPreviewViewportApplied({
+            reason,
+            requestId,
+            ok: false,
+            error: 'embed-focused-viewport-not-applied'
+          })
+          return { ok: false, applied: false, reason }
+        }
+        this.embedBaselineViewport = this.readEmbedLayoutViewport()
+      } else if (this.embedBaselineViewport) {
+        const { scale, x, y } = this.embedBaselineViewport
+        this.mindMap.view.scale = scale
+        this.mindMap.view.x = x
+        this.mindMap.view.y = y
+        this.mindMap.view.transform()
+        if (typeof this.mindMap.view.emitEvent === 'function') {
+          this.mindMap.view.emitEvent('scale')
+        }
+      }
+      const viewport = this.readEmbedLayoutViewport()
+      if (!viewport) {
+        this.notifyEmbedPreviewViewportApplied({
+          reason,
+          requestId,
+          ok: false,
+          error: 'embed-focused-viewport-read-failed'
+        })
+        return { ok: false, applied: false, reason }
+      }
+      debugMindMapOpen('applyEmbedFocusedViewport done', {
+        reason,
+        recomputedFocused: shouldRecomputeFocused,
+        viewport
+      })
+      this.notifyEmbedPreviewViewportApplied({
+        reason,
+        requestId,
+        ok: true,
+        scale: viewport.scale,
+        x: viewport.x,
+        y: viewport.y
+      })
+      return {
+        ok: true,
+        applied: true,
+        reason,
+        scale: viewport.scale,
+        x: viewport.x,
+        y: viewport.y
+      }
+    },
+
+    notifyEmbedPreviewViewportApplied(payload) {
+      if (!this.isEmbedMode || !window.takeOverApp) {
+        return
+      }
+      this.$bus.$emit('embed_preview_viewport_applied', payload)
+    },
+
+    collectFocusedPreviewNodeBounds() {
       const root = this.mindMap && this.mindMap.renderer
         ? this.mindMap.renderer.root
         : null
@@ -785,32 +905,48 @@ export default {
       return bounds
     },
 
-    getEmbedPreviewTargetRootScreenRatio() {
+    getEmbedFocusedTargetRootScreenRatio() {
       const configuredMultiplier = Number(
         this.mindMapConfig &&
           this.mindMapConfig.__nbPreviewRootScreenRatioMultiplier
       )
       if (Number.isFinite(configuredMultiplier) && configuredMultiplier > 0) {
-        return EMBED_PREVIEW_BASELINE_ROOT_SCREEN_RATIO * configuredMultiplier
+        return FOCUSED_PREVIEW_BASELINE_ROOT_SCREEN_RATIO * configuredMultiplier
       }
-      if (this.isEmbedMode) {
-        return EMBED_PREVIEW_TARGET_ROOT_SCREEN_RATIO
+      return getMindMapEmbedFocusedTargetRootScreenRatio()
+    },
+
+    getEditorFocusedTargetRootScreenRatio() {
+      const configuredMultiplier = Number(
+        this.mindMapConfig &&
+          this.mindMapConfig.__nbPreviewRootScreenRatioMultiplier
+      )
+      if (Number.isFinite(configuredMultiplier) && configuredMultiplier > 0) {
+        return FOCUSED_PREVIEW_BASELINE_ROOT_SCREEN_RATIO * configuredMultiplier
       }
       return (
-        EMBED_PREVIEW_BASELINE_ROOT_SCREEN_RATIO *
-        EDITOR_PREVIEW_ROOT_SCREEN_RATIO_MULTIPLIER
+        FOCUSED_PREVIEW_BASELINE_ROOT_SCREEN_RATIO *
+        EDITOR_FOCUSED_ROOT_SCREEN_RATIO_MULTIPLIER
       )
     },
 
-    computeEmbedPreviewViewBox() {
-      const nodeBounds = this.collectEmbedPreviewNodeBounds()
+    computeEmbedFocusedViewBox() {
+      const nodeBounds = this.collectFocusedPreviewNodeBounds()
       return computeMindMapFocusedViewBoxFromNodeBounds(nodeBounds, {
-        targetRootScreenRatio: this.getEmbedPreviewTargetRootScreenRatio(),
-        targetAspect: EMBED_PREVIEW_TARGET_ASPECT
+        targetRootScreenRatio: this.getEmbedFocusedTargetRootScreenRatio(),
+        targetAspect: FOCUSED_PREVIEW_TARGET_ASPECT
       })
     },
 
-    applyEmbedPreviewViewBox(viewBox) {
+    computeEditorFocusedViewBox() {
+      const nodeBounds = this.collectFocusedPreviewNodeBounds()
+      return computeMindMapFocusedViewBoxFromNodeBounds(nodeBounds, {
+        targetRootScreenRatio: this.getEditorFocusedTargetRootScreenRatio(),
+        targetAspect: FOCUSED_PREVIEW_TARGET_ASPECT
+      })
+    },
+
+    applyFocusedViewBox(viewBox) {
       if (!viewBox || !this.$refs.mindMapContainer) return null
       const rect = this.$refs.mindMapContainer.getBoundingClientRect()
       if (rect.width <= 0 || rect.height <= 0) return null
@@ -827,20 +963,20 @@ export default {
       return { scale, x, y }
     },
 
-    applyEmbedPreviewViewport(reason) {
-      const canApplyPreviewViewport =
-        this.isEmbedMode ||
-        (window.takeOverApp && !this.hadInitialView)
-      if (!canApplyPreviewViewport || !this.mindMap || !this.mindMap.view) {
-        debugMindMapOpen('applyEmbedPreviewViewport skipped', {
+    applyEditorFocusedViewport(reason, options = {}) {
+      const requestId = options.requestId || null
+      const canApplyEditorFocusedViewport =
+        !this.isEmbedMode && window.takeOverApp && !this.hadInitialView
+      if (!canApplyEditorFocusedViewport || !this.mindMap || !this.mindMap.view) {
+        debugMindMapOpen('applyEditorFocusedViewport skipped', {
           reason,
           isEmbedMode: this.isEmbedMode,
           hadInitialView: this.hadInitialView,
-          canApplyPreviewViewport,
+          canApplyEditorFocusedViewport,
           hasMindMap: !!this.mindMap,
           hasView: !!(this.mindMap && this.mindMap.view)
         })
-        return null
+        return { ok: false, applied: false, reason }
       }
       const scaleBefore = this.mindMap.view.scale || null
       const size = {
@@ -851,7 +987,7 @@ export default {
           ? Math.round(this.$refs.mindMapContainer.getBoundingClientRect().height)
           : null
       }
-      debugMindMapOpen('applyEmbedPreviewViewport start', {
+      debugMindMapOpen('applyEditorFocusedViewport start', {
         reason,
         scaleBefore,
         size,
@@ -860,18 +996,30 @@ export default {
       if (typeof this.mindMap.resize === 'function') {
         this.mindMap.resize()
       }
-      const viewBox = this.computeEmbedPreviewViewBox()
-      const applied = this.applyEmbedPreviewViewBox(viewBox)
-      debugMindMapOpen('applyEmbedPreviewViewport done', {
+      const viewBox = this.computeEditorFocusedViewBox()
+      if (!viewBox) {
+        debugMindMapOpen('applyEditorFocusedViewport failed: no viewBox', {
+          reason
+        })
+        return { ok: false, applied: false, reason }
+      }
+      const applied = this.applyFocusedViewBox(viewBox)
+      const result = {
+        ok: !!applied,
+        applied: !!applied,
+        reason,
+        scale: applied ? this.mindMap.view.scale || null : null,
+        x: applied ? this.mindMap.view.x : null,
+        y: applied ? this.mindMap.view.y : null,
+        viewBox
+      }
+      debugMindMapOpen('applyEditorFocusedViewport done', {
         reason,
         scaleAfter: this.mindMap.view.scale || null,
         viewBox,
-        applied
+        applied: result.applied
       })
-      return {
-        scale: this.mindMap.view.scale || null,
-        viewBox
-      }
+      return result
     },
 
     // 执行命令

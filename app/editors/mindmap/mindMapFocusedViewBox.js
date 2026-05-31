@@ -147,3 +147,9 @@ export function getMindMapThumbnailTargetRootScreenRatio() {
     previewViewportConfig.thumbnailRootScreenRatioMultiplier
   );
 }
+
+export function getMindMapEmbedFocusedTargetRootScreenRatio() {
+  const multiplier =
+    previewViewportConfig.embedFocusedRootScreenRatioMultiplier ?? 0.4;
+  return previewViewportConfig.baselineRootScreenRatio * multiplier;
+}

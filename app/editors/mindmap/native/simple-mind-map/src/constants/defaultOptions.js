@@ -215,6 +215,11 @@ export const defaultOpt = {
     }
   */
   handleNodePasteImg: null,
+  // 节点图片粘贴/导入时的最大存储尺寸（仅超出时才缩放，与画布显示用的 imgMaxWidth/imgMaxHeight 无关）
+  maxNodeImageStorageWidth: 8192,
+  maxNodeImageStorageHeight: 8192,
+  // 单张图片最大体积（与 Excalidraw MAX_ALLOWED_FILE_BYTES 一致）
+  maxNodeImageStorageBytes: 8 * 1024 * 1024,
   // 自定义创建节点形状的方法，可以传一个函数，均接收一个参数
   // 矩形、圆角矩形、椭圆、圆等形状会调用该方法
   // 接收svg path字符串，返回svg节点

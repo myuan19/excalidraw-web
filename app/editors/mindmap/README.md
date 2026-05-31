@@ -19,5 +19,7 @@ Dev / prod use the **same iframe URL**: `/mind-map/index.html` on the main app o
 
 Node content uses **Quill rich text (HTML in `data.text`)** — Markdown import/export and per-node Markdown editing are not supported.
 
+Viewport / initial framing for **embed**, **editor**, and **thumbnail** are documented in [`VIEWPORT.md`](./VIEWPORT.md).
+
 - `./_scripts/dev.sh --all` — ensures `public/mind-map/` is built, then starts API + Vite
 - `./_scripts/dev.sh --mindmap` — build + watch native sources (rebuilds `public/mind-map/` on change)

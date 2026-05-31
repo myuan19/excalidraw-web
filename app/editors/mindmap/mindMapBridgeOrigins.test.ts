@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   getNativeMindMapTargetOrigin,
   isAllowedNativeMindMapMessageOrigin,
+  isMindMapIframeDocumentComplete,
   NATIVE_MINDMAP_URL,
   resolveNativePostMessageTargetOrigin,
 } from "./mindMapBridgeOrigins";
@@ -80,5 +81,20 @@ describe("mindMapBridgeOrigins", () => {
         bridgeReady: true,
       }),
     ).toBe("http://localhost:3001");
+  });
+
+  it("detects a loaded same-origin iframe document", () => {
+    const complete = {
+      contentWindow: {},
+      contentDocument: { readyState: "complete" },
+    } as unknown as HTMLIFrameElement;
+    const loading = {
+      contentWindow: {},
+      contentDocument: { readyState: "loading" },
+    } as unknown as HTMLIFrameElement;
+
+    expect(isMindMapIframeDocumentComplete(complete)).toBe(true);
+    expect(isMindMapIframeDocumentComplete(loading)).toBe(false);
+    expect(isMindMapIframeDocumentComplete(null)).toBe(false);
   });
 });
