@@ -7,12 +7,14 @@ import {
 import { TopErrorBoundary } from "./components/TopErrorBoundary";
 import { FileList } from "./components/FileList";
 import { EditorPlatformShell } from "./components/EditorPlatformSidebar";
+import { recordRecentFileAccess } from "./data/recentFiles";
 import { logFileListOpen } from "./lib/logger";
 import { devDebug } from "./lib/devDebug";
 import { isEmbedMode } from "./embed/embedMode";
 import { prefetchMindMapNativeAssets } from "./data/mindMapPrefetch";
 import { editorRegistry } from "./editors";
 import { getLazyEditorShell } from "./editors/lazyViews";
+import { hashNeedsEditorRoute } from "./data/documentHash";
 import { getDocumentKindFromHash } from "./lib/appBranding";
 import { EditorShellChunkFallback } from "./components/EditorShellChunkFallback";
 import { logEditorOpenPhase } from "./lib/editorOpenPhases";
@@ -46,8 +48,7 @@ function useDeferredEditorPrefetch() {
 
 /** Returns true if the URL hash requires the editor (not just the file list). */
 function hashNeedsEditor(): boolean {
-  const h = window.location.hash;
-  return h.startsWith("#file=") || h.startsWith("#addLibrary=");
+  return hashNeedsEditorRoute(window.location.hash);
 }
 
 function buildFileHash(id: string, kind?: string): string {
@@ -123,6 +124,7 @@ const ForkRoot = () => {
       <div className="excalidraw-app" style={{ height: "100%" }}>
         <FileList
           onOpenFile={({ id, kind }) => {
+            recordRecentFileAccess(id);
             const resolvedKind = editorRegistry.resolveKind(kind);
             const next = buildFileHash(id, resolvedKind);
             if (resolvedKind === "mindmap") {

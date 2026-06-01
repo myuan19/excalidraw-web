@@ -52,6 +52,14 @@ export function saveMindMapBrowserViewFromData(
   }
 }
 
+export function clearMindMapBrowserView(fileId: string): void {
+  try {
+    localStorage.removeItem(storageKey(fileId));
+  } catch {
+    // ignore
+  }
+}
+
 export function readMindMapBrowserView(
   fileId: string,
 ): MindMapBrowserViewState | null {

@@ -151,7 +151,7 @@
               kind: 'script',
               message:
                 'MindMap 脚本加载失败: ' + (src || 'unknown') +
-                '（若返回 HTML/404，请整包部署 mind-map/dist/js 并放行静态路径）',
+                '（若已登录仍失败：整包部署 mind-map/dist/js 或检查 HTTP/2 反代 ERR_HTTP2_PROTOCOL_ERROR）',
               source: src || null
             })
             return
@@ -223,22 +223,40 @@
       const scheduleDraftThumbnailExport = revision => {
         draftThumbExportRevision = revision
         window.clearTimeout(draftThumbExportTimer)
-        draftThumbExportTimer = window.setTimeout(async () => {
+        draftThumbExportTimer = window.setTimeout(() => {
           draftThumbExportTimer = null
           const revisionAtExport = draftThumbExportRevision
-          const exportStart = performance.now()
-          const thumbnail = await getMindMapThumbnail()
-          debugMindMapOpen('draft thumbnail export done', {
-            revision: revisionAtExport,
-            elapsed: Math.round(performance.now() - exportStart),
-            hasThumbnail: !!thumbnail,
-            thumbnailLength: thumbnail ? thumbnail.length : 0
-          })
-          if (!thumbnail) return
-          postToHost('saveMindMapThumbnail', {
-            revision: revisionAtExport,
-            thumbnail
-          })
+          const runExport = async () => {
+            if (!nativeMindMap || !renderEnded) {
+              debugMindMapOpen('draft thumbnail export deferred (not rendered)', {
+                revision: revisionAtExport,
+                hasNativeMindMap: !!nativeMindMap,
+                renderEnded
+              })
+              if (window.$bus && typeof window.$bus.$once === 'function') {
+                window.$bus.$once('node_tree_render_end', () => {
+                  if (draftThumbExportRevision === revisionAtExport) {
+                    void runExport()
+                  }
+                })
+              }
+              return
+            }
+            const exportStart = performance.now()
+            const thumbnail = await getMindMapThumbnail()
+            debugMindMapOpen('draft thumbnail export done', {
+              revision: revisionAtExport,
+              elapsed: Math.round(performance.now() - exportStart),
+              hasThumbnail: !!thumbnail,
+              thumbnailLength: thumbnail ? thumbnail.length : 0
+            })
+            if (!thumbnail) return
+            postToHost('saveMindMapThumbnail', {
+              revision: revisionAtExport,
+              thumbnail
+            })
+          }
+          void runExport()
         }, DRAFT_THUMB_EXPORT_DEBOUNCE_MS)
       }
       const postMindMapDataToHost = async (data, requestId) => {
@@ -557,6 +575,13 @@
           if (!emitOnBus('showImport')) {
             debugMindMapOpen('mindMapHostOpenImport skipped: bus unavailable')
           }
+        }
+        if (message.type === 'hostExportDraftThumbnail') {
+          debugMindMapOpen('hostExportDraftThumbnail', {
+            renderEnded,
+            hasNativeMindMap: !!nativeMindMap
+          })
+          scheduleDraftThumbnailExport(++mindMapDataRevision)
         }
         if (message.type === 'requestMindMapSave') {
           const requestId = message.payload && message.payload.requestId

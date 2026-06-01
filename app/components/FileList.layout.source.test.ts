@@ -12,19 +12,20 @@ describe("FileList layout source contract", () => {
     const styles = fs.readFileSync(path.join(__dirname, "FileList.scss"), "utf8");
 
     expect(styles).toContain("height: 100vh;");
-    expect(styles).toContain(".filelist__shell {\n  display: grid;");
+    expect(styles).toContain("grid-template-columns: auto minmax(0, 1fr);");
     expect(styles).toContain("overflow: hidden;");
-    expect(styles).toContain(".filelist__main {\n  min-width: 0;");
+    expect(styles).toContain(".filelist__workspace {\n");
+    expect(styles).toContain(".filelist__body {\n");
     expect(styles).toContain("overflow-y: auto;");
     expect(styles).toContain("-webkit-overflow-scrolling: touch;");
   });
 
   it("reserves main scrollbar space so thumbnail loading does not shift layout", () => {
     const styles = fs.readFileSync(path.join(__dirname, "FileList.scss"), "utf8");
-    const mainRule = styles.match(/\.filelist__main \{([\s\S]*?)\n\}/);
+    const bodyRule = styles.match(/\.filelist__body \{([\s\S]*?)\n\}/);
 
-    expect(mainRule?.[1]).toContain("overflow-y: auto;");
-    expect(mainRule?.[1]).toContain("scrollbar-gutter: stable;");
+    expect(bodyRule?.[1]).toContain("overflow-y: auto;");
+    expect(bodyRule?.[1]).toContain("scrollbar-gutter: stable;");
   });
 
   it("keeps the desktop sidebar content-sized while reserving scrollbar space", () => {
@@ -78,12 +79,11 @@ describe("FileList layout source contract", () => {
 
     expect(source).toContain("function isFileListLayoutDebugEnabled()");
     expect(source).toContain("excalidraw-filelist-layout-debug");
-    expect(source).toContain("[DEBUG] FileList.layout");
+    expect(source).toContain('devDebug("file-list", `layout ${label}`, data)');
     expect(source).toContain("before selectFolder setState");
     expect(source).toContain("before thumbnail state update");
     expect(source).toContain("thumbnail committed layout");
     expect(source).toContain("thumbnail next frame layout");
-    expect(source).toContain("JSON.stringify(payload, null, 2)");
     expect(source).toContain("setFetchedThumbsWithLayoutDebug");
     expect(debugHelper?.[0]).toContain("isFileListLayoutDebugEnabled()");
     expect(source).not.toContain("FileList.selectFolder | click");
@@ -98,6 +98,15 @@ describe("FileList layout source contract", () => {
     expect(activeRule?.[1]).toContain("background: var(--fl-primary-soft);");
     expect(activeRule?.[1]).toContain("color: var(--fl-primary);");
     expect(activeRule?.[1]).not.toContain("font-weight:");
+  });
+
+  it("keeps folder drag-and-order debug behind a separate opt-in flag", () => {
+    const source = fs.readFileSync(controllerPath, "utf8");
+
+    expect(source).toContain("function debugFolderDnd(");
+    expect(source).toContain("excalidraw-filelist-folder-dnd-debug");
+    expect(source).toContain('devDebug("file-list", `folder-dnd ${label}`, data)');
+    expect(source).toContain("folderDndDebugKeyRef");
   });
 
   it("keeps file card thumbnail debug logs behind a separate opt-in flag", () => {
@@ -131,8 +140,8 @@ describe("FileList layout source contract", () => {
     expect(styles).toContain(".filelist__tree-row-wrap--drop-before::before");
     expect(styles).toContain(".filelist__tree-row-wrap--drop-after::after");
     expect(styles).toContain("position: absolute;");
-    expect(styles).toContain("height: var(--nb-border-width);");
-    expect(styles).toContain("opacity: 0.42;");
+    expect(styles).toContain("height: 2px;");
+    expect(styles).toContain("background: var(--fl-nav-outline-drop);");
     expect(styles).toContain("pointer-events: none;");
   });
 
@@ -151,5 +160,21 @@ describe("FileList layout source contract", () => {
 
     expect(wrapper).toContain("useFileListController");
     expect(wrapper).not.toContain("refreshSeqRef");
+  });
+
+  it("uses left-right shell with sidebar tools and a single new entry card", () => {
+    const source = fs.readFileSync(controllerPath, "utf8");
+
+    expect(source).toContain("renderSidebar()");
+    expect(source).toContain("filelist__workspace");
+    expect(source).toContain("filelist__topbar");
+    expect(source).toContain("filelist__sidebar-tools");
+    expect(source).toContain("filelist__topbar-import");
+    expect(source).toContain("renderTopbarImport");
+    expect(source).toContain("detectImportCandidateKinds");
+    expect(source).toContain('key="new-entry"');
+    expect(source).not.toContain("renderNewFileCard");
+    expect(source).not.toContain('className="filelist__new-btn" onClick={openNewFileDialog}');
+    expect(source).not.toContain("打开编辑器");
   });
 });

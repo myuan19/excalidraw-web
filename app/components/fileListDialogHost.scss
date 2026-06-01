@@ -1,0 +1,21 @@
+@import "./filelist-design-tokens";
+
+/**
+ * 编辑器内打开的保存/新建/导入类型弹层不在 .filelist 内，须自带 --fl-* token，
+ * 否则主按钮与文件夹选中态会失效（空白按钮、无法看出选中）。
+ */
+.filelist-dialog-host {
+  @include filelist-design-tokens;
+  font-family: var(--nb-font-ui), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: var(--nb-text);
+
+  .filelist__kind-option {
+    appearance: none;
+  }
+
+  .filelist__new-btn,
+  .filelist__import-scene-btn {
+    appearance: none;
+  }
+}

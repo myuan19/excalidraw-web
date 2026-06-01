@@ -2,7 +2,9 @@
  * 画布「编辑会话」中与离开/放弃相关的编排（与 {@link FileEditDirty} 的 dirty 判定配合使用）。
  */
 import { DeltaStorage } from "./DeltaStorage";
+import { discardLocalDraftSession } from "./discardLocalDraftSession";
 import { FileSyncState } from "./FileSyncState";
+import { isLocalDraftFileId } from "./localDraftFileId";
 
 export type DiscardLocalEditsDeps = {
   getFileId: () => string | null;
@@ -27,6 +29,13 @@ export async function discardLocalEditsNavigateHome(
   }
   deps.flushDraftDebounce();
   deps.bumpPersistGeneration();
+
+  if (isLocalDraftFileId(fid)) {
+    await discardLocalDraftSession(fid);
+    deps.navigateToFileListHome();
+    return;
+  }
+
   await DeltaStorage.restoreSnapshot([]);
   FileSyncState.clearLocalCache(fid);
   const bh = FileSyncState.getBaselineHash(fid);

@@ -49,15 +49,39 @@ Data volume: `editorhub_web_data` → `/var/lib/excalidraw` in container (bind m
 
 Deploy **the entire** `public/mind-map/dist/` (or `app/build/mind-map/dist/`) on every release. `index.html` + `app.*.js` alone are not enough: Vue lazy-loads `chunk-*.js` (~3MB). A partial copy causes `ChunkLoadError` and “原生界面未完成初始化”.
 
-If you put OAuth/auth in front of the site, **exclude** these paths from login redirects (otherwise the browser reports **404** or loads HTML instead of JS):
+**Auth model (intended)**
 
-- `/api/*` — must reach the Node API (not static 404)
-- `/assets/*`, `/icons/*` — hashed SPA + editor icons (not `index.html` fallback)
-- `/mind-map/dist/*` (and ideally all `/mind-map/` static files)
+- **Main app** (`editorhub.*`): OAuth/login required for `/`, `/assets/*`, `/mind-map/*`, `/api/*`, etc. After login, the browser sends the session cookie on same-origin `<script src="/mind-map/dist/js/...">` — do **not** whitelist these paths on the public internet.
+- **Embed only** (`/embed/...`): token + domain gate on document/API; **content-hashed** `/embed/assets/*`, `/embed/fonts/*`, `/embed/mind-map/dist/*` are public (see `embedAccess.js`). That bypass is **not** for the main editor iframe at `/mind-map/`.
 
-Without exclusions, authenticated sessions still break: e.g. `GET /icons/excalidraw.svg` or `GET /api/files/tree` redirect to OAuth HTML or return 404 from the wrong upstream.
+`curl` without a session cookie getting `302` to OAuth on `/mind-map/dist/js/*.js` is **expected**, not a deploy bug.
 
-Large chunks over HTTP/2 through some reverse proxies may show `ERR_HTTP2_PROTOCOL_ERROR`; try HTTP/1.1 for static locations, enable `gzip` for `application/javascript`, or raise proxy buffer limits.
+**Symptom: `ChunkLoadError` / `ERR_HTTP2_PROTOCOL_ERROR` while already logged in on the main app**
+
+1. **Incomplete deploy** — sync the full `app/build/mind-map/dist/js/` (all `chunk-*.js`, not only `app.*.js` + `index.html`). Run `node scripts/verify-mind-map-public.mjs` before release.
+2. **HTTP/2 proxy / frp** — lazy chunks are multi‑MB. Some gateways abort with `ERR_HTTP2_PROTOCOL_ERROR` even when auth succeeds. On the **outer** reverse proxy in front of `17888`, for static locations use `proxy_http_version 1.1`, enable `gzip` for `application/javascript`, and raise buffers, e.g.:
+
+```nginx
+location ^~ /mind-map/dist/ {
+    proxy_http_version 1.1;
+    proxy_buffering on;
+    proxy_buffers 16 512k;
+    proxy_busy_buffers_size 512k;
+    # proxy_pass …  (must reach the same static root as deploy/full/nginx.conf)
+}
+```
+
+3. **OAuth forward-auth** — when the user *is* logged in, the auth middleware must **pass the session cookie through** to upstream for `/mind-map/dist/*` (return 200 + JS, not login HTML). If only navigations get cookies but subresources do not, fix cookie `Domain` / `Path` on the OAuth product so `editorhub.*` receives the session cookie.
+
+Verify **with** a logged-in browser cookie (or `Cookie:` header from DevTools):
+
+```bash
+curl -sI 'https://YOUR_HOST/mind-map/dist/js/app.XXXXXXXX.js' \
+  -H 'Cookie: YOUR_SESSION=…' | head -8
+# Expect: 200  content-type: application/javascript
+```
+
+Optional: `HOST=https://YOUR_HOST COOKIE='session=…' node scripts/verify-static-gateway.mjs`
 
 **Symptom: JS 404 or `MIME type ('text/html')` on `/mind-map/dist/js/*.js`**
 

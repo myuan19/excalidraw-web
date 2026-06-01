@@ -46,6 +46,14 @@ export function saveForkBrowserScene(
  * Returns restored browser appState to merge over the scene loaded from server/cache.
  * Uses restoreAppState on stored cleared appState from the v1 snapshot.
  */
+export function clearForkBrowserScene(fileId: string): void {
+  try {
+    localStorage.removeItem(storageKey(fileId));
+  } catch {
+    // ignore
+  }
+}
+
 export function readForkBrowserAppStateOverlay(fileId: string): Partial<AppState> | null {
   try {
     const raw = localStorage.getItem(storageKey(fileId));
@@ -60,4 +68,20 @@ export function readForkBrowserAppStateOverlay(fileId: string): Partial<AppState
   }
 
   return null;
+}
+
+export function copyForkBrowserSceneBetweenFiles(
+  fromFileId: string,
+  toFileId: string,
+): void {
+  try {
+    const raw = localStorage.getItem(storageKey(fromFileId));
+    if (!raw) {
+      return;
+    }
+    localStorage.setItem(storageKey(toFileId), raw);
+    localStorage.removeItem(storageKey(fromFileId));
+  } catch {
+    // ignore
+  }
 }

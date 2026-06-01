@@ -246,6 +246,42 @@
   --nb-filelist-sheet-backdrop: rgba(15, 23, 42, 0.3);
   --nb-filelist-move-active-bg: rgba(105, 101, 219, 0.14);
   --nb-filelist-empty-icon-tint: rgba(105, 101, 219, 0.25);
+
+  /* file list sidebar nav (react-stack semantic layer → --nb-*) */
+  --nb-nav-surface: var(--nb-surface-secondary);
+  --nb-nav-surface-hover: var(--nb-fill-hover);
+  --nb-nav-surface-active: var(--nb-fill-hover-strong);
+  --nb-nav-border-divider: var(--nb-filelist-border);
+  --nb-nav-text-primary: var(--nb-text);
+  --nb-nav-text-muted: var(--nb-text-muted);
+  --nb-nav-text-faint: var(--nb-text-faint);
+  --nb-nav-outline-drop: var(--nb-drop-line);
+  --nb-nav-spacing-panel-x: var(--nb-space-3);
+  --nb-nav-spacing-panel-y: var(--nb-space-5);
+  --nb-nav-spacing-item-x: var(--nb-space-3);
+  --nb-nav-spacing-cluster: var(--nb-space-micro);
+  --nb-nav-spacing-section: var(--nb-space-2);
+  --nb-nav-spacing-divider-x: var(--nb-space-2);
+  --nb-nav-spacing-subtree-y: var(--nb-space-1);
+  --nb-nav-spacing-subtree-pad-bottom: var(--nb-space-2);
+  --nb-nav-spacing-subtree-indent: calc(
+    var(--nb-space-3) + var(--nb-nav-icon-size)
+  );
+  --nb-nav-radius-item: var(--nb-radius-sm);
+  --nb-nav-radius-row: var(--nb-radius-sm);
+  --nb-nav-radius-tree-row: var(--nb-radius-sm);
+  --nb-nav-font-label: var(--nb-font-body-lg);
+  --nb-nav-font-caption: var(--nb-font-body-sm);
+  --nb-nav-font-tree: var(--nb-font-body);
+  --nb-nav-font-weight-label: 500;
+  --nb-nav-font-weight-active: 600;
+  --nb-nav-item-min-height: calc(var(--nb-unit) * 20);
+  --nb-nav-row-min-height: calc(var(--nb-unit) * 20);
+  --nb-nav-tree-row-min-height: calc(var(--nb-unit) * 18);
+  --nb-nav-icon-size: calc(var(--nb-unit) * 10);
+  --nb-nav-chevron-hit: calc(var(--nb-unit) * 16);
+  --nb-nav-menu-min-width: calc(var(--nb-unit) * 92);
+  --nb-nav-dur-chevron: 0.18s;
   --nb-z-filelist-import: 205;
   --nb-z-filelist-sheet: 250;
   --nb-z-filelist-detail: 300;
@@ -286,6 +322,14 @@
 
 /* Breakpoint tokens: use rem in @media (no px in query values). */
 /* --nb-bp-xs: 23.75rem (380px); --nb-bp-sm: 40rem (640px); etc. */
+
+.excalidraw-app.theme--dark .filelist,
+.excalidraw.theme--dark .filelist {
+  --nb-nav-surface: rgba(255, 255, 255, 0.04);
+  --nb-nav-surface-hover: var(--nb-fill-hover);
+  --nb-nav-surface-active: var(--nb-fill-hover-strong);
+  --nb-nav-border-divider: var(--nb-border);
+}
 
 .excalidraw.theme--dark {
   --nb-text: #e3e3e8;

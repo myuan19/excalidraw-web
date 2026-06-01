@@ -13,10 +13,17 @@ import {
 } from "../../lib/editorOpenPhases";
 import { DeltaStorage } from "../../data/DeltaStorage";
 import { FileSyncState } from "../../data/FileSyncState";
-import { readForkBrowserAppStateOverlay } from "../../data/forkBrowserSceneStorage";
+import {
+  clearForkBrowserScene,
+  readForkBrowserAppStateOverlay,
+} from "../../data/forkBrowserSceneStorage";
+import { isExcalidrawDraftDirty } from "../../data/draftDirty";
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
 import { hashSceneSnapshot } from "../../data/sceneHash";
+import { createBlankExcalidrawInitialScene } from "../../data/forkFileScene";
+import { isLocalDraftFileId } from "../../data/localDraftFileId";
 import { restoreSceneAppState, restoreSceneElements } from "../../data/sceneRestore";
+import { LocalDraftSessions } from "../../data/localDraftSessions";
 import { ServerSync } from "../../data/ServerSync";
 
 import type { ForkLocalCacheRecord, ForkSceneSnapshot } from "../../data/forkFileTypes";
@@ -148,6 +155,36 @@ export async function initializeExcalidrawScene(opts?: {
   logInit.debug(`initializeScene file=${fid8}`);
   await DeltaStorage.setFileId(fileIdFromHash);
 
+  if (isLocalDraftFileId(fileIdFromHash)) {
+    let localRecord = FileSyncState.getLocalCache(fileIdFromHash);
+    if (!localRecord) {
+      const label =
+        LocalDraftSessions.get(fileIdFromHash)?.name ?? "未命名";
+      const initialScene = createBlankExcalidrawInitialScene(label);
+      FileSyncState.setLocalCache(fileIdFromHash, {
+        elements: initialScene.elements,
+        appState: initialScene.appState,
+        files: initialScene.files,
+        deltas: [],
+      });
+      FileSyncState.alignHashes(
+        fileIdFromHash,
+        hashSceneSnapshot(initialScene),
+      );
+      localRecord = FileSyncState.getLocalCache(fileIdFromHash);
+    }
+    if (localRecord) {
+      onPhase?.("preparing_surface");
+      if (!isExcalidrawDraftDirty(localRecord)) {
+        clearForkBrowserScene(fileIdFromHash);
+      }
+      const overlay = isExcalidrawDraftDirty(localRecord)
+        ? readForkBrowserAppStateOverlay(fileIdFromHash)
+        : null;
+      return loadLocalSnapshot(fileIdFromHash, localRecord, overlay);
+    }
+  }
+
   const localRecord = FileSyncState.getLocalCache(fileIdFromHash);
   const localElements = Array.isArray((localRecord as ForkSceneSnapshot | null)?.elements)
     ? ((localRecord as ForkSceneSnapshot).elements as unknown[])
@@ -202,6 +239,11 @@ export async function verifyExcalidrawRemoteAfterCachedOpen(opts: {
 }): Promise<boolean> {
   const fileId = getFileIdFromHash();
   if (!fileId) {
+    opts.onPhase?.("ready");
+    return false;
+  }
+
+  if (isLocalDraftFileId(fileId)) {
     opts.onPhase?.("ready");
     return false;
   }

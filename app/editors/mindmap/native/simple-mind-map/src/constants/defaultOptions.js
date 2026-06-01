@@ -215,7 +215,7 @@ export const defaultOpt = {
     }
   */
   handleNodePasteImg: null,
-  // 节点图片粘贴/导入时的最大存储尺寸（packages/common/editor-media-limits.cjs）
+  // 节点图片粘贴/导入时的最大存储尺寸（与 packages/common/src/editorMediaLimits.ts 同步）
   ...(() => {
     const {
       maxFileBytes,

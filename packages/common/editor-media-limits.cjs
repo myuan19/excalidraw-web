@@ -1,8 +1,10 @@
 /**
- * Single source of truth for editor / embed image file size caps (EditorHub).
- * Consumed by @excalidraw/common (TS), MindMap defaultOptions (build-time require), and app import checks.
+ * Node / MindMap webpack require() only — do not import from browser/Vite.
+ * Keep in sync with packages/common/src/editorMediaLimits.ts (EDITOR_MEDIA_LIMITS).
  */
-module.exports = {
+const limits = {
   maxFileBytes: 8 * 1024 * 1024,
   maxDimension: 8192,
 };
+
+module.exports = limits;

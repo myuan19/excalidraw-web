@@ -4,7 +4,7 @@ import { editorRegistry } from "../editors";
 
 /**
  * 品牌分层：
- * - 浏览器标签标题 / favicon：始终主站（本模块）
+ * - 浏览器标签标题：文件列表为主站名；打开具体文件时为文件名；favicon 始终主站
  * - 侧边栏悬浮球、新建文件类型：各编辑器 `EditorPlugin.icon`
  * - 文件列表顶栏、文件卡片：主站标题 + `editorIconForKind`
  */
@@ -41,16 +41,36 @@ export function applyMainSiteDocumentBranding(): void {
   }
 }
 
+/** 打开文件时的标签标题；无有效文件名时回退主站名。 */
+export function resolveEditorDocumentTitle(
+  fileName: string | null | undefined,
+): string {
+  const trimmed = fileName?.trim();
+  return trimmed ? trimmed : HOME_APP_TITLE;
+}
+
+/** 编辑器标签：有文件名则用文件名，favicon 仍为主站。 */
+export function applyEditorDocumentBranding(
+  fileName: string | null | undefined,
+): void {
+  document.title = resolveEditorDocumentTitle(fileName);
+  for (const link of collectFaviconLinks()) {
+    link.href = MAIN_SITE_ICON;
+  }
+}
+
 /**
- * 编辑器会话内保持主站标签品牌（覆盖子编辑器可能改动的 title/favicon）。
+ * 编辑器会话内同步标签标题（文件名）与主站 favicon。
  */
-export function useMainSiteDocumentBranding(): void {
+export function useEditorDocumentTitle(
+  fileName: string | null | undefined,
+): void {
   useEffect(() => {
     const prevTitle = document.title;
     const iconLinks = collectFaviconLinks();
     const prevHrefs = new Map(iconLinks.map((link) => [link, link.href]));
 
-    applyMainSiteDocumentBranding();
+    applyEditorDocumentBranding(fileName);
 
     return () => {
       document.title = prevTitle;
@@ -58,5 +78,5 @@ export function useMainSiteDocumentBranding(): void {
         link.href = href;
       }
     };
-  }, []);
+  }, [fileName]);
 }

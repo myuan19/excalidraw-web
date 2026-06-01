@@ -3,10 +3,14 @@ import { debounce } from "@excalidraw/common";
 
 import { FileSyncState } from "../../data/FileSyncState";
 import { MindMapAdapter } from "../../data/formats/registry";
+import { isMindMapSingleRootOnly } from "../../data/formats/MindMapAdapter";
 import { saveMindMapBrowserViewFromData } from "../../data/mindMapBrowserViewStorage";
 import { hashDocumentSnapshot } from "../../data/sceneHash";
 import { ServerSync } from "../../data/ServerSync";
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
+import { isLocalDraftFileId } from "../../data/localDraftFileId";
+import { notifyLocalDraftEdited } from "../../data/localDraftSessions";
+import { discardLocalDraftSession } from "../../data/discardLocalDraftSession";
 
 import type { ManagedDocument } from "../../data/documentTypes";
 import type { MindMapDocumentData } from "../../data/formats/MindMapAdapter";
@@ -81,6 +85,7 @@ export function useMindMapFileSave(opts: {
   navigateToFileListHome: () => void;
   setErrorMessage: (msg: string | null) => void;
   setStatus: (msg: string) => void;
+  onRequestSaveNew?: (opts: { navigateAfter: boolean }) => void;
 }) {
   const {
     getCurrentDocument,
@@ -89,6 +94,7 @@ export function useMindMapFileSave(opts: {
     navigateToFileListHome,
     setErrorMessage,
     setStatus,
+    onRequestSaveNew,
   } = opts;
 
   const [mindMapSaving, setMindMapSaving] = useState(false);
@@ -111,14 +117,24 @@ export function useMindMapFileSave(opts: {
       if (!document) {
         return;
       }
-      const hash = hashDocumentSnapshot(document);
-      FileSyncState.setDraftHash(fileId, hash);
       const baseline = FileSyncState.getBaselineHash(fileId);
+      const singleRootBlank =
+        isLocalDraftFileId(fileId) && isMindMapSingleRootOnly(document);
+      const hash = singleRootBlank
+        ? (baseline ?? hashDocumentSnapshot(document))
+        : hashDocumentSnapshot(document);
+
+      if (isLocalDraftFileId(fileId) || (baseline && hash !== baseline)) {
+        FileSyncState.setLocalCache(fileId, toMindMapLocalCacheRecord(document));
+      }
+      FileSyncState.setDraftHash(fileId, hash);
       if (!baseline || baseline === hash) {
         return;
       }
       FileSyncState.setLocalEditTime(fileId);
-      FileSyncState.setLocalCache(fileId, toMindMapLocalCacheRecord(document));
+      if (isLocalDraftFileId(fileId)) {
+        notifyLocalDraftEdited(fileId);
+      }
     }, 450),
   );
 
@@ -151,6 +167,13 @@ export function useMindMapFileSave(opts: {
         return;
       }
       updateDraftHashDebouncedRef.current(fileId, () => document);
+      if (
+        isLocalDraftFileId(fileId) &&
+        isMindMapSingleRootOnly(document)
+      ) {
+        setStatus("");
+        return;
+      }
       setStatus("有未保存更改");
     },
     [setStatus],
@@ -184,6 +207,10 @@ export function useMindMapFileSave(opts: {
         if (navigateAfter) {
           finishNavigateHome();
         }
+        return false;
+      }
+      if (isLocalDraftFileId(fileId)) {
+        onRequestSaveNew?.({ navigateAfter: !!navigateAfter });
         return false;
       }
 
@@ -277,6 +304,7 @@ export function useMindMapFileSave(opts: {
     [
       finishNavigateHome,
       getFileName,
+      onRequestSaveNew,
       persistLocalDraftToCache,
       requestNativeMindMapData,
       setErrorMessage,
@@ -307,6 +335,9 @@ export function useMindMapFileSave(opts: {
       }
     }
     if (!FileSyncState.hasUnsavedChanges(fileId)) {
+      if (isLocalDraftFileId(fileId)) {
+        await discardLocalDraftSession(fileId);
+      }
       navigateToFileListHome();
       return;
     }

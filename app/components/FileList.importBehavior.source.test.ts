@@ -13,7 +13,7 @@ describe("FileList import behavior source contract", () => {
       "utf8",
     );
     const importBranch = source.slice(
-      source.indexOf("const importDocumentFiles = useCallback"),
+      source.indexOf("const finishImportBatch = useCallback"),
       source.indexOf("const onSceneImportInputChange"),
     );
 

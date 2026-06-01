@@ -5,14 +5,27 @@ import { ArchivePanel } from "../../components/ArchivePanel";
 import { APP_SHELL_GO_HOME } from "../../shell/Sidebar";
 import { buildViewHash, type AppView } from "../../shell/useAppView";
 import { EmbedTokenManager } from "../../components/EmbedTokenManager";
+import { SaveNewDocumentDialog } from "../../components/PromoteTempFileDialog";
+import { DEFAULT_DOCUMENT_DISPLAY_NAME } from "../../data/defaultDocumentName";
+import { useSaveNewDocumentDialog } from "../../hooks/useSaveNewDocumentDialog";
+import { bootstrapLocalDraftSession } from "../../data/bootstrapLocalDraftSession";
+import { isLegacyTempFileId, isNewDocumentHash } from "../../data/documentHash";
+import { isLocalDraftFileId } from "../../data/localDraftFileId";
+import { LocalDraftSessions } from "../../data/localDraftSessions";
+import { getDocumentKindFromHash } from "../../lib/appBranding";
+import { editorRegistry } from "../../editors";
 import { FileSyncState } from "../../data/FileSyncState";
 import { readFileListTreeCache } from "../../data/fileListSessionCache";
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
 import { LocalThumbnailCache } from "../../data/localThumbnailCache";
-import { isEffectivelyEmptyMindMapData } from "../../data/formats/MindMapAdapter";
+import {
+  isEffectivelyEmptyMindMapData,
+  isMindMapSingleRootOnly,
+} from "../../data/formats/MindMapAdapter";
 import { MindMapAdapter } from "../../data/formats/registry";
 import {
   applyMindMapBrowserView,
+  clearMindMapBrowserView,
   saveMindMapBrowserView,
   saveMindMapBrowserViewFromData,
 } from "../../data/mindMapBrowserViewStorage";
@@ -56,7 +69,7 @@ import type { MindMapDocumentData } from "../../data/formats/MindMapAdapter";
 
 import {
   HOME_APP_TITLE,
-  useMainSiteDocumentBranding,
+  useEditorDocumentTitle,
 } from "../../lib/appBranding";
 import { devDebug } from "../../lib/devDebug";
 import { useMindMapNativeAIConfig } from "./useMindMapNativeAIConfig";
@@ -255,7 +268,8 @@ const MindMapEditorShell = () => {
   );
   const [error, setError] = useState<string | null>(null);
   const displayError = error ?? bridgeError;
-  const [fileName, setFileName] = useState("未命名 mindmap");
+  const [fileName, setFileName] = useState(DEFAULT_DOCUMENT_DISPLAY_NAME);
+  const lastNativeThumbnailRef = useRef<string | null>(null);
   const [showAISettings, setShowAISettings] = useState(false);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
   const [showEmbedManager, setShowEmbedManager] = useState(false);
@@ -282,12 +296,28 @@ const MindMapEditorShell = () => {
     [fileId, publishDocument],
   );
 
-  useMainSiteDocumentBranding();
+  useEditorDocumentTitle(fileId ? fileName : null);
 
   useEffect(() => {
     debugMindMapOpen("MindMapEditorShell mounted", {
       fileId8: fileId?.slice(0, 8) ?? null,
       sinceShellStart: Math.round(performance.now() - shellStartRef.current),
+    });
+  }, [fileId]);
+
+  useEffect(() => {
+    if (fileId && isLegacyTempFileId(fileId)) {
+      window.location.hash = buildViewHash("home");
+    }
+  }, [fileId]);
+
+  useEffect(() => {
+    if (fileId || !isNewDocumentHash()) {
+      return;
+    }
+    const kind = getDocumentKindFromHash();
+    void bootstrapLocalDraftSession(kind).then(({ id }) => {
+      window.location.hash = editorRegistry.buildFileHash(id, kind);
     });
   }, [fileId]);
 
@@ -477,6 +507,29 @@ const MindMapEditorShell = () => {
     navigateToFileListHomeRef.current();
   }, []);
 
+  const mindMapSaveRef = useRef<{
+    persistLocalDraftToCache: (forcedFileId?: string) => Promise<boolean>;
+    flushDraftDebounce: () => void;
+  } | null>(null);
+
+  const saveNewDoc = useSaveNewDocumentDialog({
+    getFileId: () => fileId,
+    getDocumentKind: getDocumentKindFromHash,
+    getDefaultName: () => fileName,
+    getMindMapDocument: () => latestDocumentRef.current,
+    getMindMapThumbnail: () => lastNativeThumbnailRef.current,
+    beforeSave: async () => {
+      mindMapSaveRef.current?.flushDraftDebounce();
+      const nativeSave = await requestNativeSave();
+      lastNativeThumbnailRef.current = nativeSave?.thumbnail ?? null;
+      if (nativeSave?.document) {
+        latestDocumentRef.current = nativeSave.document;
+      }
+    },
+    navigateHome: navigateToFileListHome,
+    setErrorMessage: setError,
+  });
+
   const {
     mindMapSaving,
     mindMapSaveHint,
@@ -490,6 +543,7 @@ const MindMapEditorShell = () => {
     mindMapHomeDismissDialog,
     saveToServerRef,
     skipLeaveStashOnceRef,
+    updateDraftHashDebouncedRef,
   } = useMindMapFileSave({
     getCurrentDocument: () => latestDocumentRef.current,
     requestNativeMindMapData: requestNativeSave,
@@ -497,7 +551,15 @@ const MindMapEditorShell = () => {
     navigateToFileListHome,
     setErrorMessage: setError,
     setStatus,
+    onRequestSaveNew: ({ navigateAfter }) => {
+      saveNewDoc.openSaveDialog(navigateAfter);
+    },
   });
+
+  mindMapSaveRef.current = {
+    persistLocalDraftToCache,
+    flushDraftDebounce: () => updateDraftHashDebouncedRef.current.flush(),
+  };
 
   useEffect(() => {
     navigateToFileListHomeRef.current = () => {
@@ -532,21 +594,41 @@ const MindMapEditorShell = () => {
 
       try {
         initStartRef.current = performance.now();
+
+        if (isLocalDraftFileId(fileId)) {
+          const cached = getCachedMindMapDocument(fileId);
+          const document =
+            cached ?? MindMapAdapter.toDocument(MindMapAdapter.createEmpty());
+          const data = document.data;
+          if (isMindMapSingleRootOnly(document)) {
+            clearMindMapBrowserView(fileId);
+          }
+          setFileName(
+            LocalDraftSessions.get(fileId)?.name ?? DEFAULT_DOCUMENT_DISPLAY_NAME,
+          );
+          latestDocumentRef.current = document;
+          logMindMapOpenPhase("preparing_surface");
+          publishMindMapDataToNative(data, "local-draft");
+          return;
+        }
+
         debugMindMapOpen("init start", {
           fileId8: fileId.slice(0, 8),
         });
-        const cached = getCachedMindMapDocument(fileId);
-        const hasUnsavedChanges = FileSyncState.hasUnsavedChanges(fileId);
+
+        const resolvedId = fileId;
+        const cached = getCachedMindMapDocument(resolvedId);
+        const hasUnsavedChanges = FileSyncState.hasUnsavedChanges(resolvedId);
 
         const loadFromServer = async (reason: string) => {
           const serverStart = performance.now();
           debugMindMapOpen("before ServerSync.getFile", {
-            fileId8: fileId.slice(0, 8),
+            fileId8: resolvedId.slice(0, 8),
             reason,
           });
-          const serverFile = await ServerSync.getFile(fileId);
+          const serverFile = await ServerSync.getFile(resolvedId);
           debugMindMapOpen("after ServerSync.getFile", {
-            fileId8: fileId.slice(0, 8),
+            fileId8: resolvedId.slice(0, 8),
             reason,
             elapsed: Math.round(performance.now() - serverStart),
             hasData: !!serverFile.data,
@@ -557,10 +639,10 @@ const MindMapEditorShell = () => {
             return;
           }
 
-          setFileName(serverFile.name || "未命名 mindmap");
+          setFileName(serverFile.name || DEFAULT_DOCUMENT_DISPLAY_NAME);
           needsInitialThumbnailRef.current = !serverFile.has_thumbnail;
           const parseStart = performance.now();
-          saveMindMapBrowserViewFromData(fileId, serverFile.data);
+          saveMindMapBrowserViewFromData(resolvedId, serverFile.data);
           const data = serverFile.data
             ? await MindMapAdapter.parse(serverFile.data)
             : MindMapAdapter.createEmpty();
@@ -570,17 +652,20 @@ const MindMapEditorShell = () => {
             reason,
           });
           const document = MindMapAdapter.toDocument(data);
+          if (isMindMapSingleRootOnly(document)) {
+            clearMindMapBrowserView(resolvedId);
+          }
           latestDocumentRef.current = document;
           FileSyncState.setLocalCache(
-            fileId,
+            resolvedId,
             toMindMapLocalCacheRecord(document),
           );
           if (serverFile.content_sha256) {
-            FileSyncState.setServerHash(fileId, serverFile.content_sha256);
+            FileSyncState.setServerHash(resolvedId, serverFile.content_sha256);
           }
-          FileSyncState.alignHashes(fileId, hashDocumentSnapshot(document));
+          FileSyncState.alignHashes(resolvedId, hashDocumentSnapshot(document));
           debugMindMapOpen("server payload prepared", {
-            fileId8: fileId.slice(0, 8),
+            fileId8: resolvedId.slice(0, 8),
             totalElapsed: Math.round(
               performance.now() - (initStartRef.current ?? performance.now()),
             ),
@@ -594,10 +679,12 @@ const MindMapEditorShell = () => {
           shouldOpenCachedDocumentFirst({ hasCachedDocument: !!cached }) &&
           cached
         ) {
-          setFileName(getCachedFileListName(fileId) || "未命名 mindmap");
+          setFileName(
+            getCachedFileListName(resolvedId) || DEFAULT_DOCUMENT_DISPLAY_NAME,
+          );
           latestDocumentRef.current = cached;
           debugMindMapOpen("cache payload prepared", {
-            fileId8: fileId.slice(0, 8),
+            fileId8: resolvedId.slice(0, 8),
             totalElapsed: Math.round(
               performance.now() - (initStartRef.current ?? performance.now()),
             ),
@@ -613,14 +700,14 @@ const MindMapEditorShell = () => {
             const hashStart = performance.now();
             const hashes = await ServerSync.listFileHashes();
             const remoteHash =
-              hashes.find((entry) => entry.id === fileId)?.content_sha256 ??
+              hashes.find((entry) => entry.id === resolvedId)?.content_sha256 ??
               null;
             debugMindMapOpen("after ServerSync.listFileHashes", {
-              fileId8: fileId.slice(0, 8),
+              fileId8: resolvedId.slice(0, 8),
               elapsed: Math.round(performance.now() - hashStart),
               remoteHash8: remoteHash?.slice(0, 8) ?? null,
               localServerHash8:
-                FileSyncState.getServerHash(fileId)?.slice(0, 8) ?? null,
+                FileSyncState.getServerHash(resolvedId)?.slice(0, 8) ?? null,
               hasUnsavedChanges,
             });
             if (disposed) {
@@ -629,7 +716,7 @@ const MindMapEditorShell = () => {
             if (
               shouldFetchServerAfterCachedOpen({
                 hasUnsavedChanges,
-                localServerHash: FileSyncState.getServerHash(fileId),
+                localServerHash: FileSyncState.getServerHash(resolvedId),
                 remoteServerHash: remoteHash,
               })
             ) {
@@ -639,7 +726,7 @@ const MindMapEditorShell = () => {
               return;
             }
             if (remoteHash) {
-              FileSyncState.setServerHash(fileId, remoteHash);
+              FileSyncState.setServerHash(resolvedId, remoteHash);
             }
             logMindMapOpenPhase("ready");
             return;
@@ -659,7 +746,7 @@ const MindMapEditorShell = () => {
         warnMindMapBridge("init failed", {
           message: err?.message || String(err),
           stack: err?.stack,
-          fileId8: fileId.slice(0, 8),
+          fileId8: fileId?.slice(0, 8) ?? null,
         });
         debugMindMapOpen("init error", {
           message: err?.message || String(err),
@@ -739,13 +826,21 @@ const MindMapEditorShell = () => {
           event.data.type === "appInited")
       ) {
         if (event.data.type === "appInited") {
-          if (needsInitialThumbnailRef.current) {
+          debugMindMapOpen("request draft thumbnail export");
+          postToNative("hostExportDraftThumbnail", {});
+          if (
+            needsInitialThumbnailRef.current &&
+            fileId &&
+            !isLocalDraftFileId(fileId)
+          ) {
             needsInitialThumbnailRef.current = false;
             debugMindMapOpen("trigger initial thumbnail save");
             void saveCurrentFileToServer({
               source: "visibility",
               forceThumbnail: true,
             });
+          } else {
+            needsInitialThumbnailRef.current = false;
           }
         }
         return;
@@ -755,6 +850,9 @@ const MindMapEditorShell = () => {
         return;
       }
       if (event.data.type === "hostOpenEmbedManager") {
+        if (!fileId || isLocalDraftFileId(fileId)) {
+          return;
+        }
         setShowEmbedManager(true);
         return;
       }
@@ -763,6 +861,9 @@ const MindMapEditorShell = () => {
         return;
       }
       if (event.data.type === "hostOpenHistory") {
+        if (!fileId || isLocalDraftFileId(fileId)) {
+          return;
+        }
         setShowHistoryPanel((value) => !value);
         return;
       }
@@ -951,6 +1052,7 @@ const MindMapEditorShell = () => {
     learnedOrigin,
     markDocumentChanged,
     mindMapGoHomeWithServerSave,
+    postToNative,
     requestNativeSave,
     saveCurrentFileToServer,
     updateLatestDocument,
@@ -971,7 +1073,7 @@ const MindMapEditorShell = () => {
     FileSyncState.alignHashes(fileId, hashDocumentSnapshot(document));
     FileSyncState.clearLocalEditTime(fileId);
     FileSyncState.clearLocalCache(fileId);
-    setFileName(serverFile.name || "未命名 mindmap");
+    setFileName(serverFile.name || DEFAULT_DOCUMENT_DISPLAY_NAME);
     needsInitialThumbnailRef.current = !serverFile.has_thumbnail;
     setStatus("已恢复历史版本");
     setError(null);
@@ -987,8 +1089,18 @@ const MindMapEditorShell = () => {
     const onImport = () => {
       postToNative("mindMapHostOpenImport");
     };
-    const onHistory = () => setShowHistoryPanel(true);
-    const onEmbed = () => setShowEmbedManager(true);
+    const onHistory = () => {
+      if (!fileId || isLocalDraftFileId(fileId)) {
+        return;
+      }
+      setShowHistoryPanel(true);
+    };
+    const onEmbed = () => {
+      if (!fileId || isLocalDraftFileId(fileId)) {
+        return;
+      }
+      setShowEmbedManager(true);
+    };
     const onShellGoHome = (event: Event) => {
       const target = ((event as CustomEvent<{ target?: string }>).detail
         ?.target ?? "home") as Exclude<AppView, "editor">;
@@ -1020,6 +1132,7 @@ const MindMapEditorShell = () => {
       window.removeEventListener(APP_SHELL_GO_HOME, onShellGoHome);
     };
   }, [
+    fileId,
     mindMapGoHomeWithServerSave,
     postToNative,
     saveToServerRef,
@@ -1166,7 +1279,14 @@ const MindMapEditorShell = () => {
                 type="button"
                 className="fork-home-btn fork-home-btn--primary"
                 disabled={mindMapSaving}
-                onClick={() => void mindMapHomeConfirmSave()}
+                onClick={() => {
+                  if (saveNewDoc.isLocalDraftOpen()) {
+                    mindMapHomeDismissDialog();
+                    saveNewDoc.openSaveDialog(true);
+                    return;
+                  }
+                  void mindMapHomeConfirmSave();
+                }}
               >
                 保存并返回
               </button>
@@ -1174,7 +1294,14 @@ const MindMapEditorShell = () => {
                 type="button"
                 className="fork-home-btn fork-home-btn--danger"
                 disabled={mindMapSaving}
-                onClick={() => void mindMapHomeConfirmDiscard()}
+                onClick={() => {
+                  if (saveNewDoc.isLocalDraftOpen()) {
+                    mindMapHomeDismissDialog();
+                    saveNewDoc.discardDraftAndNavigate();
+                    return;
+                  }
+                  void mindMapHomeConfirmDiscard();
+                }}
               >
                 不保存，放弃修改并返回
               </button>
@@ -1190,6 +1317,15 @@ const MindMapEditorShell = () => {
           </div>
         </div>
       ) : null}
+      <SaveNewDocumentDialog
+        open={saveNewDoc.saveOpen}
+        saving={saveNewDoc.saveInFlight}
+        overlayDismiss={saveNewDoc.saveOverlayDismiss}
+        defaultName={saveNewDoc.defaultSaveName()}
+        presetFolderId={saveNewDoc.presetFolderId()}
+        onClose={saveNewDoc.dismissSave}
+        onSave={saveNewDoc.commitSave}
+      />
     </main>
   );
 };

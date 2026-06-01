@@ -62,7 +62,7 @@ export function formatImportErrorMessage(err: unknown): string {
   }
   const m = err.message;
   if (m.startsWith("API 404:") && m.includes("folder not found")) {
-    return "目标文件夹在服务器上已不存在。请点击「全部文件」或刷新页面后，再选择文件夹并导入。";
+    return "目标文件夹在服务器上已不存在。请点击「所有文件」或刷新页面后，再选择文件夹并导入。";
   }
   if (m === "不支持的文件类型") {
     return "该文件不是可导入的 Excalidraw 单页场景。请使用 .excalidraw、.json、含元数据的 .png / .svg；素材库请在画布内「素材库」中导入 .excalidrawlib。";

@@ -2,13 +2,13 @@
   "targetAspect": 1.6666666666666667,
   "baselineRootScreenRatio": 0.224,
   "thumbnailRootScreenRatioMultiplier": 0.6,
-  "editorRootScreenRatioMultiplier": 0.054,
+  "editorRootScreenRatioMultiplier": 0.54,
   "embedFocusedRootScreenRatioMultiplier": 0.1,
   "baselineNodeCount": 10,
   "minVisualScaleNodeCount": 40,
   "singleNodeVisualScale": 1.2,
   "minNodeVisualScale": 0.8,
   "nodeCountScaleInfluence": 0.5,
-  "centerTowardOthersRatio": 0.24,
-  "rootCenterLimitRatio": 0.4
+  "centerTowardOthersRatio": 0.36,
+  "rootCenterLimitRatio": 0.6
 }

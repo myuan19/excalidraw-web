@@ -65,6 +65,13 @@ import { APP_SHELL_GO_HOME } from "../../shell/Sidebar";
 import { buildViewHash, type AppView } from "../../shell/useAppView";
 import { EmbedTokenManager } from "../../components/EmbedTokenManager";
 import { ArchivePanel } from "../../components/ArchivePanel";
+import { SaveNewDocumentDialog } from "../../components/PromoteTempFileDialog";
+import { useSaveNewDocumentDialog } from "../../hooks/useSaveNewDocumentDialog";
+import { bootstrapLocalDraftSession } from "../../data/bootstrapLocalDraftSession";
+import { isLegacyTempFileId, isNewDocumentHash } from "../../data/documentHash";
+import { isLocalDraftFileId } from "../../data/localDraftFileId";
+import { getDocumentKindFromHash } from "../../lib/appBranding";
+import { editorRegistry } from "../../editors";
 import "../../components/ExcalToolbar.scss";
 import "../../components/ForkLibrarySidebar.scss";
 import {
@@ -92,7 +99,7 @@ import {
   getFileIdFromHash,
   getFileIdFromHashString,
 } from "../../data/fileIdFromHash";
-import { useMainSiteDocumentBranding } from "../../lib/appBranding";
+import { useEditorDocumentTitle } from "../../lib/appBranding";
 import {
   logEditorOpenPhase,
   resetEditorOpenPhaseLog,
@@ -170,7 +177,39 @@ const ExcalidrawWrapper = () => {
     [forkFileId],
   );
 
-  useMainSiteDocumentBranding();
+  const [tabFileName, setTabFileName] = useState<string | null>(null);
+
+  useEditorDocumentTitle(forkFileId ? tabFileName : null);
+
+  useEffect(() => {
+    setTabFileName(null);
+  }, [forkFileId]);
+
+  useEffect(() => {
+    if (!forkFileId || !excalidrawAPI) {
+      return;
+    }
+    const name = excalidrawAPI.getAppState().name?.trim();
+    if (name) {
+      setTabFileName(name);
+    }
+  }, [forkFileId, excalidrawAPI]);
+
+  useEffect(() => {
+    if (forkFileId && isLegacyTempFileId(forkFileId)) {
+      window.location.hash = buildViewHash("home");
+    }
+  }, [forkFileId]);
+
+  useEffect(() => {
+    if (forkFileId || !isNewDocumentHash()) {
+      return;
+    }
+    const kind = getDocumentKindFromHash();
+    void bootstrapLocalDraftSession(kind).then(({ id }) => {
+      window.location.hash = editorRegistry.buildFileHash(id, kind);
+    });
+  }, [forkFileId]);
 
   useEffect(() => {
     resetEditorOpenPhaseLog();
@@ -202,6 +241,24 @@ const ExcalidrawWrapper = () => {
     navigateToFileListHomeRef.current();
   }, []);
 
+  const fileSaveRef = useRef<{
+    persistLocalDraftToCache: () => Promise<boolean>;
+    flushDraftDebounce: () => void;
+  } | null>(null);
+
+  const saveNewDoc = useSaveNewDocumentDialog({
+    getFileId: getFileIdFromHash,
+    getDocumentKind: getDocumentKindFromHash,
+    getDefaultName: () =>
+      excalidrawAPI?.getAppState().name?.trim() || "未命名",
+    getExcalidrawScene: () => getSceneDataRef.current(),
+    beforeSave: async () => {
+      fileSaveRef.current?.flushDraftDebounce();
+    },
+    navigateHome: navigateToFileListHome,
+    setErrorMessage,
+  });
+
   const {
     forkSaving,
     forkSaveHint,
@@ -222,7 +279,15 @@ const ExcalidrawWrapper = () => {
     getSceneDataRef,
     navigateToFileListHome,
     setErrorMessage,
+    onRequestSaveNew: ({ navigateAfter }) => {
+      saveNewDoc.openSaveDialog(navigateAfter);
+    },
   });
+
+  fileSaveRef.current = {
+    persistLocalDraftToCache,
+    flushDraftDebounce: () => updateDraftHashDebouncedRef.current.flush(),
+  };
 
   // Wire up navigation to set the skip flag
   useEffect(() => {
@@ -270,8 +335,18 @@ const ExcalidrawWrapper = () => {
       excalidrawAPI?.setOpenDialog({ name: "imageExport" });
     };
     const onImport = () => void importLocalExcalidrawFile();
-    const onHistory = () => setShowHistoryPanel(true);
-    const onEmbed = () => setShowEmbedManager(true);
+    const onHistory = () => {
+      if (!forkFileId || isLocalDraftFileId(forkFileId)) {
+        return;
+      }
+      setShowHistoryPanel(true);
+    };
+    const onEmbed = () => {
+      if (!forkFileId || isLocalDraftFileId(forkFileId)) {
+        return;
+      }
+      setShowEmbedManager(true);
+    };
     const onShellGoHome = (event: Event) => {
       const target = ((event as CustomEvent<{ target?: string }>).detail
         ?.target ?? "home") as Exclude<AppView, "editor">;
@@ -304,6 +379,7 @@ const ExcalidrawWrapper = () => {
     };
   }, [
     excalidrawAPI,
+    forkFileId,
     forkGoHomeWithServerSave,
     importLocalExcalidrawFile,
     saveCurrentFileToServer,
@@ -494,6 +570,13 @@ const ExcalidrawWrapper = () => {
     const fid = getFileIdFromHash();
     if (fid && excalidrawAPI) {
       updateDraftHashDebouncedRef.current(fid, getSceneData);
+    }
+
+    if (forkFileId) {
+      const name = appState.name?.trim();
+      if (name) {
+        setTabFileName((prev) => (prev === name ? prev : name));
+      }
     }
 
     if (debugCanvasRef.current && excalidrawAPI) {
@@ -751,7 +834,14 @@ const ExcalidrawWrapper = () => {
                 type="button"
                 className="fork-home-btn fork-home-btn--primary"
                 disabled={forkSaving}
-                onClick={() => void forkHomeConfirmSave()}
+                onClick={() => {
+                  if (saveNewDoc.isLocalDraftOpen()) {
+                    forkHomeDismissDialog();
+                    saveNewDoc.openSaveDialog(true);
+                    return;
+                  }
+                  void forkHomeConfirmSave();
+                }}
               >
                 保存并返回
               </button>
@@ -759,7 +849,14 @@ const ExcalidrawWrapper = () => {
                 type="button"
                 className="fork-home-btn fork-home-btn--danger"
                 disabled={forkSaving}
-                onClick={() => void forkHomeConfirmDiscard()}
+                onClick={() => {
+                  if (saveNewDoc.isLocalDraftOpen()) {
+                    forkHomeDismissDialog();
+                    saveNewDoc.discardDraftAndNavigate();
+                    return;
+                  }
+                  void forkHomeConfirmDiscard();
+                }}
               >
                 不保存，放弃修改并返回
               </button>
@@ -775,6 +872,15 @@ const ExcalidrawWrapper = () => {
           </div>
         </div>
       ) : null}
+      <SaveNewDocumentDialog
+        open={saveNewDoc.saveOpen}
+        saving={saveNewDoc.saveInFlight}
+        overlayDismiss={saveNewDoc.saveOverlayDismiss}
+        defaultName={saveNewDoc.defaultSaveName()}
+        presetFolderId={saveNewDoc.presetFolderId()}
+        onClose={saveNewDoc.dismissSave}
+        onSave={saveNewDoc.commitSave}
+      />
     </div>
   );
 };

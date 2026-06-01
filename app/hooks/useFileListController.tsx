@@ -18,7 +18,11 @@ import {
   MAIN_SITE_ICON,
 } from "../lib/appBranding";
 import { createLogger, logFileListOpen } from "../lib/logger";
-import { devDebug, isDevDebugChannelEnabled } from "../lib/devDebug";
+import {
+  devDebug,
+  isDevDebugChannelEnabled,
+  isFileListFolderDndDebugEnabled,
+} from "../lib/devDebug";
 import {
   readFileListTreeCache,
   writeFileListTreeCache,
@@ -29,9 +33,27 @@ import {
   formatImportErrorMessage,
 } from "../data/importExcalidrawScene";
 import { LocalThumbnailCache, LOCAL_THUMB_UPDATED_EVENT } from "../data/localThumbnailCache";
-import { detectFormat } from "../data/formats/detectFormat";
-import { NewFileDialog } from "../components/NewFileDialog";
+import { detectImportCandidateKinds } from "../data/detectImportCandidates";
+import { EditorKindDialog, NewFileDialog } from "../components/NewFileDialog";
+import { SaveNewDocumentDialog } from "../components/PromoteTempFileDialog";
+import { bootstrapLocalDraftSession } from "../data/bootstrapLocalDraftSession";
+import { discardLocalDraftSession } from "../data/discardLocalDraftSession";
+import { downloadLocalDraftFile } from "../data/downloadLocalDraftFile";
+import { defaultNameForDocumentKind } from "../data/defaultDocumentName";
+import { purgeLegacyTempArtifacts } from "../data/documentHash";
+import { isLocalDraftFileId } from "../data/localDraftFileId";
+import {
+  LOCAL_DRAFT_SESSIONS_CHANGE_EVENT,
+  LocalDraftSessions,
+  draftSessionToServerFile,
+} from "../data/localDraftSessions";
+import {
+  getRecentFileEntries,
+  RECENT_FILES_CHANGE_EVENT,
+  recordRecentFileAccess,
+} from "../data/recentFiles";
 import { editorRegistry } from "../editors";
+import type { EditorPlugin } from "../editors/types";
 import {
   ServerSync,
   type FileOrderItem,
@@ -165,6 +187,13 @@ function debugFileListLayout(
   devDebug("file-list", `layout ${label}`, data);
 }
 
+function debugFolderDnd(label: string, data: Record<string, unknown>): void {
+  if (!isFileListFolderDndDebugEnabled()) {
+    return;
+  }
+  devDebug("file-list", `folder-dnd ${label}`, data);
+}
+
 export interface FileListProps {
   onOpenFile: (file: { id: string; kind?: string }) => void;
   onReady?: () => void;
@@ -176,6 +205,9 @@ type FolderDraft =
   | { mode: "rename"; folder: ServerFolder };
 
 const ROOT_ID: string | null = null;
+
+type SidebarView = "recent" | "all";
+const SIDEBAR_VIEW_STORAGE_KEY = "editorhub-filelist-sidebar-view";
 
 const FILELIST_SCENE_IMPORT_INPUT_ID = "filelist-scene-import-input";
 /** HTML5 DnD payload for internal folder reparenting / reorder (sidebar only). */
@@ -258,6 +290,7 @@ function iconPath(
     | "file"
     | "grid"
     | "home"
+    | "clock"
     | "excalidraw"
     | "mindmap"
     | "chevron"
@@ -282,6 +315,8 @@ function iconPath(
     grid: "M3 3h7v7H3V3zm11 0h7v7h-7V3zM3 14h7v7H3v-7zm11 0h7v7h-7v-7z",
     home:
       "M12 3l9 8h-2v9h-5v-6h-4v6H5v-9H3l9-8z",
+    clock:
+      "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 2a8 8 0 1 1 0 16 8 8 0 0 1 0-16zm.5 3v5.25l4.25 2.52-.75 1.23-5-2.98V7h1.5z",
     excalidraw:
       "M5 19l4.2-1.1 8.7-8.7a2.1 2.1 0 0 0-3-3L7.2 14.9 5 19zm3.2-2.4l-.9.2.2-.9 7.9-7.9.7.7-7.9 7.9zM4 21h16v-2H4v2z",
     mindmap:
@@ -423,7 +458,16 @@ function getInitialFileListStateFromCache(): {
 }
 
 export function useFileListController({ onOpenFile, onReady }: FileListProps) {
+  const handleOpenFile = useCallback(
+    (opts: { id: string; kind: string }) => {
+      recordRecentFileAccess(opts.id);
+      onOpenFile(opts);
+    },
+    [onOpenFile],
+  );
+
   useEffect(() => {
+    purgeLegacyTempArtifacts();
     applyMainSiteDocumentBranding();
   }, []);
 
@@ -448,7 +492,25 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       }
     } catch { /* ignore */ }
   }, []);
+  const [sidebarView, setSidebarViewRaw] = useState<SidebarView>(() => {
+    try {
+      const saved = sessionStorage.getItem(SIDEBAR_VIEW_STORAGE_KEY);
+      return saved === "all" ? "all" : "recent";
+    } catch {
+      return "recent";
+    }
+  });
+  const setSidebarView = useCallback((view: SidebarView) => {
+    setSidebarViewRaw(view);
+    try {
+      sessionStorage.setItem(SIDEBAR_VIEW_STORAGE_KEY, view);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  const [recentRevision, setRecentRevision] = useState(0);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
+  const [allFilesTreeExpanded, setAllFilesTreeExpanded] = useState(true);
   const [mobileTreeOpen, setMobileTreeOpen] = useState(false);
   const [loading, setLoading] = useState(initialList.loading);
   const [error, setError] = useState<string | null>(null);
@@ -466,7 +528,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const thumbObserverRef = useRef<IntersectionObserver | null>(null);
   const thumbNodeMap = useRef<Map<string, HTMLElement>>(new Map());
   const sidebarRef = useRef<HTMLElement | null>(null);
-  const mainRef = useRef<HTMLElement | null>(null);
+  const mainRef = useRef<HTMLDivElement | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
   const pendingLayoutDebugRef = useRef<{
     label: string;
@@ -496,6 +558,17 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const [showAISettings, setShowAISettings] = useState(false);
   const [aiDotOk, setAiDotOk] = useState(false);
   const [newFileDialogOpen, setNewFileDialogOpen] = useState(false);
+  const [formalCreateKind, setFormalCreateKind] = useState<string | null>(null);
+  const [formalCreateSaving, setFormalCreateSaving] = useState(false);
+  const formalCreateInFlightRef = useRef(false);
+  const folderCreateInFlightRef = useRef(false);
+  const [importKindDialogOpen, setImportKindDialogOpen] = useState(false);
+  const [importKindPlugins, setImportKindPlugins] = useState<EditorPlugin[]>([]);
+  const [importPickerFileName, setImportPickerFileName] = useState<string | null>(
+    null,
+  );
+  const importQueueRef = useRef<File[]>([]);
+  const pendingImportFileRef = useRef<File | null>(null);
 
   const [moveDialogFile, setMoveDialogFile] = useState<ServerFile | null>(null);
   const [moveTargetFolderId, setMoveTargetFolderId] = useState<string | null>(null);
@@ -510,6 +583,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const [folderDropIndicator, setFolderDropIndicator] =
     useState<FolderDropInd | null>(null);
   const folderDropIndicatorRef = useRef<FolderDropInd | null>(null);
+  const folderDndDebugKeyRef = useRef<string | null>(null);
   const setFolderDropInd = useCallback((v: FolderDropInd | null) => {
     folderDropIndicatorRef.current = v;
     setFolderDropIndicator(v);
@@ -525,6 +599,20 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const mobileTreeBackdropDismiss = useStrictOverlayDismiss(dismissMobileTree);
 
   const searchActive = !!searchQuery.trim();
+
+  useEffect(() => {
+    const bumpRecent = () => setRecentRevision((value) => value + 1);
+    window.addEventListener(RECENT_FILES_CHANGE_EVENT, bumpRecent);
+    window.addEventListener(LOCAL_DRAFT_SESSIONS_CHANGE_EVENT, bumpRecent);
+    window.addEventListener("excalidraw-file-list-refresh", bumpRecent);
+    window.addEventListener("excalidraw-file-sync-state", bumpRecent);
+    return () => {
+      window.removeEventListener(RECENT_FILES_CHANGE_EVENT, bumpRecent);
+      window.removeEventListener(LOCAL_DRAFT_SESSIONS_CHANGE_EVENT, bumpRecent);
+      window.removeEventListener("excalidraw-file-list-refresh", bumpRecent);
+      window.removeEventListener("excalidraw-file-sync-state", bumpRecent);
+    };
+  }, []);
 
   useEffect(() => {
     const syncAiDot = () => setAiDotOk(isAIConfigured());
@@ -607,11 +695,13 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     window.addEventListener("excalidraw-file-sync-state", bump);
     window.addEventListener("excalidraw-server-saved", bump);
     window.addEventListener(LOCAL_THUMB_UPDATED_EVENT, bump);
+    window.addEventListener(LOCAL_DRAFT_SESSIONS_CHANGE_EVENT, bump);
     window.addEventListener("storage", bump);
     return () => {
       window.removeEventListener("excalidraw-file-sync-state", bump);
       window.removeEventListener("excalidraw-server-saved", bump);
       window.removeEventListener(LOCAL_THUMB_UPDATED_EVENT, bump);
+      window.removeEventListener(LOCAL_DRAFT_SESSIONS_CHANGE_EVENT, bump);
       window.removeEventListener("storage", bump);
     };
   }, []);
@@ -738,24 +828,30 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   );
 
   const draftStateById = useMemo(() => {
+    const slotFor = (fileId: string) => {
+      const syncState = FileSyncState.getSyncState(fileId);
+      const preferLocalThumb =
+        isLocalDraftFileId(fileId) || syncState === "draft";
+      return {
+        syncState,
+        baseHash: FileSyncState.getBaselineHash(fileId),
+        draftHash: FileSyncState.getDraftHash(fileId),
+        localDraftThumb: preferLocalThumb
+          ? LocalThumbnailCache.get(fileId)
+          : null,
+      };
+    };
     const byId: Record<
       string,
-      {
-        syncState: "synced" | "draft";
-        baseHash: string | null;
-        draftHash: string | null;
-        localDraftThumb: string | null;
-      }
+      ReturnType<typeof slotFor>
     > = {};
     for (const f of files) {
-      const syncState = FileSyncState.getSyncState(f.id);
-      byId[f.id] = {
-        syncState,
-        baseHash: FileSyncState.getBaselineHash(f.id),
-        draftHash: FileSyncState.getDraftHash(f.id),
-        localDraftThumb:
-          syncState === "draft" ? LocalThumbnailCache.get(f.id) : null,
-      };
+      byId[f.id] = slotFor(f.id);
+    }
+    for (const draft of LocalDraftSessions.listIndexed()) {
+      if (!byId[draft.id]) {
+        byId[draft.id] = slotFor(draft.id);
+      }
     }
     return byId;
   }, [files, syncVersion]);
@@ -775,13 +871,69 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     [currentFolderId, folders],
   );
 
+  const filesById = useMemo(() => {
+    const map = new Map<string, ServerFile>();
+    for (const file of files) {
+      map.set(file.id, file);
+    }
+    for (const draft of LocalDraftSessions.listIndexed()) {
+      map.set(draft.id, draftSessionToServerFile(draft));
+    }
+    return map;
+  }, [files, recentRevision]);
+
+  const recentDisplayFiles = useMemo(() => {
+    const resolved: ServerFile[] = [];
+    for (const entry of getRecentFileEntries()) {
+      if (isLocalDraftFileId(entry.id)) {
+        const file =
+          filesById.get(entry.id) ??
+          (LocalDraftSessions.get(entry.id)
+            ? draftSessionToServerFile(
+                LocalDraftSessions.get(entry.id)!,
+              )
+            : null);
+        if (file) {
+          resolved.push(file);
+        }
+        continue;
+      }
+      const file = filesById.get(entry.id);
+      if (file) {
+        resolved.push(file);
+      }
+    }
+    return resolved;
+  }, [filesById, recentRevision]);
+
   const filteredFiles = useMemo(() => {
-    let list = files;
+    let list =
+      sidebarView === "recent" && !searchQuery.trim()
+        ? recentDisplayFiles
+        : files;
     const q = searchQuery.trim().toLowerCase();
     if (q) {
-      list = files.filter((f) => f.name.toLowerCase().includes(q));
-    } else {
+      const searchPool =
+        sidebarView === "recent"
+          ? [
+              ...recentDisplayFiles,
+              ...files.filter((f) => !isLocalDraftFileId(f.id)),
+            ]
+          : files;
+      const seen = new Set<string>();
+      list = [];
+      for (const f of searchPool) {
+        if (seen.has(f.id) || !f.name.toLowerCase().includes(q)) {
+          continue;
+        }
+        seen.add(f.id);
+        list.push(f);
+      }
+    } else if (sidebarView === "all") {
       list = files.filter((f) => {
+        if (isLocalDraftFileId(f.id)) {
+          return false;
+        }
         const fid = f.folder_id ?? null;
         return fid === currentFolderId || descendantFolderIds.has(fid as string);
       });
@@ -804,7 +956,16 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       );
     });
     return sorted;
-  }, [currentFolderId, descendantFolderIds, effectiveUpdatedAt, files, searchQuery, sortKey]);
+  }, [
+    currentFolderId,
+    descendantFolderIds,
+    effectiveUpdatedAt,
+    files,
+    recentDisplayFiles,
+    searchQuery,
+    sidebarView,
+    sortKey,
+  ]);
 
   const collectLayoutDebugData = useCallback(
     (data: Record<string, unknown> = {}) => {
@@ -825,7 +986,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         currentFolderId: currentFolderIdRef.current ?? "__ROOT__",
         currentFolderName: currentFolderIdRef.current
           ? foldersById.get(currentFolderIdRef.current)?.name ?? null
-          : "全部文件",
+          : "所有文件",
         files: files.length,
         filteredFiles: filteredFiles.length,
         fetchedThumbs: Object.keys(fetchedThumbsRef.current).length,
@@ -949,29 +1110,86 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     setNewFileDialogOpen(true);
   }, []);
 
-  const commitNewFile = useCallback(
-    async (name: string, kind: string) => {
+  const newDocumentFolderId = useMemo((): string | null | undefined => {
+    if (sidebarView !== "all") {
+      return undefined;
+    }
+    return currentFolderId;
+  }, [sidebarView, currentFolderId]);
+
+  const importTargetFolderId = useMemo(() => {
+    return sidebarView === "all" ? currentFolderId : null;
+  }, [sidebarView, currentFolderId]);
+
+  const openNewDocument = useCallback(
+    (kind: string) => {
+      const folderOpts =
+        newDocumentFolderId !== undefined
+          ? { folderId: newDocumentFolderId }
+          : undefined;
+      void bootstrapLocalDraftSession(kind, folderOpts).then(({ id }) => {
+        window.location.hash = editorRegistry.buildFileHash(id, kind);
+      });
+    },
+    [newDocumentFolderId],
+  );
+
+  const commitNewDocumentPick = useCallback(
+    (kind: string) => {
       setNewFileDialogOpen(false);
+      if (sidebarView === "all") {
+        setFormalCreateKind(kind);
+        return;
+      }
+      openNewDocument(kind);
+    },
+    [openNewDocument, sidebarView],
+  );
+
+  const dismissFormalCreateDialog = useCallback(() => {
+    setFormalCreateKind(null);
+  }, []);
+
+  const formalCreateOverlayDismiss = useStrictOverlayDismiss(
+    dismissFormalCreateDialog,
+  );
+
+  const commitFormalCreate = useCallback(
+    async (name: string, folderId: string | null) => {
+      const kind = formalCreateKind;
+      if (!kind || formalCreateInFlightRef.current) {
+        return;
+      }
+      formalCreateInFlightRef.current = true;
+      setFormalCreateSaving(true);
       try {
         const plugin = editorRegistry.getByKind(kind);
         if (!plugin?.createFile) {
-          throw new Error(`暂不支持创建 ${kind} 文档`);
+          throw new Error(`无法创建 ${kind} 文档`);
         }
-        const { id } = await plugin.createFile({
-          name,
-          folderId: currentFolderId,
-        });
+        const { id } = await plugin.createFile({ name, folderId });
+        recordRecentFileAccess(id);
+        setFormalCreateKind(null);
+        window.location.hash = editorRegistry.buildFileHash(id, kind);
+        window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
         await refresh({ silent: true, noErrorOnFailure: true });
-        onOpenFile({ id, kind: plugin.kind });
-      } catch (e: any) {
-        setError(e.message);
+      } catch (err: unknown) {
+        const message =
+          err instanceof Error ? err.message : String(err ?? "创建失败");
+        setError(message);
+      } finally {
+        formalCreateInFlightRef.current = false;
+        setFormalCreateSaving(false);
       }
     },
-    [currentFolderId, onOpenFile, refresh],
+    [formalCreateKind, refresh],
   );
 
   const openMoveDialog = useCallback((e: React.MouseEvent, f: ServerFile) => {
     e.stopPropagation();
+    if (isLocalDraftFileId(f.id)) {
+      return;
+    }
     setMoveDialogFile(f);
     setMoveTargetFolderId(f.folder_id ?? null);
   }, []);
@@ -995,6 +1213,99 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     }
   }, [moveDialogFile, moveTargetFolderId, refresh]);
 
+  const importCreatedIdsRef = useRef<string[]>([]);
+
+  const importOneFileWithKind = useCallback(
+    async (file: File, kind: string) => {
+      if (file.size > EDITOR_MAX_IMAGE_FILE_BYTES) {
+        throw new Error(
+          `「${file.name}」超过 ${formatEditorMaxImageFileSizeMb()} 上限，无法导入。`,
+        );
+      }
+      const plugin = editorRegistry.getByKind(kind);
+      if (!plugin?.importFile) {
+        throw new Error(
+          `无法使用所选编辑器导入「${file.name}」。`,
+        );
+      }
+      logList.debug("import start", {
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        kind,
+        folderId: importTargetFolderId,
+      });
+      const { id } = await plugin.importFile({
+        file,
+        fileName: sanitizeFileBaseName(file.name),
+        folderId: importTargetFolderId,
+      });
+      importCreatedIdsRef.current.push(id);
+    },
+    [importTargetFolderId],
+  );
+
+  const finishImportBatch = useCallback(async () => {
+    const createdIds = importCreatedIdsRef.current;
+    importCreatedIdsRef.current = [];
+    setImporting(false);
+    if (createdIds.length === 0) {
+      return;
+    }
+    try {
+      await refresh({ silent: true, noErrorOnFailure: true });
+      setImportNotice(null);
+    } catch {
+      setImportNotice(
+        `已导入 ${createdIds.length} 个文件，但列表未能自动更新。请刷新本页以查看最新文件。`,
+      );
+    }
+  }, [refresh]);
+
+  const processImportQueue = useCallback(async function processImportQueue() {
+    const queue = importQueueRef.current;
+    if (queue.length === 0) {
+      await finishImportBatch();
+      return;
+    }
+    const file = queue[0]!;
+    try {
+      const kinds = await detectImportCandidateKinds(file);
+      if (kinds.length === 0) {
+        throw new Error(
+          `无法识别「${file.name}」的文档格式，请确认它是 ${editorRegistry.importableEditorNames()} 文件。`,
+        );
+      }
+      if (kinds.length === 1) {
+        await importOneFileWithKind(file, kinds[0]!);
+        importQueueRef.current = queue.slice(1);
+        await processImportQueue();
+        return;
+      }
+      const plugins = kinds
+        .map((k) => editorRegistry.getByKind(k))
+        .filter((p): p is EditorPlugin => !!p?.importFile);
+      pendingImportFileRef.current = file;
+      setImportPickerFileName(file.name);
+      setImportKindPlugins(plugins);
+      setImportKindDialogOpen(true);
+      setImporting(false);
+    } catch (e: unknown) {
+      logList.debug("import error", e);
+      const createdIds = [...importCreatedIdsRef.current];
+      const failedDeletes = await rollbackCreatedImportFiles(createdIds);
+      importCreatedIdsRef.current = [];
+      importQueueRef.current = [];
+      let msg = formatImportErrorMessage(e);
+      if (failedDeletes.length > 0) {
+        msg += ` 另：有 ${failedDeletes.length} 个已创建项未能从服务器自动删除，请刷新列表后检查并手动删除重复或空白文件。`;
+      }
+      setImportNotice(null);
+      setError(msg);
+      setImporting(false);
+    }
+  }, [finishImportBatch, importOneFileWithKind]);
+
   const importDocumentFiles = useCallback(
     async (fileList: File[]) => {
       if (fileList.length === 0) {
@@ -1003,56 +1314,64 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       setImporting(true);
       setError(null);
       setImportNotice(null);
-      const createdIds: string[] = [];
+      importCreatedIdsRef.current = [];
+      importQueueRef.current = [...fileList];
+      await processImportQueue();
+    },
+    [processImportQueue],
+  );
+
+  const commitImportKindPick = useCallback(
+    async (kind: string) => {
+      const file = pendingImportFileRef.current;
+      if (!file) {
+        setImportKindDialogOpen(false);
+        return;
+      }
+      setImportKindDialogOpen(false);
+      setImportPickerFileName(null);
+      pendingImportFileRef.current = null;
+      setImporting(true);
+      setError(null);
       try {
-        for (const file of fileList) {
-          if (file.size > EDITOR_MAX_IMAGE_FILE_BYTES) {
-            throw new Error(
-              `「${file.name}」超过 ${formatEditorMaxImageFileSizeMb()} 上限，无法导入。`,
-            );
-          }
-          logList.debug("import start", {
-            name: file.name,
-            type: file.type,
-            size: file.size,
-            folderId: currentFolderId,
-          });
-          const detected = await detectFormat(file);
-          const plugin = editorRegistry.getByKind(detected.kind);
-          if (!plugin?.importFile || detected.kind === "unknown") {
-            throw new Error(
-              `无法识别「${file.name}」的文档格式，请确认它是 ${editorRegistry.importableEditorNames()} 文件。`,
-            );
-          }
-          const { id } = await plugin.importFile({
-            file,
-            fileName: sanitizeFileBaseName(file.name),
-            folderId: currentFolderId,
-          });
-          createdIds.push(id);
-        }
-        try {
-          await refresh({ silent: true, noErrorOnFailure: true });
-          setImportNotice(null);
-        } catch {
-          setImportNotice(
-            `已导入 ${createdIds.length} 个文件，但列表未能自动更新。请刷新本页以查看最新文件。`,
-          );
-        }
+        await importOneFileWithKind(file, kind);
+        importQueueRef.current = importQueueRef.current.slice(1);
+        await processImportQueue();
       } catch (e: unknown) {
         logList.debug("import error", e);
+        const createdIds = [...importCreatedIdsRef.current];
         const failedDeletes = await rollbackCreatedImportFiles(createdIds);
+        importCreatedIdsRef.current = [];
+        importQueueRef.current = [];
         let msg = formatImportErrorMessage(e);
         if (failedDeletes.length > 0) {
           msg += ` 另：有 ${failedDeletes.length} 个已创建项未能从服务器自动删除，请刷新列表后检查并手动删除重复或空白文件。`;
         }
         setImportNotice(null);
         setError(msg);
-      } finally {
         setImporting(false);
       }
     },
-    [currentFolderId, refresh],
+    [importOneFileWithKind, processImportQueue],
+  );
+
+  const dismissImportKindDialog = useCallback(() => {
+    setImportKindDialogOpen(false);
+    setImportPickerFileName(null);
+    pendingImportFileRef.current = null;
+    importQueueRef.current = [];
+    void (async () => {
+      const createdIds = [...importCreatedIdsRef.current];
+      if (createdIds.length > 0) {
+        await rollbackCreatedImportFiles(createdIds);
+        importCreatedIdsRef.current = [];
+      }
+      setImporting(false);
+    })();
+  }, []);
+
+  const importKindOverlayDismiss = useStrictOverlayDismiss(
+    dismissImportKindDialog,
   );
 
   const onSceneImportInputChange = (
@@ -1120,6 +1439,11 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       return;
     }
     try {
+      if (isLocalDraftFileId(id)) {
+        await discardLocalDraftSession(id);
+        await refresh({ silent: true });
+        return;
+      }
       await ServerSync.deleteFile(id);
       FileSyncState.clearLocalCache(id);
       FileSyncState.clearHashStateForFile(id);
@@ -1146,6 +1470,10 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   ) => {
     e.stopPropagation();
     try {
+      if (isLocalDraftFileId(id)) {
+        await downloadLocalDraftFile(id, name);
+        return;
+      }
       await ServerSync.downloadFile(id, name);
     } catch (err: any) {
       setError(err.message);
@@ -1175,10 +1503,22 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     const trimmed = renameValue.trim();
     if (trimmed) {
       try {
-        await ServerSync.renameFile(id, trimmed);
-        setFiles((prev) =>
-          prev.map((f) => (f.id === id ? { ...f, name: trimmed } : f)),
-        );
+        if (isLocalDraftFileId(id)) {
+          const existing = LocalDraftSessions.get(id);
+          if (existing) {
+            LocalDraftSessions.upsert({
+              ...existing,
+              name: trimmed,
+              updated_at: new Date().toISOString(),
+            });
+          }
+          setRecentRevision((n) => n + 1);
+        } else {
+          await ServerSync.renameFile(id, trimmed);
+          setFiles((prev) =>
+            prev.map((f) => (f.id === id ? { ...f, name: trimmed } : f)),
+          );
+        }
       } catch (err: any) {
         setError(err.message);
       }
@@ -1187,14 +1527,15 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   };
 
   const selectFolder = (folderId: string | null) => {
+    setSidebarView("all");
     if (isFileListLayoutDebugEnabled()) {
       const data = {
         fromFolderId: currentFolderId ?? "__ROOT__",
         fromFolderName: currentFolderId
           ? foldersById.get(currentFolderId)?.name ?? null
-          : "全部文件",
+          : "所有文件",
         toFolderId: folderId ?? "__ROOT__",
-        toFolderName: folderId ? foldersById.get(folderId)?.name ?? null : "全部文件",
+        toFolderName: folderId ? foldersById.get(folderId)?.name ?? null : "所有文件",
         visibleThumbs: visibleThumbIds.size,
       };
       pendingLayoutDebugRef.current = {
@@ -1231,7 +1572,28 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     }
     try {
       if (folderDraft.mode === "create") {
-        const created = await ServerSync.createFolder(name, folderDraft.parentId);
+        const parentId = folderDraft.parentId;
+        debugFolderDnd("create folder start", {
+          name,
+          parentId: parentId ?? "__ROOT__",
+          currentFolderId: currentFolderId ?? "__ROOT__",
+        });
+        const created = await ServerSync.createFolder(name, parentId);
+        const siblingIds = [
+          ...getOrderedFolderChildIds(parentId).filter((id) => id !== created.id),
+          created.id,
+        ];
+        debugFolderDnd("create folder reorder", {
+          folderId: created.id,
+          parentId: parentId ?? "__ROOT__",
+          siblingCount: siblingIds.length,
+          siblingIds: siblingIds.map((id) => id.slice(0, 8)),
+        });
+        await ServerSync.saveOrder(
+          parentId,
+          siblingIds.map((id) => ({ type: "folder" as const, id })),
+        );
+        debugFolderDnd("create folder done", { folderId: created.id });
         invalidateInflightRefresh();
         setFolders((prev) => {
           const next = [...prev, created];
@@ -1240,7 +1602,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         });
         setExpandedFolders((prev) => ({
           ...prev,
-          ...(folderDraft.parentId ? { [folderDraft.parentId]: true } : {}),
+          ...(parentId ? { [parentId]: true } : {}),
           [created.id]: true,
         }));
         setCurrentFolderId(created.id);
@@ -1256,6 +1618,10 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         });
       }
     } catch (err: any) {
+      debugFolderDnd("folder draft failed", {
+        mode: folderDraft.mode,
+        message: err?.message ?? String(err),
+      });
       setError(err.message);
     } finally {
       setFolderDraft(null);
@@ -1300,6 +1666,67 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     [folders],
   );
 
+  const quickCreateFolder = useCallback(async () => {
+    if (folderCreateInFlightRef.current) {
+      return;
+    }
+    folderCreateInFlightRef.current = true;
+    const parentId =
+      currentFolderId === ROOT_ID ? null : currentFolderId;
+    let name = "新建文件夹";
+    let suffix = 1;
+    const siblingNames = new Set(
+      folders
+        .filter((folder) => folderParentId(folder) === parentId)
+        .map((folder) => folder.name),
+    );
+    while (siblingNames.has(name)) {
+      name = `新建文件夹 (${suffix})`;
+      suffix += 1;
+    }
+    try {
+      debugFolderDnd("quick create folder start", {
+        name,
+        parentId: parentId ?? "__ROOT__",
+        currentFolderId: currentFolderId ?? "__ROOT__",
+      });
+      const created = await ServerSync.createFolder(name, parentId);
+      const siblingIds = [
+        ...getOrderedFolderChildIds(parentId).filter((id) => id !== created.id),
+        created.id,
+      ];
+      await ServerSync.saveOrder(
+        parentId,
+        siblingIds.map((id) => ({ type: "folder" as const, id })),
+      );
+      invalidateInflightRefresh();
+      setFolders((prev) => {
+        const next = [...prev, created];
+        writeFileListTreeCache({ folders: next, files: filesRef.current });
+        return next;
+      });
+      setExpandedFolders((prev) => ({
+        ...prev,
+        ...(parentId ? { [parentId]: true } : {}),
+        [created.id]: true,
+      }));
+      setCurrentFolderId(created.id);
+      debugFolderDnd("quick create folder done", { folderId: created.id });
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : String(err ?? "创建文件夹失败");
+      debugFolderDnd("quick create folder failed", { message });
+      setError(message);
+    } finally {
+      folderCreateInFlightRef.current = false;
+    }
+  }, [
+    currentFolderId,
+    folders,
+    getOrderedFolderChildIds,
+    invalidateInflightRefresh,
+  ]);
+
   const isValidFolderDrop = useCallback(
     (
       sourceId: string,
@@ -1333,6 +1760,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   );
 
   const clearFolderDragState = useCallback(() => {
+    folderDndDebugKeyRef.current = null;
     setDraggingFolderId(null);
     setFolderDropInd(null);
   }, [setFolderDropInd]);
@@ -1344,12 +1772,22 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       mode: "before" | "after" | "into",
     ) => {
       if (!isValidFolderDrop(sourceId, targetId, mode)) {
+        debugFolderDnd("apply drop rejected", {
+          sourceId8: sourceId.slice(0, 8),
+          targetId,
+          mode,
+        });
         return;
       }
       const toItems = (ids: string[]): FileOrderItem[] =>
         ids.map((id) => ({ type: "folder" as const, id }));
 
       try {
+        debugFolderDnd("apply drop start", {
+          sourceId8: sourceId.slice(0, 8),
+          targetId,
+          mode,
+        });
         if (targetId === "__ROOT__") {
           const ids = getOrderedFolderChildIds(ROOT_ID).filter((id) => id !== sourceId);
           ids.push(sourceId);
@@ -1375,10 +1813,23 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
           }
           const insertAt = mode === "before" ? tIdx : tIdx + 1;
           ordered.splice(insertAt, 0, sourceId);
+          debugFolderDnd("apply drop reorder siblings", {
+            parentId: parentId ?? "__ROOT__",
+            insertAt,
+            mode,
+            orderedIds: ordered.map((id) => id.slice(0, 8)),
+          });
           await ServerSync.saveOrder(parentId, toItems(ordered));
         }
+        debugFolderDnd("apply drop done", { sourceId8: sourceId.slice(0, 8), targetId, mode });
         await refresh({ silent: true });
       } catch (err: any) {
+        debugFolderDnd("apply drop failed", {
+          sourceId8: sourceId.slice(0, 8),
+          targetId,
+          mode,
+          message: err?.message ?? String(err),
+        });
         setError(err.message ?? "文件夹移动失败");
       }
     },
@@ -1417,20 +1868,44 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     }
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const ratio = (e.clientY - r.top) / Math.max(r.height, 1);
-    const preferred: ("before" | "into" | "after")[] =
-      ratio < 0.33
-        ? ["before", "into", "after"]
-        : ratio < 0.66
-          ? ["into", "before", "after"]
-          : ["after", "into", "before"];
-    for (const mode of preferred) {
+    /** 上缘或下缘（重叠区）均显示行间分隔线，避免中部「拖入」与 before/after 来回切换导致抖动。 */
+    const nearTop = ratio < 0.55;
+    const nearBottom = ratio > 0.45;
+    const modes: ("before" | "after" | "into")[] =
+      e.altKey && !(nearTop || nearBottom)
+        ? ["into", "before", "after"]
+        : nearTop || nearBottom
+          ? ratio < 0.5
+            ? ["before", "after"]
+            : ["after", "before"]
+          : ["before", "after", "into"];
+    for (const mode of modes) {
       if (isValidFolderDrop(src, folderId, mode)) {
         e.dataTransfer.dropEffect = "move";
         setFolderDropInd({ targetId: folderId, mode });
+        const debugKey = `${folderId}:${mode}`;
+        if (folderDndDebugKeyRef.current !== debugKey) {
+          folderDndDebugKeyRef.current = debugKey;
+          debugFolderDnd("indicator", {
+            sourceId8: src.slice(0, 8),
+            targetId8: folderId.slice(0, 8),
+            mode,
+            ratio: Math.round(ratio * 1000) / 1000,
+            nearTop,
+            nearBottom,
+            useSeparator: nearTop || nearBottom,
+            altKey: e.altKey,
+            rowHeight: Math.round(r.height),
+          });
+        }
         return;
       }
     }
     e.dataTransfer.dropEffect = "none";
+    if (folderDndDebugKeyRef.current !== null) {
+      folderDndDebugKeyRef.current = null;
+      debugFolderDnd("indicator cleared", { targetId8: folderId.slice(0, 8) });
+    }
     setFolderDropInd(null);
   };
 
@@ -1438,6 +1913,10 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     e.dataTransfer.setData(FOLDER_DND_MIME, folderId);
     e.dataTransfer.effectAllowed = "move";
     setDraggingFolderId(folderId);
+    debugFolderDnd("drag start", {
+      sourceId8: folderId.slice(0, 8),
+      hint: "localStorage excalidraw-filelist-folder-dnd-debug=1",
+    });
   };
 
   const onFolderRowDragOver = (e: React.DragEvent, folder: ServerFolder) => {
@@ -1458,8 +1937,19 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     const sourceId = readFolderDragSourceId(e);
     clearFolderDragState();
     if (!ind || !sourceId || ind.targetId !== folder.id) {
+      debugFolderDnd("row drop ignored", {
+        targetId8: folder.id.slice(0, 8),
+        hasInd: !!ind,
+        hasSource: !!sourceId,
+        indTarget: ind?.targetId?.slice(0, 8) ?? null,
+      });
       return;
     }
+    debugFolderDnd("row drop", {
+      sourceId8: sourceId.slice(0, 8),
+      targetId8: folder.id.slice(0, 8),
+      mode: ind.mode,
+    });
     void applyFolderDrop(sourceId, folder.id, ind.mode);
   };
 
@@ -1476,6 +1966,14 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       ? "move"
       : "none";
     if (e.dataTransfer.dropEffect === "move") {
+      if (folderDndDebugKeyRef.current !== "__ROOT__:into") {
+        folderDndDebugKeyRef.current = "__ROOT__:into";
+        debugFolderDnd("indicator", {
+          targetId: "__ROOT__",
+          mode: "into",
+          sourceId8: src.slice(0, 8),
+        });
+      }
       setFolderDropInd({ targetId: "__ROOT__", mode: "into" });
     } else {
       setFolderDropInd(null);
@@ -1492,8 +1990,14 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     const sourceId = readFolderDragSourceId(e);
     clearFolderDragState();
     if (!ind || ind.targetId !== "__ROOT__" || !sourceId) {
+      debugFolderDnd("root drop ignored", {
+        hasInd: !!ind,
+        indTarget: ind?.targetId ?? null,
+        hasSource: !!sourceId,
+      });
       return;
     }
+    debugFolderDnd("root drop", { sourceId8: sourceId.slice(0, 8), mode: "into" });
     void applyFolderDrop(sourceId, "__ROOT__", "into");
   };
 
@@ -1535,14 +2039,18 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
               ]
                 .filter(Boolean)
                 .join(" ")}
-              style={{ paddingLeft: `${0.35 + depth * 0.75}rem` }}
+              style={
+                depth > 0
+                  ? { paddingLeft: `${depth * 0.75}rem` }
+                  : undefined
+              }
             >
               <span
                 className="filelist__tree-drag-handle"
                 draggable
                 onDragStart={(e) => onFolderHandleDragStart(e, folder.id)}
                 onDragEnd={clearFolderDragState}
-                title="拖动以排序或嵌套"
+                title="拖动排序；松手到上/下缘为插入线；按住 Alt 拖入为子文件夹"
               >
                 <Icon type="drag" size={12} />
               </span>
@@ -1599,50 +2107,223 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     });
   };
 
-  const renderTreePanel = () => (
-    <aside className="filelist__sidebar" ref={sidebarRef}>
-      <div className="filelist__sidebar-head">
-        <span>文件夹</span>
+  const selectAllFilesView = useCallback(() => {
+    setSidebarView("all");
+    selectFolder(ROOT_ID);
+    setAllFilesTreeExpanded(true);
+  }, [selectFolder, setSidebarView]);
+
+  const toggleAllFilesTree = useCallback(() => {
+    setAllFilesTreeExpanded((open) => !open);
+  }, []);
+
+  const renderSidebarNav = () => (
+      <nav className="filelist__sidebar-menu" aria-label="文件列表分区">
         <button
           type="button"
-          className="filelist__small-btn"
-          onClick={() => startCreateFolder(currentFolderId)}
+          className={[
+            "filelist__sidebar-menu-item",
+            sidebarView === "recent" ? "filelist__sidebar-menu-item--active" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          onClick={() => setSidebarView("recent")}
         >
-          <Icon type="plus" size={15} />
-          新建
+          <span className="filelist__sidebar-menu-icon" aria-hidden>
+            <Icon type="clock" size={18} />
+          </span>
+          <span className="filelist__sidebar-menu-label">最近</span>
         </button>
-      </div>
+
+        <div className="filelist__sidebar-divider" role="separator" />
+
+        <div className="filelist__sidebar-section">
+          <div
+            className={[
+              "filelist__sidebar-menu-row",
+              sidebarView === "all" && currentFolderId === ROOT_ID
+                ? "filelist__sidebar-menu-row--active"
+                : "",
+              folderDropIndicator?.targetId === "__ROOT__" &&
+              folderDropIndicator.mode === "into"
+                ? "filelist__sidebar-menu-row--drop-into"
+                : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            onDragOver={onRootRowDragOver}
+            onDrop={onRootRowDrop}
+          >
+            <button
+              type="button"
+              className={[
+                "filelist__sidebar-menu-item",
+                sidebarView === "all" && currentFolderId === ROOT_ID
+                  ? "filelist__sidebar-menu-item--active"
+                  : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              onClick={selectAllFilesView}
+            >
+              <span className="filelist__sidebar-menu-icon" aria-hidden>
+                <Icon type="home" size={18} />
+              </span>
+              <span className="filelist__sidebar-menu-label">所有文件</span>
+            </button>
+            <button
+              type="button"
+              className="filelist__sidebar-menu-chevron"
+              aria-expanded={
+                sidebarView === "all" && allFilesTreeExpanded
+              }
+              aria-label={
+                sidebarView === "all" && allFilesTreeExpanded
+                  ? "收起文件夹"
+                  : "展开文件夹"
+              }
+              onClick={(event) => {
+                event.stopPropagation();
+                if (sidebarView !== "all") {
+                  setSidebarView("all");
+                  selectFolder(currentFolderId ?? ROOT_ID);
+                  setAllFilesTreeExpanded(true);
+                  return;
+                }
+                toggleAllFilesTree();
+              }}
+            >
+              <span
+                className={[
+                  "filelist__sidebar-menu-chevron-icon",
+                  sidebarView === "all" && allFilesTreeExpanded
+                    ? "filelist__sidebar-menu-chevron-icon--open"
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+              >
+                <Icon type="chevron" size={16} />
+              </span>
+            </button>
+          </div>
+
+          {sidebarView === "all" && allFilesTreeExpanded ? (
+            <div className="filelist__sidebar-subtree">
+              <button
+                type="button"
+                className="filelist__sidebar-subtree-action"
+                onClick={() => void quickCreateFolder()}
+              >
+                <Icon type="plus" size={14} />
+                <span>新建文件夹</span>
+              </button>
+              <div className="filelist__tree filelist__tree--nested">
+                {renderFolderTree(ROOT_ID)}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </nav>
+  );
+
+  const renderTopbarImport = () => (
+    <label
+      className={[
+        "filelist__topbar-import",
+        "filelist__import-scene-btn",
+        "filelist__import-scene-btn--file",
+        importing ? "filelist__import-scene-btn--busy" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      aria-disabled={importing || undefined}
+      aria-busy={importing || undefined}
+      title={`导入 ${editorRegistry.importableEditorNames()} 文档`}
+    >
+      <span className="filelist__import-scene-facade">
+        <Icon type="upload" size={18} />
+        {importing ? "导入中…" : "导入"}
+      </span>
+      <input
+        id={FILELIST_SCENE_IMPORT_INPUT_ID}
+        ref={sceneImportInputRef}
+        type="file"
+        multiple
+        accept={editorRegistry.buildImportAccept()}
+        className="filelist__file-input-overlay"
+        onChange={onSceneImportInputChange}
+        disabled={importing}
+        tabIndex={-1}
+      />
+    </label>
+  );
+
+  const renderSidebarTools = () => (
+    <div className="filelist__sidebar-tools">
       <button
         type="button"
-        className={[
-          "filelist__tree-root",
-          currentFolderId === ROOT_ID ? "filelist__tree-root--active" : "",
-          folderDropIndicator?.targetId === "__ROOT__" &&
-          folderDropIndicator.mode === "into"
-            ? "filelist__tree-root--drop-into"
-            : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        onClick={() => selectFolder(ROOT_ID)}
-        onDragOver={onRootRowDragOver}
-        onDrop={onRootRowDrop}
+        className="filelist__sidebar-tool filelist__ai-btn"
+        onClick={() => setShowAISettings(true)}
+        title="AI：Base URL 与 API Key"
       >
-        <Icon type="grid" size={16} />
-        全部文件
+        <span
+          className={`filelist__ai-dot ${
+            aiDotOk ? "filelist__ai-dot--ok" : ""
+          }`}
+        />
+        AI 设置
       </button>
-      <div className="filelist__tree">{renderFolderTree(ROOT_ID)}</div>
+    </div>
+  );
+
+  const renderSidebar = () => (
+    <aside
+      className="filelist__sidebar filelist__sidebar--nav"
+      ref={sidebarRef}
+    >
+      <div className="filelist__sidebar-brand">
+        <ImageIcon src={MAIN_SITE_ICON} alt="" size={22} />
+        <span className="filelist__sidebar-brand-title">{HOME_APP_TITLE}</span>
+      </div>
+      <div className="filelist__sidebar-scroll">
+        {renderSidebarNav()}
+        {renderSidebarTools()}
+      </div>
     </aside>
   );
 
+  const renderNewEntryCard = (index: number) => (
+    <div
+      key="new-entry"
+      className="filelist__card filelist__card--new"
+      style={{ animationDelay: `${Math.min(index, 20) * 25}ms` }}
+      onClick={() => openNewFileDialog()}
+    >
+      <div className="filelist__card-thumb filelist__card-thumb--new">
+        <span className="filelist__card-new-plus" aria-hidden>
+          +
+        </span>
+      </div>
+      <div className="filelist__card-body">
+        <span className="filelist__card-name">新建</span>
+      </div>
+    </div>
+  );
+
   const renderFileCard = (f: ServerFile, index: number) => {
+    const isBrowserDraft = isLocalDraftFileId(f.id);
     const state = draftStateById[f.id];
     const syncState = state?.syncState ?? "synced";
-    const localDraftThumb = state?.localDraftThumb ?? null;
-    const localThumb = syncState === "draft" ? localDraftThumb : null;
-    const shouldUseDraftPreview = syncState === "draft";
+    const preferLocalThumb = isBrowserDraft || syncState === "draft";
+    const localDraftThumb =
+      state?.localDraftThumb ??
+      (preferLocalThumb ? LocalThumbnailCache.get(f.id) : null);
+    const localThumb = preferLocalThumb ? localDraftThumb : null;
+    const shouldUseDraftPreview = preferLocalThumb;
     const thumbnailChoice = chooseFileCardThumbnail({
       syncState,
+      preferLocalThumb,
       localThumb,
       fetchedThumb: fetchedThumbs[f.id] ?? null,
     });
@@ -1725,7 +2406,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
             targetTag: t?.tagName,
             targetClass: String(t?.className || "").slice(0, 100),
           });
-          onOpenFile({ id: f.id, kind });
+          handleOpenFile({ id: f.id, kind });
         }}
       >
         <div
@@ -1734,14 +2415,21 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
           ref={(node) => thumbRefCallback(node, f.id)}
           style={thumbSvg ? { background: extractThumbBg(thumbSvg) } : undefined}
         >
-          {syncState === "draft" && (
+          {isBrowserDraft ? (
+            <span
+              className="filelist__card-thumb-badge"
+              title="仅保存在本机浏览器，尚未保存到服务器"
+            >
+              临时
+            </span>
+          ) : syncState === "draft" ? (
             <span
               className="filelist__card-thumb-badge"
               title="有未保存到服务器的更改"
             >
               未保存
             </span>
-          )}
+          ) : null}
           {thumbSvg ? (
             <div
               className="filelist__card-thumb-svg"
@@ -1765,23 +2453,27 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
             >
               <Icon type="edit" size={16} />
             </button>
-            <button
-              className="filelist__card-action"
-              title="移动到文件夹"
-              onClick={(e) => openMoveDialog(e, f)}
-            >
-              <Icon type="move" size={16} />
-            </button>
-            <button
-              className="filelist__card-action"
-              title="嵌入到网页"
-              onClick={(e) => {
-                e.stopPropagation();
-                setEmbedFile(f);
-              }}
-            >
-              <Icon type="embed" size={16} />
-            </button>
+            {!isBrowserDraft ? (
+              <button
+                className="filelist__card-action"
+                title="移动到文件夹"
+                onClick={(e) => openMoveDialog(e, f)}
+              >
+                <Icon type="move" size={16} />
+              </button>
+            ) : null}
+            {!isBrowserDraft ? (
+              <button
+                className="filelist__card-action"
+                title="嵌入到网页"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEmbedFile(f);
+                }}
+              >
+                <Icon type="embed" size={16} />
+              </button>
+            ) : null}
             <button
               className="filelist__card-action"
               title="下载"
@@ -1852,7 +2544,9 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     );
   };
 
-  const empty = !loading && filteredFiles.length === 0;
+  const showNewEntryCard = !searchQuery.trim();
+  const empty =
+    !loading && filteredFiles.length === 0 && !showNewEntryCard;
 
   /** Same nesting as sidebar tree: children under `parentId`, indent by `depth`. */
   const renderMoveTargetFolderTree = (
@@ -1910,38 +2604,68 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
           <span>正在导入…</span>
         </div>
       )}
-      <header
-        className="filelist__header"
+
+      {renderSidebar()}
+
+      <div
+        className="filelist__workspace"
         onDragOver={onFileListImportDragOver}
         onDrop={onFileListImportDrop}
       >
-        <div className="filelist__header-left">
+        {importNotice && (
+          <div className="filelist__notice" role="status">
+            {importNotice}
+          </div>
+        )}
+        {error && <div className="filelist__error">{error}</div>}
+
+        <header className="filelist__topbar">
           <button
             type="button"
             className="filelist__mobile-menu"
             onClick={() => setMobileTreeOpen(true)}
-            aria-label="打开文件夹"
+            aria-label="打开导航"
           >
             <Icon type="menu" size={20} />
           </button>
-          <ImageIcon src={MAIN_SITE_ICON} alt="" size={22} />
-          <h1 className="filelist__title">{HOME_APP_TITLE}</h1>
-        </div>
-        <div className="filelist__header-right">
-          <div className="filelist__search-wrap">
-            <span className="filelist__search-icon">
-              <Icon type="search" size={16} />
-            </span>
-            <input
-              className="filelist__search"
-              type="search"
-              placeholder="搜索文件名…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              aria-label="搜索文件"
-            />
+          <div className="filelist__pathbar">
+            <div className="filelist__breadcrumbs">
+              {sidebarView === "recent" ? (
+                <span className="filelist__pathbar-label">最近</span>
+              ) : (
+                <>
+                  <button type="button" onClick={() => selectAllFilesView()}>
+                    所有文件
+                  </button>
+                  {currentPath.map((folder) => (
+                    <React.Fragment key={folder.id}>
+                      <span>/</span>
+                      <button
+                        type="button"
+                        onClick={() => selectFolder(folder.id)}
+                      >
+                        {folder.name}
+                      </button>
+                    </React.Fragment>
+                  ))}
+                </>
+              )}
+            </div>
           </div>
-          <div className="filelist__header-group">
+          <div className="filelist__topbar-actions">
+            <div className="filelist__search-wrap">
+              <span className="filelist__search-icon">
+                <Icon type="search" size={16} />
+              </span>
+              <input
+                className="filelist__search"
+                type="search"
+                placeholder="搜索文件名…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                aria-label="搜索文件"
+              />
+            </div>
             <label className="filelist__sort">
               <span className="filelist__sort-label">排序</span>
               <select
@@ -1953,92 +2677,11 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
                 <option value="name">名称</option>
               </select>
             </label>
+            {renderTopbarImport()}
           </div>
-          <div className="filelist__header-group">
-            <button
-              type="button"
-              className="filelist__ai-btn"
-              onClick={() => setShowAISettings(true)}
-              title="AI：Base URL 与 API Key"
-            >
-              <span
-                className={`filelist__ai-dot ${
-                  aiDotOk ? "filelist__ai-dot--ok" : ""
-                }`}
-              />
-              AI 设置
-            </button>
-            <label
-              className={[
-                "filelist__import-scene-btn",
-                "filelist__import-scene-btn--file",
-                importing ? "filelist__import-scene-btn--busy" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              aria-disabled={importing || undefined}
-              aria-busy={importing || undefined}
-            >
-              <span className="filelist__import-scene-facade">
-                <Icon type="upload" size={18} />
-                {importing ? "导入中…" : "导入"}
-              </span>
-              <input
-                id={FILELIST_SCENE_IMPORT_INPUT_ID}
-                ref={sceneImportInputRef}
-                type="file"
-                multiple
-                accept={editorRegistry.buildImportAccept()}
-                className="filelist__file-input-overlay"
-                onChange={onSceneImportInputChange}
-                disabled={importing}
-                tabIndex={-1}
-                title={`导入 ${editorRegistry.importableEditorNames()} 文档`}
-              />
-            </label>
-            <button className="filelist__new-btn" onClick={openNewFileDialog}>
-              <Icon type="plus" size={18} />
-              新建
-            </button>
-          </div>
-        </div>
-      </header>
+        </header>
 
-      {importNotice && (
-        <div className="filelist__notice" role="status">
-          {importNotice}
-        </div>
-      )}
-      {error && <div className="filelist__error">{error}</div>}
-
-      <div
-        className="filelist__shell"
-        onDragOver={onFileListImportDragOver}
-        onDrop={onFileListImportDrop}
-      >
-        {renderTreePanel()}
-        <main className="filelist__main" ref={mainRef}>
-          <div className="filelist__pathbar">
-            <div className="filelist__breadcrumbs">
-              <button
-                type="button"
-                onClick={() => selectFolder(ROOT_ID)}
-              >
-                全部文件
-              </button>
-              {currentPath.map((folder) => (
-                <React.Fragment key={folder.id}>
-                  <span>/</span>
-                  <button
-                    type="button"
-                    onClick={() => selectFolder(folder.id)}
-                  >
-                    {folder.name}
-                  </button>
-                </React.Fragment>
-              ))}
-            </div>
-          </div>
+        <div className="filelist__body" ref={mainRef}>
           {loading ? (
             <div className="filelist__grid" ref={gridRef}>
               {Array.from({ length: 6 }, (_, i) => (
@@ -2061,38 +2704,12 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
                 <Icon type="file" size={64} />
               </div>
               <p className="filelist__empty-text">
-                {searchQuery ? "没有匹配的文件" : "当前文件夹为空"}
+                {searchQuery
+                  ? "没有匹配的文件"
+                  : sidebarView === "recent"
+                    ? "最近 7 天内暂无打开记录"
+                    : "当前文件夹为空"}
               </p>
-              {!searchQuery && (
-                <div className="filelist__empty-actions">
-                  {importing ? (
-                    <span
-                      className="filelist__import-scene-btn filelist__import-scene-btn--busy"
-                      aria-busy
-                      aria-disabled
-                    >
-                      <Icon type="upload" size={18} />
-                      导入中…
-                    </span>
-                  ) : (
-                    <label
-                      className="filelist__import-scene-btn"
-                      htmlFor={FILELIST_SCENE_IMPORT_INPUT_ID}
-                    >
-                      <Icon type="upload" size={18} />
-                      导入文件
-                    </label>
-                  )}
-                  <button
-                    type="button"
-                    className="filelist__new-btn"
-                    onClick={openNewFileDialog}
-                  >
-                    <Icon type="plus" size={18} />
-                    创建第一个文件
-                  </button>
-                </div>
-              )}
             </div>
           ) : (
             <div
@@ -2100,10 +2717,13 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
               ref={gridRef}
               key={`${currentFolderId ?? "root"}:${sortKey}:${searchQuery.trim()}`}
             >
-              {filteredFiles.map((f, i) => renderFileCard(f, i))}
+              {showNewEntryCard ? renderNewEntryCard(0) : null}
+              {filteredFiles.map((f, i) =>
+                renderFileCard(f, showNewEntryCard ? i + 1 : i),
+              )}
             </div>
           )}
-        </main>
+        </div>
       </div>
 
       {mobileTreeOpen && (
@@ -2123,7 +2743,18 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
                 关闭
               </button>
             </div>
-            {renderTreePanel()}
+            <div className="filelist__mobile-sheet-sidebar">
+              <div className="filelist__sidebar-brand">
+                <ImageIcon src={MAIN_SITE_ICON} alt="" size={22} />
+                <span className="filelist__sidebar-brand-title">
+                  {HOME_APP_TITLE}
+                </span>
+              </div>
+              <div className="filelist__sidebar-scroll">
+                {renderSidebarNav()}
+                {renderSidebarTools()}
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -2182,7 +2813,37 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         open={newFileDialogOpen}
         overlayDismiss={newFileOverlayDismiss}
         onClose={dismissNewFileDialog}
-        onCommit={commitNewFile}
+        onCommit={commitNewDocumentPick}
+      />
+
+      <SaveNewDocumentDialog
+        open={formalCreateKind != null}
+        saving={formalCreateSaving}
+        overlayDismiss={formalCreateOverlayDismiss}
+        defaultName={
+          formalCreateKind
+            ? defaultNameForDocumentKind(formalCreateKind)
+            : "未命名"
+        }
+        presetFolderId={newDocumentFolderId}
+        title="新建文件"
+        hint="为文件命名后将在当前文件夹中创建。"
+        onClose={dismissFormalCreateDialog}
+        onSave={commitFormalCreate}
+      />
+
+      <EditorKindDialog
+        open={importKindDialogOpen}
+        title="导入"
+        hint={
+          importPickerFileName
+            ? `选择用于打开「${importPickerFileName}」的编辑器`
+            : "选择用于导入的编辑器"
+        }
+        plugins={importKindPlugins}
+        overlayDismiss={importKindOverlayDismiss}
+        onClose={dismissImportKindDialog}
+        onCommit={commitImportKindPick}
       />
 
       {moveDialogFile && (
@@ -2217,7 +2878,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
                 >
                   <Icon type="grid" size={16} />
                   <span className="filelist__move-option-label">
-                    全部文件
+                    所有文件
                     {moveFileInAllFiles ? "（当前位置）" : ""}
                   </span>
                 </button>

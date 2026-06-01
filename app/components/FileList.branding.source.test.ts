@@ -22,9 +22,9 @@ describe("File list branding source contract", () => {
     expect(brandingSource).toContain('export const MAIN_SITE_ICON = "/icons/drawing-space.svg"');
     expect(source).toContain("applyMainSiteDocumentBranding");
     expect(source).toContain("HOME_APP_TITLE");
-    expect(source).toContain(
-      '<h1 className="filelist__title">{HOME_APP_TITLE}</h1>',
-    );
+    expect(source).toContain("filelist__sidebar-brand-title");
+    expect(source).toContain("{HOME_APP_TITLE}");
+    expect(source).toContain("MAIN_SITE_ICON");
     expect(htmlSource).toContain("<title>EditorHub</title>");
     expect(htmlSource).toContain('href="/icons/drawing-space.svg"');
     expect(htmlSource).toContain('content="EditorHub"');
@@ -71,7 +71,11 @@ describe("File list branding source contract", () => {
     expect(source).not.toContain("DOCUMENT_KIND_LABELS[kind]");
   });
 
-  it("uses main site document branding inside editor shells", () => {
+  it("uses file name for document title inside editor shells", () => {
+    const brandingSource = fs.readFileSync(
+      path.join(appRoot, "lib/appBranding.ts"),
+      "utf8",
+    );
     const excalidrawSource = fs.readFileSync(
       path.join(appRoot, "editors/excalidraw/EditorShell.tsx"),
       "utf8",
@@ -81,8 +85,10 @@ describe("File list branding source contract", () => {
       "utf8",
     );
 
-    expect(excalidrawSource).toContain("useMainSiteDocumentBranding");
-    expect(mindMapSource).toContain("useMainSiteDocumentBranding");
+    expect(brandingSource).toContain("useEditorDocumentTitle");
+    expect(brandingSource).toContain("resolveEditorDocumentTitle");
+    expect(excalidrawSource).toContain("useEditorDocumentTitle");
+    expect(mindMapSource).toContain("useEditorDocumentTitle");
     expect(excalidrawSource).not.toContain('document.title = "excalidraw"');
     expect(mindMapSource).not.toContain('document.title = "mindmap"');
   });
@@ -94,8 +100,8 @@ describe("File list branding source contract", () => {
     );
 
     expect(newFileSource).toContain("plugin.icon");
-    expect(newFileSource).toContain("filelist__kind-option--active");
-    expect(newFileSource).toContain("onPointerDown");
+    expect(newFileSource).toContain("filelist__kind-option");
+    expect(newFileSource).toContain("onClick={() => pickKind(plugin.kind)}");
   });
 
   it("uses per-editor icons on the floating sidebar ball", () => {

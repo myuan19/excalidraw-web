@@ -74,6 +74,22 @@ export function isEffectivelyEmptyMindMapData(
   return isRecord(data) && isMindMapNode(data.root) && !nodeHasVisibleContent(data.root);
 }
 
+/** True when the map has only the root node (no child nodes), like a fresh blank canvas. */
+export function isMindMapSingleRootOnly(data: unknown): boolean {
+  if (!isRecord(data)) {
+    return false;
+  }
+  const root = isMindMapNode(data.root)
+    ? data.root
+    : isRecord(data.data) && isMindMapNode(data.data.root)
+      ? (data.data as { root: MindMapNode }).root
+      : null;
+  if (!root) {
+    return false;
+  }
+  return (root.children ?? []).length === 0;
+}
+
 export function stripMindMapViewportState(
   data: MindMapDocumentData,
 ): MindMapDocumentData {

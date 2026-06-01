@@ -97,7 +97,9 @@ export type MindMapIframeFailureClassification = {
 };
 
 export const MINDMAP_STATIC_DEPLOY_ERROR_MESSAGE =
-  "mindmap 静态资源未正确部署：/mind-map/dist/js/ 须以 application/javascript 返回（勿 SPA 回退为 HTML、勿 OAuth 拦截）。请 yarn build:production 后整包部署 app/build/mind-map/，网关放行 /mind-map/dist/。";
+  "MindMap 静态资源加载失败：登录态下 /mind-map/dist/js/*.js 须返回 application/javascript（非 HTML）。" +
+  " 常见原因：① 未整包部署 chunk（勿只更新 index.html）；② 大 chunk 经 HTTP/2 反代/frp 出现 ERR_HTTP2_PROTOCOL_ERROR（见 deploy/README.md 对静态 location 改用 HTTP/1.1 或加大 buffer）。" +
+  " 说明：主站须登录访问；仅 /embed/mind-map/dist/* 的 hash 资源对 embed 免登。未登录时 302 到 OAuth 属正常。";
 
 const STATIC_DEPLOY_KINDS = new Set<MindMapIframeFailureKind>([
   "script",
@@ -160,7 +162,7 @@ export function classifyMindMapIframeFailure(
     return {
       kind,
       recoverable: true,
-      userMessage: `mindmap 代码块加载失败：${message}`,
+      userMessage: MINDMAP_STATIC_DEPLOY_ERROR_MESSAGE,
     };
   }
 

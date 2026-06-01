@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { getFileIdFromHash } from "../data/fileIdFromHash";
+import { isLocalDraftFileId } from "../data/localDraftFileId";
 import { readFileListTreeCache } from "../data/fileListSessionCache";
 import {
   ServerSync,
@@ -36,7 +37,14 @@ const BALL_PANEL_SEPARATION = 4;
 /** 竖向分组：保存/嵌入/历史 | 信息/导入/导出 | 文件 */
 const PANEL_HEIGHT = 390;
 const PANEL_WIDTH = 72;
-const ANCHOR_STORAGE_KEY = "excalidraw-editor-bridge-anchor-v1";
+const ANCHOR_STORAGE_KEY = "excalidraw-editor-bridge-anchor-v2";
+
+/** 沿边缘可移动区域：十等分，顶 1 + 中 6（拖拽）+ 底 1 */
+const TRAVEL_BAND_TOP = 1;
+const TRAVEL_BAND_DRAG = 6;
+const TRAVEL_BAND_BOTTOM = 1;
+const TRAVEL_BAND_COUNT =
+  TRAVEL_BAND_TOP + TRAVEL_BAND_DRAG + TRAVEL_BAND_BOTTOM;
 
 type SnapEdge = "left" | "right" | "top" | "bottom";
 type ActionIcon =
@@ -74,7 +82,51 @@ const ACTION_ICONS: Record<ActionIcon, string> = {
 };
 
 function clampRatio(ratio: number): number {
-  return Math.max(0.08, Math.min(0.92, ratio));
+  return Math.max(0, Math.min(1, ratio));
+}
+
+function isVerticalEdge(edge: SnapEdge): boolean {
+  return edge === "left" || edge === "right";
+}
+
+/** 小球沿左/右（竖向）或上/下（横向）边缘可拖拽的 [min, max]（小球左上角坐标）。 */
+function getEdgeTravelBounds(
+  edge: SnapEdge,
+  viewport: { width: number; height: number },
+): { min: number; max: number } {
+  const axisSize = isVerticalEdge(edge) ? viewport.height : viewport.width;
+  const topReserve = (TRAVEL_BAND_TOP / TRAVEL_BAND_COUNT) * axisSize;
+  const dragSpan = (TRAVEL_BAND_DRAG / TRAVEL_BAND_COUNT) * axisSize;
+  return {
+    min: topReserve,
+    max: topReserve + dragSpan - BALL_SIZE,
+  };
+}
+
+function travelRatioToBallCoord(
+  ratio: number,
+  edge: SnapEdge,
+  viewport: { width: number; height: number },
+): number {
+  const { min, max } = getEdgeTravelBounds(edge, viewport);
+  const span = max - min;
+  if (span <= 0) {
+    return min;
+  }
+  return min + clampRatio(ratio) * span;
+}
+
+function ballCoordToTravelRatio(
+  coord: number,
+  edge: SnapEdge,
+  viewport: { width: number; height: number },
+): number {
+  const { min, max } = getEdgeTravelBounds(edge, viewport);
+  const span = max - min;
+  if (span <= 0) {
+    return 0.5;
+  }
+  return clampRatio((coord - min) / span);
 }
 
 function readStoredAnchor(): AnchorPosition {
@@ -126,16 +178,22 @@ function snapToEdge(
   const distBottom = viewport.height - centerY;
   const min = Math.min(distLeft, distRight, distTop, distBottom);
 
+  const ballY = centerY - BALL_SIZE / 2;
+  const ballX = centerX - BALL_SIZE / 2;
+
   if (min === distLeft) {
-    return { edge: "left", ratio: clampRatio(centerY / viewport.height) };
+    return { edge: "left", ratio: ballCoordToTravelRatio(ballY, "left", viewport) };
   }
   if (min === distRight) {
-    return { edge: "right", ratio: clampRatio(centerY / viewport.height) };
+    return { edge: "right", ratio: ballCoordToTravelRatio(ballY, "right", viewport) };
   }
   if (min === distTop) {
-    return { edge: "top", ratio: clampRatio(centerX / viewport.width) };
+    return { edge: "top", ratio: ballCoordToTravelRatio(ballX, "top", viewport) };
   }
-  return { edge: "bottom", ratio: clampRatio(centerX / viewport.width) };
+  return {
+    edge: "bottom",
+    ratio: ballCoordToTravelRatio(ballX, "bottom", viewport),
+  };
 }
 
 function anchorToPoint(
@@ -147,21 +205,21 @@ function anchorToPoint(
     case "left":
       return {
         x: EDGE_INSET,
-        y: ratio * viewport.height - BALL_SIZE / 2,
+        y: travelRatioToBallCoord(ratio, "left", viewport),
       };
     case "right":
       return {
         x: viewport.width - BALL_SIZE - EDGE_INSET,
-        y: ratio * viewport.height - BALL_SIZE / 2,
+        y: travelRatioToBallCoord(ratio, "right", viewport),
       };
     case "top":
       return {
-        x: ratio * viewport.width - BALL_SIZE / 2,
+        x: travelRatioToBallCoord(ratio, "top", viewport),
         y: EDGE_INSET,
       };
     case "bottom":
       return {
-        x: ratio * viewport.width - BALL_SIZE / 2,
+        x: travelRatioToBallCoord(ratio, "bottom", viewport),
         y: viewport.height - BALL_SIZE - EDGE_INSET,
       };
   }
@@ -200,39 +258,19 @@ function edgeTravelRatio(
   displayPoint: { x: number; y: number },
   viewport: { width: number; height: number },
 ): number {
-  if (anchor.edge === "left" || anchor.edge === "right") {
-    const min = EDGE_INSET;
-    const max = viewport.height - BALL_SIZE - EDGE_INSET;
-    const span = max - min;
-    if (span <= 0) {
-      return 0.5;
-    }
-    return Math.max(0, Math.min(1, (displayPoint.y - min) / span));
+  if (isVerticalEdge(anchor.edge)) {
+    return ballCoordToTravelRatio(displayPoint.y, anchor.edge, viewport);
   }
-  const min = EDGE_INSET;
-  const max = viewport.width - BALL_SIZE - EDGE_INSET;
-  const span = max - min;
-  if (span <= 0) {
-    return 0.5;
-  }
-  return Math.max(0, Math.min(1, (displayPoint.x - min) / span));
+  return ballCoordToTravelRatio(displayPoint.x, anchor.edge, viewport);
 }
 
-/** 0 = 卡片与小球顶对齐；0.5 = 中心对齐；1 = 卡片与小球底对齐 */
+/** 0 = 卡片顶与小球顶对齐；1 = 卡片底与小球底对齐（行程内均匀映射） */
 function panelOffsetAlongBall(
   travelRatio: number,
   ballSize: number,
   panelSize: number,
 ): number {
-  const topAligned = 0;
-  const centerAligned = (ballSize - panelSize) / 2;
-  const bottomAligned = ballSize - panelSize;
-  if (travelRatio <= 0.5) {
-    const blend = travelRatio / 0.5;
-    return topAligned + (centerAligned - topAligned) * blend;
-  }
-  const blend = (travelRatio - 0.5) / 0.5;
-  return centerAligned + (bottomAligned - centerAligned) * blend;
+  return clampRatio(travelRatio) * (ballSize - panelSize);
 }
 
 function computePanelStyle(
@@ -374,7 +412,7 @@ function buildFolderPath(
   folders: ServerFolder[],
 ): string {
   if (!folderId) {
-    return "全部文件";
+    return "所有文件";
   }
   const foldersById = new Map(folders.map((folder) => [folder.id, folder]));
   const path: string[] = [];
@@ -389,7 +427,7 @@ function buildFolderPath(
     path.unshift(folder.name);
     current = folder.parent_id;
   }
-  return path.length > 0 ? path.join(" / ") : "全部文件";
+  return path.length > 0 ? path.join(" / ") : "所有文件";
 }
 
 function formatFileTime(value?: string): string {
@@ -724,6 +762,8 @@ export function EditorPlatformSidebar() {
   };
 
   const fileActionsEnabled = !!fileId;
+  const serverFileActionsEnabled =
+    !!fileId && !isLocalDraftFileId(fileId);
 
   const bridgeStyle: CSSProperties = {
     left: displayPoint.x,
@@ -769,15 +809,27 @@ export function EditorPlatformSidebar() {
           <SidebarActionButton
             label="嵌入"
             icon="embed"
-            disabled={!fileActionsEnabled}
-            title={fileActionsEnabled ? "嵌入" : "保存后可嵌入"}
+            disabled={!serverFileActionsEnabled}
+            title={
+              serverFileActionsEnabled
+                ? "嵌入"
+                : fileActionsEnabled
+                  ? "保存到服务器后可嵌入"
+                  : "打开文档后可嵌入"
+            }
             onClick={() => closeAndRun(dispatchHostEmbed)}
           />
           <SidebarActionButton
             label="历史"
             icon="history"
-            disabled={!fileActionsEnabled}
-            title={fileActionsEnabled ? "历史版本" : "保存后可查看历史"}
+            disabled={!serverFileActionsEnabled}
+            title={
+              serverFileActionsEnabled
+                ? "历史版本"
+                : fileActionsEnabled
+                  ? "保存到服务器后可查看历史"
+                  : "保存后可查看历史"
+            }
             onClick={() => closeAndRun(dispatchHostHistory)}
           />
           <SidebarDivider />

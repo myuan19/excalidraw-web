@@ -40,6 +40,20 @@ describe("chooseFileCardThumbnail", () => {
     });
   });
 
+  it("prefers local thumbnail for synced browser-only drafts", () => {
+    expect(
+      chooseFileCardThumbnail({
+        syncState: "synced",
+        preferLocalThumb: true,
+        localThumb: "<svg>local</svg>",
+        fetchedThumb: null,
+      }),
+    ).toEqual({
+      thumbSvg: "<svg>local</svg>",
+      finalSource: "localThumb",
+    });
+  });
+
   it("does not synthesize a fallback thumbnail when no real thumbnail exists", () => {
     expect(
       chooseFileCardThumbnail({

@@ -59,6 +59,17 @@ export function createEditorRegistry(plugins: EditorPlugin[]) {
       return `#${params.toString()}`;
     },
 
+    /** Open a blank editor session without creating a server or local temp file. */
+    buildNewDocumentHash(kind?: string | null): string {
+      const resolved = this.resolveKind(kind);
+      const params = new URLSearchParams();
+      params.set("new", "1");
+      if (resolved !== defaultPlugin?.kind) {
+        params.set("kind", resolved);
+      }
+      return `#${params.toString()}`;
+    },
+
     buildEmbedEditUrl(
       fileId: string | undefined,
       kind: string,

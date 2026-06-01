@@ -1,0 +1,27 @@
+/* 文件列表与弹层共用的局部 token（--fl-*）。弹层须挂在 .filelist-dialog-host 上。 */
+@mixin filelist-design-tokens {
+  --fl-bg: var(--nb-page-bg);
+  --fl-panel: var(--nb-filelist-panel-glass);
+  --fl-panel-solid: var(--nb-surface);
+  --fl-border: var(--nb-filelist-border);
+  --fl-border-strong: var(--nb-filelist-border-strong);
+  --fl-muted-panel: var(--nb-filelist-muted);
+  --fl-primary: var(--nb-primary);
+  --fl-primary-soft: var(--nb-filelist-primary-soft);
+  --fl-primary-hover: var(--nb-primary-hover);
+  --fl-shadow-soft: var(--nb-shadow-soft);
+  --fl-shadow-card: var(--nb-shadow-card);
+  --fl-shadow-card-hover: var(--nb-shadow-card-hover);
+  --fl-radius-lg: var(--nb-radius-xl);
+  --fl-radius-md: var(--nb-radius-md);
+  --fl-transition-spring: var(--nb-transition-spring);
+  --fl-surface-high: var(--nb-surface-high);
+  --fl-nav-surface: var(--nb-nav-surface);
+  --fl-nav-surface-hover: var(--nb-nav-surface-hover);
+  --fl-nav-surface-active: var(--nb-nav-surface-active);
+  --fl-nav-border-divider: var(--nb-nav-border-divider);
+  --fl-nav-text-primary: var(--nb-nav-text-primary);
+  --fl-nav-text-muted: var(--nb-nav-text-muted);
+  --fl-nav-text-faint: var(--nb-nav-text-faint);
+  --fl-nav-outline-drop: var(--nb-nav-outline-drop);
+}

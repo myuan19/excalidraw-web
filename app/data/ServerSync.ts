@@ -3,6 +3,7 @@
  */
 
 import { createLogger } from "../lib/logger";
+import { devDebug, isFileListFolderDndDebugEnabled } from "../lib/devDebug";
 import { FileSyncState } from "./FileSyncState";
 import { getDocumentFormatAdapter } from "./formats/registry";
 import { editorRegistry } from "../editors/registry";
@@ -77,7 +78,17 @@ async function api<T = unknown>(
       (typeof performance !== "undefined" ? performance.now() : Date.now()) -
         t0,
     );
+  const folderApiDebug =
+    isFileListFolderDndDebugEnabled() &&
+    (path.includes("/files/order") || path.includes("/files/folders"));
   logSync.debug(`api ${method}`, { path });
+  if (folderApiDebug) {
+    devDebug("file-list", `folder-api request ${method}`, {
+      path,
+      bodyLen:
+        typeof opts.body === "string" ? opts.body.length : opts.body ? 1 : 0,
+    });
+  }
   const res = await fetch(url(path), {
     headers: { "Content-Type": "application/json" },
     ...opts,
@@ -85,6 +96,18 @@ async function api<T = unknown>(
   const ct = res.headers.get("content-type") || "";
   if (!ct.includes("application/json")) {
     const text = await res.text();
+    if (folderApiDebug) {
+      devDebug("file-list", `folder-api non-JSON ${res.status}`, {
+        path,
+        method,
+        contentType: ct || null,
+        elapsedMs: elapsedMs(),
+        preview: text.slice(0, 240),
+        looksLikeHtml:
+          text.trimStart().startsWith("<!DOCTYPE") ||
+          text.trimStart().startsWith("<html"),
+      });
+    }
     const looksLikeHtml =
       text.trimStart().startsWith("<!DOCTYPE") ||
       text.trimStart().startsWith("<html");
@@ -107,10 +130,25 @@ async function api<T = unknown>(
       path,
       preview: text.slice(0, 200),
     });
+    if (folderApiDebug) {
+      devDebug("file-list", `folder-api error ${res.status}`, {
+        path,
+        method,
+        elapsedMs: elapsedMs(),
+        preview: text.slice(0, 240),
+      });
+    }
     throw new Error(`API ${res.status}: ${text}`);
   }
   const data = (await res.json()) as T;
   logSync.debug(`api ok ${elapsedMs()}ms`, { path, method });
+  if (folderApiDebug) {
+    devDebug("file-list", `folder-api ok ${res.status}`, {
+      path,
+      method,
+      elapsedMs: elapsedMs(),
+    });
+  }
   if (method === "PUT" && path.includes("/files/")) {
     logSync.debug("api PUT ok", { path, data });
   }

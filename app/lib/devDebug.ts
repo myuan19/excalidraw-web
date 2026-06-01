@@ -77,6 +77,21 @@ export function isAppDebugEnabled(): boolean {
   return isDevDebugChannelEnabled("app");
 }
 
+/** Sidebar folder drag + POST /files/order (localStorage opt-in in production). */
+export function isFileListFolderDndDebugEnabled(): boolean {
+  if (isDevDebugChannelEnabled("file-list")) {
+    return true;
+  }
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    return localStorage.getItem("excalidraw-filelist-folder-dnd-debug") === "1";
+  } catch {
+    return false;
+  }
+}
+
 /** @deprecated Use isDevDebugChannelEnabled("ai-config") */
 export function isAIConfigDebugEnabled(): boolean {
   return isDevDebugChannelEnabled("ai-config");

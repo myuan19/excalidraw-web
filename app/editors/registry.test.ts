@@ -34,6 +34,13 @@ describe("editor registry", () => {
     );
   });
 
+  it("builds new-document hashes without a file id", () => {
+    expect(editorRegistry.buildNewDocumentHash()).toBe("#new=1");
+    expect(editorRegistry.buildNewDocumentHash("mindmap")).toBe(
+      "#new=1&kind=mindmap",
+    );
+  });
+
   it("lists creatable editors with createFile hooks", () => {
     expect(editorRegistry.listCreatable().map((plugin) => plugin.kind)).toEqual([
       "excalidraw",

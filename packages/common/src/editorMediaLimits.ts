@@ -1,9 +1,7 @@
-import limits from "../editor-media-limits.cjs";
-
-/** @see ../editor-media-limits.cjs — do not duplicate byte caps elsewhere */
+/** Canonical caps — also mirrored in ../editor-media-limits.cjs for MindMap build-time require(). */
 export const EDITOR_MEDIA_LIMITS = {
-  maxFileBytes: limits.maxFileBytes as number,
-  maxDimension: limits.maxDimension as number,
+  maxFileBytes: 8 * 1024 * 1024,
+  maxDimension: 8192,
 } as const;
 
 export const EDITOR_MAX_IMAGE_FILE_BYTES = EDITOR_MEDIA_LIMITS.maxFileBytes;

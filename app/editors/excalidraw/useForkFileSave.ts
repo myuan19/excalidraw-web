@@ -15,6 +15,9 @@ import {
 import { resolveSaveDisplayName } from "../../data/forkFileNaming";
 import { ServerSync } from "../../data/ServerSync";
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
+import { isLocalDraftFileId } from "../../data/localDraftFileId";
+import { notifyLocalDraftEdited } from "../../data/localDraftSessions";
+import { discardLocalDraftSession } from "../../data/discardLocalDraftSession";
 
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { SaveToServerOptions, SaveToServerSource, SceneData } from "../../hooks/types";
@@ -29,8 +32,15 @@ export function useForkFileSave(opts: {
   getSceneDataRef: React.MutableRefObject<() => SceneData | null>;
   navigateToFileListHome: () => void;
   setErrorMessage: (msg: string) => void;
+  onRequestSaveNew?: (opts: { navigateAfter: boolean }) => void;
 }) {
-  const { excalidrawAPI, getSceneDataRef, navigateToFileListHome, setErrorMessage } = opts;
+  const {
+    excalidrawAPI,
+    getSceneDataRef,
+    navigateToFileListHome,
+    setErrorMessage,
+    onRequestSaveNew,
+  } = opts;
   const getSceneData = () => getSceneDataRef.current();
 
   const [forkSaving, setForkSaving] = useState(false);
@@ -65,6 +75,10 @@ export function useForkFileSave(opts: {
         }
 
         FileSyncState.setLocalEditTime(fileId);
+        if (isLocalDraftFileId(fileId)) {
+          const displayName = sceneData.appState?.name?.trim();
+          notifyLocalDraftEdited(fileId, displayName);
+        }
 
         const myGen = ++localPersistGenRef.current;
         void (async () => {
@@ -176,6 +190,10 @@ export function useForkFileSave(opts: {
         if (navigateAfter) {
           finishNavigateHome();
         }
+        return false;
+      }
+      if (isLocalDraftFileId(fid)) {
+        onRequestSaveNew?.({ navigateAfter: !!navigateAfter });
         return false;
       }
       updateDraftHashDebouncedRef.current.flush();
@@ -290,7 +308,14 @@ export function useForkFileSave(opts: {
         }
       }
     },
-    [excalidrawAPI, getSceneData, finishNavigateHome, persistLocalDraftToCache, setErrorMessage],
+    [
+      excalidrawAPI,
+      getSceneData,
+      finishNavigateHome,
+      onRequestSaveNew,
+      persistLocalDraftToCache,
+      setErrorMessage,
+    ],
   );
 
   useEffect(() => {
@@ -319,6 +344,9 @@ export function useForkFileSave(opts: {
       draftFlusher: updateDraftHashDebouncedRef.current,
     });
     if (!FileEditDirty.hasUnsavedChanges(fid)) {
+      if (isLocalDraftFileId(fid)) {
+        await discardLocalDraftSession(fid);
+      }
       navigateToFileListHome();
       return;
     }

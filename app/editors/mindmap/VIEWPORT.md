@@ -19,7 +19,7 @@ Effective root screen ratio:
 targetRootScreenRatio = baselineRootScreenRatio × <strategyMultiplier>
 ```
 
-Defaults live in `native/previewViewportConfig.json` (`thumbnailRootScreenRatioMultiplier` `0.6`, `editorRootScreenRatioMultiplier` `0.054`, `embedFocusedRootScreenRatioMultiplier` `0.1`).
+Defaults live in `native/previewViewportConfig.json` (`thumbnailRootScreenRatioMultiplier` `0.6`, `editorRootScreenRatioMultiplier` `0.54`, `embedFocusedRootScreenRatioMultiplier` `0.1`).
 
 ## File map
 
@@ -42,7 +42,7 @@ Defaults live in `native/previewViewportConfig.json` (`thumbnailRootScreenRatioM
 - `applyEmbedFocusedViewport('initial-render-end')` on first render
 - Reset → restore captured baseline from first focused apply
 
-Multiplier default `0.2` keeps embed preview more zoomed out than the editor (`0.108`).
+Multiplier default `0.1` keeps embed preview more zoomed out than the editor (`0.121`).
 
 ## 2. Editor focused
 
