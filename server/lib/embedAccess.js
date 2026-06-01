@@ -97,6 +97,46 @@ export function hostFromReferer(req) {
   }
 }
 
+/** File id from parent embed document URL (subresource Referer). */
+export function extractEmbedFileIdFromReferer(req) {
+  const referer = req.get("referer");
+  if (!referer) {
+    return "";
+  }
+  try {
+    const match = new URL(referer).pathname.match(/^\/embed\/([^/]+)/);
+    const candidate = match?.[1] ?? "";
+    if (
+      !candidate ||
+      candidate === "api" ||
+      candidate === "assets" ||
+      candidate === "fonts" ||
+      candidate === "mind-map"
+    ) {
+      return "";
+    }
+    return candidate;
+  } catch {
+    return "";
+  }
+}
+
+/** Resolve embed file id for /embed/mind-map/* and other routes without :fileId param. */
+export function getEmbedRequestFileId(req) {
+  const fromQuery = req.query?.fileId ?? req.query?.fid;
+  if (typeof fromQuery === "string" && fromQuery.trim()) {
+    return fromQuery.trim();
+  }
+  const ctx = readEmbedContextCookie(req);
+  if (ctx?.fileId) {
+    return ctx.fileId;
+  }
+  if (typeof req.params?.fileId === "string" && req.params.fileId) {
+    return req.params.fileId;
+  }
+  return extractEmbedFileIdFromReferer(req) || "";
+}
+
 export function getEmbedTokenCookie(req) {
   const cookieHeader = req.headers.cookie || "";
   const match = cookieHeader.match(
@@ -267,7 +307,7 @@ export function buildEmbedContextCookieValue({
 }
 
 export function appendEmbedSetCookie(res, name, value) {
-  const base = `${name}=${encodeURIComponent(value)}; Path=${EMBED_COOKIE_PATH}; HttpOnly; Secure; SameSite=None; Max-Age=${EMBED_COOKIE_MAX_AGE_SEC}`;
+  const base = `${name}=${encodeURIComponent(value)}; Path=${EMBED_COOKIE_PATH}; HttpOnly; Secure; SameSite=None; Partitioned; Max-Age=${EMBED_COOKIE_MAX_AGE_SEC}`;
   const existing = res.getHeader("Set-Cookie");
   if (!existing) {
     res.setHeader("Set-Cookie", base);
@@ -358,9 +398,7 @@ export function validateEmbedAccess(req, { fileId, token, lookupToken }) {
  */
 export function createRequireEmbedAccess({ lookupToken, requireFileId = false }) {
   return function requireEmbedAccess(req, res, next) {
-    const fileId = requireFileId
-      ? req.params.fileId
-      : readEmbedContextCookie(req)?.fileId || req.params.fileId;
+    const fileId = requireFileId ? req.params.fileId : getEmbedRequestFileId(req);
 
     if (!fileId || typeof fileId !== "string") {
       return res.status(403).type("text/plain").send("Forbidden");
@@ -393,7 +431,10 @@ export function createRequireEmbedAccess({ lookupToken, requireFileId = false })
  * @typedef {{ ok: false, status: number, error: string }} EmbedSessionFail
  */
 
-/** Hashed static bundles (cookie session only — no per-request DB). */
+/**
+ * Content-hashed MindMap iframe chunks under /embed/mind-map/dist/.
+ * Served without session gate (same policy as /embed/assets); document data stays token-gated.
+ */
 export function isEmbeddableHashedAssetPath(assetPath) {
   if (!assetPath || typeof assetPath !== "string") {
     return false;
@@ -402,19 +443,53 @@ export function isEmbeddableHashedAssetPath(assetPath) {
 }
 
 /**
+ * Vite embed entry chunks under /embed/assets/ and /embed/fonts/.
+ * Dynamic import() does not send embed cookies reliably; filenames are content-hashed.
+ */
+export function isPublicEmbedHashedAssetPath(assetPath) {
+  if (!assetPath || typeof assetPath !== "string") {
+    return false;
+  }
+  return /-[a-zA-Z0-9_-]{6,}\.(?:js|css|mjs)$/i.test(assetPath);
+}
+
+/**
  * Validate signed session cookies issued after a successful embed page load.
+ * Falls back to token + embed-page Referer when cookies are blocked (ITP / third-party).
  * @returns {EmbedSessionOk | EmbedSessionFail}
  */
-export function validateEmbedSession(req) {
+export function validateEmbedSession(req, { lookupToken } = {}) {
+  const cookieToken = getEmbedTokenCookie(req);
   const ctx = readEmbedContextCookie(req);
-  if (!ctx) {
-    return { ok: false, status: 403, error: "Forbidden" };
+  if (ctx && cookieToken) {
+    return { ok: true, ctx, token: String(cookieToken) };
   }
-  const token = getEmbedTokenCookie(req);
-  if (!token) {
-    return { ok: false, status: 403, error: "Forbidden" };
+
+  if (typeof lookupToken === "function") {
+    const token = getEmbedRequestToken(req);
+    const fileId = ctx?.fileId || getEmbedRequestFileId(req);
+    if (token && fileId) {
+      const access = validateEmbedAccess(req, {
+        fileId,
+        token,
+        lookupToken,
+      });
+      if (access.ok) {
+        return {
+          ok: true,
+          ctx: ctx ?? {
+            tokenId: access.row.id,
+            fileId,
+            embeddingHost: access.embeddingHost,
+            exp: Date.now() + EMBED_COOKIE_MAX_AGE_SEC * 1000,
+          },
+          token: String(token),
+        };
+      }
+    }
   }
-  return { ok: true, ctx, token: String(token) };
+
+  return { ok: false, status: 403, error: "Forbidden" };
 }
 
 export function setPublicImmutableCacheHeaders(res) {
@@ -430,9 +505,9 @@ export function setPrivateImmutableCacheHeaders(res) {
 /**
  * Express middleware — hashed /embed static (assets, fonts, mind-map/dist).
  */
-export function createRequireEmbedSession() {
+export function createRequireEmbedSession({ lookupToken } = {}) {
   return function requireEmbedSession(req, res, next) {
-    const result = validateEmbedSession(req);
+    const result = validateEmbedSession(req, { lookupToken });
     if (!result.ok) {
       return res.status(result.status).type("text/plain").send(result.error);
     }
@@ -446,7 +521,6 @@ export function createRequireEmbedSession() {
  */
 export function createMindMapEmbedGate({ lookupToken }) {
   const requireDocument = createRequireEmbedAccess({ lookupToken });
-  const requireSession = createRequireEmbedSession();
 
   return function mindMapEmbedGate(req, res, next) {
     const assetPath = (() => {
@@ -457,7 +531,7 @@ export function createMindMapEmbedGate({ lookupToken }) {
       }
     })();
     if (assetPath && isEmbeddableHashedAssetPath(assetPath)) {
-      return requireSession(req, res, next);
+      return next();
     }
     return requireDocument(req, res, next);
   };

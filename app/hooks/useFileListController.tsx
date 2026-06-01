@@ -8,6 +8,10 @@ import React, {
 } from "react";
 
 import {
+  EDITOR_MAX_IMAGE_FILE_BYTES,
+  formatEditorMaxImageFileSizeMb,
+} from "@excalidraw/common";
+import {
   applyMainSiteDocumentBranding,
   editorIconForKind,
   HOME_APP_TITLE,
@@ -1002,6 +1006,11 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       const createdIds: string[] = [];
       try {
         for (const file of fileList) {
+          if (file.size > EDITOR_MAX_IMAGE_FILE_BYTES) {
+            throw new Error(
+              `「${file.name}」超过 ${formatEditorMaxImageFileSizeMb()} 上限，无法导入。`,
+            );
+          }
           logList.debug("import start", {
             name: file.name,
             type: file.type,

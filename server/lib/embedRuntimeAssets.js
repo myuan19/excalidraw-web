@@ -1,4 +1,4 @@
-/** Remap runtime font/asset loads to /embed/* (auth via HttpOnly session cookies). */
+/** Remap runtime font/asset loads to /embed/* (hashed /embed/assets are public; API stays token-gated). */
 export function buildEmbedRuntimeAssetInterceptor() {
   return `<script>
 (function(){

@@ -106,7 +106,7 @@ Docker nginx (`deploy/full/nginx.conf`) mirrors the app cache split:
 | `/assets/*`, `/mind-map/dist/*` | `immutable` + 1y — content-hashed bundles |
 | `/api/*`, `/embed` (HTML/API) | proxied to Node; document routes use `ETag` / `304` where applicable |
 
-Hashed embed chunks (`/embed/assets`, `/embed/mind-map/dist`) rely on **session cookies** for auth and long-lived cache headers from Express (`embedAccess.js`), not `?_t=` query busting.
+Content-hashed embed chunks (`/embed/assets`, `/embed/fonts`, `/embed/mind-map/dist/*`) are **public** (immutable cache). Vite `import()` / React `lazy()` cannot rely on HttpOnly session cookies. Embed **HTML**, **`/embed/api/:fileId/data`**, and **`/embed/mind-map/index.html`** remain token + domain gated (`embedAccess.js`).
 
 After deploy, the SPA compares `VITE_APP_GIT_SHA` (injected at build) with `build-meta.json` and reloads once if they differ (stale tab after a new release).
 

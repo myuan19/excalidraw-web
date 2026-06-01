@@ -13,7 +13,6 @@ import {
   captureEmbeddingHostForSession,
   createMindMapEmbedGate,
   createRequireEmbedAccess,
-  createRequireEmbedSession,
   getEmbedRequestToken,
   getRequestHost,
   isSameOriginAdminRequest,
@@ -82,7 +81,6 @@ const requireEmbedAccessForFile = createRequireEmbedAccess({
   requireFileId: true,
 });
 
-const requireEmbedSession = createRequireEmbedSession();
 const mindMapEmbedGate = createMindMapEmbedGate({ lookupToken: lookupEmbedToken });
 
 function currentPath(fileId) {
@@ -503,8 +501,9 @@ pageRouter.get(
   },
 );
 
-pageRouter.use("/assets", requireEmbedSession, sendEmbedAsset);
-pageRouter.use("/fonts", requireEmbedSession, sendEmbedFont);
+// Hashed chunks: public (import() / lazy() do not carry embed cookies or full Referer).
+pageRouter.use("/assets", sendEmbedAsset);
+pageRouter.use("/fonts", sendEmbedFont);
 pageRouter.use("/mind-map", mindMapEmbedGate, sendEmbedMindMap);
 
 pageRouter.get("/:fileId", (req, res) => {

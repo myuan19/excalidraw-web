@@ -27,6 +27,7 @@ import { hashDocumentSnapshot } from "../../data/sceneHash";
 import { ServerSync } from "../../data/ServerSync";
 import { normalizeMindMapThumbnailSvg } from "../../data/thumbnailSvg";
 import previewViewportConfig from "./native/previewViewportConfig.json";
+import { applyMindMapMediaLimitsToConfig } from "./mindMapMediaLimits";
 import {
   debugMindMapBridge,
   warnMindMapBridge,
@@ -71,7 +72,9 @@ function toBridgePayload(
   fileId: string | null,
 ): NativeMindMapBridgePayload {
   const mindMapData = applyMindMapBrowserView(data, fileId);
-  const mindMapConfig = { ...(mindMapData.config ?? {}) };
+  const mindMapConfig = applyMindMapMediaLimitsToConfig({
+    ...(mindMapData.config ?? {}),
+  });
   if (!mindMapData.view) {
     mindMapConfig.__nbPreviewRootScreenRatioMultiplier =
       previewViewportConfig.editorRootScreenRatioMultiplier;

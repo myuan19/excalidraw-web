@@ -47,7 +47,7 @@ export function expandRectToMinimumSize(
 
 /**
  * Excalidraw 列表缩略图在场景坐标下的可见区域：
- * exportPadding 外扩 + 最小 240×144 视野（与 buildSceneThumbnailSvg 一致）。
+ * exportPadding 外扩 + 最小 480×288 视野（与 buildSceneThumbnailSvg 一致）。
  */
 export function computeExcalidrawThumbnailSceneBounds(
   elements: readonly ExcalidrawElement[],

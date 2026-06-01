@@ -6,12 +6,15 @@ import {
   getEmbedRequestToken,
   hasEmbeddingContextSignal,
   isEmbeddableHashedAssetPath,
+  isPublicEmbedHashedAssetPath,
   isHostInAllowedList,
   issueEmbedSessionCookies,
   normalizeHost,
   parseAllowedDomainsInput,
   readEmbedContextCookie,
   resolveEmbeddingHost,
+  extractEmbedFileIdFromReferer,
+  getEmbedRequestFileId,
   validateEmbedAccess,
   validateEmbedSession,
 } from "./embedAccess.js";
@@ -209,6 +212,26 @@ describe("embed session fast path", () => {
     expect(isEmbeddableHashedAssetPath("index.html")).toBe(false);
   });
 
+  it("identifies public embed vite asset paths", () => {
+    expect(
+      isPublicEmbedHashedAssetPath("MindMapEmbedViewer-s9i2V0J7.js"),
+    ).toBe(true);
+    expect(isPublicEmbedHashedAssetPath("index-DlzHMzFn.js")).toBe(true);
+    expect(isPublicEmbedHashedAssetPath("secrets.json")).toBe(false);
+  });
+
+  const lookupToken = vi.fn((token, fileId) => {
+    if (token !== "tok-valid" || fileId !== "file-1") {
+      return undefined;
+    }
+    return {
+      id: "tid-1",
+      token: "tok-valid",
+      file_id: "file-1",
+      allowed_domains: "*",
+    };
+  });
+
   it("requires both session cookies for static", () => {
     const value = buildEmbedContextCookieValue({
       tokenId: "tid-1",
@@ -227,6 +250,49 @@ describe("embed session fast path", () => {
     expect(
       validateEmbedSession(mockReq({ headers: { cookie: "" } })).ok,
     ).toBe(false);
+  });
+
+  it("extracts file id from embed page referer", () => {
+    const req = mockReq({
+      headers: {
+        referer:
+          "https://excalidraw.example.com/embed/file-1?token=tok-valid",
+      },
+    });
+    expect(extractEmbedFileIdFromReferer(req)).toBe("file-1");
+  });
+
+  it("ignores non-document embed path segments in referer", () => {
+    const req = mockReq({
+      headers: {
+        referer: "https://excalidraw.example.com/embed/mind-map/index.html",
+      },
+    });
+    expect(extractEmbedFileIdFromReferer(req)).toBe("");
+  });
+
+  it("resolves file id from query for mind-map iframe without cookie", () => {
+    const req = mockReq({
+      query: { _t: "tok-valid", fileId: "file-1" },
+      headers: { host: "excalidraw.example.com" },
+    });
+    expect(getEmbedRequestFileId(req)).toBe("file-1");
+  });
+
+  it("allows hashed assets via referer token when cookies are missing", () => {
+    lookupToken.mockClear();
+    const result = validateEmbedSession(
+      mockReq({
+        headers: {
+          referer:
+            "https://excalidraw.example.com/embed/file-1?token=tok-valid",
+          host: "excalidraw.example.com",
+        },
+      }),
+      { lookupToken },
+    );
+    expect(result.ok).toBe(true);
+    expect(lookupToken).toHaveBeenCalledWith("tok-valid", "file-1");
   });
 });
 

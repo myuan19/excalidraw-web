@@ -2,6 +2,7 @@ export * from "./binary-heap";
 export * from "./bounds";
 export * from "./colors";
 export * from "./constants";
+export * from "./editorMediaLimits";
 export * from "./font-metadata";
 export * from "./queue";
 export * from "./keys";

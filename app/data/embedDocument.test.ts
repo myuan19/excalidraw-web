@@ -129,14 +129,14 @@ describe("embed document helpers", () => {
           enableFreeDrag: true,
           __nbPreviewTargetX: 0.5,
           __nbPreviewTargetY: 0.5,
-          __nbPreviewRootScreenRatioMultiplier: 0.4,
+          __nbPreviewRootScreenRatioMultiplier: 0.1,
         },
       },
       mindMapConfig: {
         enableFreeDrag: true,
         __nbPreviewTargetX: 0.5,
         __nbPreviewTargetY: 0.5,
-        __nbPreviewRootScreenRatioMultiplier: 0.4,
+        __nbPreviewRootScreenRatioMultiplier: 0.1,
       },
       lang: "zh",
       localConfig: {
@@ -174,6 +174,6 @@ describe("embed document helpers", () => {
     expect(payload.mindMapData.config?.__nbPreviewTargetX).toBeLessThan(0.5);
     expect(payload.mindMapData.config?.__nbPreviewTargetY).toBe(0.5);
     expect(payload.mindMapData.config?.__nbPreviewRootScreenRatioMultiplier)
-      .toBe(0.4);
+      .toBe(0.1);
   });
 });

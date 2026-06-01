@@ -6,6 +6,7 @@ import {
 } from "../data/embedDocument";
 import { CrosshairIcon, ExternalLinkIcon } from "./icons";
 import { embedDebug, embedMark, embedMeasure } from "./embedDebug";
+import { getEmbedBootstrap } from "./embedMode";
 import { handleEmbedEditLinkClick } from "./openEmbedEditUrl";
 import { useEmbedPinState, useEmbedIframeAutoLock } from "./EmbedFocusGate";
 
@@ -110,6 +111,20 @@ export default function MindMapEmbedViewer({
     data: summarizeMindMapRaw(data),
     editUrl,
   });
+  const embedBootstrap = getEmbedBootstrap();
+  const mindMapIframeSrc = (() => {
+    const params = new URLSearchParams();
+    if (embedBootstrap.token) {
+      params.set("_t", embedBootstrap.token);
+    }
+    if (embedBootstrap.fileId) {
+      params.set("fileId", embedBootstrap.fileId);
+    }
+    const qs = params.toString();
+    return qs
+      ? `/embed/mind-map/index.html?${qs}`
+      : "/embed/mind-map/index.html";
+  })();
   const mindMapData = getMindMapEmbedData(data);
   embedDebug("mindmap viewer data ready", {
     rootText: mindMapData.root?.data?.text ?? null,
@@ -392,7 +407,7 @@ export default function MindMapEmbedViewer({
         className={`mindmap-embed-viewer__frame${
           lockInteraction ? " mindmap-embed-viewer__frame--locked" : ""
         }`}
-        src="/embed/mind-map/index.html"
+        src={mindMapIframeSrc}
         onLoad={() => embedDebug("mindmap iframe load", getFrameDebugInfo())}
       />
       {lockInteraction && (

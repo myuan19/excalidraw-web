@@ -1,5 +1,6 @@
 import { MindMapAdapter } from "../../data/formats/MindMapAdapter";
 import previewViewportConfig from "./native/previewViewportConfig.json";
+import { applyMindMapMediaLimitsToConfig } from "./mindMapMediaLimits";
 
 import type { MindMapDocumentData } from "../../data/formats/MindMapAdapter";
 
@@ -57,13 +58,13 @@ function computeMindMapPreviewRootTargetX(data: MindMapDocumentData): number {
 }
 
 function buildMindMapPreviewData(data: MindMapDocumentData): MindMapDocumentData {
-  const config = {
+  const config = applyMindMapMediaLimitsToConfig({
     ...(data.config ?? {}),
     __nbPreviewTargetX: computeMindMapPreviewRootTargetX(data),
     __nbPreviewTargetY: 0.5,
     __nbPreviewRootScreenRatioMultiplier:
       previewViewportConfig.embedFocusedRootScreenRatioMultiplier,
-  };
+  });
   const { view: _view, ...withoutView } = data;
   return {
     ...withoutView,

@@ -14,14 +14,14 @@ describe("expandRectToMinimumSize", () => {
   it("expands tiny rects to the minimum viewport centered", () => {
     const expanded = expandRectToMinimumSize(
       { x: 0, y: 0, width: 18, height: 18 },
-      240,
-      144,
+      FILE_LIST_THUMB_MIN_VIEWPORT_WIDTH,
+      FILE_LIST_THUMB_MIN_VIEWPORT_HEIGHT,
     );
 
-    expect(expanded.width).toBe(240);
-    expect(expanded.height).toBe(144);
-    expect(expanded.x).toBeCloseTo(-111, 6);
-    expect(expanded.y).toBeCloseTo(-63, 6);
+    expect(expanded.width).toBe(FILE_LIST_THUMB_MIN_VIEWPORT_WIDTH);
+    expect(expanded.height).toBe(FILE_LIST_THUMB_MIN_VIEWPORT_HEIGHT);
+    expect(expanded.x).toBeCloseTo(-231, 6);
+    expect(expanded.y).toBeCloseTo(-135, 6);
   });
 });
 

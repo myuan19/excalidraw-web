@@ -28,10 +28,10 @@ describe("Excalidraw thumbnail minimum viewport", () => {
     });
 
     const [x, y, width, height] = getViewBoxNumbers(svg);
-    expect(width).toBeCloseTo(240, 6);
-    expect(height).toBeCloseTo(144, 6);
-    expect(x).toBeCloseTo(-111, 6);
-    expect(y).toBeCloseTo(-63, 6);
+    expect(width).toBeCloseTo(480, 6);
+    expect(height).toBeCloseTo(288, 6);
+    expect(x).toBeCloseTo(-231, 6);
+    expect(y).toBeCloseTo(-135, 6);
     expect(svg).toContain('data-excal-filelist-thumb="1"');
   });
 });
