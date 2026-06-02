@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TTD 连线对比</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        background: #f5f5f5;
+      }
+      h1 {
+        font-size: 18px;
+        padding: 16px 24px 8px;
+        margin: 0;
+      }
+      .row {
+        display: flex;
+        gap: 24px;
+        padding: 0 24px 24px;
+        align-items: flex-start;
+        overflow-x: auto;
+      }
+      .panel {
+        flex: 0 0 520px;
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 12px;
+      }
+      .panel h2 {
+        font-size: 13px;
+        line-height: 1.4;
+        margin: 0 0 8px;
+        color: #333;
+      }
+      .canvas-wrap {
+        width: 520px;
+        min-height: 420px;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        background: #fff;
+      }
+      .canvas-wrap canvas {
+        max-width: 100%;
+        height: auto;
+      }
+      #status {
+        padding: 0 24px 12px;
+        color: #666;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>TTD 连线对比（真实 exportToCanvas）</h1>
+    <div id="status">渲染中…</div>
+    <div class="row">
+      <div class="panel" id="git-head"></div>
+      <div class="panel" id="sharp"></div>
+      <div class="panel" id="current"></div>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

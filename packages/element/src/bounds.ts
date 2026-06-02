@@ -34,7 +34,12 @@ import type { AppState } from "@excalidraw/excalidraw/types";
 
 import type { Mutable } from "@excalidraw/common/utility-types";
 
-import { generateRoughOptions } from "./shape";
+import {
+  generateRoundedPolylinePath,
+  generateRoughOptions,
+  getRenderOnlyRoundedPolylineCornerIndices,
+  getRenderOnlyRoundedPolylineRadius,
+} from "./shape";
 import { ShapeCache } from "./shape";
 import { LinearElementEditor } from "./linearElementEditor";
 import { getBoundTextElement, getContainerElement } from "./textElement";
@@ -916,6 +921,20 @@ const generateLinearElementShape = (
 ): Drawable => {
   const generator = rough.generator();
   const options = generateRoughOptions(element);
+  const renderOnlyRoundedRadius = getRenderOnlyRoundedPolylineRadius(element);
+  const renderOnlyRoundedCornerIndices =
+    getRenderOnlyRoundedPolylineCornerIndices(element);
+
+  if (renderOnlyRoundedRadius !== null) {
+    return generator.path(
+      generateRoundedPolylinePath(
+        element.points,
+        renderOnlyRoundedRadius,
+        renderOnlyRoundedCornerIndices,
+      ),
+      generateRoughOptions(element, true),
+    );
+  }
 
   const method = (() => {
     if (element.roundness) {
@@ -1073,12 +1092,25 @@ export const getResizedElementAbsoluteCoords = (
   } else {
     // Line
     const gen = rough.generator();
-    const curve = !element.roundness
-      ? gen.linearPath(
-          points as [number, number][],
-          generateRoughOptions(element),
-        )
-      : gen.curve(points as [number, number][], generateRoughOptions(element));
+    const renderOnlyRoundedRadius = getRenderOnlyRoundedPolylineRadius(element);
+    const renderOnlyRoundedCornerIndices =
+      getRenderOnlyRoundedPolylineCornerIndices(element);
+    const curve =
+      renderOnlyRoundedRadius !== null
+        ? gen.path(
+            generateRoundedPolylinePath(
+              points,
+              renderOnlyRoundedRadius,
+              renderOnlyRoundedCornerIndices,
+            ),
+            generateRoughOptions(element, true),
+          )
+        : !element.roundness
+        ? gen.linearPath(
+            points as [number, number][],
+            generateRoughOptions(element),
+          )
+        : gen.curve(points as [number, number][], generateRoughOptions(element));
 
     const ops = getCurvePathOps(curve);
     bounds = getMinMaxXYFromCurvePathOps(ops);
@@ -1099,8 +1131,20 @@ export const getElementPointsCoords = (
 ): Bounds => {
   // This might be computationally heavey
   const gen = rough.generator();
+  const renderOnlyRoundedRadius = getRenderOnlyRoundedPolylineRadius(element);
+  const renderOnlyRoundedCornerIndices =
+    getRenderOnlyRoundedPolylineCornerIndices(element);
   const curve =
-    element.roundness == null
+    renderOnlyRoundedRadius !== null
+      ? gen.path(
+          generateRoundedPolylinePath(
+            points as unknown as readonly LocalPoint[],
+            renderOnlyRoundedRadius,
+            renderOnlyRoundedCornerIndices,
+          ),
+          generateRoughOptions(element, true),
+        )
+      : element.roundness == null
       ? gen.linearPath(
           points as [number, number][],
           generateRoughOptions(element),

@@ -19,9 +19,15 @@ import type { MermaidToExcalidrawLibProps } from "./types";
 
 import type { AppClassProperties, BinaryFiles } from "../../types";
 
+import {
+  smoothConnectorCorners,
+  type TTDConnectorStats,
+} from "./connectorPostProcess";
 import { extractMermaidDefinition } from "./utils/extractMermaidFromLlmResponse";
+import { ttdDebug } from "./utils/ttdDebug";
 
-export { extractMermaidDefinition };
+export { extractMermaidDefinition, isMermaidDefinition } from "./utils/extractMermaidFromLlmResponse";
+export type { TTDConnectorStats } from "./connectorPostProcess";
 
 export const resetPreview = ({
   canvasRef,
@@ -62,7 +68,7 @@ export const convertMermaidToExcalidraw = async ({
   }>;
   theme: Theme;
 }): Promise<
-  | { success: true; normalizedDefinition: string }
+  | { success: true; normalizedDefinition: string; connectorStats: TTDConnectorStats }
   | { success: false; error?: Error }
 > => {
   const canvasNode = canvasRef.current;
@@ -110,12 +116,22 @@ export const convertMermaidToExcalidraw = async ({
     const { elements, files = {} } = ret;
     setError(null);
 
+    const convertedElements = convertToExcalidrawElements(elements, {
+      regenerateIds: true,
+    });
+
+    const { elements: processedElements, connectorStats } =
+      smoothConnectorCorners(convertedElements);
+
     data.current = {
-      elements: convertToExcalidrawElements(elements, {
-        regenerateIds: true,
-      }),
+      elements: processedElements,
       files,
     };
+
+    ttdDebug("mermaid convert ok", {
+      elementCount: processedElements.length,
+      connectorStats,
+    });
 
     const canvas = await exportToCanvas({
       elements: data.current.elements,
@@ -131,7 +147,7 @@ export const convertMermaidToExcalidraw = async ({
 
     parent.style.background = "var(--default-bg-color)";
     canvasNode.replaceChildren(canvas);
-    return { success: true, normalizedDefinition: normalized };
+    return { success: true, normalizedDefinition: normalized, connectorStats };
   } catch (err: any) {
     parent.style.background = "var(--default-bg-color)";
     if (normalized) {

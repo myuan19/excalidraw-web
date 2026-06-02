@@ -163,6 +163,112 @@ export class ShapeCache {
   };
 }
 
+export const RENDER_ONLY_ROUNDED_POLYLINE_CUSTOM_DATA_KEY =
+  "renderOnlyRoundedPolyline";
+
+export const getRenderOnlyRoundedPolylineRadius = (
+  element: ExcalidrawLinearElement,
+): number | null => {
+  const value =
+    element.customData?.[RENDER_ONLY_ROUNDED_POLYLINE_CUSTOM_DATA_KEY];
+  if (value === true) {
+    return 5;
+  }
+  if (
+    value &&
+    typeof value === "object" &&
+    typeof value.radius === "number" &&
+    Number.isFinite(value.radius) &&
+    value.radius > 0
+  ) {
+    return value.radius;
+  }
+  return null;
+};
+
+export const getRenderOnlyRoundedPolylineCornerIndices = (
+  element: ExcalidrawLinearElement,
+): readonly number[] | null => {
+  const value =
+    element.customData?.[RENDER_ONLY_ROUNDED_POLYLINE_CUSTOM_DATA_KEY];
+  if (
+    value &&
+    typeof value === "object" &&
+    Array.isArray(value.cornerIndices) &&
+    value.cornerIndices.every((index: unknown) => Number.isInteger(index))
+  ) {
+    return value.cornerIndices;
+  }
+  return null;
+};
+
+export const generateRoundedPolylinePath = (
+  points: readonly LocalPoint[],
+  radius: number,
+  cornerIndices: readonly number[] | null = null,
+): string => {
+  if (points.length === 0) {
+    return "";
+  }
+  if (points.length === 1) {
+    return `M ${points[0][0]} ${points[0][1]}`;
+  }
+
+  const commands = [`M ${points[0][0]} ${points[0][1]}`];
+  const roundedCornerIndices = cornerIndices ? new Set(cornerIndices) : null;
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = points[i - 1];
+    const point = points[i];
+    const next = points[i + 1];
+
+    if (roundedCornerIndices && !roundedCornerIndices.has(i)) {
+      commands.push(`L ${point[0]} ${point[1]}`);
+      continue;
+    }
+
+    const inLength = pointDistance(prev, point);
+    const outLength = pointDistance(point, next);
+
+    if (inLength < 1 || outLength < 1) {
+      commands.push(`L ${point[0]} ${point[1]}`);
+      continue;
+    }
+
+    const inUnit = [
+      (point[0] - prev[0]) / inLength,
+      (point[1] - prev[1]) / inLength,
+    ];
+    const outUnit = [
+      (next[0] - point[0]) / outLength,
+      (next[1] - point[1]) / outLength,
+    ];
+    const cross = inUnit[0] * outUnit[1] - inUnit[1] * outUnit[0];
+    const dot = inUnit[0] * outUnit[0] + inUnit[1] * outUnit[1];
+
+    if (Math.abs(cross) < 1e-6 && dot > 0) {
+      commands.push(`L ${point[0]} ${point[1]}`);
+      continue;
+    }
+
+    const trim = Math.min(radius, inLength / 2, outLength / 2);
+    const p1 = [
+      point[0] - inUnit[0] * trim,
+      point[1] - inUnit[1] * trim,
+    ];
+    const p2 = [
+      point[0] + outUnit[0] * trim,
+      point[1] + outUnit[1] * trim,
+    ];
+
+    commands.push(`L ${p1[0]} ${p1[1]}`);
+    commands.push(`Q ${point[0]} ${point[1]}, ${p2[0]} ${p2[1]}`);
+  }
+  const last = points[points.length - 1];
+  commands.push(`L ${last[0]} ${last[1]}`);
+
+  return commands.join(" ");
+};
+
 const getDashArrayDashed = (strokeWidth: number) => [8, 8 + strokeWidth];
 
 const getDashArrayDotted = (strokeWidth: number) => [1.5, 6 + strokeWidth];
@@ -606,10 +712,22 @@ export const generateLinearCollisionShape = (
       const points = element.points.length
         ? element.points
         : [pointFrom<LocalPoint>(0, 0)];
+      const renderOnlyRoundedRadius =
+        getRenderOnlyRoundedPolylineRadius(element);
 
       if (isElbowArrow(element)) {
         return generator.path(generateElbowArrowShape(points, 16), options)
           .sets[0].ops;
+      } else if (renderOnlyRoundedRadius !== null) {
+        const cornerIndices = getRenderOnlyRoundedPolylineCornerIndices(element);
+        return generator.path(
+          generateRoundedPolylinePath(
+            points,
+            renderOnlyRoundedRadius,
+            cornerIndices,
+          ),
+          options,
+        ).sets[0].ops;
       } else if (!element.roundness) {
         return points.map((point, idx) => {
           const p = pointRotateRads(
@@ -885,6 +1003,10 @@ const _generateElementShape = (
       const points = element.points.length
         ? element.points
         : [pointFrom<LocalPoint>(0, 0)];
+      const renderOnlyRoundedRadius =
+        getRenderOnlyRoundedPolylineRadius(element);
+      const renderOnlyRoundedCornerIndices =
+        getRenderOnlyRoundedPolylineCornerIndices(element);
 
       if (isElbowArrow(element)) {
         // NOTE (mtolmacs): Temporary fix for extremely big arrow shapes
@@ -907,6 +1029,17 @@ const _generateElementShape = (
             ),
           ];
         }
+      } else if (renderOnlyRoundedRadius !== null) {
+        shape = [
+          generator.path(
+              generateRoundedPolylinePath(
+                points,
+                renderOnlyRoundedRadius,
+                renderOnlyRoundedCornerIndices,
+              ),
+            generateRoughOptions(element, true, isDarkMode),
+          ),
+        ];
       } else if (!element.roundness) {
         // curve is always the first element
         // this simplifies finding the curve for an element
