@@ -1,3 +1,6 @@
+const MERMAID_DECLARATION_RE =
+  /^(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|gantt|pie|mindmap|journey|gitGraph|timeline|quadrantChart|sankey|xychart)\b/i;
+
 /**
  * LLM 常返回带 Markdown 围栏的 Mermaid（```mermaid ... ```），而
  * @excalidraw/mermaid-to-excalidraw 只接受纯图表定义。从回复中抽出可解析片段。
@@ -21,4 +24,9 @@ export function extractMermaidDefinition(raw: string): string {
   }
 
   return text;
+}
+
+export function isMermaidDefinition(content: string): boolean {
+  const firstLine = content.trim().split(/\r?\n/)[0]?.trim() || "";
+  return MERMAID_DECLARATION_RE.test(firstLine);
 }

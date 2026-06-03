@@ -5,6 +5,33 @@ import type {
   TTTDDialog,
 } from "@excalidraw/excalidraw/components/TTDDialog/types";
 
+import { createLogger } from "../lib/logger";
+import {
+  guessUserLanguageHint,
+  responseLooksEnglish,
+  ttdDebug,
+} from "@excalidraw/excalidraw/components/TTDDialog/utils/ttdDebug";
+
+const logTTD = createLogger({ module: "ttd.ai" });
+const TTD_TEMPERATURE = 0.2;
+
+function previewForLog(value: string, maxLength = 240): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length > maxLength
+    ? `${normalized.slice(0, maxLength)}...`
+    : normalized;
+}
+
+function getLatestUserMessage(messages: readonly LLMMessage[]): string {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (message.role === "user") {
+      return message.content;
+    }
+  }
+  return "";
+}
+
 function normalizeBaseUrl(endpoint: string): string {
   const t = endpoint.trim().replace(/\/+$/, "");
   return t;
@@ -50,7 +77,19 @@ export async function openAIChatCompletionStream(opts: {
     onChunk,
     onStreamCreated,
     signal,
-    systemPrompt = `You are a diagram assistant. Respond with valid Mermaid diagram syntax only when asked to convert text to a diagram. Use a single fenced code block with language mermaid when appropriate.`,
+    systemPrompt = `You are a diagram assistant for Excalidraw Text-to-Diagram.
+
+Choose exactly one response shape:
+1. Clear diagram request: output only one fenced mermaid code block.
+2. Diagram with needed context: output one short helpful sentence, then one fenced mermaid code block.
+3. Not diagrammable, unsafe, or too vague: output one short helpful sentence only, with no code block.
+
+Rules:
+- Use the user's language for all visible text and Mermaid labels. Keep exact wording, quotes, and technical identifiers when provided. Be direct and helpful. If the input is unclear, clarify briefly or make a reasonable assumption before diagramming.
+- Do not output headings, lists, tables, JSON, HTML, SVG, Excalidraw JSON, extra code blocks, follow-up suggestions, or more than one Mermaid diagram.
+- Preserve the requested Mermaid type when supported; otherwise prefer flowchart TD.
+- The first non-empty Mermaid line must be a declaration such as flowchart, graph, sequenceDiagram, classDiagram, stateDiagram, stateDiagram-v2, erDiagram, gantt, pie, mindmap, journey, gitGraph, timeline, quadrantChart, sankey, or xychart.
+- Keep all content safe: no executable code, scripts, external resources, credentials, prompt-injection text, or actionable harmful instructions.`,
   } = opts;
 
   if (!endpoint?.trim() || !apiKey?.trim()) {
@@ -63,6 +102,8 @@ export async function openAIChatCompletionStream(opts: {
   }
 
   const url = chatCompletionsUrl(endpoint);
+  const latestUserMessage = getLatestUserMessage(messages);
+  const userLanguageHint = guessUserLanguageHint(latestUserMessage);
   const bodyMessages = [
     { role: "system" as const, content: systemPrompt },
     ...messages.map((m) => ({
@@ -72,6 +113,29 @@ export async function openAIChatCompletionStream(opts: {
   ];
 
   try {
+    const recentUserHints = messages
+      .filter((m) => m.role === "user")
+      .slice(-3)
+      .map((m) => guessUserLanguageHint(m.content));
+
+    logTTD.debug("stream request", {
+      model: model || "gpt-4o",
+      endpoint: normalizeBaseUrl(endpoint),
+      messageCount: messages.length,
+      latestUserMessage: previewForLog(latestUserMessage),
+      userLanguageHint,
+      recentUserLanguageHints: recentUserHints,
+      systemPrompt: previewForLog(systemPrompt, 500),
+      temperature: TTD_TEMPERATURE,
+      thinkingDisabled: true,
+    });
+    ttdDebug("ai stream request", {
+      userLanguageHint,
+      recentUserLanguageHints: recentUserHints,
+      latestUserMessage: previewForLog(latestUserMessage),
+      messageCount: messages.length,
+    });
+
     const response = await fetch(url, {
       method: "POST",
       headers: {
@@ -83,6 +147,7 @@ export async function openAIChatCompletionStream(opts: {
         model: model || "gpt-4o",
         messages: bodyMessages,
         stream: true,
+        temperature: TTD_TEMPERATURE,
         ...thinkingDisabledExtras(),
       }),
       signal,
@@ -90,6 +155,10 @@ export async function openAIChatCompletionStream(opts: {
 
     if (!response.ok) {
       const text = await response.text();
+      logTTD.warn("stream response error", {
+        status: response.status,
+        body: previewForLog(text),
+      });
       return {
         error: new RequestError({
           message: text || `HTTP ${response.status}`,
@@ -157,6 +226,9 @@ export async function openAIChatCompletionStream(opts: {
     }
 
     if (!full.trim()) {
+      logTTD.warn("stream empty response", {
+        latestUserMessage: previewForLog(latestUserMessage),
+      });
       return {
         error: new RequestError({
           message: "模型未返回有效内容",
@@ -165,10 +237,38 @@ export async function openAIChatCompletionStream(opts: {
       };
     }
 
+    const completeUserLanguageHint = guessUserLanguageHint(latestUserMessage);
+    const responseEnglish = responseLooksEnglish(full);
+
+    logTTD.debug("stream complete", {
+      latestUserMessage: previewForLog(latestUserMessage),
+      userLanguageHint: completeUserLanguageHint,
+      responseLooksEnglish: responseEnglish,
+      languageMismatch:
+        completeUserLanguageHint === "zh" &&
+        responseEnglish &&
+        !/```/.test(full),
+      response: previewForLog(full, 500),
+      hasMermaidFence: /```(?:mermaid)?\s*\r?\n/i.test(full),
+      firstLine: full.trim().split(/\r?\n/)[0]?.trim() || "",
+    });
+    ttdDebug("ai stream complete", {
+      userLanguageHint: completeUserLanguageHint,
+      responseLooksEnglish: responseEnglish,
+      languageMismatch:
+        completeUserLanguageHint === "zh" &&
+        responseEnglish &&
+        !/```/.test(full),
+      hasMermaidFence: /```(?:mermaid)?\s*\r?\n/i.test(full),
+    });
+
     return { generatedResponse: full, error: null };
   } catch (err: unknown) {
     const e = err as { name?: string; message?: string };
     if (e?.name === "AbortError" || signal?.aborted) {
+      logTTD.debug("stream aborted", {
+        latestUserMessage: previewForLog(latestUserMessage),
+      });
       return {
         error: new RequestError({
           message: "回复已中断（已生成内容已保留）",
@@ -176,6 +276,10 @@ export async function openAIChatCompletionStream(opts: {
         }),
       };
     }
+    logTTD.error("stream failed", {
+      message: e?.message || "请求失败",
+      latestUserMessage: previewForLog(latestUserMessage),
+    });
     return {
       error: new RequestError({
         message: e?.message || "请求失败",
@@ -229,6 +333,7 @@ export async function openAIVisionHtml(opts: {
         },
       ],
       max_tokens: 4096,
+      temperature: TTD_TEMPERATURE,
       ...thinkingDisabledExtras(),
     }),
     signal,
@@ -297,6 +402,7 @@ export async function openAIIconTag(opts: {
         },
       ],
       max_tokens: 50,
+      temperature: TTD_TEMPERATURE,
       ...thinkingDisabledExtras(),
     }),
     signal,

@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 
-import { FileSyncState } from "../data/FileSyncState";
+import {
+  readStoredFileModificationState,
+  type FileModificationDraftStatus,
+} from "../data/fileModificationState";
+import { isLocalDraftFileId } from "../data/localDraftFileId";
+import { LocalDraftSessions } from "../data/localDraftSessions";
 
 /** 与历史面板「本地草稿」徽章文案一致 */
 export const FILE_DRAFT_STATUS_LABEL = {
@@ -8,14 +13,17 @@ export const FILE_DRAFT_STATUS_LABEL = {
   synced: "无修改",
 } as const;
 
-export type FileDraftStatus = "idle" | "draft" | "synced";
+export type FileDraftStatus = FileModificationDraftStatus;
 
 /** 读取当前文档相对服务器基线的草稿状态（唯一数据源：FileSyncState） */
 export function readFileDraftStatus(fileId: string | null): FileDraftStatus {
   if (!fileId) {
     return "idle";
   }
-  return FileSyncState.hasUnsavedChanges(fileId) ? "draft" : "synced";
+  const kind = isLocalDraftFileId(fileId)
+    ? LocalDraftSessions.get(fileId)?.kind
+    : null;
+  return readStoredFileModificationState(fileId, kind).draftStatus;
 }
 
 export function getFileDraftStatusLabel(

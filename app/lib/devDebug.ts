@@ -6,6 +6,7 @@
 
 export type DevDebugChannel =
   | "app"
+  | "editor-bridge"
   | "editor-open"
   | "mindmap-open"
   | "mindmap-bridge"
@@ -17,6 +18,7 @@ export type DevDebugChannel =
 
 const CHANNEL_ENV_FLAG: Record<DevDebugChannel, string> = {
   app: "VITE_APP_ENABLE_APP_DEBUG",
+  "editor-bridge": "VITE_APP_ENABLE_EDITOR_BRIDGE_DEBUG",
   "editor-open": "VITE_APP_ENABLE_EDITOR_OPEN_DEBUG",
   "mindmap-open": "VITE_APP_ENABLE_MINDMAP_DEBUG",
   "mindmap-bridge": "VITE_APP_ENABLE_MINDMAP_DEBUG",

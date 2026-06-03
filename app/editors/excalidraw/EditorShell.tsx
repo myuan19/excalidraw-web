@@ -61,11 +61,17 @@ import DebugCanvas, {
 import { AIComponents } from "../../components/AI";
 
 import { AppSidebar } from "../../components/AppSidebar";
+import {
+  applyAppShellPendingNavigation,
+  type AppShellNavigateDetail,
+} from "../../shell/appShellNavigate";
 import { APP_SHELL_GO_HOME } from "../../shell/Sidebar";
-import { buildViewHash, type AppView } from "../../shell/useAppView";
+import { buildViewHash } from "../../shell/useAppView";
 import { EmbedTokenManager } from "../../components/EmbedTokenManager";
 import { ArchivePanel } from "../../components/ArchivePanel";
+import { LocalDraftLossConfirmDialog } from "../../components/LocalDraftLossConfirmDialog";
 import { SaveNewDocumentDialog } from "../../components/PromoteTempFileDialog";
+import { useLocalDraftLossConfirm } from "../../hooks/useLocalDraftLossConfirm";
 import { useSaveNewDocumentDialog } from "../../hooks/useSaveNewDocumentDialog";
 import { bootstrapLocalDraftSession } from "../../data/bootstrapLocalDraftSession";
 import { isLegacyTempFileId, isNewDocumentHash } from "../../data/documentHash";
@@ -246,6 +252,10 @@ const ExcalidrawWrapper = () => {
     flushDraftDebounce: () => void;
   } | null>(null);
 
+  const localDraftLoss = useLocalDraftLossConfirm({
+    getFileId: getFileIdFromHash,
+  });
+
   const saveNewDoc = useSaveNewDocumentDialog({
     getFileId: getFileIdFromHash,
     getDocumentKind: getDocumentKindFromHash,
@@ -336,7 +346,7 @@ const ExcalidrawWrapper = () => {
     };
     const onImport = () => void importLocalExcalidrawFile();
     const onHistory = () => {
-      if (!forkFileId || isLocalDraftFileId(forkFileId)) {
+      if (!forkFileId) {
         return;
       }
       setShowHistoryPanel(true);
@@ -348,13 +358,14 @@ const ExcalidrawWrapper = () => {
       setShowEmbedManager(true);
     };
     const onShellGoHome = (event: Event) => {
-      const target = ((event as CustomEvent<{ target?: string }>).detail
-        ?.target ?? "home") as Exclude<AppView, "editor">;
-      navigateToFileListHomeRef.current = () => {
-        skipLeaveStashOnceRef.current = true;
-        window.location.hash = buildViewHash(target);
-        window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
-      };
+      const detail = (event as CustomEvent<AppShellNavigateDetail>).detail;
+      applyAppShellPendingNavigation(
+        detail,
+        skipLeaveStashOnceRef,
+        (fn) => {
+          navigateToFileListHomeRef.current = fn;
+        },
+      );
       void forkGoHomeWithServerSave();
     };
     window.addEventListener("excalidraw-host-request-save", onSave);
@@ -827,7 +838,9 @@ const ExcalidrawWrapper = () => {
           >
             <h3 id="fork-home-nav-title">主页</h3>
             <p className="fork-home-dialog-desc">
-              当前画布有未保存的修改，是否先保存？
+              {saveNewDoc.isLocalDraftOpen()
+                ? "这是尚未保存的临时文档，离开前是否先保存到服务器？不保存将丢失本机草稿。"
+                : "当前画布有未保存的修改，是否先保存？"}
             </p>
             <div className="fork-home-dialog-actions">
               <button
@@ -852,7 +865,10 @@ const ExcalidrawWrapper = () => {
                 onClick={() => {
                   if (saveNewDoc.isLocalDraftOpen()) {
                     forkHomeDismissDialog();
-                    saveNewDoc.discardDraftAndNavigate();
+                    localDraftLoss.requestConfirm(() => {
+                      skipLeaveStashOnceRef.current = true;
+                      navigateToFileListHome();
+                    });
                     return;
                   }
                   void forkHomeConfirmDiscard();
@@ -872,6 +888,13 @@ const ExcalidrawWrapper = () => {
           </div>
         </div>
       ) : null}
+      <LocalDraftLossConfirmDialog
+        open={localDraftLoss.open}
+        documentName={localDraftLoss.documentName}
+        busy={forkSaving}
+        onConfirm={() => void localDraftLoss.confirmLoss()}
+        onCancel={localDraftLoss.dismiss}
+      />
       <SaveNewDocumentDialog
         open={saveNewDoc.saveOpen}
         saving={saveNewDoc.saveInFlight}

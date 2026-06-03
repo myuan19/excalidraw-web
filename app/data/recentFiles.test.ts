@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   getRecentFileEntries,
+  pickRecentEntriesExcluding,
   recordRecentFileAccess,
   RECENT_FILES_KEY,
 } from "./recentFiles";
@@ -22,6 +23,19 @@ describe("recentFiles", () => {
 
     const entries = getRecentFileEntries();
     expect(entries.map((entry) => entry.id)).toEqual(["file-a", "file-b"]);
+  });
+
+  it("pickRecentEntriesExcluding skips current file and still returns limit", () => {
+    recordRecentFileAccess("open-now");
+    recordRecentFileAccess("other-1");
+    recordRecentFileAccess("other-2");
+    recordRecentFileAccess("other-3");
+
+    const picked = pickRecentEntriesExcluding(getRecentFileEntries(), {
+      excludeFileId: "open-now",
+      limit: 2,
+    });
+    expect(picked.map((e) => e.id)).toEqual(["other-3", "other-2"]);
   });
 
   it("drops entries older than seven days", () => {

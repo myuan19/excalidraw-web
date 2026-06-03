@@ -121,6 +121,9 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       outDir: "build",
+      /** 大包告警阈值；主包与 mermaid 子包体积大，提高阈值避免误报（仍会通过 manualChunks 拆分） */
+      chunkSizeWarningLimit: 1200,
+      sourcemap: envVars.VITE_BUILD_SOURCEMAP === "true",
       rollupOptions: {
         input: {
           main: path.resolve(__dirname, "index.html"),
@@ -149,6 +152,10 @@ export default defineConfig(({ mode }) => {
               return `locales/${id.substring(index + 8)}`;
             }
 
+            if (id.includes("packages/excalidraw/subset/subset-shared")) {
+              return "subset-shared";
+            }
+
             if (id.includes("@excalidraw/mermaid-to-excalidraw")) {
               return "mermaid-to-excalidraw";
             }
@@ -156,10 +163,18 @@ export default defineConfig(({ mode }) => {
             if (id.includes("@codemirror/") || id.includes("@lezer/")) {
               return "codemirror.chunk";
             }
+
+            if (id.includes("node_modules")) {
+              if (id.includes("/cytoscape")) {
+                return "vendor-cytoscape";
+              }
+              if (id.includes("/katex")) {
+                return "vendor-katex";
+              }
+            }
           },
         },
       },
-      sourcemap: true,
       // don't auto-inline small assets (i.e. fonts hosted on CDN)
       assetsInlineLimit: 0,
     },

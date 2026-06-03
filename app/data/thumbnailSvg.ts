@@ -9,7 +9,7 @@ import { expandRectToMinimumSize } from "./thumbnailViewport";
 import {
   computeMindMapFocusedViewBoxFromNodeBounds,
   formatMindMapViewBox,
-  getMindMapThumbnailTargetRootScreenRatio,
+  buildMindMapThumbnailFocusedViewBoxOptions,
 } from "../editors/mindmap/mindMapFocusedViewBox.js";
 
 import type {
@@ -325,9 +325,10 @@ function parseMindMapNodeBounds(svgMarkup: string): Bounds[] {
 
 function computeMindMapFocusedViewBox(svgMarkup: string): string {
   const nodeBounds = parseMindMapNodeBounds(svgMarkup);
-  const focused = computeMindMapFocusedViewBoxFromNodeBounds(nodeBounds, {
-    targetRootScreenRatio: getMindMapThumbnailTargetRootScreenRatio(),
-  });
+  const focused = computeMindMapFocusedViewBoxFromNodeBounds(
+    nodeBounds,
+    buildMindMapThumbnailFocusedViewBoxOptions(),
+  );
   if (!focused) {
     const fallbackViewBox = deriveSvgBoundsViewBox(svgMarkup);
     debugMindMapThumbnail("focused viewBox fallback: no root", {

@@ -5,12 +5,36 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MutableRefObject,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 
+import {
+  getActiveDocumentFileId,
+  resolveRecentFlyoutFileRecord,
+  resolveRecentFlyoutItems,
+  type RecentFlyoutItem,
+} from "../data/recentFlyoutItems";
+import {
+  mergeFileCardThumbDisplay,
+  type FileCardThumbDisplay,
+} from "../data/fileCardThumbDisplay";
+import { resolveFileCardThumbnailSvg } from "../data/resolveFileCardThumbnail";
+import { extractThumbBg } from "../data/thumbnailSvg";
+import { FileCardThumb } from "./FileCardThumb";
 import { getFileIdFromHash } from "../data/fileIdFromHash";
 import { isLocalDraftFileId } from "../data/localDraftFileId";
+import {
+  LocalThumbnailCache,
+  LOCAL_THUMB_UPDATED_EVENT,
+} from "../data/localThumbnailCache";
+import {
+  LocalDraftSessions,
+  draftSessionToServerFile,
+} from "../data/localDraftSessions";
 import { readFileListTreeCache } from "../data/fileListSessionCache";
+import { RECENT_FILES_CHANGE_EVENT } from "../data/recentFiles";
 import {
   ServerSync,
   type ServerFile,
@@ -21,10 +45,26 @@ import {
   editorIconForKind,
   getDocumentKindFromHash,
 } from "../lib/appBranding";
-import { APP_SHELL_GO_HOME } from "../shell/Sidebar";
+import { dispatchAppShellNavigate } from "../shell/appShellNavigate";
 import type { AppView } from "../shell/useAppView";
 
 import "./EditorPlatformSidebar.scss";
+import "./FileList.scss";
+
+/** 预览浮层：固定全屏、不参与文档流，避免缩略图引发布局/滚动条抖动 */
+const BRIDGE_PREVIEW_LAYER_ID = "editor-hub-bridge-preview-layer";
+
+function ensureBridgePreviewLayer(): HTMLElement {
+  const existing = document.getElementById(BRIDGE_PREVIEW_LAYER_ID);
+  if (existing) {
+    return existing;
+  }
+  const layer = document.createElement("div");
+  layer.id = BRIDGE_PREVIEW_LAYER_ID;
+  layer.className = "editor-bridge-preview-layer";
+  document.body.appendChild(layer);
+  return layer;
+}
 
 const BALL_SIZE = 52;
 const EDGE_INSET = 10;
@@ -34,9 +74,22 @@ const DRAG_THRESHOLD_PX = 6;
 const PANEL_GAP = 6;
 /** 面板展开时，小球沿边缘方向再退后一点，避免与卡片贴太紧 */
 const BALL_PANEL_SEPARATION = 4;
-/** 竖向分组：保存/嵌入/历史 | 信息/导入/导出 | 文件 */
-const PANEL_HEIGHT = 390;
+/** 竖向分组：保存/嵌入/历史 | 最近/文件 | 导入/导出 | 信息 */
+const PANEL_BASE_HEIGHT = 390;
+/** 最近飞出栏最多展示条数；不足时不补足空位 */
+const RECENT_PANEL_MAX = 6;
 const PANEL_WIDTH = 72;
+/** 主面板内「最近」按钮距顶部的估算偏移，用于对齐飞出侧栏 */
+const ACTION_ROW_HEIGHT = 48;
+const PANEL_DIVIDER_BLOCK = 11;
+const ACTIONS_BEFORE_RECENT = 3;
+const DIVIDERS_BEFORE_RECENT = 1;
+/** 与 .editor-bridge__recent-preview-portal 的 width + gap 一致（px，16px 根字号） */
+const RECENT_PREVIEW_WIDTH_PX = 168;
+const RECENT_PREVIEW_GAP_PX = 6;
+const RECENT_FLYOUT_ROW_OFFSET =
+  ACTIONS_BEFORE_RECENT * ACTION_ROW_HEIGHT +
+  DIVIDERS_BEFORE_RECENT * PANEL_DIVIDER_BLOCK;
 const ANCHOR_STORAGE_KEY = "excalidraw-editor-bridge-anchor-v2";
 
 /** 沿边缘可移动区域：十等分，顶 1 + 中 6（拖拽）+ 底 1 */
@@ -54,7 +107,8 @@ type ActionIcon =
   | "info"
   | "embed"
   | "history"
-  | "files";
+  | "files"
+  | "recent";
 
 type AnchorPosition = {
   edge: SnapEdge;
@@ -67,18 +121,20 @@ const DEFAULT_ANCHOR: AnchorPosition = { edge: "left", ratio: 0.38 };
 const ACTION_ICONS: Record<ActionIcon, string> = {
   save:
     "M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z",
-  export:
-    "M5 20h14v-2H5v2zm7-18l-5 5h3v6h4V7h3l-5-5z",
-  import:
-    "M5 20h14v-2H5v2zm7-18v6H9l3 3 3-3h-3V2zm-6 9h2v4h8v-4h2v6H6v-6z",
-  info:
-    "M11 17h2v-6h-2v6zm1-14a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 16a7 7 0 1 1 0-14 7 7 0 0 1 0 14zm-1-10h2V7h-2v2z",
   embed:
     "M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0L19.2 12l-4.6-4.6L16 6l6 6-6 6-1.4-1.4z",
   history:
     "M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z",
   files:
-    "M10 4l2 2h8c1.1 0 2 .9 2 2v10c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h6z",
+    "M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z",
+  recent:
+    "M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z",
+  import:
+    "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z",
+  export:
+    "M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z",
+  info:
+    "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z",
 };
 
 function clampRatio(ratio: number): number {
@@ -273,38 +329,63 @@ function panelOffsetAlongBall(
   return clampRatio(travelRatio) * (ballSize - panelSize);
 }
 
-function computePanelStyle(
+/** 操作菜单整体（主栏 + 最近飞出栏）相对悬浮球的定位 */
+function computeMenuStyle(
   anchor: AnchorPosition,
   displayPoint: { x: number; y: number },
   viewport: { width: number; height: number },
 ): CSSProperties {
-  const travelRatio = edgeTravelRatio(anchor, displayPoint, viewport);
-
   if (anchor.edge === "left" || anchor.edge === "right") {
-    const top = clampPanelOffset(
-      panelOffsetAlongBall(travelRatio, BALL_SIZE, PANEL_HEIGHT),
-      PANEL_HEIGHT,
-      displayPoint.y,
-      viewport.height,
+    const travelRatio = edgeTravelRatio(anchor, displayPoint, viewport);
+    const rawTop = panelOffsetAlongBall(
+      travelRatio,
+      BALL_SIZE,
+      PANEL_BASE_HEIGHT,
+    );
+    const top = Math.round(
+      clampPanelOffset(
+        rawTop,
+        PANEL_BASE_HEIGHT,
+        displayPoint.y,
+        viewport.height,
+      ),
     );
 
     if (anchor.edge === "left") {
-      return { left: `calc(100% + ${PANEL_GAP}px)`, top, transform: "none" };
+      return {
+        left: `calc(100% + ${PANEL_GAP}px)`,
+        top,
+        transform: "none",
+      };
     }
-    return { right: `calc(100% + ${PANEL_GAP}px)`, top, transform: "none" };
+    return {
+      right: `calc(100% + ${PANEL_GAP}px)`,
+      top,
+      transform: "none",
+    };
   }
 
-  const left = clampPanelOffset(
-    panelOffsetAlongBall(travelRatio, BALL_SIZE, PANEL_WIDTH),
-    PANEL_WIDTH,
-    displayPoint.x,
-    viewport.width,
+  const left = Math.round(
+    clampPanelOffset(
+      (BALL_SIZE - PANEL_WIDTH) / 2,
+      PANEL_WIDTH,
+      displayPoint.x,
+      viewport.width,
+    ),
   );
 
   if (anchor.edge === "top") {
-    return { top: `calc(100% + ${PANEL_GAP}px)`, left, transform: "none" };
+    return {
+      top: `calc(100% + ${PANEL_GAP}px)`,
+      left,
+      transform: "none",
+    };
   }
-  return { bottom: `calc(100% + ${PANEL_GAP}px)`, left, transform: "none" };
+  return {
+    bottom: `calc(100% + ${PANEL_GAP}px)`,
+    left,
+    transform: "none",
+  };
 }
 
 function SidebarGlyph({ type }: { type: ActionIcon }) {
@@ -351,13 +432,216 @@ function dispatchHostEmbed() {
 }
 
 function dispatchShellNavigate(target: Exclude<AppView, "editor">) {
-  window.dispatchEvent(
-    new CustomEvent(APP_SHELL_GO_HOME, { detail: { target } }),
-  );
+  dispatchAppShellNavigate({ target });
 }
 
 function SidebarDivider() {
   return <div className="editor-bridge__divider" role="separator" />;
+}
+
+type RecentRowHover = {
+  item: RecentFlyoutItem;
+  centerY: number;
+  edgeX: number;
+};
+
+function RecentFlyoutRow({
+  item,
+  onSelect,
+  onRowHover,
+}: {
+  item: RecentFlyoutItem;
+  onSelect(item: RecentFlyoutItem): void;
+  onRowHover(item: RecentFlyoutItem, row: HTMLLIElement | null): void;
+}) {
+  return (
+    <li
+      className="editor-bridge__recent-flyout-row"
+      onMouseEnter={(event) => onRowHover(item, event.currentTarget)}
+      onMouseLeave={() => onRowHover(item, null)}
+    >
+      <button
+        type="button"
+        className="editor-bridge__recent-flyout-item"
+        title={item.name}
+        onClick={() => onSelect(item)}
+      >
+        <img
+          className="editor-bridge__recent-flyout-icon"
+          src={editorIconForKind(item.kind)}
+          alt=""
+          width={18}
+          height={18}
+          draggable={false}
+        />
+        <span className="editor-bridge__recent-flyout-name">{item.name}</span>
+      </button>
+    </li>
+  );
+}
+
+function clampRecentPreviewLeft(
+  rawLeft: number,
+  viewportWidth = window.innerWidth,
+): number {
+  const margin = 8;
+  return Math.max(
+    margin,
+    Math.min(rawLeft, viewportWidth - RECENT_PREVIEW_WIDTH_PX - margin),
+  );
+}
+
+function SidebarRecentList({
+  anchorEdge,
+  excludeFileId,
+  onSelect,
+}: {
+  anchorEdge: SnapEdge;
+  /** 当前正在编辑的文档 id，从最近列表中屏蔽 */
+  excludeFileId: string | null;
+  onSelect(item: RecentFlyoutItem): void;
+}) {
+  const thumbSvgCacheRef = useRef<Record<string, string>>({});
+  const hoverFileIdRef = useRef<string | null>(null);
+  const [items, setItems] = useState(() =>
+    resolveRecentFlyoutItems({
+      limit: RECENT_PANEL_MAX,
+      excludeFileId,
+    }),
+  );
+  const [rowHover, setRowHover] = useState<RecentRowHover | null>(null);
+  const [previewDisplay, setPreviewDisplay] =
+    useState<FileCardThumbDisplay | null>(null);
+
+  useEffect(() => {
+    const refresh = () => {
+      thumbSvgCacheRef.current = {};
+      setItems(
+        resolveRecentFlyoutItems({
+          limit: RECENT_PANEL_MAX,
+          excludeFileId,
+        }),
+      );
+    };
+    refresh();
+    window.addEventListener("hashchange", refresh);
+    window.addEventListener(RECENT_FILES_CHANGE_EVENT, refresh);
+    window.addEventListener("excalidraw-file-list-refresh", refresh);
+    window.addEventListener(LOCAL_THUMB_UPDATED_EVENT, refresh);
+    window.addEventListener("excalidraw-file-sync-state", refresh);
+    return () => {
+      window.removeEventListener("hashchange", refresh);
+      window.removeEventListener(RECENT_FILES_CHANGE_EVENT, refresh);
+      window.removeEventListener("excalidraw-file-list-refresh", refresh);
+      window.removeEventListener(LOCAL_THUMB_UPDATED_EVENT, refresh);
+      window.removeEventListener("excalidraw-file-sync-state", refresh);
+    };
+  }, [excludeFileId]);
+
+  const handleRowHover = useCallback(
+    (item: RecentFlyoutItem, row: HTMLLIElement | null) => {
+      if (!row) {
+        if (hoverFileIdRef.current === item.id) {
+          hoverFileIdRef.current = null;
+          setRowHover(null);
+          setPreviewDisplay(null);
+        }
+        return;
+      }
+      const rect = row.getBoundingClientRect();
+      hoverFileIdRef.current = item.id;
+      setRowHover({
+        item,
+        centerY: rect.top + rect.height / 2,
+        edgeX: anchorEdge === "right" ? rect.left : rect.right,
+      });
+
+      const file = resolveRecentFlyoutFileRecord(item.id);
+      if (!file) {
+        setPreviewDisplay(null);
+        return;
+      }
+
+      const cachedSvg = thumbSvgCacheRef.current[item.id];
+      const display = mergeFileCardThumbDisplay(item.id, file, cachedSvg);
+      setPreviewDisplay(display);
+
+      const needsFetch =
+        !display.cardThumbSvg &&
+        item.hasThumbnail &&
+        !isLocalDraftFileId(item.id);
+      if (!needsFetch) {
+        return;
+      }
+
+      void resolveFileCardThumbnailSvg(item.id, file).then((cardThumbSvg) => {
+        if (hoverFileIdRef.current !== item.id) {
+          return;
+        }
+        if (cardThumbSvg) {
+          thumbSvgCacheRef.current[item.id] = cardThumbSvg;
+        }
+        setPreviewDisplay(
+          mergeFileCardThumbDisplay(item.id, file, cardThumbSvg ?? undefined),
+        );
+      });
+    },
+    [anchorEdge],
+  );
+
+  const previewLeft =
+    rowHover == null
+      ? 0
+      : clampRecentPreviewLeft(
+          anchorEdge === "right"
+            ? rowHover.edgeX - RECENT_PREVIEW_WIDTH_PX - RECENT_PREVIEW_GAP_PX
+            : rowHover.edgeX + RECENT_PREVIEW_GAP_PX,
+        );
+
+  const showPreview = !!rowHover && !!previewDisplay;
+
+  if (items.length === 0) {
+    return (
+      <p className="editor-bridge__recent-flyout-empty">暂无最近打开的文件</p>
+    );
+  }
+
+  return (
+    <>
+      <ul className="editor-bridge__recent-flyout-list">
+        {items.map((item) => (
+          <RecentFlyoutRow
+            key={item.id}
+            item={item}
+            onSelect={onSelect}
+            onRowHover={handleRowHover}
+          />
+        ))}
+      </ul>
+      {showPreview && rowHover && previewDisplay
+        ? createPortal(
+            <div
+              className="editor-bridge__recent-preview-portal"
+              style={{
+                top: Math.round(rowHover.centerY),
+                left: Math.round(previewLeft),
+              }}
+              aria-hidden
+            >
+              <FileCardThumb
+                className="editor-bridge__recent-preview-thumb"
+                kind={previewDisplay.kind}
+                cardThumbSvg={previewDisplay.cardThumbSvg}
+                thumbLoading={previewDisplay.thumbLoading}
+                badge={previewDisplay.badge}
+                thumbBg={previewDisplay.thumbBg}
+              />
+            </div>,
+            ensureBridgePreviewLayer(),
+          )
+        : null}
+    </>
+  );
 }
 
 function SidebarActionButton({
@@ -452,15 +736,32 @@ function formatFileTime(value?: string): string {
 async function loadFileInfo(fileId: string): Promise<FileInfo> {
   const cached = readFileListTreeCache();
   let folders = cached?.folders ?? [];
-  let file = cached?.files.find((item) => item.id === fileId);
+  let file: ServerFile | undefined =
+    cached?.files.find((item) => item.id === fileId) ??
+    (isLocalDraftFileId(fileId)
+      ? (() => {
+          const draft = LocalDraftSessions.get(fileId);
+          return draft ? draftSessionToServerFile(draft) : undefined;
+        })()
+      : undefined);
 
   if (!file) {
     const tree = await ServerSync.listFileTree();
     folders = tree.folders;
-    file = tree.files.find((item) => item.id === fileId);
+    file =
+      tree.files.find((item) => item.id === fileId) ??
+      (isLocalDraftFileId(fileId)
+        ? (() => {
+            const draft = LocalDraftSessions.get(fileId);
+            return draft ? draftSessionToServerFile(draft) : undefined;
+          })()
+        : undefined);
   }
 
   if (!file) {
+    if (isLocalDraftFileId(fileId)) {
+      throw new Error("临时文件信息不存在，可能已被放弃或清理");
+    }
     file = await ServerSync.getFile(fileId);
   }
 
@@ -574,6 +875,7 @@ function FileInfoDialog({
 
 export function EditorPlatformSidebar() {
   const [open, setOpen] = useState(false);
+  const [recentOpen, setRecentOpen] = useState(false);
   const [showFileInfo, setShowFileInfo] = useState(false);
   const [fileId, setFileId] = useState<string | null>(() => getFileIdFromHash());
   const [documentKind, setDocumentKind] = useState(() =>
@@ -598,13 +900,32 @@ export function EditorPlatformSidebar() {
     moved: boolean;
   } | null>(null);
 
-  const settledPoint = anchorToPoint(anchor, viewport);
-  const displayPoint = dragPoint ?? settledPoint;
+  const settledPoint = useMemo(
+    () => anchorToPoint(anchor, viewport),
+    [anchor, viewport],
+  );
+  const displayX = dragPoint?.x ?? settledPoint.x;
+  const displayY = dragPoint?.y ?? settledPoint.y;
+  const displayPoint = useMemo(
+    () => ({ x: displayX, y: displayY }),
+    [displayX, displayY],
+  );
   const docked = !dragging && !open;
-  const panelStyle = useMemo(
-    () => computePanelStyle(anchor, displayPoint, viewport),
+  const menuStyle = useMemo(
+    () => computeMenuStyle(anchor, displayPoint, viewport),
     [anchor, displayPoint, viewport],
   );
+
+  const menuShellStyle = useMemo((): CSSProperties => {
+    return {
+      ...menuStyle,
+      ["--ep-recent-flyout-offset" as string]: `${RECENT_FLYOUT_ROW_OFFSET}px`,
+    };
+  }, [menuStyle]);
+
+  useEffect(() => {
+    ensureBridgePreviewLayer();
+  }, []);
 
   useEffect(() => {
     const syncFromHash = () => {
@@ -648,16 +969,42 @@ export function EditorPlatformSidebar() {
 
   useEffect(() => {
     if (!open) {
+      setRecentOpen(false);
+    }
+  }, [open]);
+
+  const closeSidebarPanel = useCallback(() => {
+    setOpen(false);
+    setRecentOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (!open) {
       return;
     }
     const onPointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
       }
+      if (rootRef.current?.contains(target)) {
+        return;
+      }
+      const previewLayer = document.getElementById(BRIDGE_PREVIEW_LAYER_ID);
+      if (previewLayer?.contains(target)) {
+        return;
+      }
+      if (
+        target instanceof Element &&
+        target.closest(".editor-bridge__dismiss-layer")
+      ) {
+        return;
+      }
+      closeSidebarPanel();
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setOpen(false);
+        closeSidebarPanel();
       }
     };
     document.addEventListener("pointerdown", onPointerDown);
@@ -666,12 +1013,27 @@ export function EditorPlatformSidebar() {
       document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [open]);
+  }, [closeSidebarPanel, open]);
 
   const closeAndRun = useCallback((action: () => void) => {
-    setOpen(false);
+    closeSidebarPanel();
     action();
-  }, []);
+  }, [closeSidebarPanel]);
+
+  const openRecentFile = useCallback(
+    (item: RecentFlyoutItem) => {
+      const activeId = getActiveDocumentFileId();
+      if (activeId && item.id === activeId) {
+        return;
+      }
+      closeAndRun(() =>
+        dispatchAppShellNavigate({
+          openFile: { id: item.id, kind: item.kind },
+        }),
+      );
+    },
+    [closeAndRun],
+  );
 
   const finishDrag = useCallback(
     (clientX: number, clientY: number) => {
@@ -792,107 +1154,178 @@ export function EditorPlatformSidebar() {
       aria-label="EditorHub"
     >
       <div className="editor-bridge__peel-zone" aria-hidden="true" />
+      {open && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className="editor-bridge__dismiss-layer"
+              aria-hidden="true"
+              onPointerDown={closeSidebarPanel}
+            />,
+            document.body,
+          )
+        : null}
       {open ? (
-        <nav
-          className="editor-bridge__panel"
-          style={panelStyle}
-          aria-label="文档操作"
+        <div
+          className="editor-bridge__menu"
+          style={menuShellStyle}
+          onPointerDown={(event) => {
+            if (!recentOpen) {
+              return;
+            }
+            const target = event.target;
+            if (!(target instanceof Element)) {
+              return;
+            }
+            if (target.closest(".editor-bridge__recent-flyout")) {
+              return;
+            }
+            if (target.closest(".editor-bridge__action--active")) {
+              return;
+            }
+            setRecentOpen(false);
+          }}
         >
-          {/* 保存与嵌入、历史 */}
-          <SidebarActionButton
-            label="保存"
-            icon="save"
-            disabled={!fileActionsEnabled}
-            title={fileActionsEnabled ? "保存" : "打开文档后可保存"}
-            onClick={() => closeAndRun(dispatchHostSave)}
-          />
-          <SidebarActionButton
-            label="嵌入"
-            icon="embed"
-            disabled={!serverFileActionsEnabled}
-            title={
-              serverFileActionsEnabled
-                ? "嵌入"
-                : fileActionsEnabled
-                  ? "保存到服务器后可嵌入"
-                  : "打开文档后可嵌入"
-            }
-            onClick={() => closeAndRun(dispatchHostEmbed)}
-          />
-          <SidebarActionButton
-            label="历史"
-            icon="history"
-            disabled={!serverFileActionsEnabled}
-            title={
-              serverFileActionsEnabled
-                ? "历史版本"
-                : fileActionsEnabled
-                  ? "保存到服务器后可查看历史"
-                  : "保存后可查看历史"
-            }
-            onClick={() => closeAndRun(dispatchHostHistory)}
-          />
-          <SidebarDivider />
-          {/* 信息 / 导入 / 导出 */}
-          <SidebarActionButton
-            label="信息"
-            icon="info"
-            disabled={!fileActionsEnabled}
-            title={fileActionsEnabled ? "文件信息" : "打开文档后可查看信息"}
-            onClick={() => {
-              setOpen(false);
-              setShowFileInfo(true);
-            }}
-          />
-          <SidebarActionButton
-            label="导入"
-            icon="import"
-            disabled={!fileActionsEnabled}
-            title={fileActionsEnabled ? "导入" : "打开文档后可导入"}
-            onClick={() => closeAndRun(dispatchHostImport)}
-          />
-          <SidebarActionButton
-            label="导出"
-            icon="export"
-            disabled={!fileActionsEnabled}
-            title={fileActionsEnabled ? "导出" : "打开文档后可导出"}
-            onClick={() => closeAndRun(dispatchHostExport)}
-          />
-          <SidebarDivider />
-          {/* 返回文件列表 */}
-          <SidebarActionButton
-            label="文件"
-            icon="files"
-            onClick={() => closeAndRun(() => dispatchShellNavigate("home"))}
-          />
-        </nav>
+          <nav className="editor-bridge__panel" aria-label="文档操作">
+            <div className="editor-bridge__group" role="group" aria-label="保存与版本">
+              <SidebarActionButton
+                label="保存"
+                icon="save"
+                disabled={!fileActionsEnabled}
+                title={fileActionsEnabled ? "保存" : "打开文档后可保存"}
+                onClick={() => closeAndRun(dispatchHostSave)}
+              />
+              <SidebarActionButton
+                label="嵌入"
+                icon="embed"
+                disabled={!serverFileActionsEnabled}
+                title={
+                  serverFileActionsEnabled
+                    ? "嵌入"
+                    : fileActionsEnabled
+                      ? "保存到服务器后可嵌入"
+                      : "打开文档后可嵌入"
+                }
+                onClick={() => closeAndRun(dispatchHostEmbed)}
+              />
+              <SidebarActionButton
+                label="历史"
+                icon="history"
+                disabled={!fileActionsEnabled}
+                title={
+                  fileActionsEnabled
+                    ? "历史版本"
+                    : "打开文档后可查看历史"
+                }
+                onClick={() => closeAndRun(dispatchHostHistory)}
+              />
+            </div>
+            <SidebarDivider />
+            <div className="editor-bridge__group" role="group" aria-label="文件与最近">
+              <button
+                type="button"
+                className={[
+                  "editor-bridge__action",
+                  recentOpen ? "editor-bridge__action--active" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                title={
+                  fileActionsEnabled
+                    ? recentOpen
+                      ? "收起最近文件"
+                      : "最近打开的文件"
+                    : "打开文档后可查看最近"
+                }
+                aria-label="最近"
+                aria-expanded={recentOpen}
+                disabled={!fileActionsEnabled}
+                onClick={() => setRecentOpen((value) => !value)}
+              >
+                <SidebarGlyph type="recent" />
+                <span className="editor-bridge__action-label">最近</span>
+              </button>
+              <SidebarActionButton
+                label="文件"
+                icon="files"
+                title="返回文件列表"
+                onClick={() => closeAndRun(() => dispatchShellNavigate("home"))}
+              />
+            </div>
+            <SidebarDivider />
+            <div className="editor-bridge__group" role="group" aria-label="导入与导出">
+              <SidebarActionButton
+                label="导入"
+                icon="import"
+                disabled={!fileActionsEnabled}
+                title={fileActionsEnabled ? "导入" : "打开文档后可导入"}
+                onClick={() => closeAndRun(dispatchHostImport)}
+              />
+              <SidebarActionButton
+                label="导出"
+                icon="export"
+                disabled={!fileActionsEnabled}
+                title={fileActionsEnabled ? "导出" : "打开文档后可导出"}
+                onClick={() => closeAndRun(dispatchHostExport)}
+              />
+            </div>
+            <SidebarDivider />
+            <div className="editor-bridge__group" role="group" aria-label="文档信息">
+              <SidebarActionButton
+                label="信息"
+                icon="info"
+                disabled={!fileActionsEnabled}
+                title={fileActionsEnabled ? "文件信息" : "打开文档后可查看信息"}
+                onClick={() => {
+                  setOpen(false);
+                  setRecentOpen(false);
+                  setShowFileInfo(true);
+                }}
+              />
+            </div>
+          </nav>
+          {recentOpen && fileActionsEnabled ? (
+            <aside
+              className="editor-bridge__recent-flyout"
+              aria-label="最近打开的文件"
+            >
+              <p className="editor-bridge__recent-flyout-title">最近打开</p>
+              <SidebarRecentList
+                anchorEdge={anchor.edge}
+                excludeFileId={fileId}
+                onSelect={openRecentFile}
+              />
+            </aside>
+          ) : null}
+        </div>
       ) : null}
-      <button
-        type="button"
-        className="editor-bridge__ball"
-        aria-label={
-          open
-            ? "关闭操作面板"
-            : draftStatusLabel
-              ? `打开操作面板（${draftStatusLabel}，可拖拽）`
-              : "打开操作面板（可拖拽）"
-        }
-        aria-expanded={open}
-        title={
-          draftStatusLabel
-            ? `${draftStatusLabel} · Ctrl+S 保存`
-            : "Ctrl+S 保存"
-        }
-        onPointerDown={onBallPointerDown}
-        onPointerMove={onBallPointerMove}
-        onPointerUp={onBallPointerUp}
-        onPointerCancel={onBallPointerCancel}
-      >
-        <span className="editor-bridge__ball-viewport" aria-hidden="true">
-          <span className="editor-bridge__ball-icon-ring" aria-hidden="true">
-            <img src={ballIconSrc} alt="" width={28} height={28} draggable={false} />
+      <div className="editor-bridge__ball-anchor">
+        <button
+          type="button"
+          className="editor-bridge__ball"
+          aria-label={
+            open
+              ? "关闭操作面板"
+              : draftStatusLabel
+                ? `打开操作面板（${draftStatusLabel}，可拖拽）`
+                : "打开操作面板（可拖拽）"
+          }
+          aria-expanded={open}
+          title={
+            draftStatusLabel
+              ? `${draftStatusLabel} · Ctrl+S 保存`
+              : "Ctrl+S 保存"
+          }
+          onPointerDown={onBallPointerDown}
+          onPointerMove={onBallPointerMove}
+          onPointerUp={onBallPointerUp}
+          onPointerCancel={onBallPointerCancel}
+        >
+          <span className="editor-bridge__ball-viewport" aria-hidden="true">
+            <span className="editor-bridge__ball-icon-ring" aria-hidden="true">
+              <img src={ballIconSrc} alt="" width={28} height={28} draggable={false} />
+            </span>
           </span>
-        </span>
+        </button>
         {draftStatusLabel ? (
           <span
             className="editor-bridge__status-dot"
@@ -900,7 +1333,7 @@ export function EditorPlatformSidebar() {
             title={draftStatusLabel}
           />
         ) : null}
-      </button>
+      </div>
       <FileInfoDialog
         fileId={fileId}
         open={showFileInfo}

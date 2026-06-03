@@ -32,6 +32,7 @@ export namespace TChat {
     errorDetails?: string;
     errorType?: "parse" | "network" | "other";
     lastAttemptAt?: number;
+    preservePreviewFallbackWhileGenerating?: boolean;
     type: "user" | "assistant" | "warning";
     warningType?: /* daily rate limit */
     "messageLimitExceeded" | /* general 429 */ "rateLimitExceeded";
@@ -42,6 +43,7 @@ export namespace TChat {
     id: string;
     messages: ChatMessage[];
     currentPrompt: string;
+    resendFromMessageId?: string | null;
   };
 }
 

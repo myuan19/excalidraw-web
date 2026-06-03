@@ -2,19 +2,29 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AISettings } from "../../components/AISettings";
 import { ArchivePanel } from "../../components/ArchivePanel";
+import {
+  applyAppShellPendingNavigation,
+  type AppShellNavigateDetail,
+} from "../../shell/appShellNavigate";
 import { APP_SHELL_GO_HOME } from "../../shell/Sidebar";
-import { buildViewHash, type AppView } from "../../shell/useAppView";
+import { buildViewHash } from "../../shell/useAppView";
 import { EmbedTokenManager } from "../../components/EmbedTokenManager";
+import { LocalDraftLossConfirmDialog } from "../../components/LocalDraftLossConfirmDialog";
 import { SaveNewDocumentDialog } from "../../components/PromoteTempFileDialog";
 import { DEFAULT_DOCUMENT_DISPLAY_NAME } from "../../data/defaultDocumentName";
+import { useLocalDraftLossConfirm } from "../../hooks/useLocalDraftLossConfirm";
 import { useSaveNewDocumentDialog } from "../../hooks/useSaveNewDocumentDialog";
 import { bootstrapLocalDraftSession } from "../../data/bootstrapLocalDraftSession";
 import { isLegacyTempFileId, isNewDocumentHash } from "../../data/documentHash";
 import { isLocalDraftFileId } from "../../data/localDraftFileId";
-import { LocalDraftSessions } from "../../data/localDraftSessions";
+import {
+  LocalDraftSessions,
+  notifyLocalDraftEdited,
+} from "../../data/localDraftSessions";
 import { getDocumentKindFromHash } from "../../lib/appBranding";
 import { editorRegistry } from "../../editors";
 import { FileSyncState } from "../../data/FileSyncState";
+import { evaluateCurrentFileModificationState } from "../../data/fileModificationState";
 import { readFileListTreeCache } from "../../data/fileListSessionCache";
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
 import { LocalThumbnailCache } from "../../data/localThumbnailCache";
@@ -511,6 +521,10 @@ const MindMapEditorShell = () => {
     persistLocalDraftToCache: (forcedFileId?: string) => Promise<boolean>;
     flushDraftDebounce: () => void;
   } | null>(null);
+
+  const localDraftLoss = useLocalDraftLossConfirm({
+    getFileId: getFileIdFromHash,
+  });
 
   const saveNewDoc = useSaveNewDocumentDialog({
     getFileId: () => fileId,
@@ -1090,7 +1104,7 @@ const MindMapEditorShell = () => {
       postToNative("mindMapHostOpenImport");
     };
     const onHistory = () => {
-      if (!fileId || isLocalDraftFileId(fileId)) {
+      if (!fileId) {
         return;
       }
       setShowHistoryPanel(true);
@@ -1102,13 +1116,14 @@ const MindMapEditorShell = () => {
       setShowEmbedManager(true);
     };
     const onShellGoHome = (event: Event) => {
-      const target = ((event as CustomEvent<{ target?: string }>).detail
-        ?.target ?? "home") as Exclude<AppView, "editor">;
-      navigateToFileListHomeRef.current = () => {
-        skipLeaveStashOnceRef.current = true;
-        window.location.hash = buildViewHash(target);
-        window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
-      };
+      const detail = (event as CustomEvent<AppShellNavigateDetail>).detail;
+      applyAppShellPendingNavigation(
+        detail,
+        skipLeaveStashOnceRef,
+        (fn) => {
+          navigateToFileListHomeRef.current = fn;
+        },
+      );
       void mindMapGoHomeWithServerSave();
     };
     window.addEventListener("mindmap-host-request-save", onSave);
@@ -1163,9 +1178,19 @@ const MindMapEditorShell = () => {
       if (!fileId || !latestDocumentRef.current) {
         return;
       }
-      const hash = hashDocumentSnapshot(latestDocumentRef.current);
+      const state = evaluateCurrentFileModificationState({
+        fileId,
+        kind: "mindmap",
+        mindMapDocument: latestDocumentRef.current,
+      });
+      const hash =
+        state.modified
+          ? (state.contentHash ?? hashDocumentSnapshot(latestDocumentRef.current))
+          : (state.baselineHash ??
+            state.contentHash ??
+            hashDocumentSnapshot(latestDocumentRef.current));
       FileSyncState.setDraftHash(fileId, hash);
-      if (FileSyncState.hasUnsavedChanges(fileId)) {
+      if (state.modified) {
         FileSyncState.setLocalCache(fileId, {
           document: latestDocumentRef.current,
           elements: undefined,
@@ -1173,6 +1198,14 @@ const MindMapEditorShell = () => {
           files: {},
           deltas: [],
         });
+        if (state.shouldMarkLocalDraftEdited) {
+          notifyLocalDraftEdited(fileId, fileName);
+        }
+        return;
+      }
+      FileSyncState.clearLocalEditTime(fileId);
+      if (isLocalDraftFileId(fileId)) {
+        FileSyncState.clearLocalCache(fileId);
       }
     };
     window.addEventListener("beforeunload", onBeforeUnload);
@@ -1272,7 +1305,9 @@ const MindMapEditorShell = () => {
           >
             <h3 id="mindmap-home-nav-title">主页</h3>
             <p className="fork-home-dialog-desc">
-              当前 mindmap 有未保存的修改，是否先保存？
+              {saveNewDoc.isLocalDraftOpen()
+                ? "这是尚未保存的临时文档，离开前是否先保存到服务器？不保存将丢失本机草稿。"
+                : "当前 mindmap 有未保存的修改，是否先保存？"}
             </p>
             <div className="fork-home-dialog-actions">
               <button
@@ -1297,7 +1332,10 @@ const MindMapEditorShell = () => {
                 onClick={() => {
                   if (saveNewDoc.isLocalDraftOpen()) {
                     mindMapHomeDismissDialog();
-                    saveNewDoc.discardDraftAndNavigate();
+                    localDraftLoss.requestConfirm(() => {
+                      skipLeaveStashOnceRef.current = true;
+                      navigateToFileListHome();
+                    });
                     return;
                   }
                   void mindMapHomeConfirmDiscard();
@@ -1317,6 +1355,13 @@ const MindMapEditorShell = () => {
           </div>
         </div>
       ) : null}
+      <LocalDraftLossConfirmDialog
+        open={localDraftLoss.open}
+        documentName={localDraftLoss.documentName}
+        busy={mindMapSaving}
+        onConfirm={() => void localDraftLoss.confirmLoss()}
+        onCancel={localDraftLoss.dismiss}
+      />
       <SaveNewDocumentDialog
         open={saveNewDoc.saveOpen}
         saving={saveNewDoc.saveInFlight}

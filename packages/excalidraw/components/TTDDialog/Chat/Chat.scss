@@ -33,7 +33,7 @@ $verticalBreakpoint: 861px;
     &__messages {
       flex: 1 1 0;
       overflow-y: auto;
-      margin-bottom: 0.5rem;
+      margin-bottom: 0;
       padding: 1rem 0.5rem 0 0.5rem;
       display: flex;
       flex-direction: column;
@@ -78,21 +78,18 @@ $verticalBreakpoint: 861px;
 
     &__input-outer {
       position: relative;
-      min-height: 71px;
+      min-height: 112px;
     }
 
     &__input-container {
       display: flex;
       flex-direction: column;
       justify-content: flex-end;
+      flex: 0 0 auto;
+      padding-top: 0.75rem;
     }
 
     &__input-wrapper {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
-
       display: flex;
       align-items: flex-end;
       gap: 0.5rem;
@@ -119,9 +116,10 @@ $verticalBreakpoint: 861px;
       outline: none;
       font-size: 0.875rem;
       line-height: 1.5;
-      min-height: 24px;
-      max-height: 120px;
+      min-height: 64px;
+      max-height: 180px;
       overflow-x: hidden;
+      overflow-y: auto;
       border: none !important;
       background: transparent !important;
       color: var(--color-on-surface);
@@ -132,8 +130,8 @@ $verticalBreakpoint: 861px;
 
       @media screen and (max-width: $verticalBreakpoint) {
         line-height: 1.4;
-        min-height: 20px;
-        max-height: 100px;
+        min-height: 52px;
+        max-height: 150px;
         resize: none;
         padding: 0;
 
@@ -185,6 +183,24 @@ $verticalBreakpoint: 861px;
         color: var(--text-primary-color);
         border-radius: var(--border-radius-md);
         min-width: 6rem;
+      }
+
+      .chat-message__body[role="button"] {
+        cursor: pointer;
+        border-radius: var(--border-radius-sm);
+
+        &:focus-visible {
+          outline: 2px solid var(--color-primary);
+          outline-offset: 3px;
+        }
+      }
+    }
+
+    &--resend-source {
+      .chat-message__content {
+        box-shadow:
+          0 0 0 2px color-mix(in srgb, var(--color-primary) 38%, transparent),
+          var(--chat-msg-shadow);
       }
     }
 

@@ -15,9 +15,14 @@ import {
 import { resolveSaveDisplayName } from "../../data/forkFileNaming";
 import { ServerSync } from "../../data/ServerSync";
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
+import {
+  shouldDeferLeaveWhileNewDocumentHash,
+  shouldPromptEditorHomeNavDialog,
+} from "../../data/editorLeaveHome";
 import { isLocalDraftFileId } from "../../data/localDraftFileId";
 import { notifyLocalDraftEdited } from "../../data/localDraftSessions";
 import { discardLocalDraftSession } from "../../data/discardLocalDraftSession";
+import { clearAppShellPendingNavigation } from "../../shell/appShellNavigate";
 
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { SaveToServerOptions, SaveToServerSource, SceneData } from "../../hooks/types";
@@ -335,7 +340,14 @@ export function useForkFileSave(opts: {
 
   const forkGoHomeWithServerSave = useCallback(async () => {
     const fid = getFileIdFromHash();
-    if (!excalidrawAPI || !fid) {
+    if (!fid) {
+      if (shouldDeferLeaveWhileNewDocumentHash(fid)) {
+        return;
+      }
+      navigateToFileListHome();
+      return;
+    }
+    if (!excalidrawAPI) {
       navigateToFileListHome();
       return;
     }
@@ -343,10 +355,16 @@ export function useForkFileSave(opts: {
       flushEmbeddedLocalFiles: () => LocalData.flushSave(),
       draftFlusher: updateDraftHashDebouncedRef.current,
     });
-    if (!FileEditDirty.hasUnsavedChanges(fid)) {
-      if (isLocalDraftFileId(fid)) {
+    if (isLocalDraftFileId(fid)) {
+      if (!shouldPromptEditorHomeNavDialog(fid)) {
         await discardLocalDraftSession(fid);
+        navigateToFileListHome();
+        return;
       }
+      setForkHomeNavDialogOpen(true);
+      return;
+    }
+    if (!FileEditDirty.hasUnsavedChanges(fid)) {
       navigateToFileListHome();
       return;
     }
@@ -365,6 +383,7 @@ export function useForkFileSave(opts: {
 
   const forkHomeDismissDialog = useCallback(() => {
     setForkHomeNavDialogOpen(false);
+    clearAppShellPendingNavigation();
   }, []);
 
   return {

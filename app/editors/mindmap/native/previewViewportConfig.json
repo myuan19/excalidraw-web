@@ -1,14 +1,22 @@
 {
   "targetAspect": 1.6666666666666667,
   "baselineRootScreenRatio": 0.224,
-  "thumbnailRootScreenRatioMultiplier": 0.6,
-  "editorRootScreenRatioMultiplier": 0.54,
-  "embedFocusedRootScreenRatioMultiplier": 0.1,
+  "thumbnailRootScreenRatioMultiplier": 0.7,
+  "editorRootScreenRatioMultiplier": 0.2625,
+  "embedFocusedRootScreenRatioMultiplier": 0.28,
   "baselineNodeCount": 10,
   "minVisualScaleNodeCount": 40,
   "singleNodeVisualScale": 1.2,
+  "editorEmbedSingleRootOnlyVisualScaleFactor": 1,
+  "thumbnailSingleRootOnlyVisualScaleFactor": 1,
+  "singleRootOnlyVisualScaleFactor": 0.5,
   "minNodeVisualScale": 0.8,
-  "nodeCountScaleInfluence": 0.5,
+  "editorEmbedNodeCountScaleInfluence": 1,
+  "nodeCountScaleInfluence": 1,
   "centerTowardOthersRatio": 0.36,
-  "rootCenterLimitRatio": 0.6
+  "rootCenterLimitRatio": 0.6,
+  "thumbnailCenterTowardOthersRatio": 0.55,
+  "thumbnailRootCenterLimitRatio": 0.8,
+  "editorEmbedCenterTowardOthersRatio": 0.55,
+  "editorEmbedRootCenterLimitRatio": 0.8
 }

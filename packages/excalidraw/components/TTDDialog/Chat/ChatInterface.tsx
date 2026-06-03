@@ -14,6 +14,8 @@ import type { TChat, TTTDDialog } from "../types";
 
 import type { FormEventHandler } from "react";
 
+import { ttdDebug } from "../utils/ttdDebug";
+
 export const ChatInterface = ({
   chatId,
   messages,
@@ -28,6 +30,8 @@ export const ChatInterface = ({
   onDeleteMessage,
   onInsertMessage,
   onRetry,
+  onUserMessageClick,
+  resendFromMessageId,
   renderWelcomeScreen,
   renderWarning,
 }: {
@@ -49,40 +53,96 @@ export const ChatInterface = ({
   onDeleteMessage?: (messageId: string) => void;
   onInsertMessage?: (message: TChat.ChatMessage) => void;
   onRetry?: (message: TChat.ChatMessage) => void;
+  onUserMessageClick?: (message: TChat.ChatMessage) => void;
+  resendFromMessageId?: string | null;
   renderWelcomeScreen?: TTTDDialog.renderWelcomeScreen;
   renderWarning?: TTTDDialog.renderWarning;
 }) => {
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  const resizeTextarea = (textarea: HTMLTextAreaElement) => {
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
+  };
+
   useLayoutEffect(() => {
-    messagesEndRef.current?.scrollIntoView();
+    const messagesContainer = messagesContainerRef.current;
+    if (messagesContainer) {
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
   }, [messages]);
+
+  useLayoutEffect(() => {
+    if (textareaRef.current) {
+      resizeTextarea(textareaRef.current);
+      const el = textareaRef.current;
+      ttdDebug("input layout resize", {
+        chatId,
+        promptLength: currentPrompt.length,
+        scrollHeight: el.scrollHeight,
+        clientHeight: el.clientHeight,
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+        overflowX: el.scrollWidth > el.clientWidth,
+        overflowY: el.scrollHeight > el.clientHeight,
+      });
+    }
+  }, [chatId, currentPrompt]);
 
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.focus();
     }
+    ttdDebug("input chatId changed", {
+      chatId,
+      currentPromptLength: currentPrompt.length,
+      isGenerating,
+    });
   }, [chatId]);
 
   const handleInputChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = event.target.value;
+    ttdDebug("input onChange", {
+      chatId,
+      length: value.length,
+      preview: value.slice(0, 40),
+    });
     onPromptChange(value);
+  };
+
+  const handleUserMessageClick = (message: TChat.ChatMessage) => {
+    ttdDebug("input user message click (resend prep)", {
+      chatId,
+      messageId: message.id,
+      contentLength:
+        typeof message.content === "string" ? message.content.length : 0,
+    });
+    onUserMessageClick?.(message);
+    textareaRef.current?.focus();
   };
 
   const handleSubmit = () => {
     if (isGenerating && onAbort) {
+      ttdDebug("input submit → abort", { chatId });
       onAbort();
       return;
     }
 
     const trimmedPrompt = currentPrompt.trim();
     if (!trimmedPrompt) {
+      ttdDebug("input submit skipped (empty)", { chatId });
       return;
     }
 
-    onGenerate({ prompt: trimmedPrompt });
+    ttdDebug("input submit", {
+      chatId,
+      promptLength: trimmedPrompt.length,
+      beforeClearLength: currentPrompt.length,
+    });
     onPromptChange("");
+    onGenerate({ prompt: trimmedPrompt });
+    ttdDebug("input submit after clear", { chatId, cleared: true });
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -95,21 +155,25 @@ export const ChatInterface = ({
   };
 
   const canSend =
-    currentPrompt.trim().length > 3 &&
+    currentPrompt.trim().length > 0 &&
     !isGenerating &&
     (rateLimits?.rateLimitRemaining ?? 1) > 0;
 
   const canStop = isGenerating && !!onAbort;
 
   const onInput: FormEventHandler<HTMLTextAreaElement> = (ev) => {
-    const target = ev.target as HTMLTextAreaElement;
-    target.style.height = "auto";
-    target.style.height = `${Math.min(target.scrollHeight, 120)}px`;
+    const el = ev.target as HTMLTextAreaElement;
+    resizeTextarea(el);
+    ttdDebug("input onInput resize", {
+      chatId,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+    });
   };
 
   return (
     <div className="chat-interface">
-      <div className="chat-interface__messages">
+      <div className="chat-interface__messages" ref={messagesContainerRef}>
         {messages.length === 0 ? (
           <div className="chat-interface__welcome-screen">
             {renderWelcomeScreen ? (
@@ -128,6 +192,8 @@ export const ChatInterface = ({
               onDeleteMessage={onDeleteMessage}
               onInsertMessage={onInsertMessage}
               onRetry={onRetry}
+              onUserMessageClick={handleUserMessageClick}
+              isResendSource={message.id === resendFromMessageId}
               rateLimitRemaining={rateLimits?.rateLimitRemaining}
               isLastMessage={index === messages.length - 1}
               renderWarning={renderWarning}
@@ -138,7 +204,6 @@ export const ChatInterface = ({
             />
           ))
         )}
-        <div ref={messagesEndRef} id="messages-end" />
       </div>
 
       <div className="chat-interface__input-container">

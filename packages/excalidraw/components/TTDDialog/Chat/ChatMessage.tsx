@@ -14,6 +14,8 @@ export const ChatMessage: React.FC<{
   onDeleteMessage?: (messageId: string) => void;
   onInsertMessage?: (message: TChat.ChatMessage) => void;
   onRetry?: (message: TChat.ChatMessage) => void;
+  onUserMessageClick?: (message: TChat.ChatMessage) => void;
+  isResendSource?: boolean;
   rateLimitRemaining?: number;
   isLastMessage?: boolean;
   renderWarning?: TTTDDialog.renderWarning;
@@ -25,6 +27,8 @@ export const ChatMessage: React.FC<{
   onDeleteMessage,
   onInsertMessage,
   onRetry,
+  onUserMessageClick,
+  isResendSource,
   rateLimitRemaining,
   isLastMessage,
   renderWarning,
@@ -106,8 +110,32 @@ export const ChatMessage: React.FC<{
     );
   }
 
+  const canSelectUserMessage =
+    message.type === "user" &&
+    typeof message.content === "string" &&
+    !!onUserMessageClick;
+
+  const handleUserMessageSelect = () => {
+    if (canSelectUserMessage) {
+      onUserMessageClick(message);
+    }
+  };
+
+  const handleUserMessageKeyDown = (
+    event: React.KeyboardEvent<HTMLDivElement>,
+  ) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      handleUserMessageSelect();
+    }
+  };
+
   return (
-    <div className={`chat-message chat-message--${message.type}`}>
+    <div
+      className={clsx(`chat-message chat-message--${message.type}`, {
+        "chat-message--resend-source": isResendSource,
+      })}
+    >
       <div className="chat-message__content">
         <div className="chat-message__header">
           <span className="chat-message__role">
@@ -119,7 +147,14 @@ export const ChatMessage: React.FC<{
             {formatTime(message.timestamp)}
           </span>
         </div>
-        <div className="chat-message__body">
+        <div
+          className="chat-message__body"
+          role={canSelectUserMessage ? "button" : undefined}
+          tabIndex={canSelectUserMessage ? 0 : undefined}
+          title={canSelectUserMessage ? "点击后从此条消息重新发送" : undefined}
+          onClick={handleUserMessageSelect}
+          onKeyDown={handleUserMessageKeyDown}
+        >
           {message.error ? (
             <>
               <div className="chat-message__error">{message.content}</div>

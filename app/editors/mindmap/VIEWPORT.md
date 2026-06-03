@@ -19,7 +19,7 @@ Effective root screen ratio:
 targetRootScreenRatio = baselineRootScreenRatio × <strategyMultiplier>
 ```
 
-Defaults live in `native/previewViewportConfig.json` (`thumbnailRootScreenRatioMultiplier` `0.6`, `editorRootScreenRatioMultiplier` `0.54`, `embedFocusedRootScreenRatioMultiplier` `0.1`).
+Defaults live in `native/previewViewportConfig.json` (`thumbnailRootScreenRatioMultiplier` `0.7`, `editorRootScreenRatioMultiplier` `0.1125`, `embedFocusedRootScreenRatioMultiplier` `0.12`). Root offset: `centerTowardOthersRatio` `0.55`, `rootCenterLimitRatio` `0.8` (thumbnail + canvas each have `thumbnail*` / `editorEmbed*` keys with the same values).
 
 ## File map
 
@@ -42,7 +42,7 @@ Defaults live in `native/previewViewportConfig.json` (`thumbnailRootScreenRatioM
 - `applyEmbedFocusedViewport('initial-render-end')` on first render
 - Reset → restore captured baseline from first focused apply
 
-Multiplier default `0.1` keeps embed preview more zoomed out than the editor (`0.121`).
+Canvas effective root ratio ≈ `0.224 × multiplier` (editor ~`0.025`, embed ~`0.027`). Thumbnail ~`0.157`.
 
 ## 2. Editor focused
 
@@ -71,8 +71,12 @@ Edit.vue applyEmbedFocusedViewport → embed_preview_viewport_applied → Host
 | Embed zoom / root size in frame | `embedFocusedRootScreenRatioMultiplier` |
 | Editor initial zoom (no saved view) | `editorRootScreenRatioMultiplier` |
 | Thumbnail crop | `thumbnailRootScreenRatioMultiplier` |
-| Shared offset toward children | `centerTowardOthersRatio`, `rootCenterLimitRatio` |
-| Node count vs zoom (0–1, default 1) | `nodeCountScaleInfluence` — `0.5` halves how many nodes shrink/grow the frame |
+| Offset toward children (default `0.55` / `0.8`) | `thumbnailCenterTowardOthersRatio`, `thumbnailRootCenterLimitRatio`, `editorEmbedCenterTowardOthersRatio`, `editorEmbedRootCenterLimitRatio` |
+| Legacy shared offset (fallback) | `centerTowardOthersRatio`, `rootCenterLimitRatio` |
+| Node count vs zoom (0–1, default 1) | `nodeCountScaleInfluence` (thumbnail), `editorEmbedNodeCountScaleInfluence` (canvas) |
+| Lone root only (canvas) | `editorEmbedSingleRootOnlyVisualScaleFactor` — default `1` (no extra shrink) |
+| Lone root only (thumbnail) | `thumbnailSingleRootOnlyVisualScaleFactor` — default `1` (match editor) |
+| Document has only data root (renderer may have expand chrome) | `filterMindMapFocusedNodeBounds` — canvas uses root bounds only |
 
 ## Tests
 

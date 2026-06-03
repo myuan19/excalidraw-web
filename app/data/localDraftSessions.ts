@@ -1,9 +1,8 @@
-import { isExcalidrawDraftDirty, isMindMapDraftDirty } from "./draftDirty";
+import { readStoredLocalDraftModified } from "./fileModificationState";
 import { FileSyncState } from "./FileSyncState";
 import { isLocalDraftFileId } from "./localDraftFileId";
 import { recordRecentFileAccess, removeRecentFileEntry } from "./recentFiles";
 
-import type { ForkSceneSnapshot } from "./forkFileTypes";
 import type { ServerFile } from "./ServerSync";
 
 export interface LocalDraftSessionRecord {
@@ -61,19 +60,8 @@ export function hasRecoverableLocalDraft(fileId: string): boolean {
   if (!isLocalDraftFileId(fileId)) {
     return false;
   }
-  if (FileSyncState.hasUnsavedChanges(fileId)) {
-    return true;
-  }
-  const cache = FileSyncState.getLocalCache(fileId);
-  if (!cache) {
-    return false;
-  }
   const meta = LocalDraftSessions.get(fileId);
-  if (meta?.kind === "mindmap") {
-    const doc = (cache as { document?: unknown }).document;
-    return isMindMapDraftDirty(doc);
-  }
-  return isExcalidrawDraftDirty(cache as ForkSceneSnapshot);
+  return readStoredLocalDraftModified(fileId, meta?.kind);
 }
 
 export const LocalDraftSessions = {

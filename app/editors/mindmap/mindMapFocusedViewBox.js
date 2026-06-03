@@ -5,11 +5,33 @@ const DEFAULTS = {
   baselineNodeCount: previewViewportConfig.baselineNodeCount,
   minVisualScaleNodeCount: previewViewportConfig.minVisualScaleNodeCount,
   singleNodeVisualScale: previewViewportConfig.singleNodeVisualScale,
+  singleRootOnlyVisualScaleFactor:
+    previewViewportConfig.singleRootOnlyVisualScaleFactor ?? 1,
+  editorEmbedSingleRootOnlyVisualScaleFactor:
+    previewViewportConfig.editorEmbedSingleRootOnlyVisualScaleFactor ?? 1,
+  thumbnailSingleRootOnlyVisualScaleFactor:
+    previewViewportConfig.thumbnailSingleRootOnlyVisualScaleFactor ??
+    previewViewportConfig.singleRootOnlyVisualScaleFactor ??
+    1,
   minNodeVisualScale: previewViewportConfig.minNodeVisualScale,
   nodeCountScaleInfluence:
     previewViewportConfig.nodeCountScaleInfluence ?? 1,
+  editorEmbedNodeCountScaleInfluence:
+    previewViewportConfig.editorEmbedNodeCountScaleInfluence ?? 1,
   centerTowardOthersRatio: previewViewportConfig.centerTowardOthersRatio,
   rootCenterLimitRatio: previewViewportConfig.rootCenterLimitRatio,
+  thumbnailCenterTowardOthersRatio:
+    previewViewportConfig.thumbnailCenterTowardOthersRatio ??
+    previewViewportConfig.centerTowardOthersRatio,
+  thumbnailRootCenterLimitRatio:
+    previewViewportConfig.thumbnailRootCenterLimitRatio ??
+    previewViewportConfig.rootCenterLimitRatio,
+  editorEmbedCenterTowardOthersRatio:
+    previewViewportConfig.editorEmbedCenterTowardOthersRatio ??
+    previewViewportConfig.centerTowardOthersRatio,
+  editorEmbedRootCenterLimitRatio:
+    previewViewportConfig.editorEmbedRootCenterLimitRatio ??
+    previewViewportConfig.rootCenterLimitRatio,
 };
 
 function clamp(value, min, max) {
@@ -67,7 +89,14 @@ export function computeMindMapNodeVisualScale(nodeCount, options = {}) {
       (minVisualScaleNodeCount - baselineNodeCount);
     rawScale = 1 - clamp(t, 0, 1) * (1 - minNodeVisualScale);
   }
-  return 1 + (rawScale - 1) * influence;
+  let scale = 1 + (rawScale - 1) * influence;
+  if (nodeCount === 1) {
+    const rootOnlyFactor =
+      options.singleRootOnlyVisualScaleFactor ??
+      DEFAULTS.singleRootOnlyVisualScaleFactor;
+    scale *= rootOnlyFactor;
+  }
+  return scale;
 }
 
 export function computeMindMapFocusedViewBoxFromNodeBounds(
@@ -82,6 +111,11 @@ export function computeMindMapFocusedViewBoxFromNodeBounds(
   const targetAspect = options.targetAspect ?? DEFAULTS.targetAspect;
   const centerTowardOthersRatio =
     options.centerTowardOthersRatio ?? DEFAULTS.centerTowardOthersRatio;
+  const normalizedCenterTowardOthersRatio = clamp(
+    centerTowardOthersRatio,
+    0,
+    1,
+  );
   const rootCenterLimitRatio =
     options.rootCenterLimitRatio ?? DEFAULTS.rootCenterLimitRatio;
 
@@ -106,21 +140,30 @@ export function computeMindMapFocusedViewBoxFromNodeBounds(
   const rawCenter = {
     x:
       rootCenter.x +
-      (otherCenter.x - rootCenter.x) * centerTowardOthersRatio,
+      (otherCenter.x - rootCenter.x) * normalizedCenterTowardOthersRatio,
     y:
       rootCenter.y +
-      (otherCenter.y - rootCenter.y) * centerTowardOthersRatio,
+      (otherCenter.y - rootCenter.y) * normalizedCenterTowardOthersRatio,
+  };
+  const normalizedRootCenterLimitRatio = clamp(rootCenterLimitRatio, 0, 1);
+  const rootVisibleCenterLimit = {
+    x: Math.max(0, 0.5 - rootBounds.width / viewSize.width / 2),
+    y: Math.max(0, 0.5 - rootBounds.height / viewSize.height / 2),
+  };
+  const rootCenterLimit = {
+    x: rootVisibleCenterLimit.x * normalizedRootCenterLimitRatio,
+    y: rootVisibleCenterLimit.y * normalizedRootCenterLimitRatio,
   };
   const limitedCenter = {
     x: clamp(
       rawCenter.x,
-      rootCenter.x - viewSize.width * rootCenterLimitRatio,
-      rootCenter.x + viewSize.width * rootCenterLimitRatio,
+      rootCenter.x - viewSize.width * rootCenterLimit.x,
+      rootCenter.x + viewSize.width * rootCenterLimit.x,
     ),
     y: clamp(
       rawCenter.y,
-      rootCenter.y - viewSize.height * rootCenterLimitRatio,
-      rootCenter.y + viewSize.height * rootCenterLimitRatio,
+      rootCenter.y - viewSize.height * rootCenterLimit.y,
+      rootCenter.y + viewSize.height * rootCenterLimit.y,
     ),
   };
 
@@ -158,8 +201,81 @@ export function getMindMapThumbnailTargetRootScreenRatio() {
   );
 }
 
+export function getMindMapEditorFocusedTargetRootScreenRatio() {
+  return (
+    previewViewportConfig.baselineRootScreenRatio *
+    previewViewportConfig.editorRootScreenRatioMultiplier
+  );
+}
+
 export function getMindMapEmbedFocusedTargetRootScreenRatio() {
   const multiplier =
-    previewViewportConfig.embedFocusedRootScreenRatioMultiplier ?? 0.4;
+    previewViewportConfig.embedFocusedRootScreenRatioMultiplier ?? 0.75;
   return previewViewportConfig.baselineRootScreenRatio * multiplier;
+}
+
+function resolveConfiguredRootScreenRatio(configuredMultiplier, fallbackRatio) {
+  const multiplier = Number(configuredMultiplier);
+  if (Number.isFinite(multiplier) && multiplier > 0) {
+    return previewViewportConfig.baselineRootScreenRatio * multiplier;
+  }
+  return fallbackRatio;
+}
+
+/** 画布（编辑器 / 嵌入）共用 focused 参数，仅 multiplier 与单根系数不同 */
+export function buildMindMapCanvasFocusedViewBoxOptions(
+  configuredMultiplier,
+  kind,
+) {
+  const fallbackRatio =
+    kind === "embed"
+      ? getMindMapEmbedFocusedTargetRootScreenRatio()
+      : getMindMapEditorFocusedTargetRootScreenRatio();
+  return {
+    targetAspect: DEFAULTS.targetAspect,
+    targetRootScreenRatio: resolveConfiguredRootScreenRatio(
+      configuredMultiplier,
+      fallbackRatio,
+    ),
+    centerTowardOthersRatio: DEFAULTS.editorEmbedCenterTowardOthersRatio,
+    rootCenterLimitRatio: DEFAULTS.editorEmbedRootCenterLimitRatio,
+    baselineNodeCount: DEFAULTS.baselineNodeCount,
+    minVisualScaleNodeCount: DEFAULTS.minVisualScaleNodeCount,
+    singleNodeVisualScale: DEFAULTS.singleNodeVisualScale,
+    minNodeVisualScale: DEFAULTS.minNodeVisualScale,
+    nodeCountScaleInfluence: DEFAULTS.editorEmbedNodeCountScaleInfluence,
+    singleRootOnlyVisualScaleFactor:
+      DEFAULTS.editorEmbedSingleRootOnlyVisualScaleFactor,
+  };
+}
+
+/** 缩略图 SVG 裁剪：同一套 viewBox 公式，独立 multiplier / 单根系数 */
+export function buildMindMapThumbnailFocusedViewBoxOptions() {
+  return {
+    targetAspect: DEFAULTS.targetAspect,
+    targetRootScreenRatio: getMindMapThumbnailTargetRootScreenRatio(),
+    centerTowardOthersRatio: DEFAULTS.thumbnailCenterTowardOthersRatio,
+    rootCenterLimitRatio: DEFAULTS.thumbnailRootCenterLimitRatio,
+    baselineNodeCount: DEFAULTS.baselineNodeCount,
+    minVisualScaleNodeCount: DEFAULTS.minVisualScaleNodeCount,
+    singleNodeVisualScale: DEFAULTS.singleNodeVisualScale,
+    minNodeVisualScale: DEFAULTS.minNodeVisualScale,
+    nodeCountScaleInfluence: DEFAULTS.nodeCountScaleInfluence,
+    singleRootOnlyVisualScaleFactor:
+      DEFAULTS.thumbnailSingleRootOnlyVisualScaleFactor,
+  };
+}
+
+/**
+ * 文档仅有一个根节点时，渲染树里可能仍有展开按钮等子节点；
+ * 画布 framing 只按根节点尺寸计算，避免根显示过小。
+ */
+export function filterMindMapFocusedNodeBounds(
+  nodeBounds,
+  singleRootOnlyDocument,
+) {
+  if (!singleRootOnlyDocument || nodeBounds.length <= 1) {
+    return nodeBounds;
+  }
+  return [nodeBounds[0]];
 }

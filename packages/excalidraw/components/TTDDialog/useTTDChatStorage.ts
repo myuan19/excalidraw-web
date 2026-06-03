@@ -7,6 +7,10 @@ import { chatHistoryAtom } from "./TTDContext";
 
 import type { SavedChat, SavedChats, TTDPersistenceAdapter } from "./types";
 
+import { ttdDebug } from "./utils/ttdDebug";
+
+export const MAX_SAVED_CHATS = 30;
+
 interface UseTTDChatStorageProps {
   persistenceAdapter: TTDPersistenceAdapter;
 }
@@ -19,7 +23,7 @@ interface UseTTDChatStorageReturn {
   createNewChatId: () => Promise<string>;
 }
 
-const generateChatTitle = (firstMessage: string): string => {
+export const generateChatTitle = (firstMessage: string): string => {
   const trimmed = firstMessage.trim();
   if (trimmed.length <= 50) {
     return trimmed;
@@ -83,6 +87,15 @@ export const useTTDChatStorage = ({
       try {
         const chats = await persistenceAdapter.loadChats();
         setSavedChats(chats);
+        const newest = chats[0];
+        ttdDebug("storage loadChats done", {
+          count: chats.length,
+          newestChatId: newest?.id ?? null,
+          newestTitle: newest?.title ?? null,
+          activeChatId: chatHistory.id,
+          activeMessageCount: chatHistory.messages.length,
+          wouldMatchNewest: newest?.id === chatHistory.id,
+        });
         setChatsLoaded(true);
       } catch (error) {
         console.warn("Failed to load chats:", error);
@@ -159,7 +172,7 @@ export const useTTDChatStorage = ({
       chatToSave,
     ]
       .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(0, 10);
+      .slice(0, MAX_SAVED_CHATS);
 
     setSavedChats(updatedChats);
 

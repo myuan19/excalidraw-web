@@ -16,6 +16,7 @@ import { TTDDialogTab } from "./TTDDialogTab";
 import "./TTDDialog.scss";
 
 import { TTDWelcomeMessage } from "./TTDWelcomeMessage";
+import { ttdDebug } from "./utils/ttdDebug";
 
 import type {
   MermaidToExcalidrawLibProps,
@@ -77,9 +78,10 @@ const TTDDialogBase = withInternalFallback(
       const fn = async () => {
         await mermaidToExcalidrawLib.api;
         setMermaidToExcalidrawLib((prev) => ({ ...prev, loaded: true }));
+        ttdDebug("mermaid lib loaded", { activeTab: tab });
       };
       fn();
-    }, [mermaidToExcalidrawLib.api]);
+    }, [mermaidToExcalidrawLib.api, tab]);
 
     return (
       <Dialog

@@ -149,7 +149,7 @@ describe("FileList layout source contract", () => {
     const source = fs.readFileSync(controllerPath, "utf8");
 
     expect(source).toContain(
-      'key={`${currentFolderId ?? "root"}:${sortKey}:${searchQuery.trim()}`}',
+      'key={`${sidebarView}:${currentFolderId ?? "root"}:${sortKey}:${searchQuery.trim()}`}',
     );
     expect(source).not.toContain("listAnimationEpoch");
     expect(source).not.toContain("setListAnimationEpoch");

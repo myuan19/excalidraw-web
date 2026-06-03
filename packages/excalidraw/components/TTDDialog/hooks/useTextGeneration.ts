@@ -8,7 +8,11 @@ import { trackEvent } from "../../../analytics";
 import { t } from "../../../i18n";
 
 import { errorAtom, rateLimitsAtom, chatHistoryAtom } from "../TTDContext";
-import { useChatAgent } from "../Chat";
+import {
+  generateChatTitle,
+  MAX_SAVED_CHATS,
+  savedChatsAtom,
+} from "../useTTDChatStorage";
 
 import {
   addMessages,
@@ -17,12 +21,102 @@ import {
   removeLastAssistantMessage,
   updateAssistantContent,
 } from "../utils/chat";
-import { extractMermaidDefinition } from "../utils/extractMermaidFromLlmResponse";
+import {
+  extractMermaidDefinition,
+  isMermaidDefinition,
+} from "../utils/extractMermaidFromLlmResponse";
 
-import type { LLMMessage, TTTDDialog } from "../types";
+import type { LLMMessage, SavedChat, TChat, TTTDDialog } from "../types";
 
-const MIN_PROMPT_LENGTH = 3;
-const MAX_PROMPT_LENGTH = 10000;
+import { ttdDebug } from "../utils/ttdDebug";
+
+const MAX_CONTEXT_TURNS = 8;
+const MAX_CONTEXT_CHAR_LENGTH = 30000;
+
+const toSavedChat = (history: TChat.ChatHistory): SavedChat => ({
+  id: history.id,
+  title: generateChatTitle(
+    history.messages.find(
+      (message) =>
+        message.type === "user" && typeof message.content === "string",
+    )?.content ?? "Untitled chat",
+  ),
+  messages: history.messages
+    .filter((message) => message.type === "user" || message.type === "assistant")
+    .map((message) => ({
+      ...message,
+      timestamp:
+        message.timestamp instanceof Date
+          ? message.timestamp
+          : new Date(message.timestamp),
+    })),
+  currentPrompt: history.currentPrompt,
+  timestamp: Date.now(),
+});
+
+const getMessagesLength = (messages: LLMMessage[]): number =>
+  messages.reduce((total, message) => total + message.content.length, 0);
+
+const splitMessagesIntoTurns = (messages: LLMMessage[]): LLMMessage[][] => {
+  const turns: LLMMessage[][] = [];
+  let currentTurn: LLMMessage[] = [];
+
+  messages.forEach((message) => {
+    if (message.role === "user" && currentTurn.length > 0) {
+      turns.push(currentTurn);
+      currentTurn = [];
+    }
+    currentTurn.push(message);
+  });
+
+  if (currentTurn.length > 0) {
+    turns.push(currentTurn);
+  }
+
+  return turns;
+};
+
+const getRecentMessagesByTurns = (
+  messages: LLMMessage[],
+  maxTurns: number,
+): LLMMessage[] => splitMessagesIntoTurns(messages).slice(-maxTurns).flat();
+
+const trimHistoryToCharLimit = (
+  historyMessages: LLMMessage[],
+  currentMessage: LLMMessage,
+  maxChars: number,
+): LLMMessage[] => {
+  const turns = splitMessagesIntoTurns(historyMessages);
+
+  while (
+    turns.length > 0 &&
+    getMessagesLength([...turns.flat(), currentMessage]) > maxChars
+  ) {
+    turns.shift();
+  }
+
+  return [...turns.flat(), currentMessage];
+};
+
+const getMessagesBeforeResendSource = (
+  chatHistory: TChat.ChatHistory,
+): TChat.ChatMessage[] => {
+  if (!chatHistory.resendFromMessageId) {
+    return chatHistory.messages;
+  }
+
+  const sourceIndex = chatHistory.messages.findIndex(
+    (message) =>
+      message.id === chatHistory.resendFromMessageId &&
+      message.type === "user",
+  );
+
+  if (sourceIndex === -1) {
+    return chatHistory.messages;
+  }
+
+  return chatHistory.messages.slice(0, sourceIndex);
+};
 
 export const useTextGeneration = ({
   onTextSubmit,
@@ -34,41 +128,96 @@ export const useTextGeneration = ({
   const [, setError] = useAtom(errorAtom);
   const [rateLimits, setRateLimits] = useAtom(rateLimitsAtom);
   const [chatHistory, setChatHistory] = useAtom(chatHistoryAtom);
-
-  const { addUserMessage, addAssistantMessage, setAssistantError } =
-    useChatAgent();
+  const [, setSavedChats] = useAtom(savedChatsAtom);
 
   const streamingAbortControllerRef = useRef<AbortController | null>(null);
+  const generationHistoryRef = useRef<TChat.ChatHistory | null>(null);
+  const activeChatHistoryRef = useRef(chatHistory);
+  activeChatHistoryRef.current = chatHistory;
 
-  const validatePrompt = (prompt: string): boolean => {
-    if (
-      prompt.length > MAX_PROMPT_LENGTH ||
-      prompt.length < MIN_PROMPT_LENGTH ||
-      rateLimits?.rateLimitRemaining === 0
-    ) {
-      if (prompt.length < MIN_PROMPT_LENGTH) {
-        setError(
-          new Error(
-            t("chat.errors.promptTooShort", { min: MIN_PROMPT_LENGTH }),
-          ),
-        );
-      }
-      if (prompt.length > MAX_PROMPT_LENGTH) {
-        setError(
-          new Error(t("chat.errors.promptTooLong", { max: MAX_PROMPT_LENGTH })),
-        );
-      }
+  const serializeErrorDetails = (errorDetails?: Error | unknown) => {
+    return errorDetails
+      ? JSON.stringify({
+          name: errorDetails instanceof Error ? errorDetails.name : "Error",
+          message:
+            errorDetails instanceof Error
+              ? errorDetails.message
+              : String(errorDetails),
+          stack: errorDetails instanceof Error ? errorDetails.stack : undefined,
+        })
+      : undefined;
+  };
 
-      return false;
+  const syncGenerationHistory = (
+    nextHistory: TChat.ChatHistory,
+  ) => {
+    const activeId = activeChatHistoryRef.current.id;
+    const appliedToUi = activeId === nextHistory.id;
+    const lastMsg = getLastAssistantMessage(nextHistory);
+
+    ttdDebug("generation sync", {
+      generationChatId: nextHistory.id,
+      activeChatId: activeId,
+      appliedToUi,
+      messageCount: nextHistory.messages.length,
+      isGenerating: !!lastMsg?.isGenerating,
+      assistantContentLength:
+        typeof lastMsg?.content === "string" ? lastMsg.content.length : 0,
+    });
+
+    generationHistoryRef.current = nextHistory;
+    setChatHistory((currentHistory) =>
+      currentHistory.id === nextHistory.id ? nextHistory : currentHistory,
+    );
+
+    setSavedChats((prevSavedChats) => {
+      const savedChat = toSavedChat(nextHistory);
+      const existingChat = prevSavedChats.find(
+        (chat) => chat.id === savedChat.id,
+      );
+      const nextTimestamp = existingChat?.timestamp ?? savedChat.timestamp;
+
+      return [
+        ...prevSavedChats.filter((chat) => chat.id !== savedChat.id),
+        {
+          ...savedChat,
+          timestamp: nextTimestamp,
+        },
+      ]
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, MAX_SAVED_CHATS);
+    });
+  };
+
+  const setGenerationAssistantError = (
+    errorMessage: string,
+    errorType: "parse" | "network" | "other" = "other",
+    errorDetails?: Error | unknown,
+  ) => {
+    const nextHistory = updateAssistantContent(
+      generationHistoryRef.current ?? chatHistory,
+      {
+        isGenerating: false,
+        error: errorMessage,
+        errorType,
+        errorDetails: serializeErrorDetails(errorDetails),
+      },
+    );
+    syncGenerationHistory(nextHistory);
+  };
+
+  const setErrorForGeneration = (error: Error | null) => {
+    const generationChatId = generationHistoryRef.current?.id ?? chatHistory.id;
+    if (activeChatHistoryRef.current.id === generationChatId) {
+      setError(error);
     }
-    return true;
   };
 
   const onGenerate: TTTDDialog.OnGenerate = async ({
     prompt,
     isRepairFlow = false,
   }) => {
-    if (!validatePrompt(prompt)) {
+    if (rateLimits?.rateLimitRemaining === 0) {
       return;
     }
 
@@ -81,92 +230,157 @@ export const useTextGeneration = ({
     const abortController = new AbortController();
     streamingAbortControllerRef.current = abortController;
 
+    let initialGenerationHistory: TChat.ChatHistory;
+
     if (!isRepairFlow) {
-      addUserMessage(prompt);
-      addAssistantMessage();
+      if (chatHistory.resendFromMessageId) {
+        const resendBaseMessages = getMessagesBeforeResendSource(chatHistory);
+        initialGenerationHistory = addMessages(
+          {
+            ...chatHistory,
+            messages: resendBaseMessages,
+            currentPrompt: "",
+            resendFromMessageId: null,
+          },
+          [
+            {
+              type: "user",
+              content: prompt,
+            },
+            {
+              type: "assistant",
+              content: "",
+              isGenerating: true,
+            },
+          ],
+        );
+      } else {
+        initialGenerationHistory = {
+          ...addMessages(chatHistory, [
+            {
+              type: "user",
+              content: prompt,
+            },
+            {
+              type: "assistant",
+              content: "",
+              isGenerating: true,
+            },
+          ]),
+          currentPrompt: "",
+        };
+      }
     } else {
-      setChatHistory((prev) =>
-        updateAssistantContent(prev, {
-          isGenerating: true,
-          content: "",
-          error: undefined,
-          errorType: undefined,
-          errorDetails: undefined,
-        }),
-      );
+      initialGenerationHistory = updateAssistantContent(chatHistory, {
+        isGenerating: true,
+        content: "",
+        error: undefined,
+        errorType: undefined,
+        errorDetails: undefined,
+      });
     }
+    generationHistoryRef.current = initialGenerationHistory;
+    ttdDebug("generation start", {
+      chatId: initialGenerationHistory.id,
+      isRepairFlow,
+      resendFromMessageId: chatHistory.resendFromMessageId ?? null,
+      messageCount: initialGenerationHistory.messages.length,
+      promptLength: prompt.length,
+    });
+    syncGenerationHistory(initialGenerationHistory);
 
     try {
       trackEvent("ai", "generate", "ttd");
 
-      const previousMessages = getMessagesForLLM(chatHistory);
+      const baseMessages = isRepairFlow
+        ? chatHistory.messages
+        : getMessagesBeforeResendSource(chatHistory);
+      const previousMessages = getMessagesForLLM({
+        ...chatHistory,
+        messages: baseMessages,
+      });
+      const currentMessage: LLMMessage = { role: "user", content: prompt };
+      const recentHistoryMessages = getRecentMessagesByTurns(
+        previousMessages,
+        MAX_CONTEXT_TURNS,
+      );
 
-      const messages: LLMMessage[] = [
-        ...previousMessages.slice(-3),
-        { role: "user", content: prompt },
-      ];
+      const messages: LLMMessage[] = trimHistoryToCharLimit(
+        recentHistoryMessages,
+        currentMessage,
+        MAX_CONTEXT_CHAR_LENGTH,
+      );
 
       const { generatedResponse, error, rateLimit, rateLimitRemaining } =
         await onTextSubmit({
           messages,
           onStreamCreated: () => {
             if (isRepairFlow) {
-              setChatHistory((prev) =>
-                updateAssistantContent(prev, {
+              const nextHistory = updateAssistantContent(
+                generationHistoryRef.current ?? initialGenerationHistory,
+                {
                   content: "",
                   error: "",
                   isGenerating: true,
-                }),
+                },
               );
+              syncGenerationHistory(nextHistory);
             }
           },
           onChunk: (chunk: string) => {
-            setChatHistory((prev) => {
-              const lastAssistantMessage = getLastAssistantMessage(prev);
-              return updateAssistantContent(prev, {
+            const currentGenerationHistory =
+              generationHistoryRef.current ?? initialGenerationHistory;
+            const lastAssistantMessage = getLastAssistantMessage(
+              currentGenerationHistory,
+            );
+            const nextHistory = updateAssistantContent(
+              currentGenerationHistory,
+              {
                 content: lastAssistantMessage.content + chunk,
-              });
-            });
+              },
+            );
+            syncGenerationHistory(nextHistory);
           },
           signal: abortController.signal,
         });
 
-      setChatHistory((prev) =>
-        updateAssistantContent(prev, {
+      const completedHistory = updateAssistantContent(
+        generationHistoryRef.current ?? initialGenerationHistory,
+        {
           isGenerating: false,
-        }),
+        },
       );
+      syncGenerationHistory(completedHistory);
 
       if (isFiniteNumber(rateLimit) && isFiniteNumber(rateLimitRemaining)) {
         setRateLimits({ rateLimit, rateLimitRemaining });
       }
 
       if (error?.status === 429 || rateLimitRemaining === 0) {
-        setChatHistory((chatHistory) => {
-          if (error?.status === 429) {
-            chatHistory = removeLastAssistantMessage(chatHistory);
-          }
+        let nextHistory = generationHistoryRef.current ?? completedHistory;
+        if (error?.status === 429) {
+          nextHistory = removeLastAssistantMessage(nextHistory);
+        }
 
-          chatHistory = {
-            ...chatHistory,
-            messages: chatHistory.messages.filter(
-              (msg) =>
-                msg.type !== "warning" ||
-                msg.warningType === "rateLimitExceeded" ||
-                msg.warningType === "messageLimitExceeded",
-            ),
-          };
-          const messages = addMessages(chatHistory, [
-            {
-              type: "warning",
-              warningType:
-                rateLimitRemaining === 0
-                  ? "messageLimitExceeded"
-                  : "rateLimitExceeded",
-            },
-          ]);
-          return messages;
-        });
+        nextHistory = {
+          ...nextHistory,
+          messages: nextHistory.messages.filter(
+            (msg) =>
+              msg.type !== "warning" ||
+              msg.warningType === "rateLimitExceeded" ||
+              msg.warningType === "messageLimitExceeded",
+          ),
+        };
+        nextHistory = addMessages(nextHistory, [
+          {
+            type: "warning",
+            warningType:
+              rateLimitRemaining === 0
+                ? "messageLimitExceeded"
+                : "rateLimitExceeded",
+          },
+        ]);
+        syncGenerationHistory(nextHistory);
       }
 
       if (error) {
@@ -187,36 +401,43 @@ export const useTextGeneration = ({
           error.message || t("chat.errors.requestFailed"),
         );
         if (error.status !== 429) {
-          setAssistantError(_error.message, "network");
+          setGenerationAssistantError(_error.message, "network");
         }
-        setError(_error);
+        setErrorForGeneration(_error);
 
         return;
       }
 
       try {
         const normalized = extractMermaidDefinition(generatedResponse ?? "");
+        if (!isMermaidDefinition(normalized)) {
+          trackEvent("ai", "mermaid absent", "ttd");
+          return;
+        }
+
         await parseMermaidToExcalidraw(normalized);
         trackEvent("ai", "mermaid parse success", "ttd");
-        setChatHistory((prev) =>
-          updateAssistantContent(prev, {
+        const normalizedHistory = updateAssistantContent(
+          generationHistoryRef.current ?? initialGenerationHistory,
+          {
             content: normalized,
-          }),
+          },
         );
+        syncGenerationHistory(normalizedHistory);
       } catch (error: any) {
         trackEvent("ai", "mermaid parse failed", "ttd");
         const _error = new Error(
           error.message || t("chat.errors.mermaidParseError"),
         );
-        setAssistantError(_error.message, "parse");
-        setError(_error);
+        setGenerationAssistantError(_error.message, "parse");
+        setErrorForGeneration(_error);
       }
     } catch (error: any) {
       const _error = new Error(
         error.message || t("chat.errors.generationFailed"),
       );
-      setAssistantError(_error.message, "other");
-      setError(_error);
+      setGenerationAssistantError(_error.message, "other");
+      setErrorForGeneration(_error);
     } finally {
       streamingAbortControllerRef.current = null;
     }

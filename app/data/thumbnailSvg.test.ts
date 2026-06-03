@@ -40,8 +40,11 @@ const expectWithinConfiguredRootLimit = (screenPoint: {
   x: number;
   y: number;
 }) => {
-  const minPercent = (0.5 - previewViewportConfig.rootCenterLimitRatio) * 100;
-  const maxPercent = (0.5 + previewViewportConfig.rootCenterLimitRatio) * 100;
+  const limit =
+    previewViewportConfig.thumbnailRootCenterLimitRatio ??
+    previewViewportConfig.rootCenterLimitRatio;
+  const minPercent = (0.5 - limit) * 100;
+  const maxPercent = (0.5 + limit) * 100;
   expect(screenPoint.x).toBeGreaterThanOrEqual(minPercent - 0.01);
   expect(screenPoint.x).toBeLessThanOrEqual(maxPercent + 0.01);
   expect(screenPoint.y).toBeGreaterThanOrEqual(minPercent - 0.01);
@@ -88,10 +91,21 @@ describe("MindMap SVG thumbnails", () => {
   });
 
   it("uses the configured root offset and visible limit ratios", () => {
-    expect(previewViewportConfig.centerTowardOthersRatio).toBe(0.36);
-    expect(previewViewportConfig.rootCenterLimitRatio).toBe(0.6);
-    expect(previewViewportConfig.thumbnailRootScreenRatioMultiplier).toBe(0.6);
-    expect(previewViewportConfig.editorRootScreenRatioMultiplier).toBe(0.54);
+    expect(previewViewportConfig.thumbnailCenterTowardOthersRatio).toBe(0.55);
+    expect(previewViewportConfig.thumbnailRootCenterLimitRatio).toBe(0.8);
+    expect(previewViewportConfig.editorEmbedCenterTowardOthersRatio).toBe(0.55);
+    expect(previewViewportConfig.editorEmbedRootCenterLimitRatio).toBe(0.8);
+    expect(previewViewportConfig.thumbnailRootScreenRatioMultiplier).toBe(0.7);
+    expect(previewViewportConfig.editorRootScreenRatioMultiplier).toBe(0.1125);
+    expect(previewViewportConfig.embedFocusedRootScreenRatioMultiplier).toBe(
+      0.12,
+    );
+    expect(previewViewportConfig.editorEmbedSingleRootOnlyVisualScaleFactor).toBe(
+      1,
+    );
+    expect(previewViewportConfig.thumbnailSingleRootOnlyVisualScaleFactor).toBe(
+      1,
+    );
   });
 
   it(
@@ -161,10 +175,10 @@ describe("MindMap SVG thumbnails", () => {
     const result = normalizeMindMapThumbnailSvg(svg);
 
     const [x, y, width, height] = getViewBoxNumbers(result);
-    expect(x).toBeCloseTo(-280.67, 1);
-    expect(y).toBeCloseTo(-122.95, 1);
-    expect(width).toBeCloseTo(1052.3, 1);
-    expect(height).toBeCloseTo(631.38, 1);
+    expect(x).toBeCloseTo(-87.3, 1);
+    expect(y).toBeCloseTo(-58.09, 1);
+    expect(width).toBeCloseTo(833.89, 1);
+    expect(height).toBeCloseTo(500.34, 1);
   });
 
   it("centers a single-root MindMap thumbnail without clamping to the exported bounds", () => {
@@ -184,10 +198,10 @@ describe("MindMap SVG thumbnails", () => {
     const [x, y, width, height] = getViewBoxNumbers(result);
     const center = getViewBoxCenter(result);
 
-    expect(x).toBeCloseTo(-263.83, 1);
-    expect(y).toBeCloseTo(-40, 1);
-    expect(width).toBeCloseTo(1041.67, 1);
-    expect(height).toBeCloseTo(625, 1);
+    expect(x).toBeCloseTo(-152.23, 1);
+    expect(y).toBeCloseTo(26.96, 1);
+    expect(width).toBeCloseTo(818.45, 1);
+    expect(height).toBeCloseTo(491.07, 1);
     expect(center.x).toBeCloseTo(257, 1);
     expect(center.y).toBeCloseTo(272.5, 1);
   });
@@ -204,8 +218,8 @@ describe("MindMap SVG thumbnails", () => {
     const result = normalizeMindMapThumbnailSvg(svg);
     const [, , width, height] = getViewBoxNumbers(result);
 
-    expect(width).toBeCloseTo(1041.67, 1);
-    expect(height).toBeCloseTo(625, 1);
+    expect(width).toBeCloseTo(818.45, 1);
+    expect(height).toBeCloseTo(491.07, 1);
     expect(result).toContain("viewBox=");
   });
 
@@ -288,10 +302,10 @@ describe("MindMap SVG thumbnails", () => {
     const [x, y, width, height] = getViewBoxNumbers(
       normalizeMindMapThumbnailSvg(svg),
     );
-    expect(x).toBeCloseTo(733.31, 1);
-    expect(y).toBeCloseTo(122.3, 1);
-    expect(width).toBeCloseTo(1063.14, 1);
-    expect(height).toBeCloseTo(637.89, 1);
+    expect(x).toBeCloseTo(931.98, 1);
+    expect(y).toBeCloseTo(185.6, 1);
+    expect(width).toBeCloseTo(849.93, 1);
+    expect(height).toBeCloseTo(509.96, 1);
   });
 
   it("matches the focused experiment for native path-based wide sibling exports", () => {
@@ -315,10 +329,10 @@ describe("MindMap SVG thumbnails", () => {
       normalizeMindMapThumbnailSvg(svg),
     );
 
-    expect(x).toBeCloseTo(-168.2, 1);
-    expect(y).toBeCloseTo(570.09, 1);
-    expect(width).toBeCloseTo(1223.31, 1);
-    expect(height).toBeCloseTo(733.99, 1);
+    expect(x).toBeCloseTo(-62.66, 1);
+    expect(y).toBeCloseTo(607.4, 1);
+    expect(width).toBeCloseTo(1124.59, 1);
+    expect(height).toBeCloseTo(674.75, 1);
   });
 
   it("does not let the node container consume the root node bounds", () => {
@@ -338,7 +352,7 @@ describe("MindMap SVG thumbnails", () => {
       y: 900 + 45 / 2,
     });
 
-    expect(center.x).toBeCloseTo(440.54, 1);
+    expect(center.x).toBeCloseTo(495.18, 1);
     expectWithinConfiguredRootLimit(rootScreen);
   });
 
@@ -357,10 +371,10 @@ describe("MindMap SVG thumbnails", () => {
     const [x, y, width, height] = getViewBoxNumbers(
       normalizeMindMapThumbnailSvg(svg),
     );
-    expect(x).toBeCloseTo(-143.27, 1);
-    expect(y).toBeCloseTo(385.55, 1);
-    expect(width).toBeCloseTo(1052.3, 1);
-    expect(height).toBeCloseTo(631.38, 1);
+    expect(x).toBeCloseTo(0.7, 1);
+    expect(y).toBeCloseTo(450.41, 1);
+    expect(width).toBeCloseTo(833.89, 1);
+    expect(height).toBeCloseTo(500.34, 1);
   });
 
   it("keeps node-count visual scale between 1.2 and 0.8", () => {
@@ -382,7 +396,7 @@ describe("MindMap SVG thumbnails", () => {
 
     expect(visualScale).toBeGreaterThanOrEqual(0.8);
     expect(visualScale).toBeLessThanOrEqual(1.2);
-    expect(visualScale).toBeCloseTo(1.078, 1);
+    expect(visualScale).toBeCloseTo(1.156, 1);
   });
 
   it("clamps the target center so the root stays inside the configured visible limit", () => {
@@ -410,8 +424,8 @@ describe("MindMap SVG thumbnails", () => {
       y: 400 + 45 / 2,
     });
 
-    expect(center.x).toBeCloseTo(758.48, 1);
-    expect(center.y).toBeCloseTo(403.24, 1);
+    expect(center.x).toBeCloseTo(950.28, 1);
+    expect(center.y).toBeCloseTo(393.08, 1);
     expectWithinConfiguredRootLimit(rootScreen);
   });
 
@@ -439,7 +453,7 @@ describe("MindMap SVG thumbnails", () => {
       y: 520 + 45 / 2,
     });
 
-    expect(width).toBeCloseTo(1273.15, 1);
+    expect(width).toBeCloseTo(1227.68, 1);
     expectWithinConfiguredRootLimit(rootScreen);
   });
 

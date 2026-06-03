@@ -6,7 +6,6 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 
-import { discardLocalDraftSession } from "../data/discardLocalDraftSession";
 import { isLocalDraftFileId } from "../data/localDraftFileId";
 import { LocalDraftSessions } from "../data/localDraftSessions";
 import { saveNewDocument } from "../data/saveNewDocument";
@@ -144,14 +143,6 @@ export function useSaveNewDocumentDialog(opts: {
     ],
   );
 
-  const discardDraftAndNavigate = useCallback(async () => {
-    const draftId = getFileId();
-    if (draftId && isLocalDraftFileId(draftId)) {
-      await discardLocalDraftSession(draftId);
-    }
-    navigateHome();
-  }, [getFileId, navigateHome]);
-
   return {
     saveOpen,
     saveInFlight,
@@ -159,7 +150,6 @@ export function useSaveNewDocumentDialog(opts: {
     dismissSave,
     openSaveDialog,
     commitSave,
-    discardDraftAndNavigate,
     isLocalDraftOpen,
     presetFolderId: getPresetFolderId,
     defaultSaveName: getDefaultName,

@@ -28,12 +28,14 @@ import {
   writeFileListTreeCache,
 } from "../data/fileListSessionCache";
 import { FileSyncState } from "../data/FileSyncState";
+import { resolveFileCardThumbDisplay } from "../data/fileCardThumbDisplay";
 import { chooseFileCardThumbnail } from "../data/fileCardThumbnail";
 import {
   formatImportErrorMessage,
 } from "../data/importExcalidrawScene";
 import { LocalThumbnailCache, LOCAL_THUMB_UPDATED_EVENT } from "../data/localThumbnailCache";
 import { detectImportCandidateKinds } from "../data/detectImportCandidates";
+import { FileCardThumb } from "../components/FileCardThumb";
 import { EditorKindDialog, NewFileDialog } from "../components/NewFileDialog";
 import { SaveNewDocumentDialog } from "../components/PromoteTempFileDialog";
 import { bootstrapLocalDraftSession } from "../data/bootstrapLocalDraftSession";
@@ -60,10 +62,6 @@ import {
   type ServerFile,
   type ServerFolder,
 } from "../data/ServerSync";
-import {
-  extractThumbBg,
-  patchThumbnailSvgForCard,
-} from "../data/thumbnailSvg";
 import {
   ensureAIConfigLoaded,
   isAIConfigured,
@@ -374,10 +372,6 @@ function ImageIcon({
       draggable={false}
     />
   );
-}
-
-function editorIconSrc(kind: string): string {
-  return editorIconForKind(kind);
 }
 
 /**
@@ -2329,7 +2323,12 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     });
     const thumbSvg = thumbnailChoice.thumbSvg;
     const kind = editorRegistry.resolveKind(f.kind);
-    const cardThumbSvg = thumbSvg ? patchThumbnailSvgForCard(thumbSvg) : null;
+    const thumbDisplay = resolveFileCardThumbDisplay(
+      f.id,
+      f,
+      fetchedThumbs[f.id] ?? null,
+    );
+    const cardThumbSvg = thumbDisplay.cardThumbSvg;
     if (syncState === "draft" || !thumbSvg) {
       debugFileListThumbnail("thumbnail choice", {
         id: f.id,
@@ -2380,7 +2379,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       });
     }
     const q = searchQuery.trim();
-    const thumbLoading = !thumbSvg && f.has_thumbnail;
+    const thumbLoading = thumbDisplay.thumbLoading;
     return (
       <div
         key={f.id}
@@ -2409,41 +2408,15 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
           handleOpenFile({ id: f.id, kind });
         }}
       >
-        <div
-          className="filelist__card-thumb"
+        <FileCardThumb
+          kind={kind}
+          cardThumbSvg={cardThumbSvg}
+          thumbLoading={thumbLoading}
+          badge={thumbDisplay.badge}
+          thumbBg={thumbDisplay.thumbBg}
+          ref={(node: HTMLDivElement | null) => thumbRefCallback(node, f.id)}
           data-thumb-file-id={f.id}
-          ref={(node) => thumbRefCallback(node, f.id)}
-          style={thumbSvg ? { background: extractThumbBg(thumbSvg) } : undefined}
         >
-          {isBrowserDraft ? (
-            <span
-              className="filelist__card-thumb-badge"
-              title="仅保存在本机浏览器，尚未保存到服务器"
-            >
-              临时
-            </span>
-          ) : syncState === "draft" ? (
-            <span
-              className="filelist__card-thumb-badge"
-              title="有未保存到服务器的更改"
-            >
-              未保存
-            </span>
-          ) : null}
-          {thumbSvg ? (
-            <div
-              className="filelist__card-thumb-svg"
-              dangerouslySetInnerHTML={{
-                __html: cardThumbSvg ?? "",
-              }}
-            />
-          ) : thumbLoading ? (
-            <div className="filelist__card-thumb-loading" />
-          ) : (
-            <div className="filelist__card-thumb-placeholder">
-              <ImageIcon src={editorIconSrc(kind)} alt="" size={40} />
-            </div>
-          )}
           <div className="filelist__card-actions">
             <button
               className="filelist__card-action"
@@ -2489,7 +2462,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
               <Icon type="delete" size={16} />
             </button>
           </div>
-        </div>
+        </FileCardThumb>
         <div className="filelist__card-body">
           <div className="filelist__card-name-row">
             {renamingId === f.id ? (
@@ -2715,7 +2688,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
             <div
               className="filelist__grid"
               ref={gridRef}
-              key={`${currentFolderId ?? "root"}:${sortKey}:${searchQuery.trim()}`}
+              key={`${sidebarView}:${currentFolderId ?? "root"}:${sortKey}:${searchQuery.trim()}`}
             >
               {showNewEntryCard ? renderNewEntryCard(0) : null}
               {filteredFiles.map((f, i) =>

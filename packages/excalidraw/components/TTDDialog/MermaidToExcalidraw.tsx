@@ -28,6 +28,7 @@ import {
   saveMermaidDataToStorage,
   resetPreview,
 } from "./common";
+import { ttdDebug } from "./utils/ttdDebug";
 
 import "./MermaidToExcalidraw.scss";
 
@@ -111,15 +112,38 @@ const MermaidToExcalidraw = ({
         if (!result.success) {
           const err = result.error ?? new Error("Invalid mermaid definition");
           setError(err);
+          ttdDebug("mermaid tab render failed", {
+            isActive,
+            loaded: mermaidToExcalidrawLib.loaded,
+            textLength: deferredText.length,
+            error: err.message.slice(0, 120),
+          });
+          return;
         }
+        ttdDebug("mermaid tab render ok", {
+          isActive,
+          loaded: mermaidToExcalidrawLib.loaded,
+          textLength: deferredText.length,
+          elementCount: data.current.elements.length,
+          connectorStats: result.connectorStats,
+        });
       } catch (err) {
         if (isDevEnv()) {
           console.error("Failed to parse mermaid definition", err);
         }
+        ttdDebug("mermaid tab render error", {
+          isActive,
+          message: getErrorMessage(err).slice(0, 120),
+        });
       }
     };
 
     if (isActive) {
+      ttdDebug("mermaid tab render tick", {
+        isActive,
+        loaded: mermaidToExcalidrawLib.loaded,
+        textLength: deferredText.length,
+      });
       doRender();
       debouncedSaveMermaidDefinition(deferredText);
     }

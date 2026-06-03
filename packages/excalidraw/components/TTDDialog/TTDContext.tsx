@@ -14,4 +14,5 @@ export const chatHistoryAtom = atom<TChat.ChatHistory>({
   id: randomId(),
   messages: [],
   currentPrompt: "",
+  resendFromMessageId: null,
 });

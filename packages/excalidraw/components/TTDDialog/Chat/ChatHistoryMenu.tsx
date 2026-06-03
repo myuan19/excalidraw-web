@@ -8,6 +8,8 @@ import { FilledButton } from "../../FilledButton";
 
 import type { SavedChat } from "../types";
 
+import { ttdDebug } from "../utils/ttdDebug";
+
 interface ChatHistoryMenuProps {
   isOpen: boolean;
   onToggle: () => void;
@@ -34,7 +36,17 @@ export const ChatHistoryMenu = ({
   disabled,
 }: ChatHistoryMenuProps) => {
   return (
-    <div className="ttd-chat-history-menu">
+    <div
+      className="ttd-chat-history-menu"
+      onPointerDownCapture={() => {
+        if (disabled) {
+          ttdDebug("history menu blocked (pointer)", {
+            activeSessionId,
+            savedChatsCount: savedChats.length,
+          });
+        }
+      }}
+    >
       {isNewChatBtnVisible && (
         <FilledButton onClick={onNewChat} disabled={disabled}>
           {t("chat.newChat")}
@@ -52,7 +64,11 @@ export const ChatHistoryMenu = ({
             >
               {historyIcon}
             </DropdownMenu.Trigger>
-            <DropdownMenu.Content onClickOutside={onClose} onSelect={onClose}>
+            <DropdownMenu.Content
+              className="ttd-chat-history-menu__content"
+              onClickOutside={onClose}
+              onSelect={onClose}
+            >
               <>
                 {savedChats.map((chat) => (
                   <DropdownMenu.ItemCustom
@@ -61,6 +77,12 @@ export const ChatHistoryMenu = ({
                       "ttd-chat-menu-item--active": chat.id === activeSessionId,
                     })}
                     onClick={() => {
+                      ttdDebug("history menu restore item", {
+                        fromSessionId: activeSessionId,
+                        toSessionId: chat.id,
+                        title: chat.title,
+                        disabled,
+                      });
                       onRestoreChat(chat);
                     }}
                   >

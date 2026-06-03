@@ -174,8 +174,9 @@ import AiCreate from './AiCreate.vue'
 import AiChat from './AiChat.vue'
 import previewViewportConfig from '../../../../../previewViewportConfig.json'
 import {
+  buildMindMapCanvasFocusedViewBoxOptions,
   computeMindMapFocusedViewBoxFromNodeBounds,
-  getMindMapEmbedFocusedTargetRootScreenRatio
+  filterMindMapFocusedNodeBounds
 } from '../../../../../../mindMapFocusedViewBox.js'
 
 import { isMindmapDevDebugEnabled, mindmapDevDebug } from '@/utils/mindmapDevDebug'
@@ -198,12 +199,6 @@ const getSlowMindMapResources = () => {
       encodedBodySize: item.encodedBodySize || 0
     }))
 }
-
-const FOCUSED_PREVIEW_TARGET_ASPECT = previewViewportConfig.targetAspect
-const FOCUSED_PREVIEW_BASELINE_ROOT_SCREEN_RATIO =
-  previewViewportConfig.baselineRootScreenRatio
-const EDITOR_FOCUSED_ROOT_SCREEN_RATIO_MULTIPLIER =
-  previewViewportConfig.editorRootScreenRatioMultiplier
 
 // 注册插件
 MindMap.usePlugin(MiniMap)
@@ -885,45 +880,54 @@ export default {
       return bounds
     },
 
-    getEmbedFocusedTargetRootScreenRatio() {
+    getConfiguredRootScreenRatioMultiplier() {
       const configuredMultiplier = Number(
         this.mindMapConfig &&
           this.mindMapConfig.__nbPreviewRootScreenRatioMultiplier
       )
-      if (Number.isFinite(configuredMultiplier) && configuredMultiplier > 0) {
-        return FOCUSED_PREVIEW_BASELINE_ROOT_SCREEN_RATIO * configuredMultiplier
-      }
-      return getMindMapEmbedFocusedTargetRootScreenRatio()
+      return Number.isFinite(configuredMultiplier) && configuredMultiplier > 0
+        ? configuredMultiplier
+        : null
     },
 
-    getEditorFocusedTargetRootScreenRatio() {
-      const configuredMultiplier = Number(
-        this.mindMapConfig &&
-          this.mindMapConfig.__nbPreviewRootScreenRatioMultiplier
-      )
-      if (Number.isFinite(configuredMultiplier) && configuredMultiplier > 0) {
-        return FOCUSED_PREVIEW_BASELINE_ROOT_SCREEN_RATIO * configuredMultiplier
-      }
-      return (
-        FOCUSED_PREVIEW_BASELINE_ROOT_SCREEN_RATIO *
-        EDITOR_FOCUSED_ROOT_SCREEN_RATIO_MULTIPLIER
+    isDocumentSingleRootOnly() {
+      const data =
+        this.mindMapData ||
+        (this.mindMap && typeof this.mindMap.getData === 'function'
+          ? this.mindMap.getData(true)
+          : null)
+      const root = data && data.root
+      return !!(root && (!root.children || root.children.length === 0))
+    },
+
+    collectFocusedPreviewNodeBoundsForViewport() {
+      const rawBounds = this.collectFocusedPreviewNodeBounds()
+      return filterMindMapFocusedNodeBounds(
+        rawBounds,
+        this.isDocumentSingleRootOnly()
       )
     },
 
     computeEmbedFocusedViewBox() {
-      const nodeBounds = this.collectFocusedPreviewNodeBounds()
-      return computeMindMapFocusedViewBoxFromNodeBounds(nodeBounds, {
-        targetRootScreenRatio: this.getEmbedFocusedTargetRootScreenRatio(),
-        targetAspect: FOCUSED_PREVIEW_TARGET_ASPECT
-      })
+      const nodeBounds = this.collectFocusedPreviewNodeBoundsForViewport()
+      return computeMindMapFocusedViewBoxFromNodeBounds(
+        nodeBounds,
+        buildMindMapCanvasFocusedViewBoxOptions(
+          this.getConfiguredRootScreenRatioMultiplier(),
+          'embed'
+        )
+      )
     },
 
     computeEditorFocusedViewBox() {
-      const nodeBounds = this.collectFocusedPreviewNodeBounds()
-      return computeMindMapFocusedViewBoxFromNodeBounds(nodeBounds, {
-        targetRootScreenRatio: this.getEditorFocusedTargetRootScreenRatio(),
-        targetAspect: FOCUSED_PREVIEW_TARGET_ASPECT
-      })
+      const nodeBounds = this.collectFocusedPreviewNodeBoundsForViewport()
+      return computeMindMapFocusedViewBoxFromNodeBounds(
+        nodeBounds,
+        buildMindMapCanvasFocusedViewBoxOptions(
+          this.getConfiguredRootScreenRatioMultiplier(),
+          'editor'
+        )
+      )
     },
 
     applyFocusedViewBox(viewBox) {

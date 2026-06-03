@@ -69,6 +69,38 @@ export function getRecentFileEntries(): RecentFileEntry[] {
     );
 }
 
+/** 最近列表是否应跳过该条目（例如当前正在编辑的文档） */
+export function isExcludedFromRecentList(
+  entryId: string,
+  excludeFileId: string | null | undefined,
+): boolean {
+  if (!excludeFileId) {
+    return false;
+  }
+  return entryId === excludeFileId;
+}
+
+/**
+ * 从最近记录中取最多 limit 条，且不含 excludeFileId。
+ * 当前文件占掉一个「名额」时继续向后扫描，保证仍凑满 limit 条（若有足够其它文件）。
+ */
+export function pickRecentEntriesExcluding(
+  entries: RecentFileEntry[],
+  opts: { excludeFileId?: string | null; limit: number },
+): RecentFileEntry[] {
+  const picked: RecentFileEntry[] = [];
+  for (const entry of entries) {
+    if (isExcludedFromRecentList(entry.id, opts.excludeFileId)) {
+      continue;
+    }
+    picked.push(entry);
+    if (picked.length >= opts.limit) {
+      break;
+    }
+  }
+  return picked;
+}
+
 export function removeRecentFileEntry(fileId: string): void {
   writeEntries(readEntries().filter((entry) => entry.id !== fileId));
 }

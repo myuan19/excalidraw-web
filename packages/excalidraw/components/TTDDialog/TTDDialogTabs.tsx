@@ -5,6 +5,8 @@ import { isMemberOf } from "@excalidraw/common";
 
 import { useExcalidrawSetAppState } from "../App";
 
+import { ttdDebug } from "./utils/ttdDebug";
+
 import type { ReactNode } from "react";
 
 const TTDDialogTabs = (
@@ -42,6 +44,10 @@ const TTDDialogTabs = (
           props.dialog === "ttd" &&
           isMemberOf(["text-to-diagram", "mermaid"], tab)
         ) {
+          ttdDebug("dialog tab change", {
+            from: props.tab,
+            to: tab,
+          });
           setAppState({
             openDialog: { name: props.dialog, tab },
           });

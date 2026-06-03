@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 
 import type { NonDeletedExcalidrawElement } from "@excalidraw/element/types";
 
@@ -15,6 +15,7 @@ import {
   saveMermaidDataToStorage,
 } from "./common";
 import { errorAtom, chatHistoryAtom, showPreviewAtom } from "./TTDContext";
+import { chatsLoadedAtom } from "./useTTDChatStorage";
 
 import { useTTDChatStorage } from "./useTTDChatStorage";
 import { useMermaidRenderer } from "./hooks/useMermaidRenderer";
@@ -24,6 +25,7 @@ import { TTDChatPanel } from "./Chat/TTDChatPanel";
 import { TTDPreviewPanel } from "./TTDPreviewPanel";
 
 import { getLastAssistantMessage } from "./utils/chat";
+import { ttdDebug } from "./utils/ttdDebug";
 
 import type { BinaryFiles } from "../../types";
 import type {
@@ -55,6 +57,8 @@ const TextToDiagramContent = ({
   const [error, setError] = useAtom(errorAtom);
   const [chatHistory, setChatHistory] = useAtom(chatHistoryAtom);
   const showPreview = useAtomValue(showPreviewAtom);
+  const chatsLoaded = useAtomValue(chatsLoadedAtom);
+  const didAutoRestoreOnOpenRef = useRef(false);
 
   const { savedChats } = useTTDChatStorage({ persistenceAdapter });
 
@@ -79,6 +83,57 @@ const TextToDiagramContent = ({
     handleMenuToggle,
     handleMenuClose,
   } = useChatManagement({ persistenceAdapter });
+
+  useEffect(() => {
+    if (didAutoRestoreOnOpenRef.current || !chatsLoaded || savedChats.length === 0) {
+      return;
+    }
+    if (chatHistory.messages.length > 0) {
+      didAutoRestoreOnOpenRef.current = true;
+      return;
+    }
+    const newest = savedChats[0];
+    if (!newest) {
+      return;
+    }
+    didAutoRestoreOnOpenRef.current = true;
+    if (newest.id === chatHistory.id) {
+      return;
+    }
+    ttdDebug("session auto restore newest", {
+      fromChatId: chatHistory.id,
+      toChatId: newest.id,
+      title: newest.title,
+      messageCount: newest.messages.length,
+    });
+    onRestoreChat(newest);
+  }, [
+    chatsLoaded,
+    savedChats,
+    chatHistory.id,
+    chatHistory.messages.length,
+    onRestoreChat,
+  ]);
+
+  useEffect(() => {
+    const newest = savedChats[0];
+    ttdDebug("session state snapshot", {
+      activeChatId: chatHistory.id,
+      activeMessageCount: chatHistory.messages.length,
+      activePromptLength: chatHistory.currentPrompt.length,
+      savedChatsCount: savedChats.length,
+      newestSavedChatId: newest?.id ?? null,
+      isActiveNewest: newest?.id === chatHistory.id,
+      isGenerating: lastAssistantMessage?.isGenerating ?? false,
+      showPreview,
+    });
+  }, [
+    chatHistory.id,
+    chatHistory.messages.length,
+    lastAssistantMessage?.isGenerating,
+    showPreview,
+    savedChats.length,
+  ]);
 
   const onViewAsMermaid = () => {
     if (typeof lastAssistantMessage?.content === "string") {
@@ -166,6 +221,24 @@ const TextToDiagramContent = ({
     }
   };
 
+  const handleUserMessageClick = (message: TChat.ChatMessage) => {
+    if (message.type !== "user" || typeof message.content !== "string") {
+      return;
+    }
+
+    ttdDebug("prompt resend source set", {
+      chatId: chatHistory.id,
+      messageId: message.id,
+      contentLength: message.content.length,
+      previousPromptLength: chatHistory.currentPrompt.length,
+    });
+    setChatHistory((prev) => ({
+      ...prev,
+      currentPrompt: message.content ?? "",
+      resendFromMessageId: message.id,
+    }));
+  };
+
   const handleInsertToEditor = () => {
     insertToEditor({ app, data });
   };
@@ -187,6 +260,12 @@ const TextToDiagramContent = ({
   };
 
   const handlePromptChange = (newPrompt: string) => {
+    ttdDebug("prompt atom update", {
+      chatId: chatHistory.id,
+      fromLength: chatHistory.currentPrompt.length,
+      toLength: newPrompt.length,
+      sameAsBefore: newPrompt === chatHistory.currentPrompt,
+    });
     setChatHistory((prev) => ({
       ...prev,
       currentPrompt: newPrompt,
@@ -223,6 +302,8 @@ const TextToDiagramContent = ({
         onDeleteMessage={handleDeleteMessage}
         onInsertMessage={handleInsertMessage}
         onRetry={handleRetry}
+        onUserMessageClick={handleUserMessageClick}
+        resendFromMessageId={chatHistory.resendFromMessageId}
         onViewAsMermaid={onViewAsMermaid}
         renderWarning={renderWarning}
         renderWelcomeScreen={renderWelcomeScreen}

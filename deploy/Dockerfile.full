@@ -20,6 +20,7 @@ ARG HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy all_proxy AL
 ARG YARN_REGISTRY=https://registry.yarnpkg.com
 ARG NPM_REGISTRY=https://registry.npmjs.org
 ARG USE_NPM_MIRROR=0
+ARG DEPLOY_DEBUG=0
 ARG NODE_ENV=production
 WORKDIR /opt/node_app
 
@@ -38,6 +39,12 @@ RUN set -eux; \
       || (echo "[docker] yarn retry: registry.npmmirror.com" >&2; yarn config set registry https://registry.npmmirror.com; yarn install) \
       || (echo "[docker] yarn retry: registry.yarnpkg.com" >&2; yarn config set registry https://registry.yarnpkg.com; yarn install); \
     export NPM_CONFIG_REGISTRY="${NPM_REGISTRY}"; \
+    if [ "${DEPLOY_DEBUG}" = "1" ]; then \
+      export VITE_APP_DEPLOY_DEBUG=true VITE_LOG_LEVEL=debug VITE_LOG_REMOTE=1; \
+      echo "[docker] frontend debug logs enabled"; \
+    else \
+      export VITE_LOG_REMOTE=0 VITE_LOG_LEVEL=error; \
+    fi; \
     chmod +x scripts/build-production.sh; \
     ./scripts/build-production.sh docker
 

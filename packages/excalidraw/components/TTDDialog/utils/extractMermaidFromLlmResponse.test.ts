@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { extractMermaidDefinition } from "./extractMermaidFromLlmResponse";
+import {
+  extractMermaidDefinition,
+  isMermaidDefinition,
+} from "./extractMermaidFromLlmResponse";
 
 describe("extractMermaidDefinition", () => {
   it("strips ```mermaid fenced blocks", () => {
@@ -31,5 +34,18 @@ graph LR
   it("handles unclosed fence (streaming) by taking content after opening", () => {
     const raw = "```mermaid\nflowchart TD\n  A --> B";
     expect(extractMermaidDefinition(raw)).toBe("flowchart TD\n  A --> B");
+  });
+});
+
+describe("isMermaidDefinition", () => {
+  it("accepts supported Mermaid diagram declarations", () => {
+    expect(isMermaidDefinition("flowchart TD\n  A --> B")).toBe(true);
+    expect(isMermaidDefinition("sequenceDiagram\n  A->>B: Hi")).toBe(true);
+  });
+
+  it("rejects plain text responses", () => {
+    expect(isMermaidDefinition("I need more detail to create a diagram.")).toBe(
+      false,
+    );
   });
 });

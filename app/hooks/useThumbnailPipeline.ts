@@ -4,6 +4,8 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { createLogger } from "../lib/logger";
 import { devDebug, isDevDebugChannelEnabled } from "../lib/devDebug";
 import { fetchThumbnailSvgForCard } from "../data/fetchThumbnailSvgForCard";
+import { isLocalDraftFileId } from "../data/localDraftFileId";
+import { ensureLocalDraftThumbnailFromCache } from "../data/localDraftThumbnailRecovery";
 import type { ServerFile } from "../data/ServerSync";
 
 const logPipe = createLogger({ module: "thumbPipeline" });
@@ -81,6 +83,7 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
     const skipped = {
       notInAllowSet: 0,
       localDraftThumb: 0,
+      localDraftRecoverQueued: 0,
       serverNoThumbFlag: 0,
       alreadyInFetched: 0,
       inFlightRef: 0,
@@ -110,6 +113,18 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
           localDraftThumbLen: localDraftThumb.length,
         });
         skipped.localDraftThumb++;
+        continue;
+      }
+      if (isLocalDraftFileId(f.id)) {
+        if (!thumbFetchingRef.current.has(f.id)) {
+          thumbFetchingRef.current.add(f.id);
+          skipped.localDraftRecoverQueued++;
+          void ensureLocalDraftThumbnailFromCache(f.id, f.kind).finally(() => {
+            thumbFetchingRef.current.delete(f.id);
+          });
+        } else {
+          skipped.inFlightRef++;
+        }
         continue;
       }
       if (!f.has_thumbnail) {

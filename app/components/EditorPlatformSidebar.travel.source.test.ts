@@ -29,4 +29,10 @@ describe("Editor platform sidebar travel bounds", () => {
   it("stores anchor under v2 travel-ratio semantics", () => {
     expect(source).toContain("excalidraw-editor-bridge-anchor-v2");
   });
+
+  it("closes the open panel when clicking blank canvas via dismiss layer", () => {
+    expect(source).toContain("editor-bridge__dismiss-layer");
+    expect(source).toContain("closeSidebarPanel");
+    expect(source).toMatch(/createPortal\([\s\S]*editor-bridge__dismiss-layer/);
+  });
 });

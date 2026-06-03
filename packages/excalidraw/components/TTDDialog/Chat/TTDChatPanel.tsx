@@ -39,6 +39,8 @@ export const TTDChatPanel = ({
   onDeleteMessage,
   onInsertMessage,
   onRetry,
+  onUserMessageClick,
+  resendFromMessageId,
   onViewAsMermaid,
   renderWelcomeScreen,
   renderWarning,
@@ -66,6 +68,8 @@ export const TTDChatPanel = ({
   onDeleteMessage: (messageId: string) => void;
   onInsertMessage: (message: TChat.ChatMessage) => void;
   onRetry?: (message: TChat.ChatMessage) => void;
+  onUserMessageClick?: (message: TChat.ChatMessage) => void;
+  resendFromMessageId?: string | null;
 
   onViewAsMermaid: () => void;
 
@@ -129,7 +133,6 @@ export const TTDChatPanel = ({
               onDeleteChat={onDeleteChat}
               savedChats={savedChats}
               activeSessionId={activeSessionId}
-              disabled={isGenerating}
             />
           </div>
         </div>
@@ -152,6 +155,8 @@ export const TTDChatPanel = ({
         onDeleteMessage={onDeleteMessage}
         onInsertMessage={onInsertMessage}
         onRetry={onRetry}
+        onUserMessageClick={onUserMessageClick}
+        resendFromMessageId={resendFromMessageId}
         rateLimits={rateLimits}
         renderWelcomeScreen={renderWelcomeScreen}
         renderWarning={renderWarning}

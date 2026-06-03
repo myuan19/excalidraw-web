@@ -11,7 +11,6 @@ import { recordRecentFileAccess } from "./data/recentFiles";
 import { logFileListOpen } from "./lib/logger";
 import { devDebug } from "./lib/devDebug";
 import { isEmbedMode } from "./embed/embedMode";
-import { prefetchMindMapNativeAssets } from "./data/mindMapPrefetch";
 import { editorRegistry } from "./editors";
 import { getLazyEditorShell } from "./editors/lazyViews";
 import { hashNeedsEditorRoute } from "./data/documentHash";
@@ -115,7 +114,6 @@ const ForkRoot = () => {
     if (!needsEditor || documentKind !== "mindmap") {
       return;
     }
-    void prefetchMindMapNativeAssets();
     editorRegistry.getByKind("mindmap")?.loadEditorShell().catch(() => {});
   }, [needsEditor, documentKind]);
 

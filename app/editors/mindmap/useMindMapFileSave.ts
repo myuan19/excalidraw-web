@@ -3,14 +3,19 @@ import { debounce } from "@excalidraw/common";
 
 import { FileSyncState } from "../../data/FileSyncState";
 import { MindMapAdapter } from "../../data/formats/registry";
-import { isMindMapSingleRootOnly } from "../../data/formats/MindMapAdapter";
 import { saveMindMapBrowserViewFromData } from "../../data/mindMapBrowserViewStorage";
 import { hashDocumentSnapshot } from "../../data/sceneHash";
 import { ServerSync } from "../../data/ServerSync";
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
+import {
+  shouldDeferLeaveWhileNewDocumentHash,
+  shouldPromptEditorHomeNavDialog,
+} from "../../data/editorLeaveHome";
+import { evaluateCurrentFileModificationState } from "../../data/fileModificationState";
 import { isLocalDraftFileId } from "../../data/localDraftFileId";
 import { notifyLocalDraftEdited } from "../../data/localDraftSessions";
 import { discardLocalDraftSession } from "../../data/discardLocalDraftSession";
+import { clearAppShellPendingNavigation } from "../../shell/appShellNavigate";
 
 import type { ManagedDocument } from "../../data/documentTypes";
 import type { MindMapDocumentData } from "../../data/formats/MindMapAdapter";
@@ -117,18 +122,25 @@ export function useMindMapFileSave(opts: {
       if (!document) {
         return;
       }
-      const baseline = FileSyncState.getBaselineHash(fileId);
-      const singleRootBlank =
-        isLocalDraftFileId(fileId) && isMindMapSingleRootOnly(document);
-      const hash = singleRootBlank
-        ? (baseline ?? hashDocumentSnapshot(document))
-        : hashDocumentSnapshot(document);
+      const state = evaluateCurrentFileModificationState({
+        fileId,
+        kind: "mindmap",
+        mindMapDocument: document,
+      });
+      const hash =
+        state.modified
+          ? (state.contentHash ?? hashDocumentSnapshot(document))
+          : (state.baselineHash ?? state.contentHash ?? hashDocumentSnapshot(document));
 
-      if (isLocalDraftFileId(fileId) || (baseline && hash !== baseline)) {
+      if (state.modified) {
         FileSyncState.setLocalCache(fileId, toMindMapLocalCacheRecord(document));
       }
       FileSyncState.setDraftHash(fileId, hash);
-      if (!baseline || baseline === hash) {
+      if (!state.modified) {
+        FileSyncState.clearLocalEditTime(fileId);
+        if (isLocalDraftFileId(fileId)) {
+          FileSyncState.clearLocalCache(fileId);
+        }
         return;
       }
       FileSyncState.setLocalEditTime(fileId);
@@ -167,10 +179,12 @@ export function useMindMapFileSave(opts: {
         return;
       }
       updateDraftHashDebouncedRef.current(fileId, () => document);
-      if (
-        isLocalDraftFileId(fileId) &&
-        isMindMapSingleRootOnly(document)
-      ) {
+      const state = evaluateCurrentFileModificationState({
+        fileId,
+        kind: "mindmap",
+        mindMapDocument: document,
+      });
+      if (!state.modified) {
         setStatus("");
         return;
       }
@@ -316,33 +330,65 @@ export function useMindMapFileSave(opts: {
     saveToServerRef.current = saveCurrentFileToServer;
   }, [saveCurrentFileToServer]);
 
+  const syncCurrentMindMapDraftForLeave = useCallback(
+    async (fileId: string) => {
+      const nativeSave = await requestNativeMindMapData();
+      if (!nativeSave) {
+        updateDraftHashDebouncedRef.current.flush();
+        return;
+      }
+      const { document } = nativeSave;
+      updateDraftHashDebouncedRef.current.flush();
+      const state = evaluateCurrentFileModificationState({
+        fileId,
+        kind: "mindmap",
+        mindMapDocument: document,
+      });
+      const hash =
+        state.modified
+          ? (state.contentHash ?? hashDocumentSnapshot(document))
+          : (state.baselineHash ?? state.contentHash ?? hashDocumentSnapshot(document));
+      FileSyncState.setDraftHash(fileId, hash);
+      if (!state.modified) {
+        FileSyncState.clearLocalEditTime(fileId);
+        FileSyncState.clearLocalCache(fileId);
+        return;
+      }
+      FileSyncState.setLocalEditTime(fileId);
+      FileSyncState.setLocalCache(fileId, toMindMapLocalCacheRecord(document));
+      if (isLocalDraftFileId(fileId)) {
+        notifyLocalDraftEdited(fileId);
+      }
+    },
+    [requestNativeMindMapData],
+  );
+
   const mindMapGoHomeWithServerSave = useCallback(async () => {
     const fileId = getFileIdFromHash();
     if (!fileId) {
+      if (shouldDeferLeaveWhileNewDocumentHash(fileId)) {
+        return;
+      }
       navigateToFileListHome();
       return;
     }
-    const nativeSave = await requestNativeMindMapData();
-    if (nativeSave) {
-      const { document } = nativeSave;
-      updateDraftHashDebouncedRef.current.flush();
-      const hash = hashDocumentSnapshot(document);
-      FileSyncState.setDraftHash(fileId, hash);
-      const baseline = FileSyncState.getBaselineHash(fileId);
-      if (baseline && hash !== baseline) {
-        FileSyncState.setLocalEditTime(fileId);
-        FileSyncState.setLocalCache(fileId, toMindMapLocalCacheRecord(document));
-      }
-    }
-    if (!FileSyncState.hasUnsavedChanges(fileId)) {
-      if (isLocalDraftFileId(fileId)) {
+    if (isLocalDraftFileId(fileId)) {
+      await syncCurrentMindMapDraftForLeave(fileId);
+      if (!shouldPromptEditorHomeNavDialog(fileId)) {
         await discardLocalDraftSession(fileId);
+        navigateToFileListHome();
+        return;
       }
+      setMindMapHomeNavDialogOpen(true);
+      return;
+    }
+    await syncCurrentMindMapDraftForLeave(fileId);
+    if (!shouldPromptEditorHomeNavDialog(fileId)) {
       navigateToFileListHome();
       return;
     }
     setMindMapHomeNavDialogOpen(true);
-  }, [navigateToFileListHome, requestNativeMindMapData]);
+  }, [navigateToFileListHome, syncCurrentMindMapDraftForLeave]);
 
   const mindMapHomeConfirmSave = useCallback(async () => {
     setMindMapHomeNavDialogOpen(false);
@@ -372,6 +418,7 @@ export function useMindMapFileSave(opts: {
 
   const mindMapHomeDismissDialog = useCallback(() => {
     setMindMapHomeNavDialogOpen(false);
+    clearAppShellPendingNavigation();
   }, []);
 
   return {

@@ -10,6 +10,8 @@ import { getLastAssistantMessage } from "../utils/chat";
 
 import type { SavedChat, TTDPersistenceAdapter } from "../types";
 
+import { ttdDebug } from "../utils/ttdDebug";
+
 interface UseChatManagementProps {
   persistenceAdapter: TTDPersistenceAdapter;
 }
@@ -21,9 +23,10 @@ export const useChatManagement = ({
   const [chatHistory, setChatHistory] = useAtom(chatHistoryAtom);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  const { restoreChat, deleteChat, createNewChatId } = useTTDChatStorage({
-    persistenceAdapter,
-  });
+  const { savedChats, restoreChat, deleteChat, createNewChatId } =
+    useTTDChatStorage({
+      persistenceAdapter,
+    });
 
   const applyChatToState = useCallback(
     (chat: SavedChat) => {
@@ -39,6 +42,7 @@ export const useChatManagement = ({
         id: chat.id,
         messages: restoredMessages,
         currentPrompt: "",
+        resendFromMessageId: null,
       };
 
       const lastAssistantMsg = getLastAssistantMessage(history);
@@ -46,6 +50,11 @@ export const useChatManagement = ({
       setError(
         lastAssistantMsg?.error ? new Error(lastAssistantMsg?.error) : null,
       );
+      ttdDebug("chat apply to state", {
+        chatId: history.id,
+        messageCount: history.messages.length,
+        isGenerating: !!lastAssistantMsg?.isGenerating,
+      });
       setChatHistory(history);
     },
     [setError, setChatHistory],
@@ -57,18 +66,26 @@ export const useChatManagement = ({
       id: newSessionId,
       messages: [],
       currentPrompt: "",
+      resendFromMessageId: null,
     });
     setError(null);
   }, [createNewChatId, setChatHistory, setError]);
 
   const onRestoreChat = useCallback(
     (chat: SavedChat) => {
-      const restoredChat = restoreChat(chat);
+      ttdDebug("chat restore click", {
+        targetChatId: chat.id,
+        activeChatId: chatHistory.id,
+        isGenerating: !!getLastAssistantMessage(chatHistory)?.isGenerating,
+        savedChatsCount: savedChats.length,
+      });
+      const latestChat = savedChats.find((saved) => saved.id === chat.id) ?? chat;
+      const restoredChat = restoreChat(latestChat);
       applyChatToState(restoredChat);
 
       setIsMenuOpen(false);
     },
-    [restoreChat, applyChatToState],
+    [savedChats, restoreChat, applyChatToState, chatHistory],
   );
 
   const handleDeleteChat = useCallback(
@@ -91,13 +108,23 @@ export const useChatManagement = ({
   );
 
   const handleNewChat = useCallback(async () => {
+    ttdDebug("chat new click", {
+      activeChatId: chatHistory.id,
+      isGenerating: !!getLastAssistantMessage(chatHistory)?.isGenerating,
+    });
     await resetChatState();
     setIsMenuOpen(false);
-  }, [resetChatState]);
+  }, [resetChatState, chatHistory]);
 
   const handleMenuToggle = useCallback(() => {
+    const isGenerating = !!getLastAssistantMessage(chatHistory)?.isGenerating;
+    ttdDebug("chat menu toggle", {
+      activeChatId: chatHistory.id,
+      isGenerating,
+      menuWillOpen: !isMenuOpen,
+    });
     setIsMenuOpen((prev) => !prev);
-  }, []);
+  }, [chatHistory, isMenuOpen]);
 
   const handleMenuClose = useCallback(() => {
     setIsMenuOpen(false);
