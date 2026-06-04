@@ -315,9 +315,9 @@ class NodeImgSelect {
         pointer-events: none;
         box-sizing: border-box;
         border: 2px solid #409EFF;
-        border-radius: 5px;
+        border-radius: 3px;
         box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.15);
-        z-index: 1999;
+        z-index: 99;
         display: none;
       `
       const targetNode = this.mindMap.opt.customInnerElsAppendTo || document.body
@@ -334,10 +334,9 @@ class NodeImgSelect {
   }
 
   updateHighlightPos() {
-    if (!this.highlightEl || !this.selectedNode) return
+    if (!this.highlightEl || !this.selectedImgNode) return
     try {
-      // 对齐到节点 group 的边界（即单元格边界）
-      const rect = this.selectedNode.group.rbox()
+      const rect = this.selectedImgNode.rbox()
       this.highlightEl.style.left = `${rect.x}px`
       this.highlightEl.style.top = `${rect.y}px`
       this.highlightEl.style.width = `${rect.width}px`
