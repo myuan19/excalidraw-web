@@ -76,9 +76,11 @@ function createImgNode() {
     this.mindMap.emit('node_img_mousemove', this, node, e)
   })
   node.on('contextmenu', e => {
+    console.log('[DEBUG] nodeCreateContents.imgNode.contextmenu | 图片右键事件触发')
     this.mindMap.emit('node_img_contextmenu', this, node, e)
   })
   node.on('mousedown', e => {
+    console.log('[DEBUG] nodeCreateContents.imgNode.mousedown | button:', e.button)
     this.mindMap.emit('node_img_mousedown', this, node, e)
   })
   return {

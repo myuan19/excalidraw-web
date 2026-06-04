@@ -355,6 +355,7 @@ export default {
 
     // 图片右键显示
     showImgMenu(node, imgNode, e) {
+      console.log('[DEBUG] Contextmenu.showImgMenu | node:', !!node, '| imgNode:', !!imgNode, '| e.clientXY:', e?.clientX, e?.clientY)
       this.type = 'image'
       this.isShow = true
       this.node = node
@@ -362,11 +363,13 @@ export default {
         const { x, y } = this.getShowPosition(e.clientX + 10, e.clientY + 10)
         this.left = x
         this.top = y
+        console.log('[DEBUG] Contextmenu.showImgMenu | 菜单显示位置:', x, y, '| isShow:', this.isShow, '| type:', this.type)
       })
     },
 
     // 执行图片操作
     execImgAction(action) {
+      console.log('[DEBUG] Contextmenu.execImgAction | action:', action, '| hasNodeImgSelect:', !!this.mindMap.nodeImgSelect)
       if (!this.mindMap.nodeImgSelect) return
       switch (action) {
         case 'copy':

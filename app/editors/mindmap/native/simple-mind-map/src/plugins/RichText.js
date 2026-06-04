@@ -558,6 +558,7 @@ class RichText {
     this.quill.root.addEventListener(
       'paste',
       e => {
+        console.log('[DEBUG] RichText.paste | clipboardData.files.length:', e.clipboardData?.files?.length || 0)
         if (
           e.clipboardData &&
           e.clipboardData.files &&
@@ -566,11 +567,14 @@ class RichText {
           const imgFile = Array.from(e.clipboardData.files).find(f =>
             f.type.startsWith('image/')
           )
+          console.log('[DEBUG] RichText.paste | 找到图片文件:', !!imgFile, imgFile ? imgFile.type + ' ' + imgFile.size + 'B' : '')
           if (imgFile) {
             e.preventDefault()
             e.stopPropagation()
             const node = this.node
+            console.log('[DEBUG] RichText.paste | 当前编辑节点:', !!node, node ? node.getData('text')?.substring(0, 20) : '')
             if (!node) return
+            console.log('[DEBUG] RichText.paste | → hideEditText + renderer.paste()')
             this.hideEditText()
             this.mindMap.renderer.paste()
           }
