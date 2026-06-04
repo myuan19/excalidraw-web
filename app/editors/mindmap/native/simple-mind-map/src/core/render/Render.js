@@ -1232,6 +1232,10 @@ class Render {
 
   // 粘贴
   async paste() {
+    // 富文本编辑中由 RichText 插件自行处理粘贴，此处跳过
+    if (this.mindMap.richText && this.mindMap.richText.showTextEdit) {
+      return
+    }
     const {
       errorHandler,
       handleIsSplitByWrapOnPasteCreateNewNode,

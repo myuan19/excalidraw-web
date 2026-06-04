@@ -346,10 +346,10 @@ class NodeImgSelect {
     }
   }
 
-  // 拖拽调整位置：四象限覆盖层
+  // 拖拽调整位置：四象限覆盖层（对齐节点 hoverNode 即选中蓝框，排除展开按钮）
   showPlacementOverlay(mouseX, mouseY) {
     if (!this.selectedNode) return
-    const nodeEl = this.selectedNode.group
+    const nodeEl = this.selectedNode.hoverNode || this.selectedNode.group
     if (!nodeEl) return
 
     if (!this.dragPlacementOverlay) {
@@ -425,7 +425,7 @@ class NodeImgSelect {
 
   applyPlacementFromDrag(mouseX, mouseY) {
     if (!this.selectedNode) return
-    const nodeEl = this.selectedNode.group
+    const nodeEl = this.selectedNode.hoverNode || this.selectedNode.group
     if (!nodeEl) return
 
     const rbox = nodeEl.rbox()
