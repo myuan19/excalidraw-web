@@ -111,17 +111,21 @@
       </div>
     </template>
     <template v-if="type === 'image'">
+      <div class="item" @click="execImgAction('preview')">
+        <span class="name">放大预览</span>
+      </div>
+      <div class="splitLine"></div>
       <div class="item" @click="execImgAction('copy')">
-        <span class="name">{{ $t('contextmenu.copyNode') }}</span>
+        <span class="name">复制</span>
         <span class="desc">Ctrl + C</span>
       </div>
       <div class="item" @click="execImgAction('cut')">
-        <span class="name">{{ $t('contextmenu.cutNode') }}</span>
+        <span class="name">剪切</span>
         <span class="desc">Ctrl + X</span>
       </div>
       <div class="splitLine"></div>
       <div class="item danger" @click="execImgAction('delete')">
-        <span class="name">{{ $t('contextmenu.deleteNode') }}</span>
+        <span class="name">删除图片</span>
         <span class="desc">Delete</span>
       </div>
     </template>
@@ -355,7 +359,6 @@ export default {
 
     // 图片右键显示
     showImgMenu(node, imgNode, e) {
-      console.log('[DEBUG] Contextmenu.showImgMenu | node:', !!node, '| imgNode:', !!imgNode, '| e.clientXY:', e?.clientX, e?.clientY)
       this.type = 'image'
       this.isShow = true
       this.node = node
@@ -363,13 +366,11 @@ export default {
         const { x, y } = this.getShowPosition(e.clientX + 10, e.clientY + 10)
         this.left = x
         this.top = y
-        console.log('[DEBUG] Contextmenu.showImgMenu | 菜单显示位置:', x, y, '| isShow:', this.isShow, '| type:', this.type)
       })
     },
 
     // 执行图片操作
     execImgAction(action) {
-      console.log('[DEBUG] Contextmenu.execImgAction | action:', action, '| hasNodeImgSelect:', !!this.mindMap.nodeImgSelect)
       if (!this.mindMap.nodeImgSelect) return
       switch (action) {
         case 'copy':
@@ -380,6 +381,11 @@ export default {
           break
         case 'delete':
           this.mindMap.nodeImgSelect.deleteSelectedImg()
+          break
+        case 'preview':
+          if (this.node) {
+            this.mindMap.emit('node_img_preview', this.node, null)
+          }
           break
       }
       this.hide()
@@ -575,6 +581,7 @@ export default {
 }
 .contextmenuContainer {
   position: fixed;
+  z-index: 2100;
   font-size: 14px;
   font-family: PingFangSC-Regular, PingFang SC;
   font-weight: 400;

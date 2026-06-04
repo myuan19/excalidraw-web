@@ -77,59 +77,44 @@ class NodeImgSelect {
   }
 
   onNodeImgClick(node, imgNode, e) {
-    console.log('[DEBUG] NodeImgSelect.onNodeImgClick | readonly:', this.mindMap.opt.readonly, '| isImgSelected:', this.isImgSelected, '| nodeText:', node.getData('text')?.substring(0, 20))
     if (this.mindMap.opt.readonly) return
 
-    // 拖拽刚结束，吞掉这次 click，不触发选中/预览
     if (this._justFinishedDrag) {
-      console.log('[DEBUG] NodeImgSelect.onNodeImgClick | → _justFinishedDrag, skip click')
       this._justFinishedDrag = false
       e.stopPropagation()
       return
     }
 
     const isNodeActive = node.getData('isActive')
-    console.log('[DEBUG] NodeImgSelect.onNodeImgClick | isNodeActive:', isNodeActive, '| selectedNode===node:', this.selectedNode === node)
 
     if (this.isImgSelected && this.selectedNode === node) {
-      console.log('[DEBUG] NodeImgSelect.onNodeImgClick | → 再次点击已选中图片 → 触发预览')
       e.stopPropagation()
       this.mindMap.emit('node_img_preview', node, e)
       return
     }
 
     if (isNodeActive) {
-      console.log('[DEBUG] NodeImgSelect.onNodeImgClick | → 节点已激活 → 选中图片, stopPropagation')
       e.stopPropagation()
       this.selectImg(node, imgNode)
-    } else {
-      console.log('[DEBUG] NodeImgSelect.onNodeImgClick | → 节点未激活 → 不阻止冒泡，让 group click 激活节点')
     }
   }
 
   onNodeImgContextmenu(node, imgNode, e) {
-    console.log('[DEBUG] NodeImgSelect.onNodeImgContextmenu | nodeText:', node.getData('text')?.substring(0, 20), '| readonly:', this.mindMap.opt.readonly)
     if (this.mindMap.opt.readonly) return
     e.preventDefault()
     e.stopPropagation()
     this.selectImg(node, imgNode)
-    console.log('[DEBUG] NodeImgSelect.onNodeImgContextmenu | 图片已选中，等待 $bus 转发到 Contextmenu.vue')
   }
 
   onNodeImgMousedown(node, imgNode, e) {
-    console.log('[DEBUG] NodeImgSelect.onNodeImgMousedown | button:', e.button, '| isImgSelected:', this.isImgSelected, '| sameNode:', this.selectedNode === node)
     if (this.mindMap.opt.readonly) return
     if (e.button !== 0) return
     if (!this.isImgSelected || this.selectedNode !== node) return
 
-    // 只标记"准备拖拽"，不立即进入 isDraggingPlacement
-    // 这样 click 事件链不会被打断
     this._dragPending = true
     this.dragStartX = e.clientX
     this.dragStartY = e.clientY
-    // 阻止冒泡防止 group mousedown 触发节点拖拽，但不 preventDefault 以保证 click 正常触发
     e.stopPropagation()
-    console.log('[DEBUG] NodeImgSelect.onNodeImgMousedown | → 记录拖拽起点(pending), startXY:', e.clientX, e.clientY)
   }
 
   onMousemove(e) {
@@ -139,21 +124,17 @@ class NodeImgSelect {
     const dx = e.clientX - this.dragStartX
     const dy = e.clientY - this.dragStartY
 
-    // pending → 超过阈值后转为真正拖拽
     if (this._dragPending && !this.isDraggingPlacement) {
       if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return
       this._dragPending = false
       this.isDraggingPlacement = true
-      console.log('[DEBUG] NodeImgSelect.onMousemove | → 超过阈值，进入拖拽模式')
     }
 
     this.showPlacementOverlay(e.clientX, e.clientY)
   }
 
   handleMouseup(e) {
-    // 只是 pending 但没有真正拖拽 → 是一次普通点击，重置即可
     if (this._dragPending && !this.isDraggingPlacement) {
-      console.log('[DEBUG] NodeImgSelect.handleMouseup | → dragPending 但未拖拽，重置')
       this._dragPending = false
       return
     }
@@ -161,13 +142,9 @@ class NodeImgSelect {
 
     const dx = e.clientX - this.dragStartX
     const dy = e.clientY - this.dragStartY
-    console.log('[DEBUG] NodeImgSelect.handleMouseup | dx:', dx, 'dy:', dy)
 
     if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-      console.log('[DEBUG] NodeImgSelect.handleMouseup | → 拖拽超过阈值，应用位置')
       this.applyPlacementFromDrag(e.clientX, e.clientY)
-    } else {
-      console.log('[DEBUG] NodeImgSelect.handleMouseup | → 移动距离不足，不调整位置')
     }
 
     this.isDraggingPlacement = false
@@ -177,19 +154,16 @@ class NodeImgSelect {
   }
 
   selectImg(node, imgNode) {
-    console.log('[DEBUG] NodeImgSelect.selectImg | nodeText:', node.getData('text')?.substring(0, 20), '| hasImgNode:', !!imgNode)
     this.deselectImg()
     this.selectedNode = node
     this.selectedImgNode = imgNode
     this.isImgSelected = true
     this.showHighlight()
     this.mindMap.emit('node_img_selected', node, imgNode)
-    console.log('[DEBUG] NodeImgSelect.selectImg | 图片选中完成，isImgSelected:', this.isImgSelected)
   }
 
   deselectImg() {
     if (!this.isImgSelected) return
-    console.log('[DEBUG] NodeImgSelect.deselectImg | 取消图片选中')
     this.isImgSelected = false
     this.selectedNode = null
     this.selectedImgNode = null
@@ -249,7 +223,11 @@ class NodeImgSelect {
   }
 
   onRenderEnd() {
-    if (this.isImgSelected) {
+    if (this.isImgSelected && this.selectedNode) {
+      // 重新渲染后 SVG image 节点会被重建，刷新引用
+      if (this.selectedNode._imgData && this.selectedNode._imgData.node) {
+        this.selectedImgNode = this.selectedNode._imgData.node
+      }
       this.updateHighlightPos()
     }
   }
@@ -257,13 +235,9 @@ class NodeImgSelect {
   onKeydown(e) {
     if (!this.isImgSelected || !this.selectedNode) return
 
-    console.log('[DEBUG] NodeImgSelect.onKeydown | key:', e.key, '| ctrl:', e.ctrlKey, '| meta:', e.metaKey, '| isImgSelected:', this.isImgSelected)
-
-    const node = this.selectedNode
     const isCtrl = e.ctrlKey || e.metaKey
 
     if (e.key === 'Delete' || e.key === 'Backspace') {
-      console.log('[DEBUG] NodeImgSelect.onKeydown | → Delete/Backspace → 删除图片')
       e.preventDefault()
       e.stopPropagation()
       this.deleteSelectedImg()
@@ -271,7 +245,6 @@ class NodeImgSelect {
     }
 
     if (isCtrl && e.key === 'c') {
-      console.log('[DEBUG] NodeImgSelect.onKeydown | → Ctrl+C → 复制图片')
       e.preventDefault()
       e.stopPropagation()
       this.copySelectedImg()
@@ -279,7 +252,6 @@ class NodeImgSelect {
     }
 
     if (isCtrl && e.key === 'x') {
-      console.log('[DEBUG] NodeImgSelect.onKeydown | → Ctrl+X → 剪切图片')
       e.preventDefault()
       e.stopPropagation()
       this.cutSelectedImg()
@@ -287,7 +259,6 @@ class NodeImgSelect {
     }
 
     if (e.key === 'Escape') {
-      console.log('[DEBUG] NodeImgSelect.onKeydown | → Escape → 取消选中')
       e.preventDefault()
       e.stopPropagation()
       this.deselectImg()
@@ -295,35 +266,25 @@ class NodeImgSelect {
   }
 
   async deleteSelectedImg() {
-    console.log('[DEBUG] NodeImgSelect.deleteSelectedImg | hasNode:', !!this.selectedNode)
     if (!this.selectedNode) return
     const node = this.selectedNode
     this.deselectImg()
     this.mindMap.execCommand('SET_NODE_IMAGE', node, { url: null })
-    console.log('[DEBUG] NodeImgSelect.deleteSelectedImg | 图片已删除')
   }
 
   async copySelectedImg() {
-    console.log('[DEBUG] NodeImgSelect.copySelectedImg | hasNode:', !!this.selectedNode)
     if (!this.selectedNode) return
     const imgUrl = this.selectedNode.getImageUrl()
-    console.log('[DEBUG] NodeImgSelect.copySelectedImg | imgUrl存在:', !!imgUrl, '| urlLen:', imgUrl?.length)
     if (!imgUrl) return
 
     try {
       if (navigator.clipboard && navigator.clipboard.write) {
-        console.log('[DEBUG] NodeImgSelect.copySelectedImg | 使用 navigator.clipboard.write')
         const response = await fetch(imgUrl)
         const blob = await response.blob()
-        console.log('[DEBUG] NodeImgSelect.copySelectedImg | blob type:', blob.type, '| size:', blob.size)
         const item = new ClipboardItem({ [blob.type]: blob })
         await navigator.clipboard.write([item])
-        console.log('[DEBUG] NodeImgSelect.copySelectedImg | 写入剪贴板成功')
-      } else {
-        console.log('[DEBUG] NodeImgSelect.copySelectedImg | navigator.clipboard.write 不可用，使用内部存储')
       }
     } catch (err) {
-      console.log('[DEBUG] NodeImgSelect.copySelectedImg | 写入剪贴板失败:', err.message, '| 使用内部存储')
       this._clipboardImgData = {
         url: imgUrl,
         imageSize: this.selectedNode.getData('imageSize'),
@@ -335,14 +296,12 @@ class NodeImgSelect {
   }
 
   async cutSelectedImg() {
-    console.log('[DEBUG] NodeImgSelect.cutSelectedImg | hasNode:', !!this.selectedNode)
     if (!this.selectedNode) return
     const node = this.selectedNode
     await this.copySelectedImg()
     this.deselectImg()
     this.mindMap.execCommand('SET_NODE_IMAGE', node, { url: null })
     this.mindMap.emit('node_img_cut', node)
-    console.log('[DEBUG] NodeImgSelect.cutSelectedImg | 剪切完成')
   }
 
   // 高亮选中图片
@@ -354,9 +313,10 @@ class NodeImgSelect {
       this.highlightEl.style.cssText = `
         position: fixed;
         pointer-events: none;
+        box-sizing: border-box;
         border: 2px solid #409EFF;
-        border-radius: 3px;
-        box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.2);
+        border-radius: 5px;
+        box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.15);
         z-index: 1999;
         display: none;
       `
@@ -374,16 +334,15 @@ class NodeImgSelect {
   }
 
   updateHighlightPos() {
-    if (!this.highlightEl || !this.selectedImgNode) return
+    if (!this.highlightEl || !this.selectedNode) return
     try {
-      const rect = this.selectedImgNode.rbox()
-      console.log('[DEBUG] NodeImgSelect.updateHighlightPos | rect:', JSON.stringify({x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height)}))
-      this.highlightEl.style.left = `${rect.x - 2}px`
-      this.highlightEl.style.top = `${rect.y - 2}px`
-      this.highlightEl.style.width = `${rect.width + 4}px`
-      this.highlightEl.style.height = `${rect.height + 4}px`
+      // 对齐到节点 group 的边界（即单元格边界）
+      const rect = this.selectedNode.group.rbox()
+      this.highlightEl.style.left = `${rect.x}px`
+      this.highlightEl.style.top = `${rect.y}px`
+      this.highlightEl.style.width = `${rect.width}px`
+      this.highlightEl.style.height = `${rect.height}px`
     } catch (e) {
-      console.log('[DEBUG] NodeImgSelect.updateHighlightPos | rbox() 异常:', e.message)
       this.hideHighlight()
     }
   }
@@ -473,13 +432,9 @@ class NodeImgSelect {
     const rbox = nodeEl.rbox()
     const placement = this.calcPlacementFromMouse(mouseX, mouseY, rbox)
     const currentPlacement = this.selectedNode.getStyle('imgPlacement') || 'top'
-    console.log('[DEBUG] NodeImgSelect.applyPlacementFromDrag | current:', currentPlacement, '→ new:', placement, '| mouseXY:', mouseX, mouseY)
 
     if (placement !== currentPlacement) {
-      console.log('[DEBUG] NodeImgSelect.applyPlacementFromDrag | → 应用新位置:', placement)
       this.selectedNode.setStyle('imgPlacement', placement)
-    } else {
-      console.log('[DEBUG] NodeImgSelect.applyPlacementFromDrag | → 位置未变化，不操作')
     }
   }
 

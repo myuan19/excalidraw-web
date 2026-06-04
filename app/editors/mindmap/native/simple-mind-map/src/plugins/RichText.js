@@ -10,7 +10,8 @@ import {
   nodeRichTextToTextWithWrap,
   getNodeRichTextStyles,
   htmlEscape,
-  compareVersion
+  compareVersion,
+  loadImage
 } from '../utils'
 import { richTextSupportStyleList } from '../constants/constant'
 import MindMapNode from '../core/render/node/MindMapNode'
@@ -554,11 +555,10 @@ class RichText {
       delta.ops = ops
       return delta
     })
-    // 拦截图片粘贴：退出编辑模式后将图片设置到节点上
+    // 拦截图片粘贴：保持编辑状态，直接将图片设置到节点上
     this.quill.root.addEventListener(
       'paste',
       e => {
-        console.log('[DEBUG] RichText.paste | clipboardData.files.length:', e.clipboardData?.files?.length || 0)
         if (
           e.clipboardData &&
           e.clipboardData.files &&
@@ -567,16 +567,33 @@ class RichText {
           const imgFile = Array.from(e.clipboardData.files).find(f =>
             f.type.startsWith('image/')
           )
-          console.log('[DEBUG] RichText.paste | 找到图片文件:', !!imgFile, imgFile ? imgFile.type + ' ' + imgFile.size + 'B' : '')
           if (imgFile) {
             e.preventDefault()
             e.stopPropagation()
             const node = this.node
-            console.log('[DEBUG] RichText.paste | 当前编辑节点:', !!node, node ? node.getData('text')?.substring(0, 20) : '')
             if (!node) return
-            console.log('[DEBUG] RichText.paste | → hideEditText + renderer.paste()')
-            this.hideEditText()
-            this.mindMap.renderer.paste()
+            const { handleNodePasteImg } = this.mindMap.opt
+            const loadFn =
+              handleNodePasteImg && typeof handleNodePasteImg === 'function'
+                ? handleNodePasteImg
+                : (file) =>
+                    loadImage(file, {
+                      maxWidth: this.mindMap.opt.maxNodeImageStorageWidth,
+                      maxHeight: this.mindMap.opt.maxNodeImageStorageHeight,
+                      maxBytes: this.mindMap.opt.maxNodeImageStorageBytes
+                    })
+            loadFn(imgFile)
+              .then(imgData => {
+                this.mindMap.execCommand('SET_NODE_IMAGE', node, {
+                  url: imgData.url,
+                  title: '',
+                  width: imgData.size.width,
+                  height: imgData.size.height
+                })
+              })
+              .catch(err => {
+                console.error('RichText paste image failed:', err)
+              })
           }
         }
       },

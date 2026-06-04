@@ -29,18 +29,16 @@ export default {
   },
   methods: {
     onNodeImgPreview(node, e) {
-      console.log('[DEBUG] NodeImgPreview.onNodeImgPreview | hasNode:', !!node, '| hasEvent:', !!e)
       if (e) {
         e.stopPropagation()
         e.preventDefault()
       }
       const imgUrl = node.getImageUrl()
-      console.log('[DEBUG] NodeImgPreview.onNodeImgPreview | imgUrl存在:', !!imgUrl, '| urlLen:', imgUrl?.length)
+      if (!imgUrl) return
       this.images = [imgUrl]
       this.$viewerApi({
         images: this.images
       })
-      console.log('[DEBUG] NodeImgPreview.onNodeImgPreview | viewerApi 已调用')
     }
   }
 }
