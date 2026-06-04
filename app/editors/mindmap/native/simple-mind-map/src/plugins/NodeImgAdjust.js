@@ -190,40 +190,6 @@ class NodeImgAdjust {
       e.stopPropagation()
     })
     this.handleEl.appendChild(btnEl)
-    // 删除按钮
-    const btnRemove = document.createElement('div')
-    this.handleEl.prepend(btnRemove)
-    btnRemove.className = 'node-image-remove'
-    btnRemove.innerHTML = customDeleteBtnInnerHTML || btnsSvg.remove
-    btnRemove.style.cssText = `
-      position: absolute;
-      right: 0;top:0;color:#fff;
-      pointer-events: auto;
-      background-color: rgba(0, 0, 0, 0.3);
-      width: ${imgResizeBtnSize}px;
-      height: ${imgResizeBtnSize}px;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      cursor: pointer;
-    `
-    btnRemove.addEventListener('mouseenter', e => {
-      this.showHandleEl()
-    })
-    btnRemove.addEventListener('mouseleave', e => {
-      if (this.isMousedown) return
-      this.hideHandleEl()
-    })
-    btnRemove.addEventListener('click', async e => {
-      let stop = false
-      if (typeof this.mindMap.opt.beforeDeleteNodeImg === 'function') {
-        stop = await this.mindMap.opt.beforeDeleteNodeImg(this.node)
-      }
-      if (!stop) {
-        this.mindMap.execCommand('SET_NODE_IMAGE', this.node, { url: null })
-        this.mindMap.emit('delete_node_img_from_delete_btn', this.node)
-      }
-    })
     // 添加元素到页面
     const targetNode = this.mindMap.opt.customInnerElsAppendTo || document.body
     targetNode.appendChild(this.handleEl)

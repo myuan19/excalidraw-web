@@ -84,10 +84,7 @@
       :configData="mindMapConfig"
       :mindMap="mindMap"
     ></Setting>
-    <NodeImgPlacementToolbar
-      v-if="mindMap && !isEmbedMode"
-      :mindMap="mindMap"
-    ></NodeImgPlacementToolbar>
+    <!-- NodeImgPlacementToolbar removed: image placement is now adjusted by dragging -->
     <NodeNoteSidebar
       v-if="mindMap && !isEmbedMode"
       :mindMap="mindMap"
@@ -123,6 +120,7 @@ import RichText from 'simple-mind-map/src/plugins/RichText.js'
 import AssociativeLine from 'simple-mind-map/src/plugins/AssociativeLine.js'
 import TouchEvent from 'simple-mind-map/src/plugins/TouchEvent.js'
 import NodeImgAdjust from 'simple-mind-map/src/plugins/NodeImgAdjust.js'
+import NodeImgSelect from 'simple-mind-map/src/plugins/NodeImgSelect.js'
 import SearchPlugin from 'simple-mind-map/src/plugins/Search.js'
 import Painter from 'simple-mind-map/src/plugins/Painter.js'
 import ScrollbarPlugin from 'simple-mind-map/src/plugins/Scrollbar.js'
@@ -168,7 +166,7 @@ import NodeOuterFrame from './NodeOuterFrame.vue'
 import NodeTagStyle from './NodeTagStyle.vue'
 import Setting from './Setting.vue'
 import AssociativeLineStyle from './AssociativeLineStyle.vue'
-import NodeImgPlacementToolbar from './NodeImgPlacementToolbar.vue'
+// NodeImgPlacementToolbar removed: image placement adjusted by dragging
 import NodeNoteSidebar from './NodeNoteSidebar.vue'
 import AiCreate from './AiCreate.vue'
 import AiChat from './AiChat.vue'
@@ -211,6 +209,7 @@ MindMap.usePlugin(MiniMap)
   .usePlugin(Select)
   .usePlugin(AssociativeLine)
   .usePlugin(NodeImgAdjust)
+  .usePlugin(NodeImgSelect)
   .usePlugin(TouchEvent)
   .usePlugin(SearchPlugin)
   .usePlugin(Painter)
@@ -255,7 +254,6 @@ export default {
     NodeTagStyle,
     Setting,
     AssociativeLineStyle,
-    NodeImgPlacementToolbar,
     NodeNoteSidebar,
     AiCreate,
     AiChat
@@ -643,7 +641,13 @@ export default {
         'demonstrate_jump',
         'exit_demonstrate',
         'node_note_dblclick',
-        'node_mousedown'
+        'node_mousedown',
+        'node_img_selected',
+        'node_img_deselected',
+        'node_img_contextmenu',
+        'node_img_preview',
+        'node_img_copied',
+        'node_img_cut'
       ].forEach(event => {
         this.mindMap.on(event, (...args) => {
           this.$bus.$emit(event, ...args)

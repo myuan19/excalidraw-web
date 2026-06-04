@@ -20,15 +20,19 @@ export default {
     }
   },
   mounted() {
-    this.mindMap.on('node_img_dblclick', this.onNodeTmgDblclick)
+    this.mindMap.on('node_img_dblclick', this.onNodeImgPreview)
+    this.mindMap.on('node_img_preview', this.onNodeImgPreview)
   },
   beforeDestroy() {
-    this.mindMap.off('node_img_dblclick', this.onNodeTmgDblclick)
+    this.mindMap.off('node_img_dblclick', this.onNodeImgPreview)
+    this.mindMap.off('node_img_preview', this.onNodeImgPreview)
   },
   methods: {
-    onNodeTmgDblclick(node, e) {
-      e.stopPropagation()
-      e.preventDefault()
+    onNodeImgPreview(node, e) {
+      if (e) {
+        e.stopPropagation()
+        e.preventDefault()
+      }
       this.images = [node.getImageUrl()]
       this.$viewerApi({
         images: this.images

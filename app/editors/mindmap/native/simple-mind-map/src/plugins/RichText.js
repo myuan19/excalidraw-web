@@ -554,7 +554,7 @@ class RichText {
       delta.ops = ops
       return delta
     })
-    // 拦截图片的粘贴，当剪贴板里是纯图片，或文本+图片都可以拦截到，但是带来的问题是文本+图片时里面的文本也无法粘贴
+    // 拦截图片粘贴：退出编辑模式后将图片设置到节点上
     this.quill.root.addEventListener(
       'paste',
       e => {
@@ -563,7 +563,17 @@ class RichText {
           e.clipboardData.files &&
           e.clipboardData.files.length
         ) {
-          e.preventDefault()
+          const imgFile = Array.from(e.clipboardData.files).find(f =>
+            f.type.startsWith('image/')
+          )
+          if (imgFile) {
+            e.preventDefault()
+            e.stopPropagation()
+            const node = this.node
+            if (!node) return
+            this.hideEditText()
+            this.mindMap.renderer.paste()
+          }
         }
       },
       true

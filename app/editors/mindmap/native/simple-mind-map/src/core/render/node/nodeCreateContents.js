@@ -75,6 +75,12 @@ function createImgNode() {
   node.on('mousemove', e => {
     this.mindMap.emit('node_img_mousemove', this, node, e)
   })
+  node.on('contextmenu', e => {
+    this.mindMap.emit('node_img_contextmenu', this, node, e)
+  })
+  node.on('mousedown', e => {
+    this.mindMap.emit('node_img_mousedown', this, node, e)
+  })
   return {
     node,
     width: imgSize[0],

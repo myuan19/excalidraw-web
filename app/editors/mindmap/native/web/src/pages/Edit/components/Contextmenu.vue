@@ -110,6 +110,21 @@
         <span class="name">{{ $t('contextmenu.aiCreate') }}</span>
       </div>
     </template>
+    <template v-if="type === 'image'">
+      <div class="item" @click="execImgAction('copy')">
+        <span class="name">{{ $t('contextmenu.copyNode') }}</span>
+        <span class="desc">Ctrl + C</span>
+      </div>
+      <div class="item" @click="execImgAction('cut')">
+        <span class="name">{{ $t('contextmenu.cutNode') }}</span>
+        <span class="desc">Ctrl + X</span>
+      </div>
+      <div class="splitLine"></div>
+      <div class="item danger" @click="execImgAction('delete')">
+        <span class="name">{{ $t('contextmenu.deleteNode') }}</span>
+        <span class="desc">Delete</span>
+      </div>
+    </template>
     <template v-if="type === 'svg'">
       <div class="item" @click="exec('RETURN_CENTER')">
         <span class="name">{{ $t('contextmenu.backCenter') }}</span>
@@ -300,6 +315,8 @@ export default {
   },
   created() {
     this.$bus.$on('node_contextmenu', this.show)
+    this.$bus.$on('node_img_contextmenu', this.showImgMenu)
+    this.$bus.$on('node_img_selected', this.hide)
     this.$bus.$on('node_click', this.hide)
     this.$bus.$on('draw_click', this.hide)
     this.$bus.$on('expand_btn_click', this.hide)
@@ -310,6 +327,8 @@ export default {
   },
   beforeDestroy() {
     this.$bus.$off('node_contextmenu', this.show)
+    this.$bus.$off('node_img_contextmenu', this.showImgMenu)
+    this.$bus.$off('node_img_selected', this.hide)
     this.$bus.$off('node_click', this.hide)
     this.$bus.$off('draw_click', this.hide)
     this.$bus.$off('expand_btn_click', this.hide)
@@ -332,6 +351,35 @@ export default {
         y = window.innerHeight - rect.height - 10
       }
       return { x, y }
+    },
+
+    // 图片右键显示
+    showImgMenu(node, imgNode, e) {
+      this.type = 'image'
+      this.isShow = true
+      this.node = node
+      this.$nextTick(() => {
+        const { x, y } = this.getShowPosition(e.clientX + 10, e.clientY + 10)
+        this.left = x
+        this.top = y
+      })
+    },
+
+    // 执行图片操作
+    execImgAction(action) {
+      if (!this.mindMap.nodeImgSelect) return
+      switch (action) {
+        case 'copy':
+          this.mindMap.nodeImgSelect.copySelectedImg()
+          break
+        case 'cut':
+          this.mindMap.nodeImgSelect.cutSelectedImg()
+          break
+        case 'delete':
+          this.mindMap.nodeImgSelect.deleteSelectedImg()
+          break
+      }
+      this.hide()
     },
 
     // 节点右键显示
