@@ -16,6 +16,7 @@ class NodeImgSelect {
     this.dragStartX = 0
     this.dragStartY = 0
     this.dragPlacementOverlay = null
+    this._lastSelectTime = 0
 
     this.bindEvent()
   }
@@ -88,6 +89,11 @@ class NodeImgSelect {
     const isNodeActive = node.getData('isActive')
 
     if (this.isImgSelected && this.selectedNode === node) {
+      // 刚选中图片后的短暂窗口内不触发预览，防止双击直接放大
+      if (Date.now() - this._lastSelectTime < 350) {
+        e.stopPropagation()
+        return
+      }
       e.stopPropagation()
       this.mindMap.emit('node_img_preview', node, e)
       return
@@ -95,6 +101,7 @@ class NodeImgSelect {
 
     if (isNodeActive) {
       e.stopPropagation()
+      this._lastSelectTime = Date.now()
       this.selectImg(node, imgNode)
     }
   }
