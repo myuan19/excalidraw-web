@@ -33,6 +33,7 @@ const DEFAULTS = {
     previewViewportConfig.editorEmbedRootCenterLimitRatio ??
     previewViewportConfig.rootCenterLimitRatio,
   rootAnchorXRatio: previewViewportConfig.rootAnchorXRatio ?? 0.25,
+  rootAnchorMaxWidth: previewViewportConfig.rootAnchorMaxWidth ?? 500,
   rootWidthBaseline: previewViewportConfig.rootWidthBaseline ?? 120,
   rootWidthDamping: previewViewportConfig.rootWidthDamping ?? 0.15,
 };
@@ -136,11 +137,25 @@ export function computeMindMapFocusedViewBoxFromNodeBounds(
     options.rootCenterLimitRatio ?? DEFAULTS.rootCenterLimitRatio;
 
   const otherBounds = unionMindMapBounds(nodeBounds.slice(1));
-  const rootAnchorXRatio = clamp(
+  const minAnchorX = clamp(
     options.rootAnchorXRatio ?? DEFAULTS.rootAnchorXRatio,
     0,
-    1,
+    0.5,
   );
+  const anchorBaseline =
+    options.rootWidthBaseline ?? DEFAULTS.rootWidthBaseline;
+  const anchorMaxWidth =
+    options.rootAnchorMaxWidth ?? DEFAULTS.rootAnchorMaxWidth;
+  const anchorT =
+    rootBounds.width <= anchorBaseline
+      ? 0
+      : clamp(
+          (rootBounds.width - anchorBaseline) /
+            (anchorMaxWidth - anchorBaseline),
+          0,
+          1,
+        );
+  const rootAnchorXRatio = 0.5 - (0.5 - minAnchorX) * anchorT;
   const rootAnchor = {
     x: rootBounds.x + rootBounds.width * rootAnchorXRatio,
     y: rootBounds.y + rootBounds.height / 2,

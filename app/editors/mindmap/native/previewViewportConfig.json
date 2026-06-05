@@ -19,7 +19,8 @@
   "thumbnailRootCenterLimitRatio": 0.8,
   "editorEmbedCenterTowardOthersRatio": 0.55,
   "editorEmbedRootCenterLimitRatio": 0.8,
-  "rootAnchorXRatio": 0.5,
+  "rootAnchorXRatio": 0.25,
+  "rootAnchorMaxWidth": 500,
   "rootWidthBaseline": 120,
   "rootWidthDamping": 0.15
 }
