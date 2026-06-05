@@ -23,6 +23,7 @@ import { isLocalDraftFileId } from "../../data/localDraftFileId";
 import { notifyLocalDraftEdited } from "../../data/localDraftSessions";
 import { discardLocalDraftSession } from "../../data/discardLocalDraftSession";
 import { clearAppShellPendingNavigation } from "../../shell/appShellNavigate";
+import { manageSessionAutoArchive, broadcastFileSaved } from "../../data/autoSaveSession";
 
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { SaveToServerOptions, SaveToServerSource, SceneData } from "../../hooks/types";
@@ -222,7 +223,7 @@ export function useForkFileSave(opts: {
         }
         return false;
       }
-      if (source !== "visibility") {
+      if (source !== "visibility" && source !== "auto") {
         setForkSaving(true);
       } else {
         visibilitySaveInFlightRef.current = true;
@@ -272,10 +273,16 @@ export function useForkFileSave(opts: {
         );
         window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
         window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
+        broadcastFileSaved(fid);
+        if (source === "auto" && !result?.skipped) {
+          void manageSessionAutoArchive(fid);
+        }
         if (result?.skipped) {
           if (source === "toolbar" || source === "hotkey") {
             setForkSaveHint("已是最新版本");
           }
+        } else if (source === "auto") {
+          excalidrawAPI.setToast({ message: "空闲自动保存完成" });
         } else if (source === "visibility") {
           excalidrawAPI.setToast({ message: "切换到后台时已保存到服务器" });
         } else if (source === "hotkey" || source === "toolbar") {
@@ -306,7 +313,7 @@ export function useForkFileSave(opts: {
         }
         return false;
       } finally {
-        if (source !== "visibility") {
+        if (source !== "visibility" && source !== "auto") {
           setForkSaving(false);
         } else {
           visibilitySaveInFlightRef.current = false;

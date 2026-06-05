@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import { ServerSync, type ArchiveEntry } from "../data/ServerSync";
 import { useFileDraftStatus } from "../hooks/useFileDraftStatus";
+import { isAutoSaveLabel } from "../data/autoSaveSession";
 
 import "./ExcalToolbar.scss";
 
@@ -145,6 +146,11 @@ export const ArchivePanel: React.FC<ArchivePanelProps> = ({
                     style={i === 0 ? { fontWeight: 600 } : undefined}
                   >
                     {i === 0 ? "最新提交" : formatVersionTime(a.created_at)}
+                    {isAutoSaveLabel(a.label) && (
+                      <span className="nb-history-badge nb-history-badge--auto">
+                        自动保存
+                      </span>
+                    )}
                   </span>
                   {i === 0 && (
                     <span className="nb-history-sub">

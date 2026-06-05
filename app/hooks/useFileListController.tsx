@@ -28,6 +28,7 @@ import {
   writeFileListTreeCache,
 } from "../data/fileListSessionCache";
 import { FileSyncState } from "../data/FileSyncState";
+import { onCrossTabFileSaved } from "../data/autoSaveSession";
 import { resolveFileCardThumbDisplay } from "../data/fileCardThumbDisplay";
 import { chooseFileCardThumbnail } from "../data/fileCardThumbnail";
 import {
@@ -603,11 +604,16 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     window.addEventListener(LOCAL_DRAFT_SESSIONS_CHANGE_EVENT, bumpRecent);
     window.addEventListener("excalidraw-file-list-refresh", bumpRecent);
     window.addEventListener("excalidraw-file-sync-state", bumpRecent);
+    const unsubCrossTab = onCrossTabFileSaved(() => {
+      window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
+      window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
+    });
     return () => {
       window.removeEventListener(RECENT_FILES_CHANGE_EVENT, bumpRecent);
       window.removeEventListener(LOCAL_DRAFT_SESSIONS_CHANGE_EVENT, bumpRecent);
       window.removeEventListener("excalidraw-file-list-refresh", bumpRecent);
       window.removeEventListener("excalidraw-file-sync-state", bumpRecent);
+      unsubCrossTab();
     };
   }, []);
 

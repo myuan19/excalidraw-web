@@ -16,6 +16,7 @@ import { isLocalDraftFileId } from "../../data/localDraftFileId";
 import { notifyLocalDraftEdited } from "../../data/localDraftSessions";
 import { discardLocalDraftSession } from "../../data/discardLocalDraftSession";
 import { clearAppShellPendingNavigation } from "../../shell/appShellNavigate";
+import { notifyEdit, manageSessionAutoArchive, broadcastFileSaved } from "../../data/autoSaveSession";
 
 import type { ManagedDocument } from "../../data/documentTypes";
 import type { MindMapDocumentData } from "../../data/formats/MindMapAdapter";
@@ -179,6 +180,7 @@ export function useMindMapFileSave(opts: {
         return;
       }
       updateDraftHashDebouncedRef.current(fileId, () => document);
+      notifyEdit();
       const state = evaluateCurrentFileModificationState({
         fileId,
         kind: "mindmap",
@@ -253,7 +255,7 @@ export function useMindMapFileSave(opts: {
         return false;
       }
 
-      if (source !== "visibility") {
+      if (source !== "visibility" && source !== "auto") {
         setMindMapSaving(true);
         setMindMapSaveHint(null);
       } else {
@@ -283,7 +285,13 @@ export function useMindMapFileSave(opts: {
         );
         window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
         window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
-        if (source === "toolbar" || source === "hotkey") {
+        broadcastFileSaved(fileId);
+        if (source === "auto" && !result?.skipped) {
+          void manageSessionAutoArchive(fileId);
+        }
+        if (source === "auto") {
+          setMindMapSaveHint("空闲自动保存完成");
+        } else if (source === "toolbar" || source === "hotkey") {
           setMindMapSaveHint(result?.skipped ? "已是最新版本" : "已保存");
         }
         setStatus("已保存");
@@ -308,7 +316,7 @@ export function useMindMapFileSave(opts: {
         }
         return false;
       } finally {
-        if (source !== "visibility") {
+        if (source !== "visibility" && source !== "auto") {
           setMindMapSaving(false);
         } else {
           visibilitySaveInFlightRef.current = false;

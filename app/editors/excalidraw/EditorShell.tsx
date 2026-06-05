@@ -92,6 +92,7 @@ import {
 import { mountLibraryAIActions } from "../../data/libraryAIMount";
 import { DeltaStorage } from "../../data/DeltaStorage";
 import { FileSyncState } from "../../data/FileSyncState";
+import { notifyEdit } from "../../data/autoSaveSession";
 import { hashSceneSnapshot } from "../../data/sceneHash";
 import {
   formatImportErrorMessage,
@@ -581,6 +582,7 @@ const ExcalidrawWrapper = () => {
     const fid = getFileIdFromHash();
     if (fid && excalidrawAPI) {
       updateDraftHashDebouncedRef.current(fid, getSceneData);
+      notifyEdit();
     }
 
     if (forkFileId) {

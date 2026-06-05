@@ -6,10 +6,10 @@
 export interface AppSettings {
   /** 切换到后台（visibilitychange → hidden）时自动保存到服务器 */
   autoSaveOnBlur: boolean;
-  /** 定时自动保存（编辑中每隔一段时间自动保存） */
+  /** 空闲一段时间无编辑后自动保存 */
   autoSaveEnabled: boolean;
-  /** 自动保存间隔（秒），仅 autoSaveEnabled 为 true 时生效 */
-  autoSaveIntervalSec: number;
+  /** 空闲自动保存等待时间（秒），编辑停止后多久触发保存 */
+  autoSaveIdleSec: number;
 }
 
 const STORAGE_KEY = "editorhub-app-settings";
@@ -17,7 +17,7 @@ const STORAGE_KEY = "editorhub-app-settings";
 const DEFAULT_SETTINGS: AppSettings = {
   autoSaveOnBlur: true,
   autoSaveEnabled: false,
-  autoSaveIntervalSec: 120,
+  autoSaveIdleSec: 10,
 };
 
 let cache: AppSettings = { ...DEFAULT_SETTINGS };
@@ -52,11 +52,11 @@ function load(): AppSettings {
           typeof parsed.autoSaveEnabled === "boolean"
             ? parsed.autoSaveEnabled
             : DEFAULT_SETTINGS.autoSaveEnabled,
-        autoSaveIntervalSec:
-          typeof parsed.autoSaveIntervalSec === "number" &&
-          parsed.autoSaveIntervalSec >= 10
-            ? parsed.autoSaveIntervalSec
-            : DEFAULT_SETTINGS.autoSaveIntervalSec,
+        autoSaveIdleSec:
+          typeof parsed.autoSaveIdleSec === "number" &&
+          parsed.autoSaveIdleSec >= 5
+            ? parsed.autoSaveIdleSec
+            : DEFAULT_SETTINGS.autoSaveIdleSec,
       };
     }
   } catch {

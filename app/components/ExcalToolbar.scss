@@ -121,6 +121,19 @@
   color: var(--nb-warning);
 }
 
+.nb-history-overlay .nb-history-badge--auto {
+  display: inline-block;
+  margin-left: var(--nb-space-2, 4px);
+  padding: 0 var(--nb-space-2, 4px);
+  font-size: 0.75em;
+  font-weight: 500;
+  line-height: 1.5;
+  border-radius: var(--nb-radius-xs, 3px);
+  background: var(--nb-info-soft-bg, #e3f2fd);
+  color: var(--nb-info, #1976d2);
+  vertical-align: middle;
+}
+
 .excalidraw.theme--dark .nb-history-badge--synced {
   background: var(--nb-success-soft-bg-dark);
   color: var(--nb-success-text-dark);

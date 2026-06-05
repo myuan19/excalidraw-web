@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getAppSettings } from "../../data/appSettings";
+import { registerAutoSaveTrigger } from "../../data/autoSaveSession";
 import { SettingsPanel } from "../../components/SettingsPanel";
 import { ArchivePanel } from "../../components/ArchivePanel";
 import {
@@ -1237,37 +1238,16 @@ const MindMapEditorShell = () => {
       }, 600);
     };
 
-    let autoSaveTimer: number | null = null;
-    const startAutoSaveTimer = () => {
-      if (autoSaveTimer !== null) {
-        window.clearInterval(autoSaveTimer);
-        autoSaveTimer = null;
-      }
-      const settings = getAppSettings();
-      if (!settings.autoSaveEnabled || !isBridgeReady || !isAppReady) {
-        return;
-      }
-      autoSaveTimer = window.setInterval(() => {
-        if (!getAppSettings().autoSaveEnabled) {
-          if (autoSaveTimer !== null) {
-            window.clearInterval(autoSaveTimer);
-            autoSaveTimer = null;
-          }
-          return;
-        }
-        void saveToServerRef.current({ source: "visibility" });
-      }, settings.autoSaveIntervalSec * 1000);
-    };
-    startAutoSaveTimer();
+    const unregisterAutoSave = registerAutoSaveTrigger(() => {
+      void saveToServerRef.current({ source: "auto" });
+    });
 
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       if (visibilitySaveTimer !== null) {
         window.clearTimeout(visibilitySaveTimer);
       }
-      if (autoSaveTimer !== null) {
-        window.clearInterval(autoSaveTimer);
-      }
+      unregisterAutoSave();
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [isAppReady, isBridgeReady, saveToServerRef]);

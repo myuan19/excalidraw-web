@@ -191,10 +191,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <div className="settings-panel__option">
                 <div className="settings-panel__option-text">
                   <span className="settings-panel__option-label">
-                    启用定时自动保存
+                    空闲自动保存
                   </span>
                   <span className="settings-panel__option-desc">
-                    编辑过程中按照设定的间隔时间自动保存到服务器
+                    停止编辑一段时间后自动保存到服务器，同一次打开期间会覆盖上一次自动存档
                   </span>
                 </div>
                 <label className="settings-panel__toggle">
@@ -215,24 +215,28 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <div className="settings-panel__option settings-panel__option--sub">
                   <div className="settings-panel__option-text">
                     <span className="settings-panel__option-label">
-                      自动保存间隔
+                      空闲等待时间
+                    </span>
+                    <span className="settings-panel__option-desc">
+                      停止编辑后等待多久触发保存
                     </span>
                   </div>
                   <select
                     className="settings-panel__select"
-                    value={appSettings.autoSaveIntervalSec}
+                    value={appSettings.autoSaveIdleSec}
                     onChange={(e) =>
                       handleAppSettingChange(
-                        "autoSaveIntervalSec",
+                        "autoSaveIdleSec",
                         Number(e.target.value),
                       )
                     }
                   >
+                    <option value={5}>5 秒</option>
+                    <option value={10}>10 秒</option>
                     <option value={30}>30 秒</option>
                     <option value={60}>1 分钟</option>
                     <option value={120}>2 分钟</option>
                     <option value={300}>5 分钟</option>
-                    <option value={600}>10 分钟</option>
                   </select>
                 </div>
               )}
