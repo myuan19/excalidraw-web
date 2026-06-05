@@ -32,8 +32,7 @@ const DEFAULTS = {
   editorEmbedRootCenterLimitRatio:
     previewViewportConfig.editorEmbedRootCenterLimitRatio ??
     previewViewportConfig.rootCenterLimitRatio,
-  rootWidthBaseline: previewViewportConfig.rootWidthBaseline ?? 150,
-  rootWidthDamping: previewViewportConfig.rootWidthDamping ?? 0.3,
+  rootAnchorXRatio: previewViewportConfig.rootAnchorXRatio ?? 0.25,
 };
 
 function clamp(value, min, max) {
@@ -41,23 +40,6 @@ function clamp(value, min, max) {
     return min;
   }
   return Math.min(Math.max(value, min), max);
-}
-
-/**
- * Soft-clamp: widths beyond `baseline` are damped by `damping` factor so that
- * very long root labels don't blow up the focused viewBox.
- */
-function effectiveRootWidth(width, options) {
-  const baseline = options.rootWidthBaseline ?? DEFAULTS.rootWidthBaseline;
-  const damping = clamp(
-    options.rootWidthDamping ?? DEFAULTS.rootWidthDamping,
-    0,
-    1,
-  );
-  if (width <= baseline) {
-    return width;
-  }
-  return baseline + (width - baseline) * damping;
 }
 
 export function centerOfMindMapBounds(bounds) {
@@ -139,18 +121,25 @@ export function computeMindMapFocusedViewBoxFromNodeBounds(
     options.rootCenterLimitRatio ?? DEFAULTS.rootCenterLimitRatio;
 
   const otherBounds = unionMindMapBounds(nodeBounds.slice(1));
-  const rootCenter = centerOfMindMapBounds(rootBounds);
+  const rootAnchorXRatio = clamp(
+    options.rootAnchorXRatio ?? DEFAULTS.rootAnchorXRatio,
+    0,
+    1,
+  );
+  const rootAnchor = {
+    x: rootBounds.x + rootBounds.width * rootAnchorXRatio,
+    y: rootBounds.y + rootBounds.height / 2,
+  };
   const otherCenter = otherBounds
     ? centerOfMindMapBounds(otherBounds)
-    : rootCenter;
+    : rootAnchor;
   const nodeVisualScale = computeMindMapNodeVisualScale(
     nodeBounds.length,
     options,
   );
   const targetRootRatio = options.targetRootScreenRatio * nodeVisualScale;
-  const effectiveW = effectiveRootWidth(rootBounds.width, options);
   const baseWidth = Math.max(
-    effectiveW / targetRootRatio,
+    rootBounds.width / targetRootRatio,
     (rootBounds.height / targetRootRatio) * targetAspect,
   );
   const viewSize = {
@@ -159,11 +148,11 @@ export function computeMindMapFocusedViewBoxFromNodeBounds(
   };
   const rawCenter = {
     x:
-      rootCenter.x +
-      (otherCenter.x - rootCenter.x) * normalizedCenterTowardOthersRatio,
+      rootAnchor.x +
+      (otherCenter.x - rootAnchor.x) * normalizedCenterTowardOthersRatio,
     y:
-      rootCenter.y +
-      (otherCenter.y - rootCenter.y) * normalizedCenterTowardOthersRatio,
+      rootAnchor.y +
+      (otherCenter.y - rootAnchor.y) * normalizedCenterTowardOthersRatio,
   };
   const normalizedRootCenterLimitRatio = clamp(rootCenterLimitRatio, 0, 1);
   const rootVisibleCenterLimit = {
@@ -177,13 +166,13 @@ export function computeMindMapFocusedViewBoxFromNodeBounds(
   const limitedCenter = {
     x: clamp(
       rawCenter.x,
-      rootCenter.x - viewSize.width * rootCenterLimit.x,
-      rootCenter.x + viewSize.width * rootCenterLimit.x,
+      rootAnchor.x - viewSize.width * rootCenterLimit.x,
+      rootAnchor.x + viewSize.width * rootCenterLimit.x,
     ),
     y: clamp(
       rawCenter.y,
-      rootCenter.y - viewSize.height * rootCenterLimit.y,
-      rootCenter.y + viewSize.height * rootCenterLimit.y,
+      rootAnchor.y - viewSize.height * rootCenterLimit.y,
+      rootAnchor.y + viewSize.height * rootCenterLimit.y,
     ),
   };
 
@@ -197,11 +186,11 @@ export function computeMindMapFocusedViewBoxFromNodeBounds(
     otherBounds,
     rootScreen: {
       centerX:
-        ((rootCenter.x - (limitedCenter.x - viewSize.width / 2)) /
+        ((rootAnchor.x - (limitedCenter.x - viewSize.width / 2)) /
           viewSize.width) *
         100,
       centerY:
-        ((rootCenter.y - (limitedCenter.y - viewSize.height / 2)) /
+        ((rootAnchor.y - (limitedCenter.y - viewSize.height / 2)) /
           viewSize.height) *
         100,
       width: (rootBounds.width / viewSize.width) * 100,
