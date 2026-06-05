@@ -90,6 +90,14 @@ export function isMindMapSingleRootOnly(data: unknown): boolean {
   return (root.children ?? []).length === 0;
 }
 
+/**
+ * Extract the root node's plain-text label from a MindMap document,
+ * suitable for use as the file display name.
+ */
+export function getMindMapRootText(data: MindMapDocumentData): string {
+  return mindMapRichTextToPlainText(data.root?.data?.text ?? "").trim();
+}
+
 export function stripMindMapViewportState(
   data: MindMapDocumentData,
 ): MindMapDocumentData {

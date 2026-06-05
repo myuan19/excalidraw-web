@@ -602,6 +602,20 @@
           }
           postMindMapDataToHost(bridgeState.mindMapData, requestId)
         }
+        if (message.type === 'updateRootText') {
+          const newText = message.payload && message.payload.text
+          if (typeof newText === 'string' && nativeMindMap) {
+            const root = nativeMindMap.renderer.root
+            if (root) {
+              const isRichText = root.getData('richText')
+              const textValue = isRichText
+                ? '<p>' + newText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</p>'
+                : newText
+              root.setText(textValue, isRichText)
+              nativeMindMap.render()
+            }
+          }
+        }
         if (
           message.type === 'restoreMindMapView' ||
           message.type === 'MINDMAP_PREVIEW_LOCATE'

@@ -1520,6 +1520,11 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
             prev.map((f) => (f.id === id ? { ...f, name: trimmed } : f)),
           );
         }
+        window.dispatchEvent(
+          new CustomEvent("excalidraw-file-renamed", {
+            detail: { id, name: trimmed },
+          }),
+        );
       } catch (err: any) {
         setError(err.message);
       }

@@ -32,6 +32,7 @@ import { readFileListTreeCache } from "../../data/fileListSessionCache";
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
 import { LocalThumbnailCache } from "../../data/localThumbnailCache";
 import {
+  getMindMapRootText,
   isEffectivelyEmptyMindMapData,
   isMindMapSingleRootOnly,
 } from "../../data/formats/MindMapAdapter";
@@ -301,6 +302,7 @@ const MindMapEditorShell = () => {
   );
   const shellStartRef = useRef(performance.now());
   const initStartRef = useRef<number | null>(null);
+  const lastSyncedRootTextRef = useRef<string | null>(null);
 
   const publishMindMapDataToNative = useCallback(
     (data: MindMapDocumentData, reason: string) => {
@@ -341,6 +343,34 @@ const MindMapEditorShell = () => {
       return document;
     },
     [],
+  );
+
+  const syncRootTextToFileName = useCallback(
+    (data: MindMapDocumentData) => {
+      if (!fileId) return;
+      const rootText = getMindMapRootText(data);
+      if (
+        !rootText ||
+        rootText === lastSyncedRootTextRef.current
+      ) {
+        return;
+      }
+      lastSyncedRootTextRef.current = rootText;
+      setFileName(rootText);
+      if (!isLocalDraftFileId(fileId)) {
+        void ServerSync.renameFile(fileId, rootText).catch(() => {});
+      } else {
+        const session = LocalDraftSessions.get(fileId);
+        if (session) {
+          LocalDraftSessions.upsert({
+            ...session,
+            name: rootText,
+            updated_at: new Date().toISOString(),
+          });
+        }
+      }
+    },
+    [fileId],
   );
 
   const postClipboardResult = useCallback(
@@ -620,9 +650,9 @@ const MindMapEditorShell = () => {
           if (isMindMapSingleRootOnly(document)) {
             clearMindMapBrowserView(fileId);
           }
-          setFileName(
-            LocalDraftSessions.get(fileId)?.name ?? DEFAULT_DOCUMENT_DISPLAY_NAME,
-          );
+          const localName = LocalDraftSessions.get(fileId)?.name ?? DEFAULT_DOCUMENT_DISPLAY_NAME;
+          setFileName(localName);
+          lastSyncedRootTextRef.current = getMindMapRootText(data);
           latestDocumentRef.current = document;
           logMindMapOpenPhase("preparing_surface");
           publishMindMapDataToNative(data, "local-draft");
@@ -673,6 +703,7 @@ const MindMapEditorShell = () => {
             clearMindMapBrowserView(resolvedId);
           }
           latestDocumentRef.current = document;
+          lastSyncedRootTextRef.current = getMindMapRootText(data);
           FileSyncState.setLocalCache(
             resolvedId,
             toMindMapLocalCacheRecord(document),
@@ -700,6 +731,7 @@ const MindMapEditorShell = () => {
             getCachedFileListName(resolvedId) || DEFAULT_DOCUMENT_DISPLAY_NAME,
           );
           latestDocumentRef.current = cached;
+          lastSyncedRootTextRef.current = getMindMapRootText(cached.data);
           debugMindMapOpen("cache payload prepared", {
             fileId8: resolvedId.slice(0, 8),
             totalElapsed: Math.round(
@@ -956,6 +988,7 @@ const MindMapEditorShell = () => {
             } else {
               markDocumentChanged(document);
             }
+            syncRootTextToFileName(parsedData);
             setError(null);
           })
           .catch((err: any) => {
@@ -1252,6 +1285,24 @@ const MindMapEditorShell = () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [isAppReady, isBridgeReady, saveToServerRef]);
+
+  useEffect(() => {
+    const onFileRenamed = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!detail || detail.id !== fileId) return;
+      const newName = String(detail.name || "").trim();
+      if (!newName) return;
+      lastSyncedRootTextRef.current = newName;
+      setFileName(newName);
+      if (isBridgeReady) {
+        postToNative("updateRootText", { text: newName });
+      }
+    };
+    window.addEventListener("excalidraw-file-renamed", onFileRenamed);
+    return () => {
+      window.removeEventListener("excalidraw-file-renamed", onFileRenamed);
+    };
+  }, [fileId, isBridgeReady, postToNative]);
 
   useEffect(() => {
     if (isAppReady) {
