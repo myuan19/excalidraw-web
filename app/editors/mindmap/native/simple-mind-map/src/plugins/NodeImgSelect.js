@@ -16,7 +16,7 @@ class NodeImgSelect {
     this.dragStartX = 0
     this.dragStartY = 0
     this.dragPlacementOverlay = null
-    this._lastSelectTime = 0
+    this._previewTimer = null
 
     this.bindEvent()
   }
@@ -89,19 +89,19 @@ class NodeImgSelect {
     const isNodeActive = node.getData('isActive')
 
     if (this.isImgSelected && this.selectedNode === node) {
-      // 刚选中图片后的短暂窗口内不触发预览，防止双击直接放大
-      if (Date.now() - this._lastSelectTime < 350) {
-        e.stopPropagation()
-        return
-      }
       e.stopPropagation()
-      this.mindMap.emit('node_img_preview', node, e)
+      // 延迟触发预览，给 dblclick 事件留出取消窗口
+      clearTimeout(this._previewTimer)
+      this._previewTimer = setTimeout(() => {
+        if (this.isImgSelected && this.selectedNode === node) {
+          this.mindMap.emit('node_img_preview', node, e)
+        }
+      }, 300)
       return
     }
 
     if (isNodeActive) {
       e.stopPropagation()
-      this._lastSelectTime = Date.now()
       this.selectImg(node, imgNode)
     }
   }
@@ -171,6 +171,7 @@ class NodeImgSelect {
 
   deselectImg() {
     if (!this.isImgSelected) return
+    clearTimeout(this._previewTimer)
     this.isImgSelected = false
     this.selectedNode = null
     this.selectedImgNode = null
@@ -205,6 +206,7 @@ class NodeImgSelect {
   }
 
   onNodeDblclick() {
+    clearTimeout(this._previewTimer)
     this.deselectImg()
   }
 
