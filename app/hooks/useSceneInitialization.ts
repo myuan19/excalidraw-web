@@ -5,6 +5,7 @@ import {
 } from "@excalidraw/common";
 import { getAppSettings } from "../data/appSettings";
 import { registerAutoSaveTrigger } from "../data/autoSaveSession";
+import { requestSave } from "../data/saveQueue";
 import { CaptureUpdateAction } from "@excalidraw/excalidraw";
 import {
   parseLibraryTokensFromUrl,
@@ -289,7 +290,7 @@ export function useSceneInitialization(opts: {
             fileId: getFileIdFromHash(),
             uploadInFlight: visibilitySaveInFlightRef.current,
             onShouldUpload: () => {
-              void saveToServerRef.current?.({ source: "visibility" });
+              requestSave({ source: "visibility" });
             },
           });
         }
@@ -297,7 +298,7 @@ export function useSceneInitialization(opts: {
     };
 
     const unregisterAutoSave = registerAutoSaveTrigger(() => {
-      void saveToServerRef.current?.({ source: "auto" });
+      requestSave({ source: "auto" });
     });
 
     window.addEventListener(EVENT.HASHCHANGE, onHashChange, false);

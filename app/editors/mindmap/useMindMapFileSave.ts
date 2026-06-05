@@ -16,7 +16,8 @@ import { isLocalDraftFileId } from "../../data/localDraftFileId";
 import { notifyLocalDraftEdited } from "../../data/localDraftSessions";
 import { discardLocalDraftSession } from "../../data/discardLocalDraftSession";
 import { clearAppShellPendingNavigation } from "../../shell/appShellNavigate";
-import { notifyEdit, manageSessionAutoArchive, broadcastFileSaved } from "../../data/autoSaveSession";
+import { notifyEdit } from "../../data/autoSaveSession";
+import { installExecutor, requestSaveAndWait } from "../../data/saveQueue";
 
 import type { ManagedDocument } from "../../data/documentTypes";
 import type { MindMapDocumentData } from "../../data/formats/MindMapAdapter";
@@ -285,10 +286,6 @@ export function useMindMapFileSave(opts: {
         );
         window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
         window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
-        broadcastFileSaved(fileId);
-        if (source === "auto" && !result?.skipped) {
-          void manageSessionAutoArchive(fileId);
-        }
         if (source === "auto") {
           setMindMapSaveHint("空闲自动保存完成");
         } else if (source === "toolbar" || source === "hotkey") {
@@ -336,6 +333,14 @@ export function useMindMapFileSave(opts: {
 
   useEffect(() => {
     saveToServerRef.current = saveCurrentFileToServer;
+  }, [saveCurrentFileToServer]);
+
+  useEffect(() => {
+    return installExecutor(async (req) => {
+      const result = await saveCurrentFileToServer(req);
+      const fid = getFileIdFromHash();
+      return { saved: result, fileId: fid ?? undefined };
+    });
   }, [saveCurrentFileToServer]);
 
   const syncCurrentMindMapDraftForLeave = useCallback(
@@ -400,8 +405,8 @@ export function useMindMapFileSave(opts: {
 
   const mindMapHomeConfirmSave = useCallback(async () => {
     setMindMapHomeNavDialogOpen(false);
-    await saveCurrentFileToServer({ source: "home", navigateAfter: true });
-  }, [saveCurrentFileToServer]);
+    await requestSaveAndWait({ source: "home", navigateAfter: true });
+  }, []);
 
   const mindMapHomeConfirmDiscard = useCallback(async () => {
     const fileId = getFileIdFromHash();

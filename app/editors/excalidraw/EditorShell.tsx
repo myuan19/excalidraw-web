@@ -92,6 +92,7 @@ import { mountLibraryAIActions } from "../../data/libraryAIMount";
 import { DeltaStorage } from "../../data/DeltaStorage";
 import { FileSyncState } from "../../data/FileSyncState";
 import { notifyEdit } from "../../data/autoSaveSession";
+import { requestSave } from "../../data/saveQueue";
 import { hashSceneSnapshot } from "../../data/sceneHash";
 import {
   formatImportErrorMessage,
@@ -340,7 +341,7 @@ const ExcalidrawWrapper = () => {
   }, [excalidrawAPI]);
 
   useEffect(() => {
-    const onSave = () => void saveCurrentFileToServer({ source: "sidebar" });
+    const onSave = () => requestSave({ source: "sidebar" });
     const onExport = () => {
       excalidrawAPI?.setOpenDialog({ name: "imageExport" });
     };

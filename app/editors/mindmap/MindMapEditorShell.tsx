@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getAppSettings } from "../../data/appSettings";
 import { registerAutoSaveTrigger } from "../../data/autoSaveSession";
+import { requestSave } from "../../data/saveQueue";
 import { SettingsPanel } from "../../components/SettingsPanel";
 import { ArchivePanel } from "../../components/ArchivePanel";
 import {
@@ -851,7 +852,7 @@ const MindMapEditorShell = () => {
           ) {
             needsInitialThumbnailRef.current = false;
             debugMindMapOpen("trigger initial thumbnail save");
-            void saveCurrentFileToServer({
+            requestSave({
               source: "visibility",
               forceThumbnail: true,
             });
@@ -884,7 +885,7 @@ const MindMapEditorShell = () => {
         return;
       }
       if (event.data.type === "hostRequestSave") {
-        void saveToServerRef.current({ source: "hotkey" });
+        requestSave({ source: "hotkey" });
         return;
       }
       if (event.data.type === "saveMindMapData") {
@@ -1098,7 +1099,7 @@ const MindMapEditorShell = () => {
   }, [fileId, publishMindMapDataToNative]);
 
   useEffect(() => {
-    const onSave = () => void saveToServerRef.current({ source: "sidebar" });
+    const onSave = () => requestSave({ source: "sidebar" });
     const onExport = () => {
       postToNative("mindMapHostOpenExport");
     };
@@ -1233,13 +1234,13 @@ const MindMapEditorShell = () => {
       visibilitySaveTimer = window.setTimeout(() => {
         visibilitySaveTimer = null;
         if (document.hidden) {
-          void saveToServerRef.current({ source: "visibility" });
+          requestSave({ source: "visibility" });
         }
       }, 600);
     };
 
     const unregisterAutoSave = registerAutoSaveTrigger(() => {
-      void saveToServerRef.current({ source: "auto" });
+      requestSave({ source: "auto" });
     });
 
     document.addEventListener("visibilitychange", onVisibilityChange);

@@ -23,7 +23,7 @@ import { isLocalDraftFileId } from "../../data/localDraftFileId";
 import { notifyLocalDraftEdited } from "../../data/localDraftSessions";
 import { discardLocalDraftSession } from "../../data/discardLocalDraftSession";
 import { clearAppShellPendingNavigation } from "../../shell/appShellNavigate";
-import { manageSessionAutoArchive, broadcastFileSaved } from "../../data/autoSaveSession";
+import { installExecutor, requestSaveAndWait } from "../../data/saveQueue";
 
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { SaveToServerOptions, SaveToServerSource, SceneData } from "../../hooks/types";
@@ -273,10 +273,6 @@ export function useForkFileSave(opts: {
         );
         window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
         window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
-        broadcastFileSaved(fid);
-        if (source === "auto" && !result?.skipped) {
-          void manageSessionAutoArchive(fid);
-        }
         if (result?.skipped) {
           if (source === "toolbar" || source === "hotkey") {
             setForkSaveHint("已是最新版本");
@@ -334,6 +330,14 @@ export function useForkFileSave(opts: {
     saveToServerRef.current = saveCurrentFileToServer;
   }, [saveCurrentFileToServer]);
 
+  useEffect(() => {
+    return installExecutor(async (req) => {
+      const result = await saveCurrentFileToServer(req);
+      const fid = getFileIdFromHash();
+      return { saved: result, fileId: fid ?? undefined };
+    });
+  }, [saveCurrentFileToServer]);
+
   const discardLocalEditsForHomeNavigation = useCallback(async () => {
     await discardLocalEditsNavigateHome({
       getFileId: () => getFileIdFromHash(),
@@ -380,8 +384,8 @@ export function useForkFileSave(opts: {
 
   const forkHomeConfirmSave = useCallback(async () => {
     setForkHomeNavDialogOpen(false);
-    await saveCurrentFileToServer({ source: "home", navigateAfter: true });
-  }, [saveCurrentFileToServer]);
+    await requestSaveAndWait({ source: "home", navigateAfter: true });
+  }, []);
 
   const forkHomeConfirmDiscard = useCallback(async () => {
     setForkHomeNavDialogOpen(false);
