@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { AISettings } from "../../components/AISettings";
+import { getAppSettings } from "../../data/appSettings";
+import { SettingsPanel } from "../../components/SettingsPanel";
 import { ArchivePanel } from "../../components/ArchivePanel";
 import {
   applyAppShellPendingNavigation,
@@ -1225,6 +1226,9 @@ const MindMapEditorShell = () => {
       if (!isBridgeReady || !isAppReady) {
         return;
       }
+      if (!getAppSettings().autoSaveOnBlur) {
+        return;
+      }
       visibilitySaveTimer = window.setTimeout(() => {
         visibilitySaveTimer = null;
         if (document.hidden) {
@@ -1232,10 +1236,37 @@ const MindMapEditorShell = () => {
         }
       }, 600);
     };
+
+    let autoSaveTimer: number | null = null;
+    const startAutoSaveTimer = () => {
+      if (autoSaveTimer !== null) {
+        window.clearInterval(autoSaveTimer);
+        autoSaveTimer = null;
+      }
+      const settings = getAppSettings();
+      if (!settings.autoSaveEnabled || !isBridgeReady || !isAppReady) {
+        return;
+      }
+      autoSaveTimer = window.setInterval(() => {
+        if (!getAppSettings().autoSaveEnabled) {
+          if (autoSaveTimer !== null) {
+            window.clearInterval(autoSaveTimer);
+            autoSaveTimer = null;
+          }
+          return;
+        }
+        void saveToServerRef.current({ source: "visibility" });
+      }, settings.autoSaveIntervalSec * 1000);
+    };
+    startAutoSaveTimer();
+
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       if (visibilitySaveTimer !== null) {
         window.clearTimeout(visibilitySaveTimer);
+      }
+      if (autoSaveTimer !== null) {
+        window.clearInterval(autoSaveTimer);
       }
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
@@ -1273,7 +1304,7 @@ const MindMapEditorShell = () => {
           onClose={() => setShowEmbedManager(false)}
         />
       )}
-      <AISettings
+      <SettingsPanel
         open={showAISettings}
         onClose={() => setShowAISettings(false)}
       />

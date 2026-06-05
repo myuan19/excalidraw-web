@@ -3,6 +3,7 @@ import {
   EVENT,
   resolvablePromise,
 } from "@excalidraw/common";
+import { getAppSettings } from "../data/appSettings";
 import { CaptureUpdateAction } from "@excalidraw/excalidraw";
 import {
   parseLibraryTokensFromUrl,
@@ -274,6 +275,9 @@ export function useSceneInitialization(opts: {
       if (!document.hidden) {
         return;
       }
+      if (!getAppSettings().autoSaveOnBlur) {
+        return;
+      }
       visibilityFlushTimer = window.setTimeout(() => {
         visibilityFlushTimer = null;
         if (document.hidden) {
@@ -291,6 +295,35 @@ export function useSceneInitialization(opts: {
       }, VISIBILITY_BACKGROUND_SAVE_DELAY_MS);
     };
 
+    let autoSaveTimer: number | null = null;
+    const startAutoSaveTimer = () => {
+      if (autoSaveTimer != null) {
+        window.clearInterval(autoSaveTimer);
+        autoSaveTimer = null;
+      }
+      const settings = getAppSettings();
+      if (!settings.autoSaveEnabled) {
+        return;
+      }
+      autoSaveTimer = window.setInterval(() => {
+        if (!getAppSettings().autoSaveEnabled) {
+          if (autoSaveTimer != null) {
+            window.clearInterval(autoSaveTimer);
+            autoSaveTimer = null;
+          }
+          return;
+        }
+        logHook.info("periodic auto-save triggered");
+        void saveToServerRef.current?.({ source: "visibility" });
+      }, settings.autoSaveIntervalSec * 1000);
+    };
+    startAutoSaveTimer();
+
+    const onSettingsChange = () => {
+      startAutoSaveTimer();
+    };
+    window.addEventListener("storage", onSettingsChange);
+
     window.addEventListener(EVENT.HASHCHANGE, onHashChange, false);
     window.addEventListener(EVENT.UNLOAD, onUnload, false);
     document.addEventListener(
@@ -302,6 +335,10 @@ export function useSceneInitialization(opts: {
       if (visibilityFlushTimer != null) {
         window.clearTimeout(visibilityFlushTimer);
       }
+      if (autoSaveTimer != null) {
+        window.clearInterval(autoSaveTimer);
+      }
+      window.removeEventListener("storage", onSettingsChange);
       window.removeEventListener(EVENT.HASHCHANGE, onHashChange, false);
       window.removeEventListener(EVENT.UNLOAD, onUnload, false);
       document.removeEventListener(

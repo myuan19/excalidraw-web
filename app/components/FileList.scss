@@ -170,6 +170,7 @@
 .filelist__new-btn,
 .filelist__import-scene-btn,
 .filelist__ai-btn,
+.filelist__settings-btn,
 .filelist__small-btn {
   display: inline-flex;
   align-items: center;
@@ -206,6 +207,7 @@
 
 .filelist__import-scene-btn,
 .filelist__ai-btn,
+.filelist__settings-btn,
 .filelist__small-btn {
   background: var(--fl-surface-high);
   color: var(--nb-text);
@@ -1640,6 +1642,7 @@
   .filelist__sort,
   .filelist__sidebar-tool,
   .filelist__ai-btn,
+  .filelist__settings-btn,
   .filelist__import-scene-btn,
   .filelist__new-btn {
     flex: 1 1 auto;
@@ -1742,6 +1745,7 @@
   }
 
   .filelist__ai-btn,
+  .filelist__settings-btn,
   .filelist__import-scene-btn,
   .filelist__new-btn {
     padding: 0 var(--nb-space-4);
