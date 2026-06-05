@@ -32,7 +32,6 @@ import { readFileListTreeCache } from "../../data/fileListSessionCache";
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
 import { LocalThumbnailCache } from "../../data/localThumbnailCache";
 import {
-  getMindMapRootText,
   isEffectivelyEmptyMindMapData,
   isMindMapSingleRootOnly,
 } from "../../data/formats/MindMapAdapter";
@@ -87,6 +86,7 @@ import {
 } from "../../lib/appBranding";
 import { devDebug } from "../../lib/devDebug";
 import { useMindMapNativeAIConfig } from "./useMindMapNativeAIConfig";
+import { useMindMapRootNameSync } from "./useMindMapRootNameSync";
 
 import "./MindMapEditorShell.scss";
 
@@ -302,7 +302,6 @@ const MindMapEditorShell = () => {
   );
   const shellStartRef = useRef(performance.now());
   const initStartRef = useRef<number | null>(null);
-  const lastSyncedRootTextRef = useRef<string | null>(null);
 
   const publishMindMapDataToNative = useCallback(
     (data: MindMapDocumentData, reason: string) => {
@@ -343,34 +342,6 @@ const MindMapEditorShell = () => {
       return document;
     },
     [],
-  );
-
-  const syncRootTextToFileName = useCallback(
-    (data: MindMapDocumentData) => {
-      if (!fileId) return;
-      const rootText = getMindMapRootText(data);
-      if (
-        !rootText ||
-        rootText === lastSyncedRootTextRef.current
-      ) {
-        return;
-      }
-      lastSyncedRootTextRef.current = rootText;
-      setFileName(rootText);
-      if (!isLocalDraftFileId(fileId)) {
-        void ServerSync.renameFile(fileId, rootText).catch(() => {});
-      } else {
-        const session = LocalDraftSessions.get(fileId);
-        if (session) {
-          LocalDraftSessions.upsert({
-            ...session,
-            name: rootText,
-            updated_at: new Date().toISOString(),
-          });
-        }
-      }
-    },
-    [fileId],
   );
 
   const postClipboardResult = useCallback(
@@ -618,6 +589,14 @@ const MindMapEditorShell = () => {
 
   useMindMapNativeAIConfig({ isBridgeReady, postToNative });
 
+  const { initSyncedText, onDocumentChanged: syncRootTextToFileName } =
+    useMindMapRootNameSync({
+      fileId,
+      setFileName,
+      isBridgeReady,
+      postToNative,
+    });
+
   useEffect(() => {
     if (!isBridgeReady) {
       return;
@@ -652,7 +631,7 @@ const MindMapEditorShell = () => {
           }
           const localName = LocalDraftSessions.get(fileId)?.name ?? DEFAULT_DOCUMENT_DISPLAY_NAME;
           setFileName(localName);
-          lastSyncedRootTextRef.current = getMindMapRootText(data);
+          initSyncedText(data);
           latestDocumentRef.current = document;
           logMindMapOpenPhase("preparing_surface");
           publishMindMapDataToNative(data, "local-draft");
@@ -703,7 +682,7 @@ const MindMapEditorShell = () => {
             clearMindMapBrowserView(resolvedId);
           }
           latestDocumentRef.current = document;
-          lastSyncedRootTextRef.current = getMindMapRootText(data);
+          initSyncedText(data);
           FileSyncState.setLocalCache(
             resolvedId,
             toMindMapLocalCacheRecord(document),
@@ -731,7 +710,7 @@ const MindMapEditorShell = () => {
             getCachedFileListName(resolvedId) || DEFAULT_DOCUMENT_DISPLAY_NAME,
           );
           latestDocumentRef.current = cached;
-          lastSyncedRootTextRef.current = getMindMapRootText(cached.data);
+          initSyncedText(cached.data);
           debugMindMapOpen("cache payload prepared", {
             fileId8: resolvedId.slice(0, 8),
             totalElapsed: Math.round(
@@ -1285,24 +1264,6 @@ const MindMapEditorShell = () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [isAppReady, isBridgeReady, saveToServerRef]);
-
-  useEffect(() => {
-    const onFileRenamed = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      if (!detail || detail.id !== fileId) return;
-      const newName = String(detail.name || "").trim();
-      if (!newName) return;
-      lastSyncedRootTextRef.current = newName;
-      setFileName(newName);
-      if (isBridgeReady) {
-        postToNative("updateRootText", { text: newName });
-      }
-    };
-    window.addEventListener("excalidraw-file-renamed", onFileRenamed);
-    return () => {
-      window.removeEventListener("excalidraw-file-renamed", onFileRenamed);
-    };
-  }, [fileId, isBridgeReady, postToNative]);
 
   useEffect(() => {
     if (isAppReady) {
