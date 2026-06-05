@@ -38,7 +38,6 @@ import type {
   AppState,
   ExcalidrawImperativeAPI,
   BinaryFiles,
-  ExcalidrawInitialDataState,
   UIAppState,
   ExcalidrawProps,
 } from "@excalidraw/excalidraw/types";

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 
 import { ServerSync, type ArchiveEntry } from "../data/ServerSync";
 import { useFileDraftStatus } from "../hooks/useFileDraftStatus";
@@ -29,7 +29,6 @@ export const ArchivePanel: React.FC<ArchivePanelProps> = ({
 }) => {
   const [versions, setVersions] = useState<ArchiveEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const overlayRef = useRef<HTMLDivElement | null>(null);
   const { unsaved, label: draftStatusLabel } = useFileDraftStatus(fileId);
 
   const refresh = useCallback(
@@ -81,7 +80,6 @@ export const ArchivePanel: React.FC<ArchivePanelProps> = ({
 
   return (
     <div
-      ref={overlayRef}
       className="nb-history-overlay"
       role="presentation"
       onClick={(event) => {

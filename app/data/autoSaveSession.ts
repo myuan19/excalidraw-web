@@ -11,7 +11,7 @@
  */
 
 import { getAppSettings } from "./appSettings";
-import { ServerSync, type ArchiveEntry } from "./ServerSync";
+import { ServerSync } from "./ServerSync";
 import { createLogger } from "../lib/logger";
 
 const log = createLogger({ module: "autoSave" });
@@ -33,13 +33,6 @@ const AUTO_LABEL_PREFIX = "auto:";
 
 export function isAutoSaveLabel(label: string): boolean {
   return label.startsWith(AUTO_LABEL_PREFIX);
-}
-
-export function formatAutoSaveLabel(label: string): string {
-  if (!isAutoSaveLabel(label)) {
-    return label;
-  }
-  return "自动保存";
 }
 
 /**

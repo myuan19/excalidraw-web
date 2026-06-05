@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   type AISettingsConfig,
@@ -37,7 +37,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<"general" | "ai">("general");
-  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) {
@@ -127,7 +126,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     <div className="settings-panel-overlay" {...backdropProps}>
       <div
         className="settings-panel"
-        ref={panelRef}
         onPointerDown={(e) => e.stopPropagation()}
       >
         <div className="settings-panel__header">

@@ -596,8 +596,6 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const moveDialogOverlayDismiss = useStrictOverlayDismiss(dismissMoveDialog);
   const mobileTreeBackdropDismiss = useStrictOverlayDismiss(dismissMobileTree);
 
-  const searchActive = !!searchQuery.trim();
-
   useEffect(() => {
     const bumpRecent = () => setRecentRevision((value) => value + 1);
     window.addEventListener(RECENT_FILES_CHANGE_EVENT, bumpRecent);
