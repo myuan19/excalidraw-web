@@ -32,6 +32,8 @@ const DEFAULTS = {
   editorEmbedRootCenterLimitRatio:
     previewViewportConfig.editorEmbedRootCenterLimitRatio ??
     previewViewportConfig.rootCenterLimitRatio,
+  rootWidthBaseline: previewViewportConfig.rootWidthBaseline ?? 150,
+  rootWidthDamping: previewViewportConfig.rootWidthDamping ?? 0.3,
 };
 
 function clamp(value, min, max) {
@@ -39,6 +41,23 @@ function clamp(value, min, max) {
     return min;
   }
   return Math.min(Math.max(value, min), max);
+}
+
+/**
+ * Soft-clamp: widths beyond `baseline` are damped by `damping` factor so that
+ * very long root labels don't blow up the focused viewBox.
+ */
+function effectiveRootWidth(width, options) {
+  const baseline = options.rootWidthBaseline ?? DEFAULTS.rootWidthBaseline;
+  const damping = clamp(
+    options.rootWidthDamping ?? DEFAULTS.rootWidthDamping,
+    0,
+    1,
+  );
+  if (width <= baseline) {
+    return width;
+  }
+  return baseline + (width - baseline) * damping;
 }
 
 export function centerOfMindMapBounds(bounds) {
@@ -129,8 +148,9 @@ export function computeMindMapFocusedViewBoxFromNodeBounds(
     options,
   );
   const targetRootRatio = options.targetRootScreenRatio * nodeVisualScale;
+  const effectiveW = effectiveRootWidth(rootBounds.width, options);
   const baseWidth = Math.max(
-    rootBounds.width / targetRootRatio,
+    effectiveW / targetRootRatio,
     (rootBounds.height / targetRootRatio) * targetAspect,
   );
   const viewSize = {
