@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getAppSettings } from "../../data/appSettings";
-import { registerAutoSaveTrigger } from "../../data/autoSaveSession";
+import {
+  notifyEdit,
+  registerAutoSaveTrigger,
+} from "../../data/autoSaveSession";
 import { requestSave } from "../../data/saveQueue";
 import { SettingsPanel } from "../../components/SettingsPanel";
 import { ArchivePanel } from "../../components/ArchivePanel";
@@ -1020,6 +1023,7 @@ const MindMapEditorShell = () => {
       }
       if (event.data.type === "mindMapDirtyState") {
         setStatus("有未保存更改");
+        notifyEdit();
         return;
       }
       const current = latestDocumentRef.current;

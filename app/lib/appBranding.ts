@@ -11,8 +11,10 @@ import { editorRegistry } from "../editors";
 export const HOME_APP_TITLE = "EditorHub";
 export const MAIN_SITE_ICON = "/icons/drawing-space.svg";
 
-export function getDocumentKindFromHash(): string {
-  const params = new URLSearchParams(window.location.hash.slice(1));
+export function getDocumentKindFromHash(hash?: string): string {
+  const rawHash =
+    hash ?? (typeof window !== "undefined" ? window.location.hash : "");
+  const params = new URLSearchParams(rawHash.replace(/^#/, ""));
   return editorRegistry.resolveKind(params.get("kind"));
 }
 

@@ -1,5 +1,7 @@
 import { getTwoPointDistance } from '../utils'
 
+const DBG = (...args) => console.log('[DEBUG] TouchEvent |', ...args)
+
 // 手势事件支持插件
 class TouchEvent {
   //  构造函数
@@ -42,6 +44,9 @@ class TouchEvent {
     this.touchStartScaleView = null
     if (this.touchesNum === 1) {
       let touch = e.touches[0]
+      if (this.isInMindMap(touch.target)) {
+        e.preventDefault()
+      }
       if (this.lastTouchStartPosition) {
         this.lastTouchStartDistance = getTwoPointDistance(
           this.lastTouchStartPosition.x,
@@ -55,6 +60,7 @@ class TouchEvent {
         y: touch.clientY
       }
       this.singleTouchstartEvent = touch
+      DBG('touchstart -> mousedown | client:', touch.clientX, touch.clientY)
       this.dispatchMouseEvent('mousedown', touch.target, touch)
     }
   }
@@ -64,6 +70,9 @@ class TouchEvent {
     let len = e.touches.length
     if (len === 1) {
       let touch = e.touches[0]
+      if (this.isInMindMap(touch.target)) {
+        e.preventDefault()
+      }
       this.dispatchMouseEvent('mousemove', touch.target, touch)
     } else if (len === 2) {
       let { disableTouchZoom, minTouchZoomScale, maxTouchZoomScale } =
@@ -133,7 +142,12 @@ class TouchEvent {
 
   // 手指松开事件
   onTouchend(e) {
-    this.dispatchMouseEvent('mouseup', e.target)
+    const touch = e.changedTouches && e.changedTouches[0]
+    if (touch && this.isInMindMap(touch.target)) {
+      e.preventDefault()
+    }
+    DBG('touchend -> mouseup | client:', touch ? touch.clientX : 'none', touch ? touch.clientY : 'none')
+    this.dispatchMouseEvent('mouseup', touch ? touch.target : e.target, touch)
     if (this.touchesNum === 1) {
       // 模拟双击事件
       this.clickNum++
@@ -143,12 +157,19 @@ class TouchEvent {
         this.lastTouchStartDistance = 0
       }, 300)
       let ev = this.singleTouchstartEvent
+      const releaseDistance =
+        touch && ev
+          ? getTwoPointDistance(ev.clientX, ev.clientY, touch.clientX, touch.clientY)
+          : 0
       if (this.clickNum > 1 && this.lastTouchStartDistance <= 5) {
         this.clickNum = 0
+        DBG('touchend -> dblclick | client:', ev.clientX, ev.clientY)
         this.dispatchMouseEvent('dblclick', ev.target, ev)
+      } else if (ev && releaseDistance <= 5) {
+        DBG('touchend -> click | client:', ev.clientX, ev.clientY)
+        this.dispatchMouseEvent('click', ev.target, ev)
       } else {
-        // 点击事件应该不用模拟
-        // this.dispatchMouseEvent('click', ev.target, ev)
+        DBG('touchend | skip click after move | distance:', releaseDistance)
       }
     }
     this.touchesNum = 0
@@ -158,6 +179,7 @@ class TouchEvent {
 
   // 发送鼠标事件
   dispatchMouseEvent(eventName, target, e) {
+    if (!target) return
     let opt = {}
     if (e) {
       opt = {
@@ -165,6 +187,8 @@ class TouchEvent {
         screenY: e.screenY,
         clientX: e.clientX,
         clientY: e.clientY,
+        button: 0,
+        buttons: eventName === 'mouseup' ? 0 : 1,
         which: 1
       }
     }
@@ -174,7 +198,23 @@ class TouchEvent {
       cancelable: true,
       ...opt
     })
+    try {
+      Object.defineProperty(event, '__smmTouchSynthetic', {
+        value: true
+      })
+    } catch (err) {
+      DBG('dispatchMouseEvent | mark synthetic failed:', err)
+    }
     target.dispatchEvent(event)
+  }
+
+  isInMindMap(target) {
+    return !!(
+      target &&
+      this.mindMap &&
+      this.mindMap.el &&
+      this.mindMap.el.contains(target)
+    )
   }
 
   // 插件被移除前做的事情

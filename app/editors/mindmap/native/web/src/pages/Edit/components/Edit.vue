@@ -647,7 +647,8 @@ export default {
         'node_img_contextmenu',
         'node_img_preview',
         'node_img_copied',
-        'node_img_cut'
+        'node_img_cut',
+        'hide_text_edit'
       ].forEach(event => {
         this.mindMap.on(event, (...args) => {
           this.$bus.$emit(event, ...args)

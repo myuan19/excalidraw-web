@@ -5,6 +5,8 @@
 </template>
 
 <script>
+const DBG = (...args) => console.log('[DEBUG] NodeImgPreview |', ...args)
+
 export default {
   props: {
     mindMap: {
@@ -20,24 +22,40 @@ export default {
     }
   },
   mounted() {
-    this.mindMap.on('node_img_dblclick', this.onNodeImgPreview)
+    DBG('mounted | bind node_img_preview')
     this.mindMap.on('node_img_preview', this.onNodeImgPreview)
   },
   beforeDestroy() {
-    this.mindMap.off('node_img_dblclick', this.onNodeImgPreview)
+    DBG('beforeDestroy | unbind node_img_preview')
     this.mindMap.off('node_img_preview', this.onNodeImgPreview)
   },
   methods: {
     onNodeImgPreview(node, e) {
+      DBG('onNodeImgPreview | received | nodeUid:', node && node.uid,
+          '| hasEvent:', !!e,
+          '| hasNodeImgSelect:', !!(this.mindMap && this.mindMap.nodeImgSelect))
       if (e) {
         e.stopPropagation()
         e.preventDefault()
       }
       const imgUrl = node.getImageUrl()
-      if (!imgUrl) return
+      if (!imgUrl) {
+        DBG('onNodeImgPreview | abort: empty image url')
+        return
+      }
+      if (this.mindMap.nodeImgSelect) {
+        DBG('onNodeImgPreview | hide selection before viewer')
+        this.mindMap.nodeImgSelect.hideSelectionForPreview()
+      }
       this.images = [imgUrl]
+      DBG('onNodeImgPreview | open viewer | image length:', imgUrl.length,
+          '| zIndex:', 2147483001)
       this.$viewerApi({
-        images: this.images
+        images: this.images,
+        options: {
+          zIndex: 2147483001,
+          zIndexInline: 2147483001
+        }
       })
     }
   }

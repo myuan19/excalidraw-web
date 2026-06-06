@@ -440,8 +440,16 @@
           })
           return
         }
-        window.$bus.$on('data_change', () => {
+        let textEditDirtyTimer = null
+        const notifyDirty = () => {
           postToHost('mindMapDirtyState', { dirty: true })
+        }
+        window.$bus.$on('data_change', notifyDirty)
+        window.$bus.$on('hide_text_edit', () => {
+          if (textEditDirtyTimer) {
+            clearTimeout(textEditDirtyTimer)
+            textEditDirtyTimer = null
+          }
         })
         window.$bus.$on('view_data_change', viewData => {
           if (viewData) {
@@ -500,6 +508,14 @@
             renderEnded
           })
           notifyHostAppInited('app_inited')
+          // 直接在 mindMap 实例上监听文本编辑变化（不通过 $bus 转发，避免触发 RichText 内部错误）
+          nativeMindMap.on('node_text_edit_change', () => {
+            if (textEditDirtyTimer) return
+            textEditDirtyTimer = setTimeout(() => {
+              textEditDirtyTimer = null
+              notifyDirty()
+            }, 150)
+          })
         })
         window.$bus.$on('node_tree_render_end', () => {
           renderEnded = true

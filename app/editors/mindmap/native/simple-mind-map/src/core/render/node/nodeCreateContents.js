@@ -61,6 +61,7 @@ function createImgNode() {
     node.attr('title', this.getData('imageTitle'))
   }
   node.on('click', e => {
+    console.log('[DEBUG] nodeCreateContents.imgNode.click | button:', e.button, '| client:', e.clientX, e.clientY)
     this.mindMap.emit('node_img_click', this, node, e)
   })
   node.on('dblclick', e => {
@@ -76,11 +77,13 @@ function createImgNode() {
     this.mindMap.emit('node_img_mousemove', this, node, e)
   })
   node.on('contextmenu', e => {
-    console.log('[DEBUG] nodeCreateContents.imgNode.contextmenu | 图片右键事件触发')
+    console.log('[DEBUG] nodeCreateContents.imgNode.contextmenu | button:', e.button, '| client:', e.clientX, e.clientY)
+    e.preventDefault()
+    e.stopPropagation()
     this.mindMap.emit('node_img_contextmenu', this, node, e)
   })
   node.on('mousedown', e => {
-    console.log('[DEBUG] nodeCreateContents.imgNode.mousedown | button:', e.button)
+    console.log('[DEBUG] nodeCreateContents.imgNode.mousedown | button:', e.button, '| client:', e.clientX, e.clientY)
     this.mindMap.emit('node_img_mousedown', this, node, e)
   })
   return {

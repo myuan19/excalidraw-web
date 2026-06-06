@@ -1,6 +1,9 @@
+import * as fs from "node:fs";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "path";
 
 import { defineConfig, loadEnv } from "vite";
+import type { Plugin, PreviewServer, ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
 import svgrPlugin from "vite-plugin-svgr";
 import { ViteEjsPlugin } from "vite-plugin-ejs";
@@ -15,6 +18,75 @@ import { writeBuildMetaPlugin } from "./lib/writeBuildMetaPlugin";
 /** Legacy in-repo dev data paths — exclude from Vite HMR if present */
 const devDataDir = path.resolve(__dirname, "../_dev_data");
 const legacyServerDataDir = path.resolve(__dirname, "../server/data");
+const mindMapPublicDir = path.resolve(__dirname, "../public/mind-map");
+
+const MIND_MAP_MIME: Record<string, string> = {
+  ".css": "text/css; charset=utf-8",
+  ".html": "text/html; charset=utf-8",
+  ".ico": "image/x-icon",
+  ".js": "application/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".map": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".webp": "image/webp",
+  ".woff2": "font/woff2",
+};
+
+function serveMindMapStatic(
+  req: IncomingMessage,
+  res: ServerResponse,
+  next: () => void,
+) {
+  const pathname = (req.url || "").split("?")[0] || "";
+  if (pathname !== "/mind-map" && !pathname.startsWith("/mind-map/")) {
+    next();
+    return;
+  }
+
+  const relativePath =
+    pathname === "/mind-map" || pathname === "/mind-map/"
+      ? "index.html"
+      : decodeURIComponent(pathname.replace(/^\/mind-map\/?/, ""));
+  const filePath = path.resolve(mindMapPublicDir, relativePath);
+  const relativeToPublic = path.relative(mindMapPublicDir, filePath);
+  if (relativeToPublic.startsWith("..") || path.isAbsolute(relativeToPublic)) {
+    res.statusCode = 403;
+    res.end("Forbidden");
+    return;
+  }
+
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(filePath);
+  } catch {
+    next();
+    return;
+  }
+  if (!stat.isFile()) {
+    next();
+    return;
+  }
+
+  res.setHeader(
+    "Content-Type",
+    MIND_MAP_MIME[path.extname(filePath)] || "application/octet-stream",
+  );
+  res.setHeader("Cache-Control", "no-cache");
+  fs.createReadStream(filePath).pipe(res);
+}
+
+function mindMapStaticPlugin(): Plugin {
+  return {
+    name: "editorhub-mind-map-static",
+    configureServer(server: ViteDevServer) {
+      server.middlewares.use(serveMindMapStatic);
+    },
+    configurePreviewServer(server: PreviewServer) {
+      server.middlewares.use(serveMindMapStatic);
+    },
+  };
+}
 
 export default defineConfig(({ mode }) => {
   // To load .env variables
@@ -179,6 +251,7 @@ export default defineConfig(({ mode }) => {
       assetsInlineLimit: 0,
     },
     plugins: [
+      mindMapStaticPlugin(),
       writeBuildMetaPlugin(path.resolve(__dirname, "build")),
       Sitemap({
         hostname: "https://excalidraw.com",

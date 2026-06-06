@@ -1,7 +1,7 @@
 <template>
   <div
     class="contextmenuContainer listBox"
-    v-if="isShow"
+    v-show="isShow"
     ref="contextmenuRef"
     :style="{ left: left + 'px', top: top + 'px' }"
     :class="{ isDark: isDark }"
@@ -207,6 +207,8 @@ import { transformToTxt } from 'simple-mind-map/src/parse/toTxt'
 import { setDataToClipboard, setImgToClipboard, copy } from '@/utils'
 import { numberTypeList, numberLevelList } from '@/config'
 
+const DBG = (...args) => console.log('[DEBUG] Contextmenu |', ...args)
+
 // 右键菜单
 export default {
   props: {
@@ -329,6 +331,10 @@ export default {
     this.$bus.$on('translate', this.hide)
     this.$bus.$on('node_mousedown', this.onNodeMousedown)
   },
+  mounted() {
+    // 菜单需要脱离编辑器组件树，避免被画布/图片选择层的 stacking context 压住。
+    document.body.appendChild(this.$el)
+  },
   beforeDestroy() {
     this.$bus.$off('node_contextmenu', this.show)
     this.$bus.$off('node_img_contextmenu', this.showImgMenu)
@@ -340,6 +346,9 @@ export default {
     this.$bus.$off('mouseup', this.onMouseup)
     this.$bus.$off('translate', this.hide)
     this.$bus.$off('node_mousedown', this.onNodeMousedown)
+    if (this.$el && this.$el.parentNode) {
+      this.$el.parentNode.removeChild(this.$el)
+    }
   },
   methods: {
     ...mapMutations(['setLocalConfig']),
@@ -347,6 +356,8 @@ export default {
     // 计算右键菜单元素的显示位置
     getShowPosition(x, y) {
       const rect = this.$refs.contextmenuRef.getBoundingClientRect()
+      const rawX = x
+      const rawY = y
       if (x + rect.width > window.innerWidth) {
         x = x - rect.width - 20
       }
@@ -354,11 +365,19 @@ export default {
       if (y + rect.height > window.innerHeight) {
         y = window.innerHeight - rect.height - 10
       }
+      DBG('getShowPosition | raw:', rawX, rawY,
+          '| final:', x, y,
+          '| rect:', rect.width, rect.height,
+          '| viewport:', window.innerWidth, window.innerHeight,
+          '| subItemsShowLeft:', this.subItemsShowLeft)
       return { x, y }
     },
 
     // 图片右键显示
     showImgMenu(node, imgNode, e) {
+      DBG('showImgMenu | nodeUid:', node && node.uid,
+          '| client:', e && e.clientX, e && e.clientY,
+          '| hasImgNode:', !!imgNode)
       this.type = 'image'
       this.isShow = true
       this.node = node
@@ -371,6 +390,9 @@ export default {
 
     // 执行图片操作
     execImgAction(action) {
+      DBG('execImgAction | action:', action,
+          '| hasNodeImgSelect:', !!(this.mindMap && this.mindMap.nodeImgSelect),
+          '| nodeUid:', this.node && this.node.uid)
       if (!this.mindMap.nodeImgSelect) return
       switch (action) {
         case 'copy':
@@ -383,8 +405,19 @@ export default {
           this.mindMap.nodeImgSelect.deleteSelectedImg()
           break
         case 'preview':
-          if (this.node) {
+          if (
+            this.mindMap.nodeImgSelect.selectedNode === this.node &&
+            typeof this.mindMap.nodeImgSelect.previewSelectedImg === 'function'
+          ) {
+            DBG('execImgAction | preview via nodeImgSelect | nodeUid:',
+                this.node && this.node.uid)
+            this.mindMap.nodeImgSelect.previewSelectedImg(null, 'contextmenu')
+          } else if (this.node) {
+            DBG('execImgAction | preview via bus fallback | nodeUid:',
+                this.node && this.node.uid)
             this.mindMap.emit('node_img_preview', this.node, null)
+          } else {
+            DBG('execImgAction | preview abort: no node')
           }
           break
       }
@@ -393,6 +426,8 @@ export default {
 
     // 节点右键显示
     show(e, node) {
+      DBG('show node menu | nodeUid:', node && node.uid,
+          '| client:', e && e.clientX, e && e.clientY)
       this.type = 'node'
       this.isShow = true
       this.node = node
@@ -444,6 +479,7 @@ export default {
 
     // 画布右键显示
     show2(e) {
+      DBG('show svg menu | client:', e && e.clientX, e && e.clientY)
       this.type = 'svg'
       this.isShow = true
       this.$nextTick(() => {
@@ -455,6 +491,9 @@ export default {
 
     // 隐藏
     hide() {
+      if (this.isShow || this.type) {
+        DBG('hide | type:', this.type, '| nodeUid:', this.node && this.node.uid)
+      }
       this.isShow = false
       this.left = -9999
       this.top = -9999
@@ -466,6 +505,7 @@ export default {
 
     // 执行命令
     exec(key, disabled, ...args) {
+      DBG('exec | key:', key, '| disabled:', !!disabled, '| type:', this.type)
       if (disabled) {
         return
       }
@@ -581,7 +621,7 @@ export default {
 }
 .contextmenuContainer {
   position: fixed;
-  z-index: 2100;
+  z-index: 2147483000;
   font-size: 14px;
   font-family: PingFangSC-Regular, PingFang SC;
   font-weight: 400;
