@@ -362,6 +362,10 @@ export const defaultOpt = {
     color: 'rgb(94, 200, 248)',
     width: 2
   },
+  // 节点拖拽放置目标命中区域灵敏度，越大越容易识别为交换/移动
+  dragDropTargetSensitivity: 1.08,
+  // 节点拖拽吸附阈值，单位为屏幕像素
+  dragSnapThreshold: 10,
   // 节点拖拽时的透明度配置
   dragOpacityConfig: {
     cloneNodeOpacity: 0.5, // 跟随鼠标移动的克隆节点或矩形的透明度

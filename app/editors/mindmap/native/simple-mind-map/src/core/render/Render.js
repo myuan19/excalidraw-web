@@ -283,6 +283,11 @@ class Render {
     this.mindMap.command.add('INSERT_BEFORE', this.insertBefore)
     this.moveNodeTo = this.moveNodeTo.bind(this)
     this.mindMap.command.add('MOVE_NODE_TO', this.moveNodeTo)
+    this.moveNodeByDropTarget = this.moveNodeByDropTarget.bind(this)
+    this.mindMap.command.add(
+      'MOVE_NODE_BY_DROP_TARGET',
+      this.moveNodeByDropTarget
+    )
     // 删除节点
     this.removeNode = this.removeNode.bind(this)
     this.mindMap.command.add('REMOVE_NODE', this.removeNode)
@@ -1606,6 +1611,57 @@ class Render {
         expand: true
       })
       toNode.nodeData.children.push(item.nodeData)
+    })
+    this.emitNodeActiveEvent()
+    this.mindMap.render()
+  }
+
+  // 按 DropTarget 统一移动节点，拖拽决策层只传 parent + insertionIndex
+  moveNodeByDropTarget(node, targetParent, insertionIndex, dir) {
+    let nodeList = formatDataToArray(node)
+    nodeList = sortNodeList(
+      nodeList.filter(item => {
+        return !item.isRoot
+      })
+    )
+    if (!nodeList.length || !targetParent) {
+      return
+    }
+    let adjustedInsertionIndex = insertionIndex
+    nodeList.forEach(item => {
+      if (item.parent !== targetParent) {
+        return
+      }
+      const index = getNodeDataIndex(item)
+      if (index !== -1 && index < insertionIndex) {
+        adjustedInsertionIndex--
+      }
+    })
+    const movingDataList = nodeList.map(item => item.nodeData)
+    nodeList.forEach(item => {
+      this.removeNodeFromActiveList(item)
+      removeFromParentNodeData(item)
+    })
+    adjustedInsertionIndex = Math.max(
+      0,
+      Math.min(adjustedInsertionIndex, targetParent.nodeData.children.length)
+    )
+    movingDataList.forEach((nodeData, index) => {
+      if (
+        dir &&
+        (this.mindMap.opt.layout === CONSTANTS.LAYOUT.MIND_MAP ||
+          Object.prototype.hasOwnProperty.call(nodeData.data, 'dir'))
+      ) {
+        nodeData.data.dir = dir
+      }
+      targetParent.nodeData.children.splice(
+        adjustedInsertionIndex + index,
+        0,
+        nodeData
+      )
+    })
+    targetParent.setData({
+      expand: true
     })
     this.emitNodeActiveEvent()
     this.mindMap.render()

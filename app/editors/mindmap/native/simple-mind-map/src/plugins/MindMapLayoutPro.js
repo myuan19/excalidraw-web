@@ -58,6 +58,7 @@ class MindMapLayoutPro {
         'INSERT_AFTER',
         'INSERT_BEFORE',
         'MOVE_NODE_TO',
+        'MOVE_NODE_BY_DROP_TARGET',
         'REMOVE_NODE',
         'REMOVE_CURRENT_NODE',
         'PASTE_NODE',

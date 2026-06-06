@@ -214,7 +214,9 @@
           return null
         }
         try {
-          return await nativeMindMap.export('svg', false, 'MindMap')
+          return await nativeMindMap.export('svg', false, 'MindMap', {
+            preserveTextEdit: true
+          })
         } catch (error) {
           console.warn('Failed to export MindMap thumbnail', error)
           return null

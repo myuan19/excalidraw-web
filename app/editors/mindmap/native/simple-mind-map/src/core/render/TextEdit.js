@@ -8,7 +8,8 @@ import {
   checkSmmFormatData,
   getTextFromHtml,
   isWhite,
-  getVisibleColorFromTheme
+  getVisibleColorFromTheme,
+  loadImage
 } from '../../utils'
 import {
   ERROR_TYPES,
@@ -48,6 +49,19 @@ export default class TextEdit {
     // 节点双击事件
     this.mindMap.on('node_dblclick', (node, e, isInserting) => {
       this.show({ node, e, isInserting })
+    })
+    // 节点已选中时，再次单击进入编辑，并把光标放到点击位置
+    this.mindMap.on('node_click', (node, e) => {
+      if (
+        this.mindMap.opt.readonly ||
+        e.ctrlKey ||
+        e.metaKey ||
+        this.isShowTextEdit() ||
+        !node.getData('isActive')
+      ) {
+        return
+      }
+      this.show({ node, e, useClickPosition: true })
     })
     // 点击事件
     this.mindMap.on('draw_click', () => {
@@ -211,9 +225,11 @@ export default class TextEdit {
   // isFromKeyDown：是否是在按键事件进入的编辑
   async show({
     node,
+    e,
     isInserting = false,
     isFromKeyDown = false,
-    isFromScale = false
+    isFromScale = false,
+    useClickPosition = false
   }) {
     // 使用了自定义节点内容那么不响应编辑事件
     if (node.isUseCustomNodeContent()) {
@@ -251,9 +267,11 @@ export default class TextEdit {
     const params = {
       node,
       rect,
+      e,
       isInserting,
       isFromKeyDown,
-      isFromScale
+      isFromScale,
+      useClickPosition
     }
     if (this.mindMap.richText) {
       this.mindMap.richText.showEditText(params)
@@ -297,7 +315,15 @@ export default class TextEdit {
   }
 
   //  显示文本编辑框
-  showEditTextBox({ node, rect, isInserting, isFromKeyDown, isFromScale }) {
+  showEditTextBox({
+    node,
+    rect,
+    e,
+    isInserting,
+    isFromKeyDown,
+    isFromScale,
+    useClickPosition
+  }) {
     if (this.showTextEdit) return
     const {
       nodeTextEditZIndex,
@@ -344,6 +370,44 @@ export default class TextEdit {
         }
       })
       this.textEditNode.addEventListener('paste', e => {
+        const imgFile = Array.from(e.clipboardData.files || []).find(file => {
+          return file.type && file.type.startsWith('image/')
+        })
+        if (imgFile && this.currentNode) {
+          e.preventDefault()
+          e.stopPropagation()
+          const node = this.currentNode
+          const range = this.saveNativeSelection()
+          const { handleNodePasteImg } = this.mindMap.opt
+          const loadFn =
+            handleNodePasteImg && typeof handleNodePasteImg === 'function'
+              ? handleNodePasteImg
+              : file =>
+                  loadImage(file, {
+                    maxWidth: this.mindMap.opt.maxNodeImageStorageWidth,
+                    maxHeight: this.mindMap.opt.maxNodeImageStorageHeight,
+                    maxBytes: this.mindMap.opt.maxNodeImageStorageBytes
+                  })
+          loadFn(imgFile)
+            .then(imgData => {
+              this.mindMap.execCommand('SET_NODE_IMAGE', node, {
+                url: imgData.url,
+                title: '',
+                width: imgData.size.width,
+                height: imgData.size.height
+              })
+              if (this.currentNode === node) {
+                this.restoreNativeSelection(range)
+              }
+            })
+            .catch(error => {
+              this.mindMap.opt.errorHandler(
+                ERROR_TYPES.LOAD_CLIPBOARD_IMAGE_ERROR,
+                error
+              )
+            })
+          return
+        }
         const text = e.clipboardData.getData('text')
         const { isSmm, data } = checkSmmFormatData(text)
         if (isSmm && data[0] && data[0].data) {
@@ -399,7 +463,9 @@ export default class TextEdit {
     // if (!this.cacheEditingText) {
     //   selectAllInput(this.textEditNode)
     // }
-    if (isInserting || (selectTextOnEnterEditText && !isFromKeyDown)) {
+    if (useClickPosition && e && !isInserting) {
+      this.focusInputAtMouseEvent(e)
+    } else if (isInserting || (selectTextOnEnterEditText && !isFromKeyDown)) {
       selectAllInput(this.textEditNode)
     } else {
       focusInput(this.textEditNode)
@@ -432,6 +498,104 @@ export default class TextEdit {
       rect.height + this.textNodePaddingY * 2 + 'px'
     this.textEditNode.style.left = Math.floor(rect.left) + 'px'
     this.textEditNode.style.top = Math.floor(rect.top) + 'px'
+  }
+
+  saveNativeSelection() {
+    const selection = window.getSelection()
+    if (!selection || !selection.rangeCount) {
+      return null
+    }
+    const range = selection.getRangeAt(0)
+    if (!this.textEditNode.contains(range.startContainer)) {
+      return null
+    }
+    return range.cloneRange()
+  }
+
+  waitForNodeTreeRenderEndAfter(action) {
+    return new Promise(resolve => {
+      let finished = false
+      let timer = null
+      const finish = () => {
+        if (finished) {
+          return
+        }
+        finished = true
+        if (timer) {
+          clearTimeout(timer)
+        }
+        this.mindMap.off('node_tree_render_end', finish)
+        resolve()
+      }
+      this.mindMap.on('node_tree_render_end', finish)
+      action()
+      timer = setTimeout(finish, 100)
+    })
+  }
+
+  syncEditingTextToNode() {
+    if (this.mindMap.richText) {
+      return this.mindMap.richText.syncEditingTextToNode()
+    }
+    if (!this.showTextEdit || !this.currentNode) {
+      return false
+    }
+    return this.waitForNodeTreeRenderEndAfter(() =>
+      this.mindMap.execCommand(
+        'SET_NODE_TEXT',
+        this.currentNode,
+        this.getEditText()
+      )
+    )
+  }
+
+  restoreNativeSelection(range) {
+    if (!range || !this.textEditNode) {
+      return
+    }
+    const restore = () => {
+      const selection = window.getSelection()
+      if (!selection) {
+        return
+      }
+      this.textEditNode.focus()
+      selection.removeAllRanges()
+      selection.addRange(range)
+    }
+    setTimeout(() => {
+      if (window.requestAnimationFrame) {
+        window.requestAnimationFrame(restore)
+      } else {
+        restore()
+      }
+    }, 0)
+  }
+
+  focusInputAtMouseEvent(e) {
+    this.textEditNode.focus()
+    const range = this.getCaretRangeFromPoint(e.clientX, e.clientY)
+    if (!range || !this.textEditNode.contains(range.startContainer)) {
+      focusInput(this.textEditNode)
+      return
+    }
+    const selection = window.getSelection()
+    selection.removeAllRanges()
+    selection.addRange(range)
+  }
+
+  getCaretRangeFromPoint(x, y) {
+    if (document.caretRangeFromPoint) {
+      return document.caretRangeFromPoint(x, y)
+    }
+    if (document.caretPositionFromPoint) {
+      const position = document.caretPositionFromPoint(x, y)
+      if (!position) return null
+      const range = document.createRange()
+      range.setStart(position.offsetNode, position.offset)
+      range.collapse(true)
+      return range
+    }
+    return null
   }
 
   // 获取编辑区域的背景填充

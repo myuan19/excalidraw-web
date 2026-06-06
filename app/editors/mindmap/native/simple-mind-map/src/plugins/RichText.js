@@ -200,7 +200,15 @@ class RichText {
   }
 
   // 显示文本编辑控件
-  showEditText({ node, rect, isInserting, isFromKeyDown, isFromScale }) {
+  showEditText({
+    node,
+    rect,
+    e,
+    isInserting,
+    isFromKeyDown,
+    isFromScale,
+    useClickPosition
+  }) {
     if (this.showTextEdit) {
       return
     }
@@ -304,9 +312,13 @@ class RichText {
     this.setIsShowTextEdit(true)
     // 如果是刚创建的节点，那么默认全选，否则普通激活不全选，除非selectTextOnEnterEditText配置为true
     // 在selectTextOnEnterEditText时，如果是在keydown事件进入的节点编辑，也不需要全选
-    this.focus(
-      isInserting || (selectTextOnEnterEditText && !isFromKeyDown) ? 0 : null
-    )
+    if (useClickPosition && e && !isInserting) {
+      this.focusAtMouseEvent(e)
+    } else {
+      this.focus(
+        isInserting || (selectTextOnEnterEditText && !isFromKeyDown) ? 0 : null
+      )
+    }
     this.cacheEditingText = ''
   }
 
@@ -572,6 +584,8 @@ class RichText {
             e.stopPropagation()
             const node = this.node
             if (!node) return
+            const range =
+              this.quill.getSelection() || this.pasteUseRange || this.lastRange
             const { handleNodePasteImg } = this.mindMap.opt
             const loadFn =
               handleNodePasteImg && typeof handleNodePasteImg === 'function'
@@ -590,6 +604,7 @@ class RichText {
                   width: imgData.size.width,
                   height: imgData.size.height
                 })
+                this.restoreSelection(range)
               })
               .catch(err => {
                 console.error('RichText paste image failed:', err)
@@ -669,6 +684,79 @@ class RichText {
   focus(start) {
     const len = this.quill.getLength()
     this.quill.setSelection(typeof start === 'number' ? start : len, len)
+  }
+
+  focusAtMouseEvent(e) {
+    this.quill.focus()
+    const range = this.getCaretRangeFromPoint(e.clientX, e.clientY)
+    const index = this.getQuillIndexFromRange(range)
+    if (typeof index === 'number') {
+      this.quill.setSelection(index, 0, Quill.sources.SILENT)
+    } else {
+      this.focus()
+    }
+  }
+
+  getCaretRangeFromPoint(x, y) {
+    if (document.caretRangeFromPoint) {
+      return document.caretRangeFromPoint(x, y)
+    }
+    if (document.caretPositionFromPoint) {
+      const position = document.caretPositionFromPoint(x, y)
+      if (!position) return null
+      const range = document.createRange()
+      range.setStart(position.offsetNode, position.offset)
+      range.collapse(true)
+      return range
+    }
+    return null
+  }
+
+  getQuillIndexFromRange(range) {
+    if (!range || !this.quill || !this.quill.root.contains(range.startContainer)) {
+      return null
+    }
+    const blot = Quill.find(range.startContainer, true)
+    if (!blot || typeof blot.offset !== 'function') {
+      return null
+    }
+    return blot.offset(this.quill.scroll) + range.startOffset
+  }
+
+  restoreSelection(range) {
+    if (!range || !this.quill) {
+      return
+    }
+    const index = Math.min(range.index, Math.max(this.quill.getLength() - 1, 0))
+    const length = Math.min(range.length || 0, this.quill.getLength() - index)
+    const restore = () => {
+      if (!this.showTextEdit || !this.quill) {
+        return
+      }
+      this.quill.focus()
+      this.quill.setSelection(index, length, Quill.sources.SILENT)
+    }
+    setTimeout(() => {
+      if (window.requestAnimationFrame) {
+        window.requestAnimationFrame(restore)
+      } else {
+        restore()
+      }
+    }, 0)
+  }
+
+  syncEditingTextToNode() {
+    if (!this.showTextEdit || !this.node || !this.quill) {
+      return false
+    }
+    return this.mindMap.renderer.textEdit.waitForNodeTreeRenderEndAfter(() =>
+      this.mindMap.execCommand(
+        'SET_NODE_TEXT',
+        this.node,
+        this.getEditText(),
+        true
+      )
+    )
   }
 
   // 格式化当前选中的文本

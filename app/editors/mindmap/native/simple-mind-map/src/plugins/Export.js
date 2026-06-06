@@ -396,8 +396,14 @@ class Export {
   }
 
   //  导出为svg
-  async svg(name) {
-    this.mindMap.renderer.textEdit.hideEditTextBox()
+  async svg(name, options = {}) {
+    const { preserveTextEdit = false } = options || {}
+    const textEdit = this.mindMap.renderer.textEdit
+    if (preserveTextEdit) {
+      await textEdit.syncEditingTextToNode()
+    } else {
+      textEdit.hideEditTextBox()
+    }
     const { node } = await this.getSvgData()
     node.first().before(SVG(`<title>${name}</title>`))
     await this.drawBackgroundToSvg(node)

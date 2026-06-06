@@ -498,6 +498,9 @@ class MindMap {
 
   //  获取思维导图数据，节点树、主题、布局等
   getData(withConfig) {
+    if (this.renderer && this.renderer.textEdit) {
+      this.renderer.textEdit.syncEditingTextToNode()
+    }
     let nodeData = this.command.getCopyData()
     let data = {}
     if (withConfig) {
