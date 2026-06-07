@@ -495,6 +495,7 @@ export default {
     methodValidateTip: '请选择请求方式',
     noInputTip: '请输入内容',
     configurationMissing: '配置缺失',
+    sidebarTitle: 'AI 润色',
     targetNode: '目标节点',
     editScope: '编辑范围',
     scopeCurrentOnly: '仅当前节点',

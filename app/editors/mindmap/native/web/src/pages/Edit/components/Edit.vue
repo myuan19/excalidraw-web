@@ -101,6 +101,10 @@
       v-if="mindMap && !isEmbedMode && activeSidebar === 'textFormat'"
       :mindMap="mindMap"
     ></TextFormatSidebar>
+    <AiSidebar
+      v-if="mindMap && enableAi && !isEmbedMode && activeSidebar === 'ai'"
+      :mindMap="mindMap"
+    ></AiSidebar>
     <AiCreate
       v-if="mindMap && enableAi && !isEmbedMode"
       :mindMap="mindMap"
@@ -199,6 +203,7 @@ const FormulaSidebar = () => import('./FormulaSidebar.vue')
 const Setting = () => import('./Setting.vue')
 const NodeIconSidebar = () => import('./NodeIconSidebar.vue')
 const TextFormatSidebar = () => import('./TextFormatSidebar.vue')
+const AiSidebar = () => import('./AiSidebar.vue')
 const builtInNodeIconTypes = new Set(builtInNodeIconList.map(item => item.type))
 
 function walkMindMapNodeData(node, visit) {
@@ -304,7 +309,8 @@ export default {
     AssociativeLineStyle,
     NodeNoteSidebar,
     AiCreate,
-    TextFormatSidebar
+    TextFormatSidebar,
+    AiSidebar
   },
   data() {
     return {
@@ -319,7 +325,8 @@ export default {
       editorPreviewInitialApplied: false,
       embedBaselineViewport: null,
       hadInitialView: false,
-      isEmbedMode: window.takeOverAppEmbedMode === true
+      isEmbedMode: window.takeOverAppEmbedMode === true,
+      _sidebarBeforeTextFormat: ''
     }
   },
   computed: {
@@ -372,7 +379,7 @@ export default {
     this.$bus.$on('host_restore_preview_view', this.handleHostRestorePreviewView)
     this.$bus.$on('showLoading', this.handleShowLoading)
     this.$bus.$on('localStorageExceeded', this.onLocalStorageExceeded)
-    this.$bus.$on('rich_text_selection_change', this.handleRichTextAutoSwitch)
+    this.$bus.$on('rich_text_selection_change', this.handleRichTextSelectionChange)
     this.$bus.$on('hide_text_edit', this.handleTextEditEnd)
     window.addEventListener('resize', this.handleResize)
     debugMindMapOpen('mounted end')
@@ -391,23 +398,27 @@ export default {
     this.$bus.$off('host_restore_preview_view', this.handleHostRestorePreviewView)
     this.$bus.$off('showLoading', this.handleShowLoading)
     this.$bus.$off('localStorageExceeded', this.onLocalStorageExceeded)
-    this.$bus.$off('rich_text_selection_change', this.handleRichTextAutoSwitch)
+    this.$bus.$off('rich_text_selection_change', this.handleRichTextSelectionChange)
     this.$bus.$off('hide_text_edit', this.handleTextEditEnd)
     window.removeEventListener('resize', this.handleResize)
     this.mindMap.destroy()
   },
   methods: {
-    ...mapMutations(['pushActiveSidebar', 'popActiveSidebar']),
+    ...mapMutations(['setActiveSidebar', 'setHasTextSelection']),
 
-    handleRichTextAutoSwitch(hasRange) {
+    handleRichTextSelectionChange(hasRange) {
+      this.setHasTextSelection(hasRange)
       if (hasRange && this.activeSidebar !== 'textFormat') {
-        this.pushActiveSidebar('textFormat')
+        this._sidebarBeforeTextFormat = this.activeSidebar
+        this.setActiveSidebar('textFormat')
       }
     },
 
     handleTextEditEnd() {
+      this.setHasTextSelection(false)
       if (this.activeSidebar === 'textFormat') {
-        this.popActiveSidebar()
+        this.setActiveSidebar(this._sidebarBeforeTextFormat || '')
+        this._sidebarBeforeTextFormat = ''
       }
     },
 

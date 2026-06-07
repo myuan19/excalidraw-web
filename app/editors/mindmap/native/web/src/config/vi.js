@@ -463,21 +463,21 @@ export const sidebarTriggerList = [
     value: 'outline',
     icon: 'iconfuhao-dagangshu'
   },
-  // {
-  //   name: 'AI',
-  //   value: 'ai',
-  //   icon: 'iconAIshengcheng'
-  // },
+  {
+    name: 'AI',
+    value: 'ai',
+    icon: 'iconAIshengcheng'
+  },
+  {
+    name: 'Định dạng',
+    value: 'textFormat',
+    icon: 'iconbianji1'
+  },
   {
     name: 'Thiết lập',
     value: 'setting',
     icon: 'iconshezhi'
   }
-  // {
-  //   name: 'Phím tắt',
-  //   value: 'shortcutKey',
-  //   icon: 'iconjianpan'
-  // }
 ]
 
 // Danh sách các loại tải xuống

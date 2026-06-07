@@ -13,7 +13,7 @@
         class="triggerItem"
         v-for="item in triggerList"
         :key="item.value"
-        :class="{ active: activeSidebar === item.value }"
+        :class="{ active: activeSidebar === item.value, disabled: item.disabled }"
         @click="trigger(item)"
       >
         <div class="triggerIcon iconfont" :class="[item.icon]"></div>
@@ -48,7 +48,8 @@ export default {
       isDark: state => state.localConfig.isDark,
       activeSidebar: state => state.activeSidebar,
       isReadonly: state => state.isReadonly,
-      enableAi: state => state.localConfig.enableAi
+      enableAi: state => state.localConfig.enableAi,
+      hasTextSelection: state => state.hasTextSelection
     }),
 
     triggerList() {
@@ -63,7 +64,12 @@ export default {
           return item.value !== 'ai'
         })
       }
-      return list
+      return list.map(item => {
+        if (item.value === 'textFormat') {
+          return { ...item, disabled: !this.hasTextSelection }
+        }
+        return item
+      })
     }
   },
   watch: {
@@ -89,6 +95,7 @@ export default {
     ...mapMutations(['setActiveSidebar']),
 
     trigger(item) {
+      if (item.disabled) return
       this.setActiveSidebar(item.value)
     },
 
@@ -201,6 +208,12 @@ export default {
       &.active {
         color: #409eff;
         font-weight: bold;
+      }
+
+      &.disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+        &:hover { background-color: transparent; }
       }
 
       .triggerIcon {

@@ -23,7 +23,7 @@ const store = new Vuex.Store({
       enableAi: true
     },
     activeSidebar: '', // 当前显示的侧边栏
-    previousSidebar: '', // 自动切换前的侧边栏（用于恢复）
+    hasTextSelection: false, // 当前是否有文字选区（用于文本格式 tab 的启用/禁用）
     isOutlineEdit: false, // 是否是大纲编辑模式
     isReadonly: false, // 是否只读
     isSourceCodeEdit: false, // 是否是源码编辑模式
@@ -134,16 +134,9 @@ const store = new Vuex.Store({
       state.activeSidebar = data
     },
 
-    // 自动切换侧边栏（保存当前值以便恢复）
-    pushActiveSidebar(state, data) {
-      state.previousSidebar = state.activeSidebar
-      state.activeSidebar = data
-    },
-
-    // 恢复到自动切换前的侧边栏
-    popActiveSidebar(state) {
-      state.activeSidebar = state.previousSidebar || ''
-      state.previousSidebar = ''
+    // 设置是否有文字选区
+    setHasTextSelection(state, data) {
+      state.hasTextSelection = !!data
     },
 
     // 设置大纲编辑模式

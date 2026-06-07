@@ -509,6 +509,7 @@ export default {
     methodValidateTip: 'Vui lòng chọn phương thức yêu cầu',
     noInputTip: 'Vui lòng nhập nội dung',
     configurationMissing: 'Thiếu cấu hình',
+    sidebarTitle: 'AI',
     targetNode: 'Nút mục tiêu',
     editScope: 'Phạm vi chỉnh sửa',
     scopeCurrentOnly: 'Chỉ nút hiện tại',

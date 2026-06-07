@@ -131,8 +131,7 @@ const defaultBtnList = [
   'formula',
   // 'attachment',
   'outerFrame',
-  'annotation',
-  'ai'
+  'annotation'
 ]
 
 export default {
@@ -181,11 +180,6 @@ export default {
       if (!this.openNodeRichText) {
         res = res.filter(item => {
           return item !== 'formula'
-        })
-      }
-      if (!this.enableAi) {
-        res = res.filter(item => {
-          return item !== 'ai'
         })
       }
       return res

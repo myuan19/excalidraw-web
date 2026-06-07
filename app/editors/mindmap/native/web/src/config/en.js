@@ -439,21 +439,21 @@ export const sidebarTriggerList = [
     value: 'outline',
     icon: 'iconfuhao-dagangshu'
   },
-  // {
-  //   name: 'AI',
-  //   value: 'ai',
-  //   icon: 'iconAIshengcheng'
-  // },
+  {
+    name: 'AI Polish',
+    value: 'ai',
+    icon: 'iconAIshengcheng'
+  },
+  {
+    name: 'Text Format',
+    value: 'textFormat',
+    icon: 'iconbianji1'
+  },
   {
     name: 'Setting',
     value: 'setting',
     icon: 'iconshezhi'
-  },
-  // {
-  //   name: 'ShortcutKey',
-  //   value: 'shortcutKey',
-  //   icon: 'iconjianpan'
-  // }
+  }
 ]
 
 // 下载类型列表

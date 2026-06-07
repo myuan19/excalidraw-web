@@ -511,6 +511,7 @@ export default {
     methodValidateTip: 'Please select the request method',
     noInputTip: 'Please enter the content',
     configurationMissing: 'Configuration missing',
+    sidebarTitle: 'AI Polish',
     targetNode: 'Target Node',
     editScope: 'Edit Scope',
     scopeCurrentOnly: 'Current node only',

@@ -495,6 +495,7 @@ export default {
     methodValidateTip: '請選擇請求方式',
     noInputTip: '請輸入內容',
     configurationMissing: '配置缺失',
+    sidebarTitle: 'AI 潤色',
     targetNode: '目標節點',
     editScope: '編輯範圍',
     scopeCurrentOnly: '僅當前節點',
