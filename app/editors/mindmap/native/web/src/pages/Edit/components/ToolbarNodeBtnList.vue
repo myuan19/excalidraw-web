@@ -182,11 +182,26 @@
         v-if="item === 'ai'"
         class="toolbarBtn"
         :class="{
-          disabled: hasGeneralization
+          disabled: activeNodes.length !== 1 || hasGeneralization
         }"
-        @click="aiCrate"
+        @click="showAiOrganize"
       >
-        <span class="icon iconfont iconAIshengcheng"></span>
+        <span class="icon aiPolishIcon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+            <path
+              d="M6.2 17.8l1.6-1.6 8.4-8.4 2.4-1.2 1.2 2.4-1.2 2.4-8.8 8.8-2.4-.4zM16.4 6.4l1.8-1.8 1.4 1.4-1.8 1.8-1.4-1.4z"
+            />
+            <path
+              d="M5.4 9.2l.9 2.7 2.7.9-2.7.9-.9 2.7-.9-2.7-2.7-.9 2.7-.9.9-2.7z"
+            />
+            <path
+              d="M17.8 5.6l.55 1.65 1.65.55-1.65.55-.55 1.65-.55-1.65-1.65-.55 1.65-.55.55-1.65z"
+            />
+            <path
+              d="M18.6 14.4l.45 1.35 1.35.45-1.35.45-.45 1.35-.45-1.35-1.35-.45 1.35-.45.45-1.35z"
+            />
+          </svg>
+        </span>
         <span class="text">{{ $t('toolbar.ai') }}</span>
       </div>
     </template>
@@ -309,9 +324,10 @@ export default {
       this.$bus.$emit('execCommand', 'SET_NOTATION', this.activeNodes, ...args)
     },
 
-    // AI生成整体
-    aiCrate() {
-      this.$bus.$emit('ai_create_all')
+    // AI整理当前节点
+    showAiOrganize() {
+      if (this.activeNodes.length !== 1 || this.hasGeneralization) return
+      this.$bus.$emit('ai_organize_node', this.activeNodes[0])
     }
   }
 }
@@ -385,6 +401,13 @@ export default {
       flex-direction: column;
       text-align: center;
       padding: 0 5px;
+    }
+
+    .aiPolishIcon {
+      svg {
+        display: block;
+        margin: 0 auto;
+      }
     }
 
     .text {

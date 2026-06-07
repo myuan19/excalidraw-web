@@ -1,7 +1,10 @@
 import { DeltaStorage } from "./DeltaStorage";
 import { FileSyncState } from "./FileSyncState";
 import { createBlankExcalidrawInitialScene } from "./forkFileScene";
-import { MindMapAdapter } from "./formats/MindMapAdapter";
+import {
+  createEmptyMindMapData,
+  MindMapAdapter,
+} from "./formats/MindMapAdapter";
 import { generateExcalidrawThumbnailAndCache } from "./excalidrawThumbnail";
 import { generateMindMapThumbnailAndCache } from "./mindMapThumbnail";
 import { hashDocumentSnapshot, hashSceneSnapshot } from "./sceneHash";
@@ -35,7 +38,7 @@ export async function bootstrapLocalDraftSession(
   await DeltaStorage.setFileId(id);
 
   if (kind === "mindmap") {
-    const data = MindMapAdapter.createEmpty();
+    const data = createEmptyMindMapData(displayName);
     const document = MindMapAdapter.toDocument(data);
     FileSyncState.setLocalCache(id, toMindMapLocalCacheRecord(document));
     const hash = hashDocumentSnapshot(document);

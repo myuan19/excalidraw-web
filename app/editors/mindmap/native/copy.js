@@ -1,5 +1,6 @@
 const fs = require('fs')
 const path = require('path')
+const zlib = require('zlib')
 const { pathToFileURL } = require('url')
 
 const nativeDir = path.resolve(__dirname)
@@ -29,6 +30,50 @@ function copyDir(from, to) {
   }
 }
 
+const PRECOMPRESS_EXTENSIONS = new Set([
+  '.css',
+  '.html',
+  '.js',
+  '.json',
+  '.svg',
+  '.txt'
+])
+
+function shouldPrecompress(filePath) {
+  const ext = path.extname(filePath).toLowerCase()
+  if (!PRECOMPRESS_EXTENSIONS.has(ext)) {
+    return false
+  }
+  try {
+    return fs.statSync(filePath).size >= 1024
+  } catch (error) {
+    return false
+  }
+}
+
+function gzipFile(filePath) {
+  if (!shouldPrecompress(filePath)) {
+    return
+  }
+  const source = fs.readFileSync(filePath)
+  const compressed = zlib.gzipSync(source, { level: 9 })
+  fs.writeFileSync(`${filePath}.gz`, compressed)
+}
+
+function gzipDir(dir) {
+  if (!fs.existsSync(dir)) {
+    return
+  }
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const filePath = path.join(dir, entry.name)
+    if (entry.isDirectory()) {
+      gzipDir(filePath)
+    } else if (!entry.name.endsWith('.gz')) {
+      gzipFile(filePath)
+    }
+  }
+}
+
 if (fs.existsSync(servedDir)) {
   fs.rmSync(servedDir, { recursive: true, force: true })
 }
@@ -44,6 +89,7 @@ if (fs.existsSync(bridgeSrc)) {
   for (const target of bridgeTargets) {
     fs.mkdirSync(path.dirname(target), { recursive: true })
     fs.copyFileSync(bridgeSrc, target)
+    gzipFile(target)
   }
 } else {
   console.warn('[mind-map copy] missing bridge source:', bridgeSrc)
@@ -63,6 +109,8 @@ async function syncServedIndexHtml() {
   }
   fs.writeFileSync(path.join(servedDir, 'index.html'), html)
   fs.writeFileSync(dest, html)
+  gzipDir(path.resolve(nativeDir, './dist'))
+  gzipDir(path.join(servedDir, 'dist'))
 }
 
 void syncServedIndexHtml()

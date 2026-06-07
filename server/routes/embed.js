@@ -47,6 +47,17 @@ const tokenRouter = Router();
 const pageRouter = Router();
 
 const TOKEN_ACTIVE_CACHE_TTL_MS = 10_000;
+const CONTENT_HASHED_ASSET_RE =
+  /(?:^|\/)[^/]+\.[a-f0-9]{8,}\.(?:css|gif|ico|jpe?g|js|json|mjs|png|svg|webp|woff2?)$/i;
+
+function setMindMapEmbedAssetCacheHeaders(res, assetPath) {
+  if (CONTENT_HASHED_ASSET_RE.test(assetPath)) {
+    setPublicImmutableCacheHeaders(res);
+    return;
+  }
+  res.setHeader("Cache-Control", "public, no-cache, must-revalidate");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+}
 
 const embedTokenActiveCache = createEmbedTokenActiveCache({
   ttlMs: TOKEN_ACTIVE_CACHE_TTL_MS,
@@ -429,11 +440,11 @@ function sendEmbedMindMap(req, res) {
     }
     const css = rewriteMindMapCssForEmbed(rawCss, assetPath);
     res.setHeader("Content-Type", "text/css; charset=utf-8");
-    setPublicImmutableCacheHeaders(res);
+    setMindMapEmbedAssetCacheHeaders(res, assetPath);
     return res.send(css);
   }
 
-  setPublicImmutableCacheHeaders(res);
+  setMindMapEmbedAssetCacheHeaders(res, assetPath);
   res.sendFile(filePath);
 }
 

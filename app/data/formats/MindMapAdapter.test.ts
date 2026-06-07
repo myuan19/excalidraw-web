@@ -1,4 +1,5 @@
 import {
+  createEmptyMindMapData,
   isEffectivelyEmptyMindMapData,
   MindMapAdapter,
 } from "./MindMapAdapter";
@@ -8,7 +9,7 @@ describe("MindMapAdapter", () => {
     expect(MindMapAdapter.createEmpty()).toEqual({
       root: {
         data: {
-          text: "<p>根节点</p>",
+          text: "<p>未命名</p>",
           richText: true,
           expand: true,
         },
@@ -20,6 +21,15 @@ describe("MindMapAdapter", () => {
         config: {},
       },
     });
+  });
+
+  it("uses the provided display name as the default root text", () => {
+    expect(createEmptyMindMapData("项目计划").root.data.text).toBe(
+      "<p>项目计划</p>",
+    );
+    expect(createEmptyMindMapData("<unsafe&name>").root.data.text).toBe(
+      "<p>&lt;unsafe&amp;name&gt;</p>",
+    );
   });
 
   it("accepts current simple-mind-map data", async () => {

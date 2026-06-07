@@ -23,6 +23,7 @@ const store = new Vuex.Store({
       enableAi: true
     },
     activeSidebar: '', // 当前显示的侧边栏
+    previousSidebar: '', // 自动切换前的侧边栏（用于恢复）
     isOutlineEdit: false, // 是否是大纲编辑模式
     isReadonly: false, // 是否只读
     isSourceCodeEdit: false, // 是否是源码编辑模式
@@ -49,12 +50,36 @@ const store = new Vuex.Store({
     // 设置本地配置
     setLocalConfig(state, data) {
       const aiConfigKeys = Object.keys(state.aiConfig)
+      mindmapDevDebug('mindmap-ai', 'store.setLocalConfig before', {
+        incomingKeys: data && typeof data === 'object' ? Object.keys(data) : [],
+        hasIncomingApi: !!(data && data.api),
+        incomingApiTail: data && data.api ? String(data.api).slice(-32) : '',
+        hasIncomingKey: !!(data && data.key),
+        incomingKeyLen: data && data.key ? String(data.key).length : 0,
+        incomingModel: data && data.model,
+        currentHasApi: !!state.aiConfig.api,
+        currentApiTail: state.aiConfig.api
+          ? String(state.aiConfig.api).slice(-32)
+          : '',
+        currentHasKey: !!state.aiConfig.key,
+        currentKeyLen: state.aiConfig.key ? state.aiConfig.key.length : 0,
+        currentModel: state.aiConfig.model
+      })
       Object.keys(data).forEach(key => {
         if (aiConfigKeys.includes(key)) {
           state.aiConfig[key] = data[key]
         } else {
           state.localConfig[key] = data[key]
         }
+      })
+      mindmapDevDebug('mindmap-ai', 'store.setLocalConfig after', {
+        hasApi: !!state.aiConfig.api,
+        apiTail: state.aiConfig.api ? String(state.aiConfig.api).slice(-32) : '',
+        hasKey: !!state.aiConfig.key,
+        keyLen: state.aiConfig.key ? state.aiConfig.key.length : 0,
+        model: state.aiConfig.model,
+        method: state.aiConfig.method,
+        port: state.aiConfig.port
       })
       storeLocalConfig({
         ...state.localConfig,
@@ -68,10 +93,18 @@ const store = new Vuex.Store({
         hasData: !!data,
         configured: !!(data && data.configured),
         hasApi: !!(data && data.api),
+        apiTail: data && data.api ? String(data.api).slice(-32) : '',
         keyLen: data && data.key ? data.key.length : 0,
+        hasKey: !!(data && data.key),
+        hasMethod: !!(data && data.method),
         model: data && data.model
       })
-      if (!data || typeof data !== 'object') return
+      if (!data || typeof data !== 'object') {
+        mindmapDevDebug('mindmap-ai', 'store.setHostAiConfig ignored', {
+          dataType: data === null ? 'null' : typeof data
+        })
+        return
+      }
       state.aiConfig = {
         ...state.aiConfig,
         ...(data.api ? { api: data.api } : {}),
@@ -82,14 +115,35 @@ const store = new Vuex.Store({
       }
       mindmapDevDebug('mindmap-ai', 'store.setHostAiConfig after', {
         hasApi: !!state.aiConfig.api,
+        apiTail: state.aiConfig.api ? String(state.aiConfig.api).slice(-32) : '',
         keyLen: state.aiConfig.key ? state.aiConfig.key.length : 0,
-        model: state.aiConfig.model
+        hasKey: !!state.aiConfig.key,
+        model: state.aiConfig.model,
+        method: state.aiConfig.method,
+        port: state.aiConfig.port,
+        complete: !!(
+          String(state.aiConfig.api || '').trim() &&
+          String(state.aiConfig.key || '').trim() &&
+          String(state.aiConfig.model || '').trim()
+        )
       })
     },
 
     // 设置当前显示的侧边栏
     setActiveSidebar(state, data) {
       state.activeSidebar = data
+    },
+
+    // 自动切换侧边栏（保存当前值以便恢复）
+    pushActiveSidebar(state, data) {
+      state.previousSidebar = state.activeSidebar
+      state.activeSidebar = data
+    },
+
+    // 恢复到自动切换前的侧边栏
+    popActiveSidebar(state) {
+      state.activeSidebar = state.previousSidebar || ''
+      state.previousSidebar = ''
     },
 
     // 设置大纲编辑模式

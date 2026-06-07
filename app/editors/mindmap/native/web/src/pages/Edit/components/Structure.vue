@@ -75,6 +75,12 @@ export default {
       }
     }
   },
+  mounted() {
+    if (this.activeSidebar === 'structure' && this.$refs.sidebar) {
+      this.layout = this.mindMap.getLayout()
+      this.$refs.sidebar.show = true
+    }
+  },
   methods: {
     useLayout(layout) {
       this.layout = layout

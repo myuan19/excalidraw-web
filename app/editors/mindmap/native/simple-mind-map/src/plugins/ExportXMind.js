@@ -1,5 +1,3 @@
-import xmind from '../parse/xmind'
-
 //  导出XMind插件，需要通过Export插件使用
 class ExportXMind {
   //  构造函数
@@ -9,12 +7,14 @@ class ExportXMind {
 
   // 导出xmind
   async xmind(data, name) {
+    const { default: xmind } = await import('../parse/xmind')
     const zipData = await xmind.transformToXmind(data, name)
     return zipData
   }
 
   // 获取解析器
-  getXmind() {
+  async getXmind() {
+    const { default: xmind } = await import('../parse/xmind')
     return xmind
   }
 }

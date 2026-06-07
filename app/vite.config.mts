@@ -33,6 +33,22 @@ const MIND_MAP_MIME: Record<string, string> = {
   ".woff2": "font/woff2",
 };
 
+const MIND_MAP_HASHED_ASSET_RE =
+  /(?:^|\/)[^/]+\.[a-f0-9]{8,}\.(?:css|gif|ico|jpe?g|js|json|mjs|png|svg|webp|woff2?)$/i;
+
+function setMindMapStaticCacheHeaders(res: ServerResponse, filePath: string) {
+  const normalized = filePath.split(path.sep).join("/");
+  if (
+    MIND_MAP_HASHED_ASSET_RE.test(normalized) &&
+    !normalized.includes("/dist/bridge/")
+  ) {
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  } else {
+    res.setHeader("Cache-Control", "no-cache, must-revalidate");
+  }
+  res.setHeader("X-Content-Type-Options", "nosniff");
+}
+
 function serveMindMapStatic(
   req: IncomingMessage,
   res: ServerResponse,
@@ -68,11 +84,23 @@ function serveMindMapStatic(
     return;
   }
 
+  const acceptsGzip = /\bgzip\b/i.test(
+    String(req.headers["accept-encoding"] || ""),
+  );
+  const gzipPath = `${filePath}.gz`;
+  const shouldServeGzip = acceptsGzip && fs.existsSync(gzipPath);
+
   res.setHeader(
     "Content-Type",
     MIND_MAP_MIME[path.extname(filePath)] || "application/octet-stream",
   );
-  res.setHeader("Cache-Control", "no-cache");
+  setMindMapStaticCacheHeaders(res, filePath);
+  if (shouldServeGzip) {
+    res.setHeader("Content-Encoding", "gzip");
+    res.setHeader("Vary", "Accept-Encoding");
+    fs.createReadStream(gzipPath).pipe(res);
+    return;
+  }
   fs.createReadStream(filePath).pipe(res);
 }
 

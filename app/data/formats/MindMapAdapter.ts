@@ -3,6 +3,7 @@ import {
   type ManagedDocument,
 } from "../documentTypes";
 import { migrateManagedDocument } from "../documentMigrations";
+import { DEFAULT_DOCUMENT_DISPLAY_NAME } from "../defaultDocumentName";
 import { mindMapRichTextToPlainText } from "../thumbnailSvg";
 
 import type { DocumentFormatAdapter } from "./types";
@@ -113,6 +114,38 @@ function parseJsonString(input: string): unknown {
   }
 }
 
+function escapeMindMapText(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+export function createMindMapRootText(value = DEFAULT_DOCUMENT_DISPLAY_NAME): string {
+  const text = value.trim() || DEFAULT_DOCUMENT_DISPLAY_NAME;
+  return `<p>${escapeMindMapText(text)}</p>`;
+}
+
+export function createEmptyMindMapData(
+  rootText = DEFAULT_DOCUMENT_DISPLAY_NAME,
+): MindMapDocumentData {
+  return {
+    root: {
+      data: {
+        text: createMindMapRootText(rootText),
+        richText: true,
+        expand: true,
+      },
+      children: [],
+    },
+    layout: "logicalStructure",
+    theme: {
+      template: "classic4",
+      config: {},
+    },
+  };
+}
+
 export const MindMapAdapter: DocumentFormatAdapter<MindMapDocumentData> = {
   kind: "mindmap",
   currentFormatVersion: MINDMAP_FORMAT_VERSION,
@@ -120,21 +153,7 @@ export const MindMapAdapter: DocumentFormatAdapter<MindMapDocumentData> = {
   mimeTypes: ["application/json", "application/vnd.simple-mind-map+json"],
 
   createEmpty(): MindMapDocumentData {
-    return {
-      root: {
-        data: {
-          text: "<p>根节点</p>",
-          richText: true,
-          expand: true,
-        },
-        children: [],
-      },
-      layout: "logicalStructure",
-      theme: {
-        template: "classic4",
-        config: {},
-      },
-    };
+    return createEmptyMindMapData();
   },
 
   async parse(input: Blob | unknown): Promise<MindMapDocumentData> {

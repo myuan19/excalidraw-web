@@ -11,10 +11,23 @@
  */
 
 import { getAppSettings } from "./appSettings";
+import { getFileIdFromHash } from "./fileIdFromHash";
+import { isLocalDraftFileId } from "./localDraftFileId";
 import { ServerSync } from "./ServerSync";
 import { createLogger } from "../lib/logger";
 
 const log = createLogger({ module: "autoSave" });
+
+/** 仅对已入库到「所有文件」的服务器文档启用自动保存 */
+export function isAutoSaveEligibleFile(
+  fileId: string | null | undefined,
+): boolean {
+  return !!fileId && !isLocalDraftFileId(fileId);
+}
+
+export function isAutoSaveEligibleForCurrentFile(): boolean {
+  return isAutoSaveEligibleFile(getFileIdFromHash());
+}
 
 let globalSessionId: string | null = null;
 
@@ -107,6 +120,9 @@ function startIdleTimer() {
     if (!getAppSettings().autoSaveEnabled) {
       return;
     }
+    if (!isAutoSaveEligibleForCurrentFile()) {
+      return;
+    }
     log.info("idle auto-save triggered");
     triggerFn?.();
   }, settings.autoSaveIdleSec * 1000);
@@ -118,6 +134,10 @@ function startIdleTimer() {
  */
 export function notifyEdit(): void {
   if (!getAppSettings().autoSaveEnabled) {
+    return;
+  }
+  if (!isAutoSaveEligibleForCurrentFile()) {
+    clearIdleTimer();
     return;
   }
   startIdleTimer();

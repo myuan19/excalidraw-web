@@ -10,6 +10,8 @@ export interface AppSettings {
   autoSaveEnabled: boolean;
   /** 空闲自动保存等待时间（秒），编辑停止后多久触发保存 */
   autoSaveIdleSec: number;
+  /** 离开编辑器时自动保存（需同时开启空闲自动保存） */
+  autoSaveOnExit: boolean;
 }
 
 const STORAGE_KEY = "editorhub-app-settings";
@@ -18,6 +20,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoSaveOnBlur: true,
   autoSaveEnabled: false,
   autoSaveIdleSec: 10,
+  autoSaveOnExit: false,
 };
 
 let cache: AppSettings = { ...DEFAULT_SETTINGS };
@@ -57,6 +60,10 @@ function load(): AppSettings {
           parsed.autoSaveIdleSec >= 5
             ? parsed.autoSaveIdleSec
             : DEFAULT_SETTINGS.autoSaveIdleSec,
+        autoSaveOnExit:
+          typeof parsed.autoSaveOnExit === "boolean"
+            ? parsed.autoSaveOnExit
+            : DEFAULT_SETTINGS.autoSaveOnExit,
       };
     }
   } catch {
@@ -88,4 +95,10 @@ export function updateAppSettings(
 export function subscribeAppSettings(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+/** 空闲自动保存与离开自动保存均已开启 */
+export function isAutoSaveOnExitActive(): boolean {
+  const settings = getAppSettings();
+  return settings.autoSaveEnabled && settings.autoSaveOnExit;
 }

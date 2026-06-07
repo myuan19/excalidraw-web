@@ -1,4 +1,7 @@
-import { MindMapAdapter } from "../../data/formats/MindMapAdapter";
+import {
+  createEmptyMindMapData,
+  MindMapAdapter,
+} from "../../data/formats/MindMapAdapter";
 import { generateMindMapThumbnailAndCache } from "../../data/mindMapThumbnail";
 import { saveMindMapBrowserViewFromData } from "../../data/mindMapBrowserViewStorage";
 import { ServerSync } from "../../data/ServerSync";
@@ -14,7 +17,7 @@ export async function createMindMapFile({
   folderId,
 }: EditorCreateFileContext): Promise<{ id: string }> {
   const created = await ServerSync.createFile(name, folderId, "mindmap");
-  const mindMapData = MindMapAdapter.createEmpty();
+  const mindMapData = createEmptyMindMapData(name);
   const document = MindMapAdapter.toDocument(mindMapData);
   const thumbnail = await generateMindMapThumbnailAndCache(
     created.id,

@@ -16,6 +16,7 @@ import Edit from './components/Edit.vue'
 import { mapState, mapMutations } from 'vuex'
 import { getLocalConfig } from '@/api'
 import { mindmapDevDebug } from '@/utils/mindmapDevDebug'
+import { mindmapLoadMark } from '@/utils/mindmapLoadTimeline'
 
 const debugMindMapOpen = (label, data = {}) => {
   mindmapDevDebug('mindmap-open', `vue Index ${label}`, data)
@@ -45,9 +46,12 @@ export default {
     }
   },
   async created() {
+    mindmapLoadMark('vue Index created start')
     debugMindMapOpen('created start')
     this.initLocalConfig()
     this.$bus.$on('host_ai_config', this.onHostAiConfig)
+    this.$bus.$emit('host_ai_config_listener_ready')
+    debugMindMapOpen('host_ai_config listener ready')
     // Host embed: open phases are console-only; skip Vue $loading flash.
     if (!window.takeOverApp) {
       const loading = this.$loading({
@@ -60,6 +64,10 @@ export default {
       this.show = true
     }
     this.setBodyDark()
+    mindmapLoadMark('vue Index created end', {
+      show: this.show,
+      isDark: this.isDark
+    })
     debugMindMapOpen('created end', {
       show: this.show,
       isDark: this.isDark

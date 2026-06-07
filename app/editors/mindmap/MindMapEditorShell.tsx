@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getAppSettings } from "../../data/appSettings";
 import {
+  isAutoSaveEligibleForCurrentFile,
   notifyEdit,
   registerAutoSaveTrigger,
 } from "../../data/autoSaveSession";
@@ -35,6 +36,7 @@ import { readFileListTreeCache } from "../../data/fileListSessionCache";
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
 import { LocalThumbnailCache } from "../../data/localThumbnailCache";
 import {
+  createEmptyMindMapData,
   isEffectivelyEmptyMindMapData,
   isMindMapSingleRootOnly,
 } from "../../data/formats/MindMapAdapter";
@@ -257,6 +259,7 @@ const MindMapEditorShell = () => {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const {
     bootKey: iframeBootKey,
+    bridgePhase,
     bridgeError,
     isAppReady,
     isBridgeReady,
@@ -674,7 +677,9 @@ const MindMapEditorShell = () => {
           saveMindMapBrowserViewFromData(resolvedId, serverFile.data);
           const data = serverFile.data
             ? await MindMapAdapter.parse(serverFile.data)
-            : MindMapAdapter.createEmpty();
+            : createEmptyMindMapData(
+                serverFile.name || DEFAULT_DOCUMENT_DISPLAY_NAME,
+              );
           debugMindMapOpen("after MindMapAdapter.parse", {
             elapsed: Math.round(performance.now() - parseStart),
             rootChildren: data.root?.children?.length ?? 0,
@@ -1099,7 +1104,9 @@ const MindMapEditorShell = () => {
     saveMindMapBrowserViewFromData(fileId, serverFile.data);
     const data = serverFile.data
       ? await MindMapAdapter.parse(serverFile.data)
-      : MindMapAdapter.createEmpty();
+      : createEmptyMindMapData(
+          serverFile.name || DEFAULT_DOCUMENT_DISPLAY_NAME,
+        );
     const document = MindMapAdapter.toDocument(data);
     latestDocumentRef.current = document;
     publishMindMapDataToNative(data, "history-restore");
@@ -1238,7 +1245,7 @@ const MindMapEditorShell = () => {
         window.clearTimeout(visibilitySaveTimer);
         visibilitySaveTimer = null;
       }
-      if (!document.hidden || !getFileIdFromHash()) {
+      if (!document.hidden || !isAutoSaveEligibleForCurrentFile()) {
         return;
       }
       if (!isBridgeReady || !isAppReady) {
@@ -1256,6 +1263,9 @@ const MindMapEditorShell = () => {
     };
 
     const unregisterAutoSave = registerAutoSaveTrigger(() => {
+      if (!isAutoSaveEligibleForCurrentFile()) {
+        return;
+      }
       requestSave({ source: "auto" });
     });
 
@@ -1270,10 +1280,22 @@ const MindMapEditorShell = () => {
   }, [isAppReady, isBridgeReady, saveToServerRef]);
 
   useEffect(() => {
-    if (isAppReady) {
-      logMindMapOpenPhase("ready");
+    if (!isAppReady) {
+      return;
     }
-  }, [isAppReady, logMindMapOpenPhase]);
+    logMindMapOpenPhase("ready");
+    debugMindMapOpen("load complete summary", {
+      fileId8: fileId?.slice(0, 8) ?? null,
+      sinceShellStart: Math.round(performance.now() - shellStartRef.current),
+      sinceInitStart:
+        initStartRef.current != null
+          ? Math.round(performance.now() - initStartRef.current)
+          : null,
+      bridgePhase,
+      isBridgeReady,
+      isAppReady,
+    });
+  }, [bridgePhase, fileId, isAppReady, isBridgeReady, logMindMapOpenPhase]);
 
   return (
     <main className="mindmap-editor">

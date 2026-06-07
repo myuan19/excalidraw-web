@@ -16,7 +16,11 @@ import { isLocalDraftFileId } from "../../data/localDraftFileId";
 import { notifyLocalDraftEdited } from "../../data/localDraftSessions";
 import { discardLocalDraftSession } from "../../data/discardLocalDraftSession";
 import { clearAppShellPendingNavigation } from "../../shell/appShellNavigate";
-import { notifyEdit } from "../../data/autoSaveSession";
+import {
+  isAutoSaveEligibleFile,
+  notifyEdit,
+} from "../../data/autoSaveSession";
+import { isAutoSaveOnExitActive } from "../../data/appSettings";
 import { installExecutor, requestSaveAndWait } from "../../data/saveQueue";
 
 import type { ManagedDocument } from "../../data/documentTypes";
@@ -227,6 +231,9 @@ export function useMindMapFileSave(opts: {
         return false;
       }
       if (isLocalDraftFileId(fileId)) {
+        if (source === "auto" || source === "visibility") {
+          return false;
+        }
         onRequestSaveNew?.({ navigateAfter: !!navigateAfter });
         return false;
       }
@@ -287,7 +294,7 @@ export function useMindMapFileSave(opts: {
         window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
         window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
         if (source === "auto") {
-          setMindMapSaveHint("空闲自动保存完成");
+          setMindMapSaveHint("自动保存完成");
         } else if (source === "toolbar" || source === "hotkey") {
           setMindMapSaveHint(result?.skipped ? "已是最新版本" : "已保存");
         }
@@ -398,6 +405,10 @@ export function useMindMapFileSave(opts: {
     await syncCurrentMindMapDraftForLeave(fileId);
     if (!shouldPromptEditorHomeNavDialog(fileId)) {
       navigateToFileListHome();
+      return;
+    }
+    if (isAutoSaveOnExitActive() && isAutoSaveEligibleFile(fileId)) {
+      await requestSaveAndWait({ source: "home", navigateAfter: true });
       return;
     }
     setMindMapHomeNavDialogOpen(true);

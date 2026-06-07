@@ -18,8 +18,32 @@
 </template>
 
 <script>
-import Viewer from '@toast-ui/editor/dist/toastui-editor-viewer'
-import '@toast-ui/editor/dist/toastui-editor-viewer.css'
+let toastViewerPromise = null
+
+function resolveToastConstructor(mod, name) {
+  const candidates = [
+    mod && mod.default,
+    mod && mod[name],
+    mod && mod.default && mod.default.default,
+    mod && mod.default && mod.default[name],
+    mod
+  ]
+  const ctor = candidates.find(candidate => typeof candidate === 'function')
+  if (!ctor) {
+    throw new Error(`Toast UI ${name} export is unavailable`)
+  }
+  return ctor
+}
+
+async function loadToastViewer() {
+  if (!toastViewerPromise) {
+    toastViewerPromise = Promise.all([
+      import('@toast-ui/editor/dist/toastui-editor-viewer'),
+      import('@toast-ui/editor/dist/toastui-editor-viewer.css')
+    ]).then(([mod]) => resolveToastConstructor(mod, 'Viewer'))
+  }
+  return toastViewerPromise
+}
 
 // 节点备注内容显示
 export default {
@@ -52,7 +76,6 @@ export default {
   },
   mounted() {
     this.mindMap.el.appendChild(this.$refs.noteContentViewer)
-    this.initEditor()
   },
   beforeDestroy() {
     this.$bus.$off('showNoteContent', this.onShowNoteContent)
@@ -77,9 +100,10 @@ export default {
     },
 
     // 显示备注浮层
-    onShowNoteContent(content, left, top, node) {
+    async onShowNoteContent(content, left, top, node) {
       this.node = node
-      this.editor.setHTML(content)
+      await this.initEditor()
+      this.setViewerHTML(content)
       this.handleALink()
       this.updateNoteContentPosition(left, top)
       this.show = true
@@ -114,12 +138,30 @@ export default {
     },
 
     // 初始化编辑器
-    initEditor() {
+    async initEditor() {
       if (!this.editor) {
+        const Viewer = await loadToastViewer()
         this.editor = new Viewer({
           el: this.$refs.noteContentWrap
         })
       }
+    },
+
+    setViewerHTML(content) {
+      const html = content || ''
+      if (this.editor && typeof this.editor.setHTML === 'function') {
+        this.editor.setHTML(html)
+        return
+      }
+      if (
+        this.editor &&
+        this.editor.preview &&
+        typeof this.editor.preview.setHTML === 'function'
+      ) {
+        this.editor.preview.setHTML(html)
+        return
+      }
+      this.$refs.noteContentWrap.innerHTML = html
     }
   }
 }

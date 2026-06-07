@@ -1,5 +1,29 @@
 import { devDebug, isDevDebugChannelEnabled } from "../../lib/devDebug";
 
+const NOISY_BRIDGE_LABEL_PREFIXES = [
+  "onMessage mindMapViewState",
+  "onMessage mindMapDirtyState",
+];
+
+function isVerboseBridgeDebugEnabled(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    return (
+      window.localStorage.getItem("mindmapBridgeVerboseDebug") === "1" ||
+      window.localStorage.getItem("excalidraw-web-debug-mindmap-bridge-verbose") ===
+        "1"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isNoisyBridgeLabel(label: string): boolean {
+  return NOISY_BRIDGE_LABEL_PREFIXES.some((prefix) => label.startsWith(prefix));
+}
+
 export function isMindMapBridgeDebugEnabled(): boolean {
   if (isDevDebugChannelEnabled("mindmap-bridge")) {
     return true;
@@ -24,6 +48,9 @@ export function debugMindMapBridge(
   label: string,
   data: Record<string, unknown> = {},
 ): void {
+  if (isNoisyBridgeLabel(label) && !isVerboseBridgeDebugEnabled()) {
+    return;
+  }
   if (!isMindMapBridgeDebugEnabled()) {
     return;
   }

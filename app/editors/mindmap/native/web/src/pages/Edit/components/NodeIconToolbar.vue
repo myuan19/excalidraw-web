@@ -13,10 +13,18 @@
   
 <script>
 import { nodeIconList as _nodeIconList } from 'simple-mind-map/src/svg/icons'
-import icon from '@/config/icon'
 import { mapState, mapMutations } from 'vuex'
 
-const allIconList = [..._nodeIconList, ...icon]
+let extendedIconListPromise = null
+
+async function getAllIconList() {
+    if (!extendedIconListPromise) {
+        extendedIconListPromise = import('@/config/icon').then(mod => {
+            return [..._nodeIconList, ...(mod.default || [])]
+        })
+    }
+    return extendedIconListPromise
+}
 
 export default {
     props: {
@@ -65,14 +73,21 @@ export default {
     methods: {
         ...mapMutations(['setActiveSidebar']),
 
-        show(node, icon) {
+        async show(node, icon) {
             this.node = node
             this.iconType = icon.split('_')[0]
             this.iconName = icon.split('_')[1]
             this.nodeIconList = node.getData('icon') || []
-            this.iconList = [...allIconList.find((item) => {
+            const allIconList = await getAllIconList()
+            if (this.mindMap && this.mindMap.opt) {
+                this.mindMap.opt.iconList = allIconList.filter(item => {
+                    return !_nodeIconList.some(builtIn => builtIn.type === item.type)
+                })
+            }
+            const iconGroup = allIconList.find((item) => {
                 return item.type === this.iconType
-            }).list]
+            })
+            this.iconList = iconGroup ? [...iconGroup.list] : []
             this.updatePos()
             this.showNodeIconToolbar = true
             if (this.activeSidebar === 'nodeIconSidebar') {

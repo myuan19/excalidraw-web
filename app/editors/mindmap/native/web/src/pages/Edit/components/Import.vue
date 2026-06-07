@@ -57,7 +57,6 @@
 </template>
 
 <script>
-import xmind from 'simple-mind-map/src/parse/xmind.js'
 import { mapMutations } from 'vuex'
 import Vue from 'vue'
 
@@ -198,6 +197,7 @@ export default {
     // 处理.xmind文件
     async handleXmind(file) {
       try {
+        const { default: xmind } = await import('simple-mind-map/src/parse/xmind.js')
         let data = await xmind.parseXmindFile(file.raw, content => {
           this.showSelectXmindCanvasDialog(content)
           return new Promise(resolve => {

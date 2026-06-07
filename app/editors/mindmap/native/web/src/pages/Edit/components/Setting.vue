@@ -446,6 +446,13 @@ export default {
       }
     }
   },
+  mounted() {
+    if (this.activeSidebar === 'setting' && this.$refs.sidebar) {
+      this.$refs.sidebar.show = true
+      this.initConfig()
+      this.initWatermark()
+    }
+  },
   created() {
     this.initLoacalConfig()
     this.$bus.$on('toggleOpenNodeRichText', this.onToggleOpenNodeRichText)

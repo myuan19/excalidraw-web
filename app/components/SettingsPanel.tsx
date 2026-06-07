@@ -172,7 +172,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     切换后台时自动保存
                   </span>
                   <span className="settings-panel__option-desc">
-                    当页面切换到后台或失去焦点时，自动将当前编辑内容保存到服务器
+                    当页面切换到后台或失去焦点时，自动将当前编辑内容保存到服务器（仅对已入库文件生效）
                   </span>
                 </div>
                 <label className="settings-panel__toggle">
@@ -192,7 +192,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     空闲自动保存
                   </span>
                   <span className="settings-panel__option-desc">
-                    停止编辑一段时间后自动保存到服务器，同一次打开期间会覆盖上一次自动存档
+                    停止编辑一段时间后自动保存到服务器，同一次打开期间会覆盖上一次自动存档（仅对已入库文件生效）
                   </span>
                 </div>
                 <label className="settings-panel__toggle">
@@ -210,33 +210,58 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 </label>
               </div>
               {appSettings.autoSaveEnabled && (
-                <div className="settings-panel__option settings-panel__option--sub">
-                  <div className="settings-panel__option-text">
-                    <span className="settings-panel__option-label">
-                      空闲等待时间
-                    </span>
-                    <span className="settings-panel__option-desc">
-                      停止编辑后等待多久触发保存
-                    </span>
+                <>
+                  <div className="settings-panel__option settings-panel__option--sub">
+                    <div className="settings-panel__option-text">
+                      <span className="settings-panel__option-label">
+                        空闲等待时间
+                      </span>
+                      <span className="settings-panel__option-desc">
+                        停止编辑后等待多久触发保存
+                      </span>
+                    </div>
+                    <select
+                      className="settings-panel__select"
+                      value={appSettings.autoSaveIdleSec}
+                      onChange={(e) =>
+                        handleAppSettingChange(
+                          "autoSaveIdleSec",
+                          Number(e.target.value),
+                        )
+                      }
+                    >
+                      <option value={5}>5 秒</option>
+                      <option value={10}>10 秒</option>
+                      <option value={30}>30 秒</option>
+                      <option value={60}>1 分钟</option>
+                      <option value={120}>2 分钟</option>
+                      <option value={300}>5 分钟</option>
+                    </select>
                   </div>
-                  <select
-                    className="settings-panel__select"
-                    value={appSettings.autoSaveIdleSec}
-                    onChange={(e) =>
-                      handleAppSettingChange(
-                        "autoSaveIdleSec",
-                        Number(e.target.value),
-                      )
-                    }
-                  >
-                    <option value={5}>5 秒</option>
-                    <option value={10}>10 秒</option>
-                    <option value={30}>30 秒</option>
-                    <option value={60}>1 分钟</option>
-                    <option value={120}>2 分钟</option>
-                    <option value={300}>5 分钟</option>
-                  </select>
-                </div>
+                  <div className="settings-panel__option settings-panel__option--sub">
+                    <div className="settings-panel__option-text">
+                      <span className="settings-panel__option-label">
+                        离开自动保存
+                      </span>
+                      <span className="settings-panel__option-desc">
+                        切换文件、返回列表或最近访问时，若有未保存更改则自动保存后再离开（仅对已入库文件生效）
+                      </span>
+                    </div>
+                    <label className="settings-panel__toggle">
+                      <input
+                        type="checkbox"
+                        checked={appSettings.autoSaveOnExit}
+                        onChange={(e) =>
+                          handleAppSettingChange(
+                            "autoSaveOnExit",
+                            e.target.checked,
+                          )
+                        }
+                      />
+                      <span className="settings-panel__toggle-track" />
+                    </label>
+                  </div>
+                </>
               )}
             </div>
           )}

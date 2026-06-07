@@ -21,6 +21,7 @@ db.pragma("foreign_keys = ON");
  * - library_items: public | personal | canvas-scoped shapes (JSON in `data` column)
  * - library_groups: published-library grouping + per-row collapsed flag (item_ids JSON array)
  * - ai_settings: single row id=1, OpenAI-compatible JSON (no auth — LAN-only deployment)
+ * - ai_prompt_presets: global reusable AI prompt snippets / requirements
  */
 db.exec(`
   CREATE TABLE IF NOT EXISTS files (
@@ -74,6 +75,16 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS ai_settings (
     id          INTEGER PRIMARY KEY CHECK (id = 1),
     config_json TEXT NOT NULL DEFAULT '{}'
+  );
+
+  CREATE TABLE IF NOT EXISTS ai_prompt_presets (
+    id         TEXT PRIMARY KEY,
+    area       TEXT NOT NULL,
+    name       TEXT NOT NULL DEFAULT '',
+    prompt     TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    sort_index INTEGER NOT NULL DEFAULT 0
   );
 
   CREATE TABLE IF NOT EXISTS embed_tokens (

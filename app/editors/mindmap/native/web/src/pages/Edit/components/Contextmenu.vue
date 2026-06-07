@@ -106,8 +106,13 @@
         <span class="name">{{ $t('contextmenu.exportNodeToPng') }}</span>
       </div>
       <div class="splitLine" v-if="enableAi"></div>
-      <div class="item" @click="aiCreate" v-if="enableAi">
-        <span class="name">{{ $t('contextmenu.aiCreate') }}</span>
+      <div
+        class="item"
+        @click="aiPolish"
+        v-if="enableAi"
+        :class="{ disabled: isGeneralization }"
+      >
+        <span class="name">{{ $t('contextmenu.aiPolish') }}</span>
       </div>
     </template>
     <template v-if="type === 'image'">
@@ -597,9 +602,10 @@ export default {
       }
     },
 
-    // AI续写
-    aiCreate() {
-      this.$bus.$emit('ai_create_part', this.node)
+    // AI润色（与顶部 AI 按钮相同）
+    aiPolish() {
+      if (!this.node || this.node.isGeneralization) return
+      this.$bus.$emit('ai_organize_node', this.node)
       this.hide()
     }
   }

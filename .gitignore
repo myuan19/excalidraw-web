@@ -49,3 +49,4 @@ _scripts/
 # Local scratch / logs (not source)
 _ai_docs/
 _logs/
+_*

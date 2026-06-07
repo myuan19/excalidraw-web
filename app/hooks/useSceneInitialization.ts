@@ -4,7 +4,10 @@ import {
   resolvablePromise,
 } from "@excalidraw/common";
 import { getAppSettings } from "../data/appSettings";
-import { registerAutoSaveTrigger } from "../data/autoSaveSession";
+import {
+  isAutoSaveEligibleForCurrentFile,
+  registerAutoSaveTrigger,
+} from "../data/autoSaveSession";
 import { requestSave } from "../data/saveQueue";
 import { CaptureUpdateAction } from "@excalidraw/excalidraw";
 import {
@@ -277,6 +280,9 @@ export function useSceneInitialization(opts: {
       if (!document.hidden) {
         return;
       }
+      if (!isAutoSaveEligibleForCurrentFile()) {
+        return;
+      }
       if (!getAppSettings().autoSaveOnBlur) {
         return;
       }
@@ -298,6 +304,9 @@ export function useSceneInitialization(opts: {
     };
 
     const unregisterAutoSave = registerAutoSaveTrigger(() => {
+      if (!isAutoSaveEligibleForCurrentFile()) {
+        return;
+      }
       requestSave({ source: "auto" });
     });
 

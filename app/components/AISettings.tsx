@@ -7,6 +7,7 @@ import {
   refetchAIConfig,
   saveAIConfigToServer,
 } from "../data/aiConfig";
+import { devDebug } from "../lib/devDebug";
 
 import "./AISettings.scss";
 
@@ -46,6 +47,30 @@ const DEFAULT_CONFIG: AISettingsConfig = {
   mindmap: DEFAULT_MINDMAP_AI_CONFIG,
 };
 
+function summarizeAISettingsConfig(config: AISettingsConfig) {
+  return {
+    excalidraw: {
+      hasEndpoint: !!config.excalidraw.endpoint.trim(),
+      endpointLen: config.excalidraw.endpoint.length,
+      endpointTail: config.excalidraw.endpoint.slice(-32),
+      hasApiKey: !!config.excalidraw.apiKey.trim(),
+      apiKeyLen: config.excalidraw.apiKey.length,
+    },
+    mindmap: {
+      hasEndpoint: !!config.mindmap.endpoint.trim(),
+      endpointLen: config.mindmap.endpoint.length,
+      endpointTail: config.mindmap.endpoint.slice(-32),
+      hasApiKey: !!config.mindmap.apiKey.trim(),
+      apiKeyLen: config.mindmap.apiKey.length,
+      hasModel: !!config.mindmap.model.trim(),
+      model: config.mindmap.model,
+      configured: !!(
+        config.mindmap.endpoint.trim() && config.mindmap.apiKey.trim()
+      ),
+    },
+  };
+}
+
 interface AISettingsProps {
   open: boolean;
   onClose: () => void;
@@ -60,6 +85,7 @@ export const AISettings: React.FC<AISettingsProps> = ({ open, onClose }) => {
   const overlayDismiss = useStrictOverlayDismiss(onClose);
 
   useEffect(() => {
+    devDebug("ai-config", "AISettings open changed", { open });
     if (!open) {
       return;
     }
@@ -67,11 +93,20 @@ export const AISettings: React.FC<AISettingsProps> = ({ open, onClose }) => {
     let cancelled = false;
     (async () => {
       try {
+        devDebug("ai-config", "AISettings refetch start");
         const cfg = await refetchAIConfig();
+        devDebug("ai-config", "AISettings refetch success", {
+          cancelled,
+          ...summarizeAISettingsConfig(cfg),
+        });
         if (!cancelled) {
           setConfig(cfg);
         }
       } catch (e: unknown) {
+        devDebug("ai-config", "AISettings refetch failed", {
+          cancelled,
+          message: e instanceof Error ? e.message : String(e),
+        });
         if (!cancelled) {
           setLoadError(e instanceof Error ? e.message : String(e));
         }
@@ -86,9 +121,18 @@ export const AISettings: React.FC<AISettingsProps> = ({ open, onClose }) => {
     setLoadError(null);
     setSaving(true);
     try {
+      devDebug("ai-config", "AISettings save start", {
+        ...summarizeAISettingsConfig(config),
+      });
       await saveAIConfigToServer(config);
+      devDebug("ai-config", "AISettings save success", {
+        ...summarizeAISettingsConfig(config),
+      });
       onClose();
     } catch (e: unknown) {
+      devDebug("ai-config", "AISettings save failed", {
+        message: e instanceof Error ? e.message : String(e),
+      });
       setLoadError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);

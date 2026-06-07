@@ -11,7 +11,8 @@ import {
   getNodeRichTextStyles,
   htmlEscape,
   compareVersion,
-  loadImage
+  loadImage,
+  getSvgNodeVisibleRect
 } from '../utils'
 import { richTextSupportStyleList } from '../constants/constant'
 import MindMapNode from '../core/render/node/MindMapNode'
@@ -226,7 +227,7 @@ class RichText {
       : textAutoWrapWidth
     this.node = node
     this.isInserting = isInserting
-    if (!rect) rect = node._textData.node.node.getBoundingClientRect()
+    if (!rect) rect = getSvgNodeVisibleRect(node._textData.node, 'RichText.show')
     if (!isFromScale) {
       this.mindMap.emit('before_show_text_edit')
     }
@@ -355,7 +356,7 @@ class RichText {
   updateTextEditNode() {
     if (!this.node) return
     const g = this.node._textData.node
-    const rect = g.node.getBoundingClientRect()
+    const rect = getSvgNodeVisibleRect(g, 'RichText.updateTextEditNode')
     const originWidth = g.attr('data-width')
     const originHeight = g.attr('data-height')
     this.textEditNode.style.minWidth =

@@ -140,10 +140,24 @@ const listeners = new Set<() => void>();
 
 export function subscribeAIConfig(listener: () => void): () => void {
   listeners.add(listener);
-  return () => listeners.delete(listener);
+  devDebug("ai-config", "subscribeAIConfig add listener", {
+    listenerCount: listeners.size,
+    loadedOnce,
+  });
+  return () => {
+    listeners.delete(listener);
+    devDebug("ai-config", "subscribeAIConfig remove listener", {
+      listenerCount: listeners.size,
+      loadedOnce,
+    });
+  };
 }
 
 function notify() {
+  devDebug("ai-config", "notify listeners", {
+    listenerCount: listeners.size,
+    loadedOnce,
+  });
   listeners.forEach((fn) => {
     try {
       fn();
@@ -154,19 +168,54 @@ function notify() {
 }
 
 function parseResponseJson(data: unknown): AISettingsConfig {
-  return normalizeAIConfig(data);
+  devDebug("ai-config", "parseResponseJson raw shape", {
+    dataType: data === null ? "null" : typeof data,
+    topLevelKeys:
+      data && typeof data === "object" ? Object.keys(data).sort() : [],
+    hasMindMapObject: !!(
+      data &&
+      typeof data === "object" &&
+      (data as Record<string, unknown>).mindmap &&
+      typeof (data as Record<string, unknown>).mindmap === "object"
+    ),
+    hasExcalidrawObject: !!(
+      data &&
+      typeof data === "object" &&
+      (data as Record<string, unknown>).excalidraw &&
+      typeof (data as Record<string, unknown>).excalidraw === "object"
+    ),
+  });
+  const config = normalizeAIConfig(data);
+  debugAIConfig("parseResponseJson normalized", config);
+  return config;
 }
 
 function debugAIConfig(label: string, config: AISettingsConfig): void {
   devDebug("ai-config", label, {
+    loadedOnce,
+    listenerCount: listeners.size,
     excalidraw: {
       hasEndpoint: !!config.excalidraw.endpoint?.trim(),
+      endpointLen: config.excalidraw.endpoint?.length ?? 0,
+      endpointTail: config.excalidraw.endpoint
+        ? config.excalidraw.endpoint.slice(-32)
+        : "",
       hasApiKey: !!config.excalidraw.apiKey?.trim(),
+      apiKeyLen: config.excalidraw.apiKey?.length ?? 0,
     },
     mindmap: {
       hasEndpoint: !!config.mindmap.endpoint?.trim(),
+      endpointLen: config.mindmap.endpoint?.length ?? 0,
+      endpointTail: config.mindmap.endpoint
+        ? config.mindmap.endpoint.slice(-32)
+        : "",
       hasApiKey: !!config.mindmap.apiKey?.trim(),
+      apiKeyLen: config.mindmap.apiKey?.length ?? 0,
       model: config.mindmap.model,
+      modelLen: config.mindmap.model?.length ?? 0,
+      configured: !!(
+        config.mindmap.endpoint?.trim() && config.mindmap.apiKey?.trim()
+      ),
     },
   });
 }

@@ -90,7 +90,6 @@
     </div>
     <NodeImage></NodeImage>
     <NodeHyperlink></NodeHyperlink>
-    <NodeIcon></NodeIcon>
     <NodeNote></NodeNote>
     <NodeTag></NodeTag>
     <Export></Export>
@@ -101,7 +100,6 @@
 <script>
 import NodeImage from './NodeImage.vue'
 import NodeHyperlink from './NodeHyperlink.vue'
-import NodeIcon from './NodeIcon.vue'
 import NodeNote from './NodeNote.vue'
 import NodeTag from './NodeTag.vue'
 import Export from './Export.vue'
@@ -141,7 +139,6 @@ export default {
   components: {
     NodeImage,
     NodeHyperlink,
-    NodeIcon,
     NodeNote,
     NodeTag,
     Export,
@@ -770,13 +767,6 @@ export default {
         white-space: nowrap;
       }
 
-      &.aiToolbarBtn {
-        .icon {
-          width: 28px;
-          padding: 0;
-          align-items: center;
-        }
-      }
     }
   }
 }

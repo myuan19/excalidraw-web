@@ -13,7 +13,9 @@ export function isMindmapDevDebugEnabled() {
     const params = new URLSearchParams(window.location.search)
     return (
       params.get('mindmapDebug') === '1' ||
-      window.localStorage.getItem('mindmapDebug') === '1'
+      params.get('mindmapLoadDebug') === '1' ||
+      window.localStorage.getItem('mindmapDebug') === '1' ||
+      window.localStorage.getItem('mindmapLoadDebug') === '1'
     )
   } catch (error) {
     return false

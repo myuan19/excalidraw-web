@@ -957,6 +957,15 @@ export default {
       }
     }
   },
+  mounted() {
+    if (this.activeSidebar === 'baseStyle' && this.$refs.sidebar) {
+      this.$refs.sidebar.show = true
+      this.initStyle()
+      this.initRainbowLines()
+      this.initOuterFramePadding()
+      this.currentLayout = this.mindMap.getLayout()
+    }
+  },
   created() {
     this.$bus.$on('setData', this.onSetData)
   },

@@ -139,7 +139,7 @@ function getMinLevel(): LogLevel {
     return env.VITE_LOG_LEVEL as LogLevel;
   }
   if (env.DEV) {
-    return "debug";
+    return "info";
   }
   return isDeployDebugBuild() ? "debug" : "error";
 }

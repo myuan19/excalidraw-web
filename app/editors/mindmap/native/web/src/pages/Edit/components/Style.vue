@@ -632,6 +632,11 @@ export default {
       }
     }
   },
+  mounted() {
+    if (this.activeSidebar === 'nodeStyle' && this.$refs.sidebar) {
+      this.$refs.sidebar.show = true
+    }
+  },
   created() {
     this.$bus.$on('node_active', this.onNodeActive)
   },

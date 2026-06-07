@@ -25,9 +25,34 @@
 </template>
 
 <script>
-import Editor from '@toast-ui/editor'
-import '@toast-ui/editor/dist/toastui-editor.css' // Editor's Style
 import { isMobile } from 'simple-mind-map/src/utils/index'
+
+let toastEditorPromise = null
+
+function resolveToastConstructor(mod, name) {
+  const candidates = [
+    mod && mod.default,
+    mod && mod[name],
+    mod && mod.default && mod.default.default,
+    mod && mod.default && mod.default[name],
+    mod
+  ]
+  const ctor = candidates.find(candidate => typeof candidate === 'function')
+  if (!ctor) {
+    throw new Error(`Toast UI ${name} export is unavailable`)
+  }
+  return ctor
+}
+
+async function loadToastEditor() {
+  if (!toastEditorPromise) {
+    toastEditorPromise = Promise.all([
+      import('@toast-ui/editor'),
+      import('@toast-ui/editor/dist/toastui-editor.css')
+    ]).then(([mod]) => resolveToastConstructor(mod, 'Editor'))
+  }
+  return toastEditorPromise
+}
 
 // 节点备注内容设置
 export default {
@@ -80,12 +105,17 @@ export default {
       }
       this.dialogVisible = true
       this.$nextTick(() => {
-        this.initEditor()
+        this.initEditor().then(() => {
+          if (this.editor) {
+            this.editor.setHTML(this.note)
+          }
+        })
       })
     },
 
-    initEditor() {
+    async initEditor() {
       if (!this.editor) {
+        const Editor = await loadToastEditor()
         this.editor = new Editor({
           el: this.$refs.noteEditor,
           height: '500px',
@@ -93,7 +123,6 @@ export default {
           previewStyle: 'vertical'
         })
       }
-      this.editor.setHTML(this.note)
     },
 
     cancel() {
@@ -105,6 +134,9 @@ export default {
     },
 
     confirm() {
+      if (!this.editor) {
+        return
+      }
       this.note = this.editor.getHTML()
       if (this.appointNode) {
         this.appointNode.setNote(this.note)

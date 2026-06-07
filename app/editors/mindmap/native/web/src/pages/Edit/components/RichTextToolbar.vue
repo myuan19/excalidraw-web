@@ -166,8 +166,12 @@ export default {
   },
   computed: {
     ...mapState({
-      isDark: state => state.localConfig.isDark
+      isDark: state => state.localConfig.isDark,
+      activeSidebar: state => state.activeSidebar
     }),
+    isTextFormatSidebarActive() {
+      return this.activeSidebar === 'textFormat'
+    },
 
     fontFamilyList() {
       return fontFamilyList[this.$i18n.locale] || fontFamilyList.zh
@@ -193,7 +197,7 @@ export default {
         this.style.top = rect.top - 60 + 'px'
         this.formatInfo = { ...(formatInfo || {}) }
       }
-      this.showRichTextToolbar = hasRange
+      this.showRichTextToolbar = hasRange && !this.isTextFormatSidebarActive
     },
 
     toggleBold() {

@@ -139,7 +139,7 @@ export default {
     unExpandNodeChild: 'Un expand all sub nodes',
     addToDo: 'Add toDo',
     removeToDo: 'Remove toDo',
-    aiCreate: 'AI Continuation',
+    aiPolish: 'AI Polish',
     modifyNodeLink: 'Modify node link',
     linkToNode: 'Link to node',
     removeNodeLink: 'Remove node link'
@@ -347,7 +347,7 @@ export default {
       'Please export the currently edited file before creating a new one, Beware of content loss',
     openFileTip:
       'Please export the currently edited file before opening it, Beware of content loss',
-    ai: 'AI',
+    ai: 'Polish',
     expandAll: 'Expand',
     collapseAll: 'Collapse',
     exportPng: 'PNG',
@@ -410,6 +410,7 @@ export default {
     tip: 'Inserting formulas is not supported in non rich text mode'
   },
   richTextToolbar: {
+    title: 'Text Format',
     bold: 'Bold',
     italic: 'Italic',
     underline: 'Underline',
@@ -419,7 +420,9 @@ export default {
     color: 'Color',
     backgroundColor: 'Background color',
     removeFormat: 'Clear Style',
-    textAlign: 'Text align'
+    textAlign: 'Text align',
+    textFormat: 'Text Format',
+    selectTextHint: 'Double-click a node and select text to edit format'
   },
   other: {
     loading: 'Loading, please wait...'
@@ -480,22 +483,6 @@ export default {
   ai: {
     chatTitle: 'AI dialogue',
     clearRecords: 'Clear records',
-    connectFailedTitle: 'Client connection failure prompt',
-    connectFailedTip: 'Client connection failed, please check:',
-    connectFailedCheckTip1:
-      '1. Have you installed the mind mapping client? If not, please click here to install:',
-    connectFailedCheckTip2:
-      '2. If the client is installed, please confirm if the client is opened.',
-    connectFailedCheckTip3:
-      'If it has already been installed and started, you can try closing and restarting it.',
-    connectFailedCheckTip4:
-      'After completing the above steps, you can click on:',
-    baiduNetdisk: 'Baidu Netdisk',
-    createMindMapTitle: 'One click generation of mind maps',
-    createTip:
-      'Please enter a theme, and AI will generate a mind map based on your theme, such as: Hangzhou weekend travel plan.',
-    importantTip:
-      'Important note: One click generation will overwrite existing data. It is recommended to export the current data first.',
     wantModifyAiConfigTip:
       'Do you want to modify the AI configuration? Please click on:',
     modifyAIConfiguration: 'Modify AI configuration',
@@ -523,20 +510,64 @@ export default {
     portValidateTip: 'Please enter the port',
     methodValidateTip: 'Please select the request method',
     noInputTip: 'Please enter the content',
-    connectSuccessful: 'Connection successful',
-    connectFailed: 'connection failed',
-    connectionDetection: 'Connection detection',
     configurationMissing: 'Configuration missing',
-    aiCreateMsgPrefix: 'Help me write one【',
-    aiCreateMsgPostfix:
-      '】. Return only one JSON object like {"data":{"text":"Topic"},"children":[{"data":{"text":"Child"},"children":[]}]}. Do not include any other text.',
-    aiCreatePartMsgPrefix: 'I have a theme for【',
-    aiCreatePartMsgCenter:
-      '】Can you help me continue writing one of the contents of the mind map【',
-    aiCreatePartMsgPostfix: '】The subordinate content of the node',
-    aiCreatePartMsgHelp:
-      '. Return only JSON like {"data":{"text":"Node title"},"children":[{"data":{"text":"Child"},"children":[]}]}, where children are the nodes to append. Do not include any other text.',
-    aiCreatePart: 'AI Continuation'
+    targetNode: 'Target Node',
+    editScope: 'Edit Scope',
+    scopeCurrentOnly: 'Current node only',
+    scopeSubtree: 'Include all children',
+    rootNodeDefault: 'Root node (global)',
+    organizeCurrentNode: 'AI Polish',
+    organizeCurrentNodeDesc:
+      'Improve the current node content so it is clearer and easier to read in a mind map.',
+    organizeSettings: 'Organize settings',
+    organizeSettingsDesc:
+      'AI will return content in the supported MindMap rich text format, not Markdown.',
+    allowCreateChildren: 'Create new child nodes',
+    allowCreateChildrenTip:
+      'When enabled, new nodes can only be generated under the current node.',
+    currentNodeContent: 'Current node content',
+    currentNodePreview: 'Selected node preview',
+    emptyCurrentNode: 'The current node has no content',
+    mindMapAiConfigMissingTip:
+      'MindMap AI is not configured. Please configure it in external AI settings first.',
+    openAISettings: 'Open AI settings',
+    invalidAiResult: 'The AI response format is invalid',
+    modifyRequirement: 'Requirement',
+    modifyRequirementPlaceholder:
+      'Enter an organize requirement, such as shorten the title, keep key numbers, or split into steps.',
+    savedPromptPresets: 'Saved requirements',
+    savedPromptPresetsGlobalTip: 'Saved globally and shared across mind maps',
+    defaultPolishActions: 'Default actions',
+    defaultActionOrganizeCurrent: 'Organize current node',
+    defaultActionOrganizeCurrentDesc: 'Improve wording without creating child nodes.',
+    defaultActionSplitChildren: 'Split into child nodes',
+    defaultActionSplitChildrenDesc:
+      'Split the content logically and create child nodes under the current node.',
+    defaultActionSplitChildrenPrompt:
+      'Keep the core meaning of the current node and split it into several clear child nodes.',
+    defaultActionShortenTitle: 'Shorten title',
+    defaultActionShortenTitleDesc: 'Turn it into a shorter, clearer title.',
+    defaultActionShortenTitlePrompt:
+      'Turn it into a shorter, clearer title while preserving the core information.',
+    childrenEnabled: 'Create children',
+    childrenDisabled: 'No children',
+    currentChildrenSetting: 'Children',
+    currentStyleSetting: 'Style',
+    defaultThemeStyle: 'Default theme',
+    customStyleEnabled: 'Custom style',
+    streamingPreview: 'Generation preview',
+    streamingPreviewTip:
+      'AI streaming output appears here. It is applied only after the final result passes validation.',
+    waitingForAiOutput: 'Waiting for AI output...',
+    noPromptPresets: 'No saved requirements',
+    promptPresetNamePlaceholder: 'Preset name',
+    saveAsPromptPreset: 'Save preset',
+    unnamedPromptPreset: 'Untitled preset',
+    modifyRequirementRequired: 'Please enter a requirement',
+    promptPresetSaved: 'Prompt preset saved',
+    promptPresetSaveFailed: 'Failed to save prompt preset',
+    promptPresetDeleted: 'Prompt preset deleted',
+    promptPresetDeleteFailed: 'Failed to delete prompt preset'
   },
   note: {
     title: 'Note'

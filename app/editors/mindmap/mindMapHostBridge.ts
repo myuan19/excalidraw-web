@@ -52,6 +52,7 @@ export class MindMapHostBridge {
   private mountTimeoutId: number | null = null;
   private initTimeoutId: number | null = null;
   private lastFailure: MindMapIframeFailureClassification | null = null;
+  private sessionStartMs = 0;
 
   constructor(private readonly options: MindMapHostBridgeOptions) {}
 
@@ -67,6 +68,7 @@ export class MindMapHostBridge {
   }
 
   beginSession(): void {
+    this.sessionStartMs = performance.now();
     this.clearTimers();
     this.phase = "idle";
     this.learnedOrigin = null;
@@ -409,6 +411,12 @@ export class MindMapHostBridge {
   }
 
   private debugOpen(label: string, data?: Record<string, unknown>): void {
-    this.options.debugOpen?.(label, data);
+    this.options.debugOpen?.(label, {
+      sinceSessionStart:
+        this.sessionStartMs > 0
+          ? Math.round(performance.now() - this.sessionStartMs)
+          : undefined,
+      ...data,
+    });
   }
 }

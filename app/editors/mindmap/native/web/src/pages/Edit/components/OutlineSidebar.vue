@@ -67,6 +67,11 @@ export default {
       }
     }
   },
+  mounted() {
+    if (this.activeSidebar === 'outline' && this.$refs.sidebar) {
+      this.$refs.sidebar.show = true
+    }
+  },
   methods: {
     ...mapMutations(['setIsOutlineEdit', 'setActiveSidebar']),
 

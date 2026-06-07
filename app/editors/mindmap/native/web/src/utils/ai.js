@@ -29,9 +29,14 @@ class Ai {
     try {
       const res = await this.postMsg(data)
       const decoder = new TextDecoder()
+      let ended = false
       while (1) {
         const { done, value } = await res.read()
         if (done) {
+          if (!ended && this.content) {
+            ended = true
+            end(this.content)
+          }
           return
         }
         // 拿到当前切片的数据
@@ -59,6 +64,7 @@ class Ai {
         })
         progress(this.content)
         if (isEnd) {
+          ended = true
           end(this.content)
         }
       }

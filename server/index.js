@@ -1,6 +1,6 @@
 import "./loadEnv.mjs";
 import "./initLogging.mjs";
-import { existsSync } from "fs";
+import { existsSync, statSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import express from "express";
@@ -8,6 +8,7 @@ import cors from "cors";
 import filesRouter from "./routes/files.js";
 import libraryRouter from "./routes/library.js";
 import aiSettingsRouter from "./routes/ai-settings.js";
+import aiPromptPresetsRouter from "./routes/ai-prompt-presets.js";
 import ttdChatsRouter from "./routes/ttd-chats.js";
 import logsRouter from "./routes/logs.js";
 import { tokenRouter as embedTokenRouter, pageRouter as embedPageRouter } from "./routes/embed.js";
@@ -72,10 +73,91 @@ app.use("/api/logs", logsRouter);
 app.use("/api/files", filesRouter);
 app.use("/api/library", libraryRouter);
 app.use("/api/ai-settings", aiSettingsRouter);
+app.use("/api/ai-prompt-presets", aiPromptPresetsRouter);
 app.use("/api/ttd-chats", ttdChatsRouter);
 app.use("/api/embed-tokens", embedTokenRouter);
 
 app.use("/embed", embedPageRouter);
+
+const HASHED_STATIC_ASSET_RE =
+  /(?:^|\/)[^/]+\.[a-f0-9]{8,}\.(?:css|gif|ico|jpe?g|js|json|mjs|png|svg|webp|woff2?)$/i;
+
+function isImmutableSpaAssetPath(urlPath) {
+  if (!urlPath || typeof urlPath !== "string") {
+    return false;
+  }
+  if (urlPath.includes("/mind-map/dist/bridge/")) {
+    return false;
+  }
+  return HASHED_STATIC_ASSET_RE.test(urlPath);
+}
+
+function setSpaStaticCacheHeaders(res, filePath) {
+  const normalized = filePath.split(path.sep).join("/");
+  if (normalized.endsWith("/index.html") || normalized.endsWith(".html")) {
+    res.setHeader("Cache-Control", "no-cache, must-revalidate");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    return;
+  }
+  if (normalized.endsWith("/build-meta.json")) {
+    res.setHeader("Cache-Control", "no-cache, must-revalidate");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    return;
+  }
+  if (isImmutableSpaAssetPath(normalized)) {
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  } else {
+    res.setHeader("Cache-Control", "no-cache, must-revalidate");
+  }
+  res.setHeader("X-Content-Type-Options", "nosniff");
+}
+
+function safeStaticPath(root, reqPath) {
+  let decoded = "";
+  try {
+    decoded = decodeURIComponent(reqPath.split("?")[0] || "/");
+  } catch {
+    return null;
+  }
+  const resolved = path.resolve(root, `.${decoded}`);
+  const rootWithSep = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
+  if (resolved !== root && !resolved.startsWith(rootWithSep)) {
+    return null;
+  }
+  return resolved;
+}
+
+function servePrecompressedStatic(root) {
+  return (req, res, next) => {
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      return next();
+    }
+    if (!/\bgzip\b/i.test(String(req.headers["accept-encoding"] || ""))) {
+      return next();
+    }
+    const filePath = safeStaticPath(root, req.path);
+    if (!filePath) {
+      return next();
+    }
+    const gzipPath = `${filePath}.gz`;
+    try {
+      if (
+        !existsSync(filePath) ||
+        !existsSync(gzipPath) ||
+        statSync(filePath).isDirectory()
+      ) {
+        return next();
+      }
+    } catch {
+      return next();
+    }
+    setSpaStaticCacheHeaders(res, filePath);
+    res.setHeader("Content-Encoding", "gzip");
+    res.setHeader("Vary", "Accept-Encoding");
+    res.type(filePath);
+    return res.sendFile(gzipPath);
+  };
+}
 
 /**
  * 与 API 同机部署时，同一端口托管 `app/build`（`./assets/*.js` 等），避免只起了 API 而静态资源 404。
@@ -91,8 +173,14 @@ app.use("/embed", embedPageRouter);
           ? raw
           : path.join(__dirname, raw);
     if (existsSync(root) && existsSync(path.join(root, "index.html"))) {
+      app.use(servePrecompressedStatic(root));
       app.use(
-        express.static(root, { index: "index.html", maxAge: 0, etag: true }),
+        express.static(root, {
+          index: "index.html",
+          maxAge: 0,
+          etag: true,
+          setHeaders: setSpaStaticCacheHeaders,
+        }),
       );
       console.log(`[excalidraw-server] also serving static from ${root}`);
     } else {

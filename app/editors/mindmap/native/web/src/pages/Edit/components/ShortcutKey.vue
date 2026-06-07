@@ -50,6 +50,11 @@ export default {
         this.$refs.sidebar.show = false
       }
     }
+  },
+  mounted() {
+    if (this.activeSidebar === 'shortcutKey' && this.$refs.sidebar) {
+      this.$refs.sidebar.show = true
+    }
   }
 }
 </script>

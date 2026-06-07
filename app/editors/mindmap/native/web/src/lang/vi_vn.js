@@ -140,7 +140,7 @@ export default {
     unExpandNodeChild: 'Thu gọn tất cả nút con',
     addToDo: 'Thêm việc cần làm',
     removeToDo: 'Xóa việc cần làm',
-    aiCreate: 'AI Tiếp tục',
+    aiPolish: 'AI Tinh chỉnh',
     modifyNodeLink: 'Sửa liên kết nút',
     linkToNode: 'Liên kết đến nút',
     removeNodeLink: 'Xóa liên kết nút'
@@ -345,7 +345,7 @@ export default {
       'Vui lòng xuất tệp đang chỉnh sửa trước khi tạo mới, Cẩn thận mất nội dung',
     openFileTip:
       'Vui lòng xuất tệp đang chỉnh sửa trước khi mở tệp, Cẩn thận mất nội dung',
-    ai: 'AI',
+    ai: 'Tinh chỉnh',
     expandAll: 'Mở rộng',
     collapseAll: 'Thu gọn',
     exportPng: 'PNG',
@@ -408,6 +408,7 @@ export default {
     tip: 'Không hỗ trợ chèn công thức trong chế độ không phải văn bản phong phú'
   },
   richTextToolbar: {
+    title: 'Định dạng văn bản',
     bold: 'Đậm',
     italic: 'Nghiêng',
     underline: 'Gạch dưới',
@@ -417,7 +418,9 @@ export default {
     color: 'Màu sắc',
     backgroundColor: 'Màu nền',
     removeFormat: 'Xóa định dạng',
-    textAlign: 'Căn chỉnh văn bản'
+    textAlign: 'Căn chỉnh văn bản',
+    textFormat: 'Định dạng văn bản',
+    selectTextHint: 'Nhấp đúp vào nút và chọn văn bản để chỉnh sửa định dạng'
   },
   other: {
     loading: 'Đang tải, vui lòng đợi...'
@@ -479,22 +482,6 @@ export default {
   ai: {
     chatTitle: 'Đối thoại AI',
     clearRecords: 'Xóa lịch sử',
-    connectFailedTitle: 'Thông báo lỗi kết nối máy khách',
-    connectFailedTip: 'Kết nối máy khách thất bại, vui lòng kiểm tra:',
-    connectFailedCheckTip1:
-      '1. Bạn đã cài đặt ứng dụng khách sơ đồ tư duy chưa? Nếu chưa, vui lòng nhấp vào đây để cài đặt:',
-    connectFailedCheckTip2:
-      '2. Nếu đã cài đặt ứng dụng khách, vui lòng xác nhận xem ứng dụng khách đã được mở chưa.',
-    connectFailedCheckTip3:
-      'Nếu đã được cài đặt và khởi động, bạn có thể thử đóng và khởi động lại nó.',
-    connectFailedCheckTip4:
-      'Sau khi hoàn thành các bước trên, bạn có thể nhấp vào:',
-    baiduNetdisk: 'Baidu Netdisk',
-    createMindMapTitle: 'Tạo sơ đồ tư duy một nhấp',
-    createTip:
-      'Vui lòng nhập chủ đề, và AI sẽ tạo sơ đồ tư duy dựa trên chủ đề của bạn, chẳng hạn như: Kế hoạch du lịch cuối tuần Hà Nội.',
-    importantTip:
-      'Lưu ý quan trọng: Tạo một nhấp sẽ ghi đè dữ liệu hiện có. Nên xuất dữ liệu hiện tại trước.',
     wantModifyAiConfigTip: 'Bạn muốn sửa đổi cấu hình AI? Vui lòng nhấp vào:',
     modifyAIConfiguration: 'Sửa đổi cấu hình AI',
     chatInputPlaceholder: 'Nhấn Enter để gửi, Shift+Enter để xuống dòng.',
@@ -521,20 +508,67 @@ export default {
     portValidateTip: 'Vui lòng nhập cổng',
     methodValidateTip: 'Vui lòng chọn phương thức yêu cầu',
     noInputTip: 'Vui lòng nhập nội dung',
-    connectSuccessful: 'Kết nối thành công',
-    connectFailed: 'Kết nối thất bại',
-    connectionDetection: 'Phát hiện kết nối',
     configurationMissing: 'Thiếu cấu hình',
-    aiCreateMsgPrefix: 'Giúp tôi viết một【',
-    aiCreateMsgPostfix:
-      '】. Chỉ trả về một JSON object dạng {"data":{"text":"Chủ đề"},"children":[{"data":{"text":"Con"},"children":[]}]}. Không thêm văn bản khác.',
-    aiCreatePartMsgPrefix: 'Tôi có một chủ đề là【',
-    aiCreatePartMsgCenter:
-      '】Bạn có thể giúp tôi tiếp tục viết một trong những nội dung của sơ đồ tư duy【',
-    aiCreatePartMsgPostfix: '】Nội dung phụ thuộc của nút',
-    aiCreatePartMsgHelp:
-      '. Chỉ trả về JSON dạng {"data":{"text":"Tiêu đề nút"},"children":[{"data":{"text":"Con"},"children":[]}]}, trong đó children là các nút con cần thêm. Không thêm văn bản khác.',
-    aiCreatePart: 'AI Tiếp tục'
+    targetNode: 'Nút mục tiêu',
+    editScope: 'Phạm vi chỉnh sửa',
+    scopeCurrentOnly: 'Chỉ nút hiện tại',
+    scopeSubtree: 'Bao gồm tất cả nút con',
+    rootNodeDefault: 'Nút gốc (toàn cục)',
+    organizeCurrentNode: 'AI Tinh chỉnh',
+    organizeCurrentNodeDesc:
+      'Tối ưu nội dung nút hiện tại để rõ ràng hơn và phù hợp với sơ đồ tư duy.',
+    organizeSettings: 'Cài đặt sắp xếp',
+    organizeSettingsDesc:
+      'AI sẽ trả về định dạng rich text mà MindMap hỗ trợ, không dùng Markdown.',
+    allowCreateChildren: 'Tạo nút con mới',
+    allowCreateChildrenTip:
+      'Khi bật, chỉ được tạo nút con bên dưới nút hiện tại.',
+    currentNodeContent: 'Nội dung nút hiện tại',
+    currentNodePreview: 'Xem trước nút đã chọn',
+    emptyCurrentNode: 'Nút hiện tại chưa có nội dung',
+    mindMapAiConfigMissingTip:
+      'MindMap AI chưa được cấu hình. Vui lòng cấu hình trong cài đặt AI bên ngoài.',
+    openAISettings: 'Mở cài đặt AI',
+    invalidAiResult: 'Định dạng phản hồi AI không hợp lệ',
+    modifyRequirement: 'Yêu cầu chỉnh sửa',
+    modifyRequirementPlaceholder:
+      'Nhập yêu cầu, ví dụ: rút gọn tiêu đề, giữ số liệu chính, hoặc tách thành các bước.',
+    savedPromptPresets: 'Yêu cầu đã lưu',
+    savedPromptPresetsGlobalTip:
+      'Lưu toàn cục, dùng chung cho mọi sơ đồ tư duy',
+    defaultPolishActions: 'Thao tác mặc định',
+    defaultActionOrganizeCurrent: 'Sắp xếp nút hiện tại',
+    defaultActionOrganizeCurrentDesc:
+      'Tối ưu cách diễn đạt, không tạo nút con.',
+    defaultActionSplitChildren: 'Tách thành nút con',
+    defaultActionSplitChildrenDesc:
+      'Tách nội dung theo logic và tạo nút con dưới nút hiện tại.',
+    defaultActionSplitChildrenPrompt:
+      'Giữ ý chính của nút hiện tại và tách thành vài nút con rõ ràng.',
+    defaultActionShortenTitle: 'Rút gọn tiêu đề',
+    defaultActionShortenTitleDesc:
+      'Chuyển thành tiêu đề ngắn gọn và rõ ràng hơn.',
+    defaultActionShortenTitlePrompt:
+      'Chuyển thành tiêu đề ngắn gọn và rõ ràng hơn, giữ lại thông tin cốt lõi.',
+    childrenEnabled: 'Tạo nút con',
+    childrenDisabled: 'Không tạo nút con',
+    currentChildrenSetting: 'Nút con',
+    currentStyleSetting: 'Kiểu',
+    defaultThemeStyle: 'Chủ đề mặc định',
+    customStyleEnabled: 'Kiểu tùy chỉnh',
+    streamingPreview: 'Xem trước khi tạo',
+    streamingPreviewTip:
+      'Đầu ra AI dạng luồng sẽ hiển thị ở đây. Chỉ ghi vào nút sau khi kết quả cuối cùng hợp lệ.',
+    waitingForAiOutput: 'Đang chờ AI trả lời...',
+    noPromptPresets: 'Chưa có yêu cầu đã lưu',
+    promptPresetNamePlaceholder: 'Tên cấu hình',
+    saveAsPromptPreset: 'Lưu cấu hình',
+    unnamedPromptPreset: 'Cấu hình chưa đặt tên',
+    modifyRequirementRequired: 'Vui lòng nhập yêu cầu',
+    promptPresetSaved: 'Đã lưu cấu hình prompt',
+    promptPresetSaveFailed: 'Lưu cấu hình prompt thất bại',
+    promptPresetDeleted: 'Đã xóa cấu hình prompt',
+    promptPresetDeleteFailed: 'Xóa cấu hình prompt thất bại'
   },
   note: {
     title: 'Ghi chú'

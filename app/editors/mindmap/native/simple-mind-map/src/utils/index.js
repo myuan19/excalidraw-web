@@ -9,6 +9,51 @@ import { ForeignObject } from '@svgdotjs/svg.js'
 import merge from 'deepmerge'
 import { lineStyleProps } from '../theme/default'
 
+const isZeroViewportRect = rect => {
+  return (
+    rect &&
+    rect.left === 0 &&
+    rect.top === 0 &&
+    rect.width === 0 &&
+    rect.height === 0
+  )
+}
+
+const isMindMapDebugEnabled = () => {
+  if (typeof window === 'undefined') return false
+  if (window.__MINDMAP_DEBUG__ === true) return true
+  try {
+    const params = new URLSearchParams(window.location.search)
+    return (
+      params.get('mindmapDebug') === '1' ||
+      window.localStorage.getItem('mindmapDebug') === '1'
+    )
+  } catch (error) {
+    return false
+  }
+}
+
+export const getSvgNodeVisibleRect = (svgNode, label = '') => {
+  const rect = svgNode.node.getBoundingClientRect()
+  if (!isZeroViewportRect(rect)) {
+    return rect
+  }
+  const isHidden = svgNode.attr('display') === 'none'
+  if (!isHidden || typeof svgNode.show !== 'function') {
+    return rect
+  }
+  svgNode.show()
+  const visibleRect = svgNode.node.getBoundingClientRect()
+  svgNode.hide()
+  if (isZeroViewportRect(visibleRect) && isMindMapDebugEnabled()) {
+    console.log('[DEBUG] mindmap-text-edit | invalid text rect', {
+      label,
+      hiddenBeforeMeasure: isHidden
+    })
+  }
+  return isZeroViewportRect(visibleRect) ? rect : visibleRect
+}
+
 //  深度优先遍历树
 export const walk = (
   root,

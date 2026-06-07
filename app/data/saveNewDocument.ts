@@ -14,6 +14,7 @@ import { clearMindMapBrowserView } from "./mindMapBrowserViewStorage";
 
 import type { ManagedDocument } from "./documentTypes";
 import {
+  createMindMapRootText,
   isMindMapSingleRootOnly,
   MindMapAdapter,
 } from "./formats/MindMapAdapter";
@@ -41,11 +42,24 @@ export async function saveNewDocument(opts: {
     if (!document) {
       throw new Error("没有可保存的 mindmap 内容");
     }
-    const data = document.data;
+    const shouldSyncSingleRootName = isMindMapSingleRootOnly(document);
+    const data = shouldSyncSingleRootName
+      ? {
+          ...document.data,
+          root: {
+            ...document.data.root,
+            data: {
+              ...document.data.root.data,
+              text: createMindMapRootText(finalName),
+              richText: true,
+            },
+          },
+        }
+      : document.data;
     const persistDocument = isMindMapSingleRootOnly(document)
       ? MindMapAdapter.toDocument({ ...data, view: undefined })
       : document;
-    if (isMindMapSingleRootOnly(document)) {
+    if (shouldSyncSingleRootName) {
       if (opts.draftId) {
         clearMindMapBrowserView(opts.draftId);
       }

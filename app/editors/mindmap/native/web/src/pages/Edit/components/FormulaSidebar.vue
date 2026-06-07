@@ -73,6 +73,9 @@ export default {
     this.$bus.$off('node_active', this.handleNodeActive)
   },
   mounted() {
+    if (this.activeSidebar === 'formulaSidebar' && this.$refs.sidebar) {
+      this.$refs.sidebar.show = true
+    }
     this.init()
   },
   methods: {

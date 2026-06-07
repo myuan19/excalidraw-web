@@ -1,6 +1,6 @@
 /**
  * Central development diagnostics for the host app (MindMap shell, file list, embed).
- * Vite dev: all channels on.
+ * Vite dev: common channels on; noisy render/thumbnail channels are opt-in.
  * Production bundle: off unless debug-ship build (VITE_APP_DEPLOY_DEBUG) or per-channel VITE_APP_ENABLE_*_DEBUG.
  */
 
@@ -29,17 +29,40 @@ const CHANNEL_ENV_FLAG: Record<DevDebugChannel, string> = {
   "thumbnail-pipeline": "VITE_APP_ENABLE_THUMBNAIL_DEBUG",
 };
 
+const NOISY_DEV_CHANNELS = new Set<DevDebugChannel>([
+  "file-list",
+  "mindmap-thumbnail",
+  "thumbnail-pipeline",
+]);
+
 function isDeployDebugBuild(): boolean {
   return import.meta.env.VITE_APP_DEPLOY_DEBUG === "true";
 }
 
+function isLocalStorageDebugEnabled(channel: DevDebugChannel): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    return (
+      window.localStorage.getItem("excalidraw-web-debug") === "1" ||
+      window.localStorage.getItem(`excalidraw-web-debug-${channel}`) === "1"
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function isDevDebugChannelEnabled(channel: DevDebugChannel): boolean {
+  const flag = CHANNEL_ENV_FLAG[channel];
   if (import.meta.env.PROD) {
     if (isDeployDebugBuild()) {
       return true;
     }
-    const flag = CHANNEL_ENV_FLAG[channel];
-    return import.meta.env[flag] === "true";
+    return import.meta.env[flag] === "true" || isLocalStorageDebugEnabled(channel);
+  }
+  if (NOISY_DEV_CHANNELS.has(channel)) {
+    return import.meta.env[flag] === "true" || isLocalStorageDebugEnabled(channel);
   }
   return true;
 }

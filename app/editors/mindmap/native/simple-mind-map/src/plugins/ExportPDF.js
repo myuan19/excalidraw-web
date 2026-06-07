@@ -1,5 +1,3 @@
-// import JsPDF from '../utils/jspdf'
-import { PDFDocument } from 'pdf-lib'
 import { readBlob } from '../utils/index'
 
 //  导出PDF插件，需要通过Export插件使用
@@ -14,6 +12,7 @@ class ExportPDF {
     return new Promise((resolve, reject) => {
       const image = new Image()
       image.onload = async () => {
+        const { PDFDocument } = await import('pdf-lib')
         const imageWidth = image.width
         const imageHeight = image.height
         // 创建pdf页面，尺寸设置为图片的大小

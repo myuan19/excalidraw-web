@@ -91,6 +91,12 @@ export default {
       }
     }
   },
+  mounted() {
+    if (this.activeSidebar === 'theme' && this.$refs.sidebar) {
+      this.theme = this.mindMap.getTheme()
+      this.$refs.sidebar.show = true
+    }
+  },
   created() {
     this.initGroup()
     this.theme = this.mindMap.getTheme()

@@ -100,10 +100,6 @@
             <span class="iconfont iconjianpan"></span>
             {{ $t('navigatorToolbar.shortcutKeys') }}
           </el-dropdown-item>
-          <el-dropdown-item v-if="!isHostMode" command="aiChat">
-            <span class="iconfont iconAIshengcheng"></span>
-            {{ $t('navigatorToolbar.ai') }}
-          </el-dropdown-item>
           <el-dropdown-item command="github">
             <span class="iconfont icongithub"></span>
             Github
@@ -203,9 +199,6 @@ export default {
     handleCommand(command) {
       if (command === 'shortcutKey') {
         this.setActiveSidebar('shortcutKey')
-        return
-      } else if (command === 'aiChat') {
-        this.setActiveSidebar('ai')
         return
       }
       let url = ''

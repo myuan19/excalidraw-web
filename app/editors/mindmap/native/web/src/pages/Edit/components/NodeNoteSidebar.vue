@@ -7,8 +7,33 @@
 <script>
 import Sidebar from './Sidebar.vue'
 import { mapState, mapMutations } from 'vuex'
-import Viewer from '@toast-ui/editor/dist/toastui-editor-viewer'
-import '@toast-ui/editor/dist/toastui-editor-viewer.css'
+
+let toastViewerPromise = null
+
+function resolveToastConstructor(mod, name) {
+  const candidates = [
+    mod && mod.default,
+    mod && mod[name],
+    mod && mod.default && mod.default.default,
+    mod && mod.default && mod.default[name],
+    mod
+  ]
+  const ctor = candidates.find(candidate => typeof candidate === 'function')
+  if (!ctor) {
+    throw new Error(`Toast UI ${name} export is unavailable`)
+  }
+  return ctor
+}
+
+async function loadToastViewer() {
+  if (!toastViewerPromise) {
+    toastViewerPromise = Promise.all([
+      import('@toast-ui/editor/dist/toastui-editor-viewer'),
+      import('@toast-ui/editor/dist/toastui-editor-viewer.css')
+    ]).then(([mod]) => resolveToastConstructor(mod, 'Viewer'))
+  }
+  return toastViewerPromise
+}
 
 export default {
   components: {
@@ -44,9 +69,6 @@ export default {
     this.$bus.$on('node_active', this.onNodeActive)
     this.mindMap.on('node_note_click', this.onNodeNoteClick)
   },
-  mounted() {
-    this.initEditor()
-  },
   beforeDestroy() {
     this.$bus.$off('node_active', this.onNodeActive)
     this.mindMap.off('node_note_click', this.onNodeNoteClick)
@@ -69,18 +91,37 @@ export default {
     },
 
     // 初始化编辑器
-    initEditor() {
+    async initEditor() {
       if (!this.editor) {
+        const Viewer = await loadToastViewer()
         this.editor = new Viewer({
           el: this.$refs.noteContentWrap
         })
       }
     },
 
-    onNodeNoteClick(node) {
+    async onNodeNoteClick(node) {
       this.node = node
       this.setActiveSidebar('noteSidebar')
-      this.editor.setHTML(node.getData('note') || '')
+      await this.initEditor()
+      this.setViewerHTML(node.getData('note') || '')
+    },
+
+    setViewerHTML(content) {
+      const html = content || ''
+      if (this.editor && typeof this.editor.setHTML === 'function') {
+        this.editor.setHTML(html)
+        return
+      }
+      if (
+        this.editor &&
+        this.editor.preview &&
+        typeof this.editor.preview.setHTML === 'function'
+      ) {
+        this.editor.preview.setHTML(html)
+        return
+      }
+      this.$refs.noteContentWrap.innerHTML = html
     }
   }
 }

@@ -23,6 +23,8 @@ import { isLocalDraftFileId } from "../../data/localDraftFileId";
 import { notifyLocalDraftEdited } from "../../data/localDraftSessions";
 import { discardLocalDraftSession } from "../../data/discardLocalDraftSession";
 import { clearAppShellPendingNavigation } from "../../shell/appShellNavigate";
+import { isAutoSaveOnExitActive } from "../../data/appSettings";
+import { isAutoSaveEligibleFile } from "../../data/autoSaveSession";
 import { installExecutor, requestSaveAndWait } from "../../data/saveQueue";
 
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
@@ -199,6 +201,9 @@ export function useForkFileSave(opts: {
         return false;
       }
       if (isLocalDraftFileId(fid)) {
+        if (source === "auto" || source === "visibility") {
+          return false;
+        }
         onRequestSaveNew?.({ navigateAfter: !!navigateAfter });
         return false;
       }
@@ -278,7 +283,7 @@ export function useForkFileSave(opts: {
             setForkSaveHint("已是最新版本");
           }
         } else if (source === "auto") {
-          excalidrawAPI.setToast({ message: "空闲自动保存完成" });
+          excalidrawAPI.setToast({ message: "自动保存完成" });
         } else if (source === "visibility") {
           excalidrawAPI.setToast({ message: "切换到后台时已保存到服务器" });
         } else if (source === "hotkey" || source === "toolbar") {
@@ -377,6 +382,10 @@ export function useForkFileSave(opts: {
     }
     if (!FileEditDirty.hasUnsavedChanges(fid)) {
       navigateToFileListHome();
+      return;
+    }
+    if (isAutoSaveOnExitActive() && isAutoSaveEligibleFile(fid)) {
+      await requestSaveAndWait({ source: "home", navigateAfter: true });
       return;
     }
     setForkHomeNavDialogOpen(true);

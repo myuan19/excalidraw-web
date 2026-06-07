@@ -76,6 +76,15 @@ export default {
       activeNodes: []
     }
   },
+  mounted() {
+    if (this.mindMap && this.mindMap.opt) {
+      this.mindMap.opt.iconList = [...icon]
+    }
+    if (this.activeSidebar === 'nodeIconSidebar') {
+      this.$refs.sidebar.show = true
+    }
+    this.syncActiveNodes()
+  },
   computed: {
     ...mapState({
       activeSidebar: state => state.activeSidebar,
@@ -93,15 +102,21 @@ export default {
   },
   created() {
     this.$bus.$on('node_active', this.handleNodeActive)
-    this.$bus.$on('showNodeIcon', this.handleShowNodeIcon)
   },
   beforeDestroy() {
     this.$bus.$off('node_active', this.handleNodeActive)
-    this.$bus.$off('showNodeIcon', this.handleShowNodeIcon)
   },
   methods: {
-    handleNodeActive(...args) {
-      this.activeNodes = [...args[1]]
+    syncActiveNodes() {
+      const activeNodes =
+        this.mindMap && this.mindMap.renderer
+          ? this.mindMap.renderer.activeNodeList || []
+          : []
+      this.setActiveNodes(activeNodes)
+    },
+
+    setActiveNodes(activeNodes) {
+      this.activeNodes = [...activeNodes]
       if (this.activeNodes.length > 0) {
         if (this.activeNodes.length === 1) {
           let firstNode = this.activeNodes[0]
@@ -117,8 +132,8 @@ export default {
       }
     },
 
-    handleShowNodeIcon() {
-      this.dialogVisible = true
+    handleNodeActive(...args) {
+      this.setActiveNodes(args[1] || [])
     },
 
     // 获取图标渲染方式

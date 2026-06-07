@@ -136,7 +136,7 @@ export default {
     unExpandNodeChild: '收起所有下級節點',
     addToDo: '添加待辦',
     removeToDo: '刪除待辦',
-    aiCreate: 'AI續寫',
+    aiPolish: 'AI潤色',
     modifyNodeLink: '修改節點鏈接',
     linkToNode: '鏈接到指定節點',
     removeNodeLink: '刪除節點鏈接'
@@ -338,7 +338,7 @@ export default {
     directory: '目錄',
     newFileTip: '新增檔案前，請先匯出目前編輯的檔案，以免內容遺失',
     openFileTip: '開啟檔案前，請先匯出目前編輯的檔案，以免內容遺失',
-    ai: 'AI',
+    ai: '潤色',
     expandAll: '展開',
     collapseAll: '收合',
     exportPng: 'PNG',
@@ -396,6 +396,7 @@ export default {
     tip: '僅在豐富文字模式下支援插入公式'
   },
   richTextToolbar: {
+    title: '文本格式',
     bold: '粗體',
     italic: '斜體',
     underline: '底線',
@@ -405,7 +406,9 @@ export default {
     color: '字型顏色',
     backgroundColor: '背景顏色',
     removeFormat: '清除樣式',
-    textAlign: '對齊方式'
+    textAlign: '對齊方式',
+    textFormat: '文本格式',
+    selectTextHint: '雙擊節點並選取文字後可編輯格式'
   },
   other: {
     loading: '載入中，請稍候...'
@@ -466,19 +469,6 @@ export default {
   ai: {
     chatTitle: 'AI對話',
     clearRecords: '清空記錄',
-    connectFailedTitle: '客戶端連接失敗提示',
-    connectFailedTip: '客戶端連接失敗，請檢查：',
-    connectFailedCheckTip1:
-      '1.是否安裝了思緒思維導圖客戶端，如果沒有請點此安裝：',
-    connectFailedCheckTip2: '2.如果安裝了客戶端，請確認是否打開了客戶端。',
-    connectFailedCheckTip3:
-      '3.如果已經安裝並啓動了，那麽可以嘗試關閉然後重新啓動。',
-    connectFailedCheckTip4: '完成以上步驟後可點擊：',
-    baiduNetdisk: '百度網盤',
-    createMindMapTitle: '一鍵生成思維導圖',
-    createTip:
-      '請輸入一個主題，AI會根據你的主題生成思維導圖，如：杭州周末出遊計劃。',
-    importantTip: '重要提示：一鍵生成會覆蓋現有數據，建議先導出當前數據。',
     wantModifyAiConfigTip: '想要修改AI配置？請點擊：',
     modifyAIConfiguration: '修改AI配置',
     chatInputPlaceholder: 'Enter 發送，Shift   Enter 換行。',
@@ -504,19 +494,58 @@ export default {
     portValidateTip: '請輸入端口',
     methodValidateTip: '請選擇請求方式',
     noInputTip: '請輸入內容',
-    connectSuccessful: '連接成功',
-    connectFailed: '連接失敗',
-    connectionDetection: '連接檢測',
     configurationMissing: '配置缺失',
-    aiCreateMsgPrefix: '幫我寫一個【',
-    aiCreateMsgPostfix:
-      '】。请只返回一个 JSON 对象，格式为 {"data":{"text":"主题"},"children":[{"data":{"text":"子节点"},"children":[]}]}，不要输出其它说明文字。',
-    aiCreatePartMsgPrefix: '我有一個主題爲【',
-    aiCreatePartMsgCenter: '】的思維導圖，幫我續寫其中一個內容爲【',
-    aiCreatePartMsgPostfix: '】的節點的下級內容',
-    aiCreatePartMsgHelp:
-      '。请只返回 JSON，格式为 {"data":{"text":"节点标题"},"children":[{"data":{"text":"子节点"},"children":[]}]}，其中 children 为要追加的子节点，不要输出其它说明文字。',
-    aiCreatePart: 'AI續寫'
+    targetNode: '目標節點',
+    editScope: '編輯範圍',
+    scopeCurrentOnly: '僅當前節點',
+    scopeSubtree: '含所有子節點',
+    rootNodeDefault: '根節點 (全域)',
+    organizeCurrentNode: 'AI潤色',
+    organizeCurrentNodeDesc: '優化當前節點內容，使其更清晰並適合思維導圖閱讀。',
+    organizeSettings: '整理設置',
+    organizeSettingsDesc:
+      'AI 會按當前 MindMap 支持的富文本格式返回結果，不會使用 Markdown。',
+    allowCreateChildren: '是否創建新節點',
+    allowCreateChildrenTip: '開啟後僅允許在當前節點下生成子節點。',
+    currentNodeContent: '當前節點內容',
+    currentNodePreview: '選中節點預覽',
+    emptyCurrentNode: '當前節點暫無內容',
+    mindMapAiConfigMissingTip: 'MindMap AI 尚未配置，請先到外部 AI 設置中配置。',
+    openAISettings: '打開 AI 設置',
+    invalidAiResult: 'AI 返回格式不符合要求',
+    modifyRequirement: '修改要求',
+    modifyRequirementPlaceholder:
+      '可手動輸入整理要求，例如：提煉成更短標題、保留關鍵數字、按步驟拆分。',
+    savedPromptPresets: '已保存要求',
+    savedPromptPresetsGlobalTip: '全局保存，所有思維導圖可復用',
+    defaultPolishActions: '默認操作',
+    defaultActionOrganizeCurrent: '整理當前節點',
+    defaultActionOrganizeCurrentDesc: '優化表達，不新增子節點。',
+    defaultActionSplitChildren: '拆分為子節點',
+    defaultActionSplitChildrenDesc: '按邏輯拆分，並在當前節點下創建子節點。',
+    defaultActionSplitChildrenPrompt:
+      '在保留當前節點核心含義的前提下，按邏輯拆分為幾個清晰的子節點。',
+    defaultActionShortenTitle: '精簡標題',
+    defaultActionShortenTitleDesc: '提煉為更短、更清晰的標題。',
+    defaultActionShortenTitlePrompt: '提煉為更短、更清晰的標題，保留核心信息。',
+    childrenEnabled: '創建子節點',
+    childrenDisabled: '不創建子節點',
+    currentChildrenSetting: '子節點',
+    currentStyleSetting: '樣式',
+    defaultThemeStyle: '默認主題',
+    customStyleEnabled: '自定義樣式',
+    streamingPreview: '生成過程',
+    streamingPreviewTip: '這裡會展示 AI 流式輸出；最終校驗通過後才會寫入節點。',
+    waitingForAiOutput: '等待 AI 輸出...',
+    noPromptPresets: '暫無已保存要求',
+    promptPresetNamePlaceholder: '配置名稱',
+    saveAsPromptPreset: '保存為配置',
+    unnamedPromptPreset: '未命名配置',
+    modifyRequirementRequired: '請輸入修改要求',
+    promptPresetSaved: '提示詞配置已保存',
+    promptPresetSaveFailed: '提示詞配置保存失敗',
+    promptPresetDeleted: '提示詞配置已刪除',
+    promptPresetDeleteFailed: '提示詞配置刪除失敗'
   },
   note: {
     title: '備註'

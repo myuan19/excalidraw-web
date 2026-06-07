@@ -9,7 +9,8 @@ import {
   getTextFromHtml,
   isWhite,
   getVisibleColorFromTheme,
-  loadImage
+  loadImage,
+  getSvgNodeVisibleRect
 } from '../../utils'
 import {
   ERROR_TYPES,
@@ -46,8 +47,11 @@ export default class TextEdit {
     this.show = this.show.bind(this)
     this.onScale = this.onScale.bind(this)
     this.onKeydown = this.onKeydown.bind(this)
-    // 节点双击事件
+    // 仅新建节点插入时通过双击事件进入编辑；普通节点双击不再进入编辑，避免与二次单击冲突
     this.mindMap.on('node_dblclick', (node, e, isInserting) => {
+      if (!isInserting) {
+        return
+      }
       this.show({ node, e, isInserting })
     })
     // 节点已选中时，再次单击进入编辑，并把光标放到点击位置
@@ -259,7 +263,7 @@ export default class TextEdit {
     if (openRealtimeRenderOnNodeTextEdit) {
       g.show()
     }
-    const rect = g.node.getBoundingClientRect()
+    const rect = getSvgNodeVisibleRect(g, 'TextEdit.show')
     // 如果开启了大小实时更新，那么直接隐藏节点原文本
     if (openRealtimeRenderOnNodeTextEdit) {
       g.hide()
@@ -491,7 +495,10 @@ export default class TextEdit {
     if (!this.showTextEdit || !this.currentNode) {
       return
     }
-    const rect = this.currentNode._textData.node.node.getBoundingClientRect()
+    const rect = getSvgNodeVisibleRect(
+      this.currentNode._textData.node,
+      'TextEdit.updateTextEditNode'
+    )
     this.textEditNode.style.minWidth =
       rect.width + this.textNodePaddingX * 2 + 'px'
     this.textEditNode.style.minHeight =

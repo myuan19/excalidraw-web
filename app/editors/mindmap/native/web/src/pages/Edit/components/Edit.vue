@@ -17,13 +17,16 @@
       :mindMap="mindMap"
       v-if="!isZenMode && !isEmbedMode"
     ></NavigatorToolbar>
-    <OutlineSidebar v-if="!isEmbedMode" :mindMap="mindMap"></OutlineSidebar>
+    <OutlineSidebar
+      v-if="mindMap && !isEmbedMode && activeSidebar === 'outline'"
+      :mindMap="mindMap"
+    ></OutlineSidebar>
     <Style
-      v-if="mindMap && !isZenMode && !isEmbedMode"
+      v-if="mindMap && !isZenMode && !isEmbedMode && activeSidebar === 'nodeStyle'"
       :mindMap="mindMap"
     ></Style>
     <BaseStyle
-      v-if="!isEmbedMode"
+      v-if="mindMap && !isEmbedMode && activeSidebar === 'baseStyle'"
       :data="mindMapData"
       :configData="mindMapConfig"
       :mindMap="mindMap"
@@ -33,12 +36,17 @@
       :mindMap="mindMap"
     ></AssociativeLineStyle>
     <Theme
-      v-if="mindMap && !isEmbedMode"
+      v-if="mindMap && !isEmbedMode && activeSidebar === 'theme'"
       :data="mindMapData"
       :mindMap="mindMap"
     ></Theme>
-    <Structure v-if="!isEmbedMode" :mindMap="mindMap"></Structure>
-    <ShortcutKey v-if="!isEmbedMode"></ShortcutKey>
+    <Structure
+      v-if="mindMap && !isEmbedMode && activeSidebar === 'structure'"
+      :mindMap="mindMap"
+    ></Structure>
+    <ShortcutKey
+      v-if="!isEmbedMode && activeSidebar === 'shortcutKey'"
+    ></ShortcutKey>
     <Contextmenu v-if="mindMap && !isEmbedMode" :mindMap="mindMap"></Contextmenu>
     <RichTextToolbar
       v-if="mindMap && !isEmbedMode"
@@ -55,7 +63,7 @@
     <SidebarTrigger v-if="!isZenMode && !isEmbedMode"></SidebarTrigger>
     <Search v-if="mindMap && !isEmbedMode" :mindMap="mindMap"></Search>
     <NodeIconSidebar
-      v-if="mindMap && !isEmbedMode"
+      v-if="mindMap && !isEmbedMode && activeSidebar === 'nodeIconSidebar'"
       :mindMap="mindMap"
     ></NodeIconSidebar>
     <NodeIconToolbar
@@ -68,7 +76,7 @@
       :mindMap="mindMap"
     ></Scrollbar>
     <FormulaSidebar
-      v-if="mindMap && !isEmbedMode"
+      v-if="mindMap && !isEmbedMode && activeSidebar === 'formulaSidebar'"
       :mindMap="mindMap"
     ></FormulaSidebar>
     <NodeOuterFrame
@@ -80,7 +88,7 @@
       :mindMap="mindMap"
     ></NodeTagStyle>
     <Setting
-      v-if="!isEmbedMode"
+      v-if="mindMap && !isEmbedMode && activeSidebar === 'setting'"
       :configData="mindMapConfig"
       :mindMap="mindMap"
     ></Setting>
@@ -89,11 +97,14 @@
       v-if="mindMap && !isEmbedMode"
       :mindMap="mindMap"
     ></NodeNoteSidebar>
+    <TextFormatSidebar
+      v-if="mindMap && !isEmbedMode && activeSidebar === 'textFormat'"
+      :mindMap="mindMap"
+    ></TextFormatSidebar>
     <AiCreate
       v-if="mindMap && enableAi && !isEmbedMode"
       :mindMap="mindMap"
     ></AiCreate>
-    <AiChat v-if="enableAi && !isEmbedMode"></AiChat>
     <div
       class="dragMask"
       v-if="showDragMask"
@@ -133,14 +144,8 @@ import NodeBase64ImageStorage from 'simple-mind-map/src/plugins/NodeBase64ImageS
 import Themes from 'simple-mind-map-plugin-themes'
 // 协同编辑插件
 // import Cooperate from 'simple-mind-map/src/plugins/Cooperate.js'
-import OutlineSidebar from './OutlineSidebar.vue'
-import Style from './Style.vue'
-import BaseStyle from './BaseStyle.vue'
-import Theme from './Theme.vue'
-import Structure from './Structure.vue'
 import Count from './Count.vue'
 import NavigatorToolbar from './NavigatorToolbar.vue'
-import ShortcutKey from './ShortcutKey.vue'
 import Contextmenu from './Contextmenu.vue'
 import RichTextToolbar from './RichTextToolbar.vue'
 import NodeNoteContentShow from './NodeNoteContentShow.vue'
@@ -149,11 +154,9 @@ import { isHostMode, requestSave } from '@/utils/hostBridge'
 import Navigator from './Navigator.vue'
 import NodeImgPreview from './NodeImgPreview.vue'
 import SidebarTrigger from './SidebarTrigger.vue'
-import { mapState } from 'vuex'
-import icon from '@/config/icon'
+import { mapState, mapMutations } from 'vuex'
 import Vue from 'vue'
 import Search from './Search.vue'
-import NodeIconSidebar from './NodeIconSidebar.vue'
 import NodeIconToolbar from './NodeIconToolbar.vue'
 import OutlineEdit from './OutlineEdit.vue'
 import { showLoading, hideLoading } from '@/utils/loading'
@@ -161,15 +164,12 @@ import handleClipboardText from '@/utils/handleClipboardText'
 import { getParentWithClass } from '@/utils'
 import Scrollbar from './Scrollbar.vue'
 import exampleData from 'simple-mind-map/example/exampleData'
-import FormulaSidebar from './FormulaSidebar.vue'
 import NodeOuterFrame from './NodeOuterFrame.vue'
 import NodeTagStyle from './NodeTagStyle.vue'
-import Setting from './Setting.vue'
 import AssociativeLineStyle from './AssociativeLineStyle.vue'
 // NodeImgPlacementToolbar removed: image placement adjusted by dragging
 import NodeNoteSidebar from './NodeNoteSidebar.vue'
 import AiCreate from './AiCreate.vue'
-import AiChat from './AiChat.vue'
 import previewViewportConfig from '../../../../../previewViewportConfig.json'
 import {
   buildMindMapCanvasFocusedViewBoxOptions,
@@ -178,9 +178,57 @@ import {
 } from '../../../../../../mindMapFocusedViewBox.js'
 
 import { isMindmapDevDebugEnabled, mindmapDevDebug } from '@/utils/mindmapDevDebug'
+import {
+  mindmapLoadMark,
+  mindmapLoadSummary,
+  resetMindmapLoadTimeline
+} from '@/utils/mindmapLoadTimeline'
+import { nodeIconList as builtInNodeIconList } from 'simple-mind-map/src/svg/icons'
 
 const debugMindMapOpen = (label, data = {}) => {
   mindmapDevDebug('vue Edit', label, data)
+}
+
+const OutlineSidebar = () => import('./OutlineSidebar.vue')
+const Style = () => import('./Style.vue')
+const BaseStyle = () => import('./BaseStyle.vue')
+const Theme = () => import('./Theme.vue')
+const Structure = () => import('./Structure.vue')
+const ShortcutKey = () => import('./ShortcutKey.vue')
+const FormulaSidebar = () => import('./FormulaSidebar.vue')
+const Setting = () => import('./Setting.vue')
+const NodeIconSidebar = () => import('./NodeIconSidebar.vue')
+const TextFormatSidebar = () => import('./TextFormatSidebar.vue')
+const builtInNodeIconTypes = new Set(builtInNodeIconList.map(item => item.type))
+
+function walkMindMapNodeData(node, visit) {
+  if (!node) return
+  visit(node)
+  const children = Array.isArray(node.children) ? node.children : []
+  children.forEach(child => walkMindMapNodeData(child, visit))
+}
+
+function hasExtendedNodeIcon(root) {
+  let found = false
+  walkMindMapNodeData(root, node => {
+    if (found) return
+    const icons = node && node.data && Array.isArray(node.data.icon)
+      ? node.data.icon
+      : []
+    found = icons.some(iconName => {
+      const type = String(iconName || '').split('_')[0]
+      return !!type && !builtInNodeIconTypes.has(type)
+    })
+  })
+  return found
+}
+
+async function loadExtendedNodeIconsIfNeeded(root) {
+  if (!hasExtendedNodeIcon(root)) {
+    return []
+  }
+  const mod = await import('@/config/icon')
+  return mod.default || []
 }
 
 const getSlowMindMapResources = () => {
@@ -256,7 +304,7 @@ export default {
     AssociativeLineStyle,
     NodeNoteSidebar,
     AiCreate,
-    AiChat
+    TextFormatSidebar
   },
   data() {
     return {
@@ -284,6 +332,7 @@ export default {
         state.localConfig.useLeftKeySelectionRightKeyDrag,
       extraTextOnExport: state => state.extraTextOnExport,
       isDragOutlineTreeNode: state => state.isDragOutlineTreeNode,
+      activeSidebar: state => state.activeSidebar,
       enableAi: state => state.localConfig.enableAi
     })
   },
@@ -304,6 +353,8 @@ export default {
     }
   },
   mounted() {
+    resetMindmapLoadTimeline('Edit mounted')
+    mindmapLoadMark('vue Edit mounted start')
     debugMindMapOpen('mounted start')
     showLoading()
     this.getData()
@@ -321,6 +372,8 @@ export default {
     this.$bus.$on('host_restore_preview_view', this.handleHostRestorePreviewView)
     this.$bus.$on('showLoading', this.handleShowLoading)
     this.$bus.$on('localStorageExceeded', this.onLocalStorageExceeded)
+    this.$bus.$on('rich_text_selection_change', this.handleRichTextAutoSwitch)
+    this.$bus.$on('hide_text_edit', this.handleTextEditEnd)
     window.addEventListener('resize', this.handleResize)
     debugMindMapOpen('mounted end')
   },
@@ -338,10 +391,26 @@ export default {
     this.$bus.$off('host_restore_preview_view', this.handleHostRestorePreviewView)
     this.$bus.$off('showLoading', this.handleShowLoading)
     this.$bus.$off('localStorageExceeded', this.onLocalStorageExceeded)
+    this.$bus.$off('rich_text_selection_change', this.handleRichTextAutoSwitch)
+    this.$bus.$off('hide_text_edit', this.handleTextEditEnd)
     window.removeEventListener('resize', this.handleResize)
     this.mindMap.destroy()
   },
   methods: {
+    ...mapMutations(['pushActiveSidebar', 'popActiveSidebar']),
+
+    handleRichTextAutoSwitch(hasRange) {
+      if (hasRange && this.activeSidebar !== 'textFormat') {
+        this.pushActiveSidebar('textFormat')
+      }
+    },
+
+    handleTextEditEnd() {
+      if (this.activeSidebar === 'textFormat') {
+        this.popActiveSidebar()
+      }
+    },
+
     onLocalStorageExceeded() {
       this.$notify({
         type: 'warning',
@@ -379,6 +448,9 @@ export default {
 
     // 渲染结束后关闭loading
     handleHideLoading() {
+      mindmapLoadMark('vue Edit node_tree_render_end hide loading', {
+        enableShowLoading: this.enableShowLoading
+      })
       debugMindMapOpen('node_tree_render_end hide loading', {
         enableShowLoading: this.enableShowLoading,
         slowResources: getSlowMindMapResources()
@@ -464,8 +536,9 @@ export default {
     },
 
     // 初始化
-    init() {
+    async init() {
       const initStart = performance.now()
+      mindmapLoadMark('vue Edit init start')
       debugMindMapOpen('init start')
       let hasFileURL = this.hasFileURL()
       let { root, layout, theme, view } = this.mindMapData
@@ -489,6 +562,14 @@ export default {
       this.hadInitialView = !!view
       // Layout root at center; framing offset comes from focused viewBox (same as editor/thumbnail).
       const initRootNodePosition = ['center', 'center']
+      const extendedIconLoadStart = performance.now()
+      const extendedIconList = await loadExtendedNodeIconsIfNeeded(root)
+      if (extendedIconList.length > 0) {
+        debugMindMapOpen('extended node icons loaded for initial data', {
+          elapsed: Math.round(performance.now() - extendedIconLoadStart),
+          groupCount: extendedIconList.length
+        })
+      }
       const newMindMapStart = performance.now()
       this.mindMap = new MindMap({
         el: this.$refs.mindMapContainer,
@@ -520,7 +601,7 @@ export default {
               isLimitMindMapInCanvasWhenHasScrollbar: false
             }
           : {}),
-        iconList: [...icon],
+        ...(extendedIconList.length > 0 ? { iconList: extendedIconList } : {}),
         useLeftKeySelectionRightKeyDrag: this.useLeftKeySelectionRightKeyDrag,
         customInnerElsAppendTo: null,
         customHandleClipboardText: handleClipboardText,
@@ -584,6 +665,9 @@ export default {
           })
         }
       })
+      mindmapLoadMark('vue Edit new MindMap end', {
+        elapsed: Math.round(performance.now() - newMindMapStart)
+      })
       debugMindMapOpen('new MindMap end', {
         elapsed: Math.round(performance.now() - newMindMapStart),
         rootChildren: root && root.children ? root.children.length : 0,
@@ -603,6 +687,11 @@ export default {
       }
       const loadPluginsStart = performance.now()
       this.loadPlugins()
+      mindmapLoadMark('vue Edit loadPlugins end', {
+        elapsed: Math.round(performance.now() - loadPluginsStart),
+        openNodeRichText: this.openNodeRichText,
+        isShowScrollbar: this.isShowScrollbar
+      })
       debugMindMapOpen('loadPlugins end', {
         elapsed: Math.round(performance.now() - loadPluginsStart),
         openNodeRichText: this.openNodeRichText,
@@ -666,6 +755,9 @@ export default {
           this.mindMap.__nbApplyHostViewport = (reason, options = {}) =>
             this.applyEmbedFocusedViewport(reason, options)
         }
+        mindmapLoadMark('vue Edit emit app_inited', {
+          totalElapsed: Math.round(performance.now() - initStart)
+        })
         debugMindMapOpen('emit app_inited', {
           totalElapsed: Math.round(performance.now() - initStart)
         })
@@ -683,6 +775,10 @@ export default {
       }
       // 协同测试
       this.cooperateTest()
+      mindmapLoadSummary('vue Edit init end', {
+        totalElapsed: Math.round(performance.now() - initStart),
+        slowResources: getSlowMindMapResources()
+      })
       debugMindMapOpen('init end', {
         totalElapsed: Math.round(performance.now() - initStart),
         slowResources: getSlowMindMapResources()

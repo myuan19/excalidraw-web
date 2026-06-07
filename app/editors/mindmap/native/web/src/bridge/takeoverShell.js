@@ -7,13 +7,34 @@
         if (window.__MINDMAP_DEBUG__ === true) return true
         try {
           const params = new URLSearchParams(window.location.search)
-          return (
+          if (
             params.get('mindmapDebug') === '1' ||
-            window.localStorage.getItem('mindmapDebug') === '1'
-          )
+            params.get('mindmapLoadDebug') === '1' ||
+            window.localStorage.getItem('mindmapDebug') === '1' ||
+            window.localStorage.getItem('mindmapLoadDebug') === '1'
+          ) {
+            return true
+          }
+          if (/^localhost$|^127\.0\.0\.1$/.test(window.location.hostname)) {
+            return true
+          }
         } catch (error) {
           return false
         }
+        return false
+      }
+      const mindmapLoadMark = (label, data) => {
+        if (!isMindMapDebugEnabled()) return
+        console.log(
+          '[DEBUG] mindmap-load | iframe ' +
+            label +
+            ' ' +
+            JSON.stringify({
+              t: Math.round(performance.now()),
+              sinceBridgeStart: Math.round(performance.now() - bridgeStartedAt),
+              ...(data || {})
+            })
+        )
       }
       const debugMindMapOpen = (label, data) => {
         if (!isMindMapDebugEnabled()) return
@@ -46,7 +67,7 @@
         mindMapData: {
           root: {
             data: {
-              text: '<p>根节点</p>',
+              text: '<p>未命名</p>',
               richText: true,
               expand: true
             },
@@ -71,12 +92,63 @@
       }
       let runtimeBlocked = false
       let bridgeReadySent = false
+      let pendingHostAiConfig = null
+      let hostAiConfigListenerReady = false
       const emitOnBus = (event, payload) => {
         if (window.$bus && typeof window.$bus.$emit === 'function') {
           window.$bus.$emit(event, payload)
           return true
         }
         return false
+      }
+      const describeHostAiConfig = payload => {
+        return {
+          configured: !!(payload && payload.configured),
+          hasApi: !!(payload && payload.api),
+          apiTail: payload && payload.api ? String(payload.api).slice(-32) : '',
+          hasKey: !!(payload && payload.key),
+          keyLen: payload && payload.key ? String(payload.key).length : 0,
+          model: payload && payload.model,
+          method: payload && payload.method
+        }
+      }
+      const emitHostAiConfig = (payload, reason) => {
+        debugMindMapOpen('mindMapAiConfig receive', {
+          reason,
+          ...describeHostAiConfig(payload),
+          hasBus: !!(window.$bus && typeof window.$bus.$emit === 'function'),
+          listenerReady: hostAiConfigListenerReady,
+          appStarted,
+          hostAppInitedSent,
+          hasNativeMindMap: !!nativeMindMap
+        })
+        if (hostAiConfigListenerReady && emitOnBus('host_ai_config', payload)) {
+          pendingHostAiConfig = null
+          debugMindMapOpen('mindMapAiConfig emitted', {
+            reason,
+            ...describeHostAiConfig(payload)
+          })
+          return true
+        }
+        pendingHostAiConfig = payload
+        debugMindMapOpen('mindMapAiConfig queued', {
+          reason,
+          ...describeHostAiConfig(payload),
+          hasBus: !!(window.$bus && typeof window.$bus.$emit === 'function'),
+          listenerReady: hostAiConfigListenerReady
+        })
+        return false
+      }
+      const flushPendingHostAiConfig = reason => {
+        debugMindMapOpen('mindMapAiConfig flush pending', {
+          reason,
+          hasPending: !!pendingHostAiConfig,
+          hasBus: !!(window.$bus && typeof window.$bus.$emit === 'function'),
+          listenerReady: hostAiConfigListenerReady,
+          ...(pendingHostAiConfig ? describeHostAiConfig(pendingHostAiConfig) : {})
+        })
+        if (!pendingHostAiConfig) return
+        emitHostAiConfig(pendingHostAiConfig, reason)
       }
       const blockRuntime = (reason, payload) => {
         if (runtimeBlocked) return
@@ -133,6 +205,7 @@
         hostAppInitedSent = false
         renderEnded = false
         nativeMindMap = null
+        hostAiConfigListenerReady = false
         const appRoot = document.getElementById('app')
         if (appRoot) {
           appRoot.innerHTML = ''
@@ -390,6 +463,12 @@
         if (!nativeMindMap || !renderEnded) return
         appInitedSentToHost = true
         hostAppInitedSent = true
+        mindmapLoadMark('notifyHostAppInited', {
+          caller,
+          hasExport: typeof nativeMindMap?.export === 'function',
+          scale: nativeMindMap?.view?.scale || null,
+          slowResources: getSlowMindMapResources()
+        })
         debugMindMapOpen('notifyHostAppInited (after render)', {
           totalElapsed: Math.round(performance.now() - bridgeStartedAt),
           hasExport: typeof nativeMindMap?.export === 'function',
@@ -490,6 +569,16 @@
           }, ok ? 80 : 0)
         }
         window.$bus.$on('embed_preview_viewport_applied', notifyHostPreviewViewport)
+        window.$bus.$on('host_ai_config_listener_ready', () => {
+          hostAiConfigListenerReady = true
+          debugMindMapOpen('host ai config listener ready from Vue', {
+            hasBus: !!(window.$bus && typeof window.$bus.$emit === 'function'),
+            hasPendingHostAiConfig: !!pendingHostAiConfig,
+            hasNativeMindMap: !!nativeMindMap,
+            renderEnded
+          })
+          flushPendingHostAiConfig('host-ai-listener-ready')
+        })
         // 思维导图实例创建完成事件
         // MindMap.render() uses setTimeout(0) and doLayout uses asyncRun
         // (which chains multiple setTimeout(0) calls). The tree is NOT fully
@@ -528,9 +617,18 @@
           notifyHostAppInited('node_tree_render_end')
         })
         // 实例化页面
+        mindmapLoadMark('before window.initApp')
         debugMindMapOpen('before window.initApp')
+        const initAppStart = performance.now()
         window.initApp()
-        debugMindMapOpen('after window.initApp call')
+        mindmapLoadMark('after window.initApp call', {
+          elapsed: Math.round(performance.now() - initAppStart)
+        })
+        debugMindMapOpen('after window.initApp call', {
+          hasBus: !!(window.$bus && typeof window.$bus.$emit === 'function'),
+          listenerReady: hostAiConfigListenerReady,
+          hasPendingHostAiConfig: !!pendingHostAiConfig
+        })
       }
 
       window.addEventListener('message', event => {
@@ -550,6 +648,18 @@
           return
         }
         if (message.type === 'initMindMap') {
+          mindmapLoadMark('received initMindMap message', {
+            appStarted,
+            hostAppInitedSent,
+            hasNativeMindMap: !!nativeMindMap,
+            rootChildren:
+              message.payload &&
+              message.payload.mindMapData &&
+              message.payload.mindMapData.root &&
+              message.payload.mindMapData.root.children
+                ? message.payload.mindMapData.root.children.length
+                : 0
+          })
           debugMindMapOpen('received initMindMap message', {
             appStarted,
             hostAppInitedSent,
@@ -575,9 +685,14 @@
           }
         }
         if (message.type === 'mindMapAiConfig') {
-          if (!emitOnBus('host_ai_config', message.payload)) {
-            debugMindMapOpen('mindMapAiConfig skipped: bus unavailable')
-          }
+          debugMindMapOpen('postMessage mindMapAiConfig', {
+            ...describeHostAiConfig(message.payload),
+            appStarted,
+            hostAppInitedSent,
+            hostAiConfigListenerReady,
+            hasBus: !!(window.$bus && typeof window.$bus.$emit === 'function')
+          })
+          emitHostAiConfig(message.payload, 'postMessage')
         }
         if (message.type === 'mindMapHostSaveStatus') {
           if (!emitOnBus('host_save_status', message.payload)) {
@@ -726,6 +841,10 @@
           return
         }
         bridgeReadySent = true
+        mindmapLoadMark('postBridgeReady', {
+          readyState: document.readyState,
+          slowResources: getSlowMindMapResources()
+        })
         debugMindMapOpen('postBridgeReady', {
           readyState: document.readyState,
           slowResources: getSlowMindMapResources()
@@ -736,8 +855,15 @@
         if (!window.takeOverApp) return
         if (runtimeBlocked) return
         if (isRuntimeReady()) {
+          mindmapLoadMark('runtime ready', { attempt })
           postBridgeReady()
           return
+        }
+        if (attempt > 0 && attempt % 10 === 0) {
+          mindmapLoadMark('waiting for initApp runtime', {
+            attempt,
+            hasInitApp: typeof window.initApp === 'function'
+          })
         }
         if (attempt >= 80) {
           blockRuntime('runtime-wait-timeout', {
