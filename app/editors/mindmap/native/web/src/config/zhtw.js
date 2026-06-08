@@ -415,6 +415,11 @@ export const shapeList = [
 // 側邊欄列表
 export const sidebarTriggerList = [
   {
+    name: '文本格式',
+    value: 'textFormat',
+    icon: 'iconbianji1'
+  },
+  {
     name: '節點樣式',
     value: 'nodeStyle',
     icon: 'iconzhuti'
@@ -443,11 +448,6 @@ export const sidebarTriggerList = [
     name: 'AI 潤色',
     value: 'ai',
     icon: 'iconAIshengcheng'
-  },
-  {
-    name: '文本格式',
-    value: 'textFormat',
-    icon: 'iconbianji1'
   },
   {
     name: '設置',

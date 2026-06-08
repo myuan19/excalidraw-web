@@ -115,6 +115,46 @@ class RichText {
       .smm-richtext-node-wrap .ql-align-center {
         text-align: center;
       }
+
+      .ql-editor .ql-indent-1,
+      .smm-richtext-node-wrap .ql-indent-1 {
+        padding-left: 3em;
+      }
+
+      .ql-editor .ql-indent-2,
+      .smm-richtext-node-wrap .ql-indent-2 {
+        padding-left: 6em;
+      }
+
+      .ql-editor .ql-indent-3,
+      .smm-richtext-node-wrap .ql-indent-3 {
+        padding-left: 9em;
+      }
+
+      .ql-editor .ql-indent-4,
+      .smm-richtext-node-wrap .ql-indent-4 {
+        padding-left: 12em;
+      }
+
+      .ql-editor .ql-indent-5,
+      .smm-richtext-node-wrap .ql-indent-5 {
+        padding-left: 15em;
+      }
+
+      .ql-editor .ql-indent-6,
+      .smm-richtext-node-wrap .ql-indent-6 {
+        padding-left: 18em;
+      }
+
+      .ql-editor .ql-indent-7,
+      .smm-richtext-node-wrap .ql-indent-7 {
+        padding-left: 21em;
+      }
+
+      .ql-editor .ql-indent-8,
+      .smm-richtext-node-wrap .ql-indent-8 {
+        padding-left: 24em;
+      }
       `
     )
     let cssText = `
@@ -393,6 +433,19 @@ class RichText {
     if (!this.showTextEdit) {
       return
     }
+    if (!this.node) {
+      if (this.textEditNode) {
+        this.textEditNode.style.display = 'none'
+        this.textEditNode.innerHTML = ''
+      }
+      this.setIsShowTextEdit(false)
+      this.mindMap.emit('rich_text_selection_change', false)
+      this.range = null
+      this.lastRange = null
+      this.pasteUseRange = null
+      this.isInserting = false
+      return
+    }
     const { beforeHideRichTextEdit } = this.mindMap.opt
     if (typeof beforeHideRichTextEdit === 'function') {
       beforeHideRichTextEdit(this)
@@ -401,11 +454,16 @@ class RichText {
     const list = nodes && nodes.length > 0 ? nodes : [this.node]
     const node = this.node
     this.textEditNode.style.display = 'none'
+    this.textEditNode.innerHTML = ''
     this.setIsShowTextEdit(false)
     this.mindMap.emit('rich_text_selection_change', false)
+    this.range = null
+    this.lastRange = null
+    this.pasteUseRange = null
     this.node = null
     this.isInserting = false
     list.forEach(node => {
+      if (!node) return
       this.mindMap.execCommand('SET_NODE_TEXT', node, html, true)
       // if (node.isGeneralization) {
       // 概要节点
@@ -483,6 +541,7 @@ class RichText {
         'background',
         'font',
         'size',
+        'indent',
         'formula',
         'align'
       ], // 明确指定允许的格式，不包含有序列表，无序列表等
@@ -509,36 +568,8 @@ class RichText {
         this.isInserting = false
         return
       }
-      this.lastRange = this.range
-      this.range = null
-      if (range) {
-        this.pasteUseRange = range
-        let bounds = this.quill.getBounds(range.index, range.length)
-        let rect = this.textEditNode.getBoundingClientRect()
-        let rectInfo = {
-          left: bounds.left + rect.left,
-          top: bounds.top + rect.top,
-          right: bounds.right + rect.left,
-          bottom: bounds.bottom + rect.top,
-          width: bounds.width
-        }
-        let formatInfo = this.quill.getFormat(range.index, range.length)
-        let hasRange = false
-        if (range.length == 0) {
-          hasRange = false
-        } else {
-          this.range = range
-          hasRange = true
-        }
-        this.mindMap.emit(
-          'rich_text_selection_change',
-          hasRange,
-          rectInfo,
-          formatInfo
-        )
-      } else {
-        this.mindMap.emit('rich_text_selection_change', false, null, null)
-      }
+      this.updateSelectionRange(range)
+      this.emitSelectionChange(range)
     })
     this.quill.on('text-change', () => {
       this.mindMap.emit('node_text_edit_change', {
@@ -629,6 +660,40 @@ class RichText {
     return {}
   }
 
+  updateSelectionRange(range) {
+    this.range = null
+    if (!range) return
+    this.pasteUseRange = range
+    if (range.length > 0) {
+      this.range = range
+      this.lastRange = range
+    }
+  }
+
+  emitSelectionChange(range = this.range || this.lastRange) {
+    if (!range || !this.quill || !this.textEditNode) {
+      this.mindMap.emit('rich_text_selection_change', false, null, null)
+      return
+    }
+    const bounds = this.quill.getBounds(range.index, range.length)
+    const rect = this.textEditNode.getBoundingClientRect()
+    const rectInfo = {
+      left: bounds.left + rect.left,
+      top: bounds.top + rect.top,
+      right: bounds.right + rect.left,
+      bottom: bounds.bottom + rect.top,
+      width: bounds.width
+    }
+    const hasRange = range.length > 0
+    const formatInfo = this.quill.getFormat(range.index, range.length)
+    this.mindMap.emit(
+      'rich_text_selection_change',
+      hasRange,
+      rectInfo,
+      formatInfo
+    )
+  }
+
   // 处理粘贴的文本内容
   formatPasteText(text) {
     const { isSmm, data } = checkSmmFormatData(text)
@@ -678,7 +743,14 @@ class RichText {
 
   // 选中全部
   selectAll() {
-    this.quill.setSelection(0, this.quill.getLength())
+    if (!this.quill) return
+    const range = {
+      index: 0,
+      length: this.quill.getLength()
+    }
+    this.range = range
+    this.lastRange = range
+    this.quill.setSelection(range.index, range.length)
   }
 
   // 聚焦
@@ -762,9 +834,10 @@ class RichText {
 
   // 格式化当前选中的文本
   formatText(config = {}, clear = false) {
-    if (!this.range && !this.lastRange) return
+    if (!this.showTextEdit || !this.quill) return
+    const range = this.range || this.lastRange
+    if (!range || range.length <= 0) return
     const rangeLost = !this.range
-    const range = rangeLost ? this.lastRange : this.range
     if (clear) {
       this.quill.removeFormat(range.index, range.length)
     } else {
@@ -779,13 +852,37 @@ class RichText {
       }
     }
     if (rangeLost) {
-      this.quill.setSelection(this.lastRange.index, this.lastRange.length)
+      this.quill.setSelection(range.index, range.length)
     }
+    this.emitSelectionChange(range)
   }
 
   // 清除当前选中文本的样式
   removeFormat() {
     this.formatText({}, true)
+  }
+
+  // 格式化当前激活节点的全部文本
+  async formatActiveNodeText(config = {}, clear = false) {
+    if (!this.showTextEdit) {
+      const activeNode =
+        this.mindMap.renderer &&
+        this.mindMap.renderer.activeNodeList &&
+        this.mindMap.renderer.activeNodeList[0]
+      if (!activeNode || activeNode.isUseCustomNodeContent()) {
+        return
+      }
+      await this.mindMap.renderer.textEdit.show({
+        node: activeNode
+      })
+    }
+    this.selectAll()
+    this.formatText(config, clear)
+  }
+
+  // 清除当前激活节点全部文本的样式
+  removeActiveNodeTextFormat() {
+    return this.formatActiveNodeText({}, true)
   }
 
   // 格式化指定范围的文本

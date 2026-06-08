@@ -20,10 +20,12 @@ const store = new Vuex.Store({
       // 是否是暗黑模式
       isDark: false,
       // 是否开启AI功能
-      enableAi: true
+      enableAi: true,
+      // 划选富文本时是否显示浮动工具栏
+      showRichTextToolbarOnSelection: false
     },
     activeSidebar: '', // 当前显示的侧边栏
-    hasTextSelection: false, // 当前是否有文字选区（用于文本格式 tab 的启用/禁用）
+    previousActiveSidebar: '', // 上一个侧边栏（用于判断是否需要切换动画）
     isOutlineEdit: false, // 是否是大纲编辑模式
     isReadonly: false, // 是否只读
     isSourceCodeEdit: false, // 是否是源码编辑模式
@@ -131,13 +133,10 @@ const store = new Vuex.Store({
 
     // 设置当前显示的侧边栏
     setActiveSidebar(state, data) {
+      state.previousActiveSidebar = state.activeSidebar
       state.activeSidebar = data
     },
 
-    // 设置是否有文字选区
-    setHasTextSelection(state, data) {
-      state.hasTextSelection = !!data
-    },
 
     // 设置大纲编辑模式
     setIsOutlineEdit(state, data) {

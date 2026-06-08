@@ -422,7 +422,10 @@ export default {
     removeFormat: 'Clear Style',
     textAlign: 'Text align',
     textFormat: 'Text Format',
-    selectTextHint: 'Double-click a node and select text to edit format'
+    selectTextHint: 'Double-click a node and select text to edit format',
+    selectNodeHint: 'Please select a node first',
+    applyToAll: 'Will apply to all text in the node',
+    showFloatingToolbar: 'Show floating toolbar when selecting text'
   },
   other: {
     loading: 'Loading, please wait...'
@@ -488,10 +491,13 @@ export default {
     modifyAIConfiguration: 'Modify AI configuration',
     chatInputPlaceholder: 'Enter to send, Shift+Enter to wrap.',
     send: 'Send',
+    startPolish: 'Start editing',
     stopGenerating: 'Stop generating',
     generationFailed: 'Generation failed',
     aiGenerationSuccess: 'AI generation completed',
     stoppedGenerating: 'Stopped generating',
+    aiCreatingOperationBlocked:
+      'Only viewing, canvas dragging, and expanding/collapsing nodes are available during AI generation',
     AIConfiguration: 'AI configuration',
     VolcanoArkLargeModelConfiguration: 'Volcano Ark Large Model Configuration:',
     configTip:
@@ -516,6 +522,9 @@ export default {
     editScope: 'Edit Scope',
     scopeCurrentOnly: 'Current node only',
     scopeSubtree: 'Include all children',
+    contextCharLimit: 'Context limit',
+    contextCharLimitUnit: 'chars',
+    promptPresetInsertTip: 'Click to fill the form above; templates are not kept selected',
     rootNodeDefault: 'Root node (global)',
     organizeCurrentNode: 'AI Polish',
     organizeCurrentNodeDesc:
@@ -525,7 +534,10 @@ export default {
       'AI will return content in the supported MindMap rich text format, not Markdown.',
     allowCreateChildren: 'Create new child nodes',
     allowCreateChildrenTip:
-      'When enabled, new nodes can only be generated under the current node.',
+      'When enabled, AI may create child nodes. Off by default.',
+    allowDeleteNodes: 'Allow deleting nodes',
+    allowDeleteNodesTip:
+      'When enabled, AI may delete child nodes. Off by default to prevent accidental deletion.',
     currentNodeContent: 'Current node content',
     currentNodePreview: 'Selected node preview',
     emptyCurrentNode: 'The current node has no content',
@@ -536,8 +548,8 @@ export default {
     modifyRequirement: 'Requirement',
     modifyRequirementPlaceholder:
       'Enter an organize requirement, such as shorten the title, keep key numbers, or split into steps.',
-    savedPromptPresets: 'Saved requirements',
-    savedPromptPresetsGlobalTip: 'Saved globally and shared across mind maps',
+    savedPromptPresets: 'Templates',
+    savedPromptPresetsGlobalTip: 'Saves only prompts and options, not target nodes',
     defaultPolishActions: 'Default actions',
     defaultActionOrganizeCurrent: 'Organize current node',
     defaultActionOrganizeCurrentDesc: 'Improve wording without creating child nodes.',
@@ -552,23 +564,21 @@ export default {
       'Turn it into a shorter, clearer title while preserving the core information.',
     childrenEnabled: 'Create children',
     childrenDisabled: 'No children',
-    currentChildrenSetting: 'Children',
-    currentStyleSetting: 'Style',
-    defaultThemeStyle: 'Default theme',
-    customStyleEnabled: 'Custom style',
+    deleteNodesAllowed: 'Deletion allowed',
+    deleteNodesForbidden: 'Deletion blocked',
     streamingPreview: 'Generation preview',
     streamingPreviewTip:
       'AI streaming output appears here. It is applied only after the final result passes validation.',
     waitingForAiOutput: 'Waiting for AI output...',
-    noPromptPresets: 'No saved requirements',
-    promptPresetNamePlaceholder: 'Preset name',
-    saveAsPromptPreset: 'Save preset',
-    unnamedPromptPreset: 'Untitled preset',
+    noPromptPresets: 'No templates',
+    promptPresetNamePlaceholder: 'Template name',
+    saveAsPromptPreset: 'Save template',
+    unnamedPromptPreset: 'Untitled template',
     modifyRequirementRequired: 'Please enter a requirement',
-    promptPresetSaved: 'Prompt preset saved',
-    promptPresetSaveFailed: 'Failed to save prompt preset',
-    promptPresetDeleted: 'Prompt preset deleted',
-    promptPresetDeleteFailed: 'Failed to delete prompt preset'
+    promptPresetSaved: 'Template saved',
+    promptPresetSaveFailed: 'Failed to save template',
+    promptPresetDeleted: 'Template deleted',
+    promptPresetDeleteFailed: 'Failed to delete template'
   },
   note: {
     title: 'Note'

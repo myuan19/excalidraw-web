@@ -82,6 +82,7 @@ db.exec(`
     area       TEXT NOT NULL,
     name       TEXT NOT NULL DEFAULT '',
     prompt     TEXT NOT NULL DEFAULT '',
+    options_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     sort_index INTEGER NOT NULL DEFAULT 0
@@ -154,6 +155,12 @@ try {
 
 try {
   db.exec(`ALTER TABLE library_items ADD COLUMN sort_index INTEGER NOT NULL DEFAULT 0`);
+} catch {
+  // column exists
+}
+
+try {
+  db.exec(`ALTER TABLE ai_prompt_presets ADD COLUMN options_json TEXT NOT NULL DEFAULT '{}'`);
 } catch {
   // column exists
 }

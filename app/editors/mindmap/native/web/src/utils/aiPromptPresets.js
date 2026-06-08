@@ -34,12 +34,14 @@ export async function saveMindMapOrganizePromptPreset(preset) {
     area: MINDMAP_ORGANIZE_PROMPT_AREA,
     name: preset.name,
     prompt: preset.prompt,
+    options: preset.options || {},
     sort_index: preset.sort_index || 0
   }
   mindmapDevDebug('mindmap-ai-prompt', 'save preset start', {
     hasId: !!body.id,
     name: body.name,
-    promptLen: body.prompt ? body.prompt.length : 0
+    promptLen: body.prompt ? body.prompt.length : 0,
+    optionKeys: Object.keys(body.options)
   })
   const res = await fetch('/api/ai-prompt-presets', {
     method: 'POST',

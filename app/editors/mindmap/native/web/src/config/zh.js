@@ -517,6 +517,11 @@ export const langList = [
 // 侧边栏列表
 export const sidebarTriggerList = [
   {
+    name: '文本格式',
+    value: 'textFormat',
+    icon: 'iconbianji1'
+  },
+  {
     name: '节点样式',
     value: 'nodeStyle',
     icon: 'iconzhuti'
@@ -545,11 +550,6 @@ export const sidebarTriggerList = [
     name: 'AI 润色',
     value: 'ai',
     icon: 'iconAIshengcheng'
-  },
-  {
-    name: '文本格式',
-    value: 'textFormat',
-    icon: 'iconbianji1'
   },
   {
     name: '设置',

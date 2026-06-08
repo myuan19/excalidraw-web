@@ -11,12 +11,31 @@ function normalizeArea(value) {
     : "mindmap-organize";
 }
 
+function normalizeOptions(value) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value
+    : {};
+}
+
+function parseOptionsJson(value) {
+  if (!value) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return normalizeOptions(parsed);
+  } catch {
+    return {};
+  }
+}
+
 function mapRow(row) {
   return {
     id: row.id,
     area: row.area,
     name: row.name,
     prompt: row.prompt,
+    options: parseOptionsJson(row.options_json),
     created_at: row.created_at,
     updated_at: row.updated_at,
     sort_index: row.sort_index ?? 0,
@@ -28,7 +47,7 @@ router.get("/", (req, res) => {
     const area = normalizeArea(req.query.area);
     const rows = db
       .prepare(
-        "SELECT id, area, name, prompt, created_at, updated_at, sort_index FROM ai_prompt_presets WHERE area = ? ORDER BY sort_index ASC, updated_at DESC",
+        "SELECT id, area, name, prompt, options_json, created_at, updated_at, sort_index FROM ai_prompt_presets WHERE area = ? ORDER BY sort_index ASC, updated_at DESC",
       )
       .all(area);
     return res.json(rows.map(mapRow));
@@ -54,22 +73,24 @@ router.post("/", (req, res) => {
     if (!prompt) {
       return res.status(400).json({ error: "prompt_required" });
     }
+    const optionsJson = JSON.stringify(normalizeOptions(req.body?.options));
     const sortIndex = Number(req.body?.sort_index) || 0;
     const now = new Date().toISOString();
     db.prepare(
       `INSERT INTO ai_prompt_presets
-       (id, area, name, prompt, created_at, updated_at, sort_index)
-       VALUES (@id, @area, @name, @prompt, @now, @now, @sortIndex)
+       (id, area, name, prompt, options_json, created_at, updated_at, sort_index)
+       VALUES (@id, @area, @name, @prompt, @optionsJson, @now, @now, @sortIndex)
        ON CONFLICT(id) DO UPDATE SET
          area = excluded.area,
          name = excluded.name,
          prompt = excluded.prompt,
+         options_json = excluded.options_json,
          updated_at = excluded.updated_at,
          sort_index = excluded.sort_index`,
-    ).run({ id, area, name, prompt, now, sortIndex });
+    ).run({ id, area, name, prompt, optionsJson, now, sortIndex });
     const row = db
       .prepare(
-        "SELECT id, area, name, prompt, created_at, updated_at, sort_index FROM ai_prompt_presets WHERE id = ?",
+        "SELECT id, area, name, prompt, options_json, created_at, updated_at, sort_index FROM ai_prompt_presets WHERE id = ?",
       )
       .get(id);
     return res.status(201).json(mapRow(row));

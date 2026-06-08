@@ -27,6 +27,8 @@ class Command {
     )
     // 是否暂停收集历史数据
     this.isPause = false
+    // 当前命令执行上下文，例如区分用户操作和 AI/系统内部事务
+    this.contextStack = []
   }
 
   // 暂停收集历史数据
@@ -58,6 +60,9 @@ class Command {
 
   //  执行命令
   exec(name, ...args) {
+    if (this.checkIsPreventedByBeforeExec(name, args, this.getContext())) {
+      return false
+    }
     if (this.commands[name]) {
       this.commands[name].forEach(fn => {
         fn(...args)
@@ -68,10 +73,64 @@ class Command {
           name
         )
       ) {
-        return
+        return true
       }
       this.addHistory()
+      return true
     }
+    return undefined
+  }
+
+  getContext() {
+    return this.contextStack.length > 0
+      ? this.contextStack[this.contextStack.length - 1]
+      : null
+  }
+
+  runWithContext(context, fn) {
+    this.contextStack.push(context || {})
+    let finished = false
+    const finish = () => {
+      if (finished) return
+      finished = true
+      this.contextStack.pop()
+    }
+    try {
+      const result = fn()
+      if (result && typeof result.finally === 'function') {
+        return result.finally(finish)
+      }
+      finish()
+      return result
+    } catch (error) {
+      finish()
+      throw error
+    }
+  }
+
+  // 命令执行前的可取消钩子，监听函数返回 false 即阻止命令执行
+  checkIsPreventedByBeforeExec(name, args, context) {
+    const listeners =
+      this.mindMap.event && this.mindMap.event.listeners
+        ? this.mindMap.event.listeners('beforeExecCommand')
+        : []
+    if (!listeners || listeners.length <= 0) {
+      return false
+    }
+    return listeners.some(fn => {
+      const event = {
+        name,
+        args,
+        context,
+        preventDefault: false
+      }
+      const result = fn(event)
+      return (
+        event.preventDefault === true ||
+        result === false ||
+        (result && result.preventDefault === true)
+      )
+    })
   }
 
   //  添加命令

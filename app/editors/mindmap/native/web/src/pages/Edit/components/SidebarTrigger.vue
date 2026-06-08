@@ -1,19 +1,29 @@
 <template>
   <div
-    class="sidebarTriggerContainer "
+    class="sidebarTriggerContainer"
     @click.stop
-    :class="{ hasActive: show && activeSidebar, show: show, isDark: isDark }"
+    :class="{
+      panelOpen: triggerPanelOpen,
+      sidebarOpen: !!activeSidebar,
+      dockAtSidebar: dockAtSidebarEdge,
+      dockAtScreen: dockAtScreenEdge,
+      isDark: isDark
+    }"
     :style="containerStyle"
   >
-    <div class="toggleShowBtn" :class="{ hide: !show }" @click="show = !show">
+    <div
+      class="toggleShowBtn"
+      :class="{ collapsed: !triggerPanelOpen }"
+      @click="onToggleClick"
+    >
       <span class="iconfont iconjiantouyou"></span>
     </div>
-    <div class="trigger customScrollbar">
+    <div class="trigger customScrollbar" v-show="triggerPanelOpen">
       <div
         class="triggerItem"
         v-for="item in triggerList"
         :key="item.value"
-        :class="{ active: activeSidebar === item.value, disabled: item.disabled }"
+        :class="{ active: activeSidebar === item.value }"
         @click="trigger(item)"
       >
         <div class="triggerIcon iconfont" :class="[item.icon]"></div>
@@ -32,7 +42,7 @@ import { getSidebarTopMargin, SIDEBAR_BOTTOM_MARGIN } from '@/utils/sidebarLayou
 export default {
   data() {
     return {
-      show: true,
+      triggerPanelOpen: true,
       maxHeight: 0,
       topMargin: 110
     }
@@ -44,12 +54,17 @@ export default {
         top: `${this.topMargin}px`
       }
     },
+    dockAtSidebarEdge() {
+      return !!this.activeSidebar && !this.triggerPanelOpen
+    },
+    dockAtScreenEdge() {
+      return !this.activeSidebar && !this.triggerPanelOpen
+    },
     ...mapState({
       isDark: state => state.localConfig.isDark,
       activeSidebar: state => state.activeSidebar,
       isReadonly: state => state.isReadonly,
-      enableAi: state => state.localConfig.enableAi,
-      hasTextSelection: state => state.hasTextSelection
+      enableAi: state => state.localConfig.enableAi
     }),
 
     triggerList() {
@@ -64,12 +79,7 @@ export default {
           return item.value !== 'ai'
         })
       }
-      return list.map(item => {
-        if (item.value === 'textFormat') {
-          return { ...item, disabled: !this.hasTextSelection }
-        }
-        return item
-      })
+      return list
     }
   },
   watch: {
@@ -94,8 +104,16 @@ export default {
   methods: {
     ...mapMutations(['setActiveSidebar']),
 
+    onToggleClick() {
+      if (this.activeSidebar && !this.triggerPanelOpen) {
+        this.setActiveSidebar(null)
+        this.$bus.$emit('closeSideBar')
+        return
+      }
+      this.triggerPanelOpen = !this.triggerPanelOpen
+    },
+
     trigger(item) {
-      if (item.disabled) return
       this.setActiveSidebar(item.value)
     },
 
@@ -115,12 +133,14 @@ export default {
 <style lang="less" scoped>
 .sidebarTriggerContainer {
   position: fixed;
-  bottom: 80px;
   right: -60px;
-  transition: all 0.3s;
+  bottom: 80px;
+  transition: right 0.3s ease;
   display: flex;
   flex-direction: column;
   justify-content: center;
+  overflow: visible;
+  z-index: 20;
 
   &.isDark {
     .trigger {
@@ -136,51 +156,62 @@ export default {
     }
   }
 
-  &.show {
+  &.panelOpen:not(.sidebarOpen) {
     right: 0;
   }
 
-  &.hasActive {
+  &.panelOpen.sidebarOpen {
     right: 305px;
+  }
+
+  &.dockAtScreen {
+    right: 0;
+    width: 0;
+  }
+
+  &.dockAtSidebar {
+    right: 300px;
+    width: 0;
   }
 
   .toggleShowBtn {
     position: absolute;
-    left: -6px;
-    width: 35px;
-    height: 60px;
+    left: -14px;
+    width: 14px;
+    height: 48px;
     background: #409eff;
     top: 50%;
     transform: translateY(-50%);
     cursor: pointer;
-    transition: left 0.1s linear;
-    z-index: 0;
-    border-top-left-radius: 10px;
-    border-bottom-left-radius: 10px;
+    transition: background 0.15s ease, box-shadow 0.15s ease;
+    z-index: 2;
+    border-top-left-radius: 6px;
+    border-bottom-left-radius: 6px;
     display: flex;
     align-items: center;
-    padding-left: 4px;
+    justify-content: center;
+    padding: 0;
+    box-shadow: 0 1px 6px rgba(64, 158, 255, 0.22);
 
-    &.hide {
-      left: -8px;
-
-      span {
-        transform: rotateZ(180deg);
-      }
+    &.collapsed span {
+      transform: rotateZ(180deg);
     }
 
     &:hover {
-      left: -18px;
+      background: #66b1ff;
+      box-shadow: 0 2px 8px rgba(64, 158, 255, 0.32);
     }
 
     span {
       color: #fff;
-      transition: all 0.1s;
+      font-size: 10px;
+      transition: transform 0.15s ease;
     }
   }
 
   .trigger {
     position: relative;
+    z-index: 3;
     width: 60px;
     border-color: #eee;
     background-color: #fff;
@@ -208,12 +239,6 @@ export default {
       &.active {
         color: #409eff;
         font-weight: bold;
-      }
-
-      &.disabled {
-        opacity: 0.35;
-        cursor: not-allowed;
-        &:hover { background-color: transparent; }
       }
 
       .triggerIcon {

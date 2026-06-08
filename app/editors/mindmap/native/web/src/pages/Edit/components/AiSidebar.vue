@@ -1,69 +1,154 @@
 <template>
   <Sidebar ref="sidebar" :title="$t('ai.sidebarTitle') || 'AI 润色'">
     <div class="sidebarContent customScrollbar" :class="{ isDark: isDark }">
-      <!-- 目标节点 -->
-      <div class="title noTop">{{ $t('ai.targetNode') || '目标节点' }}</div>
-      <div class="row">
-        <div class="rowItem">
-          <span class="nodeNameDisplay" v-html="targetNodeName"></span>
-        </div>
-      </div>
+      <section class="sectionBlock">
+        <div class="sectionLabel">{{ $t('ai.targetNode') || '目标节点' }}</div>
+        <div class="targetChip" v-html="targetNodeName"></div>
+      </section>
 
-      <!-- 编辑范围 -->
-      <div class="title">{{ $t('ai.editScope') || '编辑范围' }}</div>
-      <div class="row">
-        <div class="rowItem">
-          <el-radio-group v-model="scope" size="mini">
-            <el-radio-button label="current">{{ $t('ai.scopeCurrentOnly') || '仅当前节点' }}</el-radio-button>
-            <el-radio-button label="subtree">{{ $t('ai.scopeSubtree') || '含所有子节点' }}</el-radio-button>
-          </el-radio-group>
-        </div>
-      </div>
-
-      <!-- 润色要求 -->
-      <div class="title">{{ $t('ai.modifyRequirement') || '润色要求' }}</div>
-      <div class="row">
-        <div class="rowItem" style="width: 100%;">
-          <el-input
-            type="textarea"
-            :rows="3"
-            v-model="prompt"
-            :placeholder="$t('ai.modifyRequirementPlaceholder') || '请输入润色要求…'"
+      <section class="sectionBlock">
+        <div class="sectionLabel">{{ $t('ai.editScope') || '编辑范围' }}</div>
+        <el-radio-group
+          class="scopeGroup"
+          v-model="scope"
+          size="mini"
+          :disabled="isAiCreating"
+        >
+          <el-radio-button label="current">{{
+            $t('ai.scopeCurrentOnly') || '仅当前节点'
+          }}</el-radio-button>
+          <el-radio-button label="subtree">{{
+            $t('ai.scopeSubtree') || '含所有子节点'
+          }}</el-radio-button>
+        </el-radio-group>
+        <div class="contextLimitRow" v-if="scope === 'subtree'">
+          <span class="contextLimitLabel">{{
+            $t('ai.contextCharLimit') || '上下文上限'
+          }}</span>
+          <el-input-number
+            v-model="contextCharLimit"
+            size="mini"
+            :min="contextCharLimitMin"
+            :max="contextCharLimitMax"
+            :step="contextCharLimitStep"
             :disabled="isAiCreating"
-            @keydown.native.enter.ctrl="onGenerate"
-            @keydown.native.enter.meta="onGenerate"
-            @keydown.native.stop
-          ></el-input>
+            controls-position="right"
+          ></el-input-number>
+          <span class="contextLimitUnit">{{
+            $t('ai.contextCharLimitUnit') || '字'
+          }}</span>
         </div>
-      </div>
+        <div class="permissionSwitchRow" v-if="scope === 'subtree'">
+          <div class="permissionSwitchText">
+            <div class="permissionSwitchTitle">{{
+              $t('ai.allowCreateChildren') || '允许新增子节点'
+            }}</div>
+            <div class="permissionSwitchTip">{{
+              $t('ai.allowCreateChildrenTip') ||
+                '开启后 AI 才能新增子节点；默认关闭。'
+            }}</div>
+          </div>
+          <el-switch
+            v-model="allowCreateChildren"
+            :disabled="isAiCreating"
+          ></el-switch>
+        </div>
+        <div class="permissionSwitchRow" v-if="scope === 'subtree'">
+          <div class="permissionSwitchText">
+            <div class="permissionSwitchTitle">{{
+              $t('ai.allowDeleteNodes') || '允许删除节点'
+            }}</div>
+            <div class="permissionSwitchTip">{{
+              $t('ai.allowDeleteNodesTip') ||
+                '开启后 AI 才能删除子节点；默认关闭，防止误删。'
+            }}</div>
+          </div>
+          <el-switch
+            v-model="allowDeleteNodes"
+            :disabled="isAiCreating"
+          ></el-switch>
+        </div>
+      </section>
 
-      <!-- 操作按钮 -->
-      <div class="row actionRow">
-        <el-button
-          v-if="!isAiCreating"
-          type="primary"
-          size="small"
-          :disabled="!hasAiConfig"
-          @click="onGenerate"
-        >{{ $t('ai.confirm') || '开始润色' }}</el-button>
-        <el-button
-          v-else
-          type="warning"
-          size="small"
-          @click="onStop"
-        >{{ $t('ai.stopGenerating') || '停止生成' }}</el-button>
-        <span class="configHint" v-if="!hasAiConfig">
+      <section class="sectionBlock">
+        <div class="sectionLabel">{{ $t('ai.modifyRequirement') || '修改要求' }}</div>
+        <el-input
+          class="requirementInput"
+          type="textarea"
+          :rows="5"
+          v-model="prompt"
+          :placeholder="
+            $t('ai.modifyRequirementPlaceholder') || '请输入修改要求…'
+          "
+          :disabled="isAiCreating"
+          @keydown.native.enter.ctrl="onGenerate"
+          @keydown.native.enter.meta="onGenerate"
+          @keydown.native.stop
+        ></el-input>
+        <div class="actionRow">
+          <el-button
+            v-if="!isAiCreating"
+            type="primary"
+            size="small"
+            :disabled="!hasAiConfig || !prompt.trim()"
+            @click="onGenerate"
+          >{{ $t('ai.startPolish') || '开始修改' }}</el-button>
+          <el-button v-else type="warning" size="small" @click="onStop">{{
+            $t('ai.stopGenerating') || '停止生成'
+          }}</el-button>
+        </div>
+        <div class="configHint" v-if="!hasAiConfig">
           {{ $t('ai.mindMapAiConfigMissingTip') || 'AI 未配置' }}
-        </span>
-      </div>
-
-      <!-- 生成预览 -->
-      <template v-if="isAiCreating || streamContent">
-        <div class="title">{{ $t('ai.streamingPreview') || '生成预览' }}</div>
-        <div class="row">
-          <pre class="streamContent">{{ streamContent || '等待 AI 输出…' }}</pre>
         </div>
-      </template>
+      </section>
+
+      <section class="sectionBlock streamSection" v-if="isAiCreating || streamContent">
+        <div class="sectionLabel">{{ $t('ai.streamingPreview') || '生成过程' }}</div>
+        <pre class="streamContent">{{
+          streamContent || $t('ai.waitingForAiOutput') || '等待 AI 输出…'
+        }}</pre>
+      </section>
+
+      <section class="sectionBlock presetSection">
+        <div class="presetSectionHeader">
+          <div class="presetHeaderMain">
+            <div class="sectionLabel noMargin">{{ $t('ai.savedPromptPresets') || '模板' }}</div>
+            <div class="presetHint">
+              {{ $t('ai.promptPresetInsertTip') || '点击插入到上方表单，不会保持选中' }}
+            </div>
+          </div>
+          <el-button
+            size="mini"
+            type="text"
+            :disabled="!prompt.trim()"
+            @click="savePromptPreset"
+          >
+            {{ $t('ai.saveAsPromptPreset') || '保存模板' }}
+          </el-button>
+        </div>
+        <div class="presetList" v-if="promptPresets.length > 0">
+          <div
+            class="presetInsertBtn"
+            v-for="preset in promptPresets"
+            :key="preset.id"
+            :class="{ disabled: isAiCreating }"
+            @click="applyPromptPreset(preset)"
+          >
+            <div class="presetInsertMain">
+              <div class="presetInsertTitle">{{ getPresetTitle(preset) }}</div>
+              <div class="presetInsertMeta">{{ getPresetScopeText(preset) }}</div>
+            </div>
+            <i
+              class="el-icon-delete presetDelete"
+              :class="{ disabled: isAiCreating }"
+              @click.stop="deletePromptPreset(preset)"
+            ></i>
+          </div>
+        </div>
+        <div class="emptyPreset" v-else>
+          {{ $t('ai.noPromptPresets') || '暂无模板' }}
+        </div>
+      </section>
     </div>
   </Sidebar>
 </template>
@@ -71,6 +156,16 @@
 <script>
 import Sidebar from './Sidebar.vue'
 import { mapState } from 'vuex'
+import {
+  deleteMindMapOrganizePromptPreset,
+  listMindMapOrganizePromptPresets,
+  saveMindMapOrganizePromptPreset
+} from '@/utils/aiPromptPresets'
+import {
+  AI_CONTEXT_CHAR_LIMIT,
+  normalizeContextCharLimit
+} from '@/utils/aiContext'
+import { mindmapDevDebug } from '@/utils/mindmapDevDebug'
 
 export default {
   components: { Sidebar },
@@ -79,12 +174,21 @@ export default {
   },
   data() {
     return {
-      scope: 'subtree',
+      scope: 'current',
       prompt: '',
       isAiCreating: false,
       streamContent: '',
       activeNodes: [],
-      targetNodeName: ''
+      targetNodeName: '',
+      frozenTargetUid: '',
+      frozenTargetName: '',
+      promptPresets: [],
+      allowCreateChildren: false,
+      allowDeleteNodes: false,
+      contextCharLimit: AI_CONTEXT_CHAR_LIMIT.DEFAULT,
+      contextCharLimitMin: AI_CONTEXT_CHAR_LIMIT.MIN,
+      contextCharLimitMax: AI_CONTEXT_CHAR_LIMIT.MAX,
+      contextCharLimitStep: AI_CONTEXT_CHAR_LIMIT.STEP
     }
   },
   computed: {
@@ -104,11 +208,18 @@ export default {
   },
   watch: {
     activeSidebar(val) {
+      if (!this.$refs.sidebar) return
       if (val === 'ai') {
         this.$refs.sidebar.show = true
         this.syncActiveNodes()
-      } else {
+      } else if (this.$refs.sidebar.show) {
         this.$refs.sidebar.show = false
+      }
+    },
+    scope(val) {
+      if (val !== 'subtree') {
+        this.allowCreateChildren = false
+        this.allowDeleteNodes = false
       }
     }
   },
@@ -122,6 +233,7 @@ export default {
     this.$bus.$on('ai_create_status', this.onAiStatus)
     this.$bus.$on('ai_stream_content', this.onAiStream)
     this.syncActiveNodes()
+    this.loadPromptPresets()
   },
   beforeDestroy() {
     this.$bus.$off('node_active', this.onNodeActive)
@@ -131,11 +243,24 @@ export default {
   methods: {
     syncActiveNodes() {
       if (!this.mindMap) return
+      if (this.isAiCreating) {
+        mindmapDevDebug('mindmap-ai-freeze', 'AiSidebar.syncActiveNodes ignored while creating', {
+          frozenTargetUid: this.frozenTargetUid,
+          frozenTargetName: this.frozenTargetName,
+          currentTargetName: this.targetNodeName
+        })
+        return
+      }
       const nodes = this.mindMap.renderer
         ? this.mindMap.renderer.activeNodeList || []
         : []
       this.activeNodes = [...nodes]
       this.updateTargetName()
+      mindmapDevDebug('mindmap-ai-freeze', 'AiSidebar.syncActiveNodes applied', {
+        activeCount: this.activeNodes.length,
+        targetNodeName: this.targetNodeName,
+        activeUids: this.activeNodes.map(item => item.getData && item.getData('uid'))
+      })
     },
 
     updateTargetName() {
@@ -150,17 +275,70 @@ export default {
       }
     },
 
+    syncTargetNodeByUid(uid) {
+      if (!uid || !this.mindMap || !this.mindMap.renderer) {
+        return false
+      }
+      const node = this.mindMap.renderer.findNodeByUid
+        ? this.mindMap.renderer.findNodeByUid(uid)
+        : null
+      if (!node) {
+        return false
+      }
+      this.activeNodes = [node]
+      this.updateTargetName()
+      mindmapDevDebug('mindmap-ai-freeze', 'AiSidebar.sync target by uid', {
+        uid,
+        targetNodeName: this.targetNodeName
+      })
+      return true
+    },
+
     onNodeActive(node, nodes) {
+      if (this.isAiCreating) {
+        mindmapDevDebug('mindmap-ai-freeze', 'AiSidebar.onNodeActive ignored while creating', {
+          incomingNodeUid: node && node.getData ? node.getData('uid') : '',
+          incomingCount: (nodes || []).length,
+          incomingUids: (nodes || []).map(item =>
+            item && item.getData ? item.getData('uid') : ''
+          ),
+          frozenTargetUid: this.frozenTargetUid,
+          frozenTargetName: this.frozenTargetName,
+          currentTargetName: this.targetNodeName
+        })
+        return
+      }
       this.activeNodes = [...(nodes || [])]
       this.updateTargetName()
+      mindmapDevDebug('mindmap-ai-freeze', 'AiSidebar.onNodeActive applied', {
+        incomingNodeUid: node && node.getData ? node.getData('uid') : '',
+        activeCount: this.activeNodes.length,
+        targetNodeName: this.targetNodeName
+      })
     },
 
     onGenerate() {
       if (!this.prompt.trim()) return
+      this.contextCharLimit = normalizeContextCharLimit(this.contextCharLimit)
+      mindmapDevDebug('mindmap-ai-sidebar', 'generate from sidebar', {
+        scope: this.scope,
+        allowCreateChildren: this.allowCreateChildren,
+        allowDeleteNodes: this.allowDeleteNodes,
+        contextCharLimit: this.contextCharLimit,
+        promptLen: this.prompt.trim().length,
+        promptPreview: this.prompt.trim().slice(0, 80),
+        targetNodeName: this.targetNodeName,
+        activeCount: this.activeNodes.length,
+        hasAiConfig: this.hasAiConfig
+      })
       this.streamContent = ''
       this.$bus.$emit('ai_organize_node', {
         prompt: this.prompt,
         scope: this.scope,
+        allowCreateChildren:
+          this.scope === 'subtree' && this.allowCreateChildren,
+        allowDeleteNodes: this.scope === 'subtree' && this.allowDeleteNodes,
+        contextCharLimit: this.contextCharLimit,
         fromSidebar: true
       })
     },
@@ -170,14 +348,195 @@ export default {
     },
 
     onAiStatus(status) {
+      const wasCreating = this.isAiCreating
       this.isAiCreating = status.creating
-      if (!status.creating) {
-        this.streamContent = ''
+      if (status.creating && !wasCreating) {
+        this.frozenTargetUid = status.targetUid || ''
+        this.frozenTargetName = status.targetName || this.targetNodeName
+        if (this.frozenTargetName) {
+          this.targetNodeName = this.frozenTargetName
+        }
+        mindmapDevDebug('mindmap-ai-freeze', 'AiSidebar.freeze target on creating', {
+          frozenTargetUid: this.frozenTargetUid,
+          frozenTargetName: this.frozenTargetName,
+          statusScope: status.scope,
+          targetNodeName: this.targetNodeName
+        })
+        return
       }
+      if (!status.creating && wasCreating) {
+        const frozenTargetUid = this.frozenTargetUid
+        mindmapDevDebug('mindmap-ai-freeze', 'AiSidebar.unfreeze target on stopped', {
+          frozenTargetUid,
+          frozenTargetName: this.frozenTargetName,
+          targetNodeName: this.targetNodeName,
+          statusTargetName: status.targetName
+        })
+        this.frozenTargetUid = ''
+        this.frozenTargetName = ''
+        this.$nextTick(() => {
+          if (!this.syncTargetNodeByUid(frozenTargetUid)) {
+            this.syncActiveNodes()
+          }
+        })
+        return
+      }
+      mindmapDevDebug('mindmap-ai-freeze', 'AiSidebar.onAiStatus no state change', {
+        creating: status.creating,
+        wasCreating,
+        targetNodeName: this.targetNodeName
+      })
     },
 
     onAiStream(content) {
       this.streamContent = content
+    },
+
+    async loadPromptPresets() {
+      try {
+        this.promptPresets = await listMindMapOrganizePromptPresets()
+      } catch (error) {
+        console.log(error)
+      }
+    },
+
+    applyPromptPreset(preset) {
+      if (this.isAiCreating || !preset) return
+      this.prompt = preset.prompt || ''
+      if (
+        preset.options &&
+        (preset.options.scope === 'current' || preset.options.scope === 'subtree')
+      ) {
+        this.scope = preset.options.scope
+      }
+      if (preset.options && preset.options.contextCharLimit) {
+        this.contextCharLimit = normalizeContextCharLimit(
+          preset.options.contextCharLimit
+        )
+      }
+      this.allowCreateChildren = !!(
+        preset.options && preset.options.allowCreateChildren
+      )
+      this.allowDeleteNodes = !!(preset.options && preset.options.allowDeleteNodes)
+      mindmapDevDebug('mindmap-ai-sidebar', 'apply prompt preset', {
+        id: preset.id,
+        scope: this.scope,
+        allowCreateChildren: this.allowCreateChildren,
+        allowDeleteNodes: this.allowDeleteNodes,
+        contextCharLimit: this.contextCharLimit,
+        promptLen: this.prompt.length,
+        promptPreview: this.prompt.slice(0, 80),
+        isAiCreating: this.isAiCreating
+      })
+    },
+
+    async savePromptPreset() {
+      const prompt = this.prompt.trim()
+      if (!prompt) {
+        this.$message.warning(
+          this.$t('ai.modifyRequirementRequired') || '请输入修改要求'
+        )
+        return
+      }
+      const name =
+        prompt.slice(0, 20) ||
+        this.$t('ai.unnamedPromptPreset') ||
+        '未命名模板'
+      mindmapDevDebug('mindmap-ai-sidebar', 'save prompt preset start', {
+        scope: this.scope,
+        promptLen: prompt.length,
+        promptPreview: prompt.slice(0, 80),
+        contextCharLimit: this.contextCharLimit,
+        allowCreateChildren: this.allowCreateChildren,
+        allowDeleteNodes: this.allowDeleteNodes,
+        isAiCreating: this.isAiCreating
+      })
+      try {
+        const saved = await saveMindMapOrganizePromptPreset({
+          name,
+          prompt,
+          options: {
+            scope: this.scope,
+            allowCreateChildren:
+              this.scope === 'subtree' && !!this.allowCreateChildren,
+            allowDeleteNodes:
+              this.scope === 'subtree' && !!this.allowDeleteNodes,
+            contextCharLimit: normalizeContextCharLimit(this.contextCharLimit)
+          },
+          sort_index: this.promptPresets.length
+        })
+        this.promptPresets.push(saved)
+        mindmapDevDebug('mindmap-ai-sidebar', 'save prompt preset success', {
+          id: saved.id,
+          scope: saved.options && saved.options.scope,
+          allowCreateChildren: saved.options && saved.options.allowCreateChildren,
+          allowDeleteNodes: saved.options && saved.options.allowDeleteNodes,
+          contextCharLimit: saved.options && saved.options.contextCharLimit,
+          promptLen: saved.prompt ? saved.prompt.length : 0,
+          isAiCreating: this.isAiCreating
+        })
+        this.$message.success(this.$t('ai.promptPresetSaved') || '模板已保存')
+      } catch (error) {
+        console.log(error)
+        mindmapDevDebug('mindmap-ai-sidebar', 'save prompt preset failed', {
+          message: error && error.message ? error.message : String(error),
+          isAiCreating: this.isAiCreating
+        })
+        this.$message.error(
+          this.$t('ai.promptPresetSaveFailed') || '模板保存失败'
+        )
+      }
+    },
+
+    async deletePromptPreset(preset) {
+      if (this.isAiCreating) return
+      try {
+        await deleteMindMapOrganizePromptPreset(preset.id)
+        this.promptPresets = this.promptPresets.filter(item => item.id !== preset.id)
+        this.$message.success(
+          this.$t('ai.promptPresetDeleted') || '模板已删除'
+        )
+      } catch (error) {
+        console.log(error)
+        this.$message.error(
+          this.$t('ai.promptPresetDeleteFailed') || '模板删除失败'
+        )
+      }
+    },
+
+    getPresetTitle(preset) {
+      const name = String((preset && preset.name) || '').trim()
+      if (name) {
+        return name
+      }
+      const prompt = String((preset && preset.prompt) || '').trim()
+      if (!prompt) {
+        return this.$t('ai.unnamedPromptPreset') || '未命名模板'
+      }
+      return prompt.length > 24 ? `${prompt.slice(0, 24)}...` : prompt
+    },
+
+    getPresetScopeText(preset) {
+      const scope = preset && preset.options ? preset.options.scope : ''
+      if (scope === 'current') {
+        return this.$t('ai.scopeCurrentOnly') || '仅当前节点'
+      }
+      const limit = normalizeContextCharLimit(
+        preset && preset.options
+          ? preset.options.contextCharLimit
+          : AI_CONTEXT_CHAR_LIMIT.DEFAULT
+      )
+      const createText =
+        preset && preset.options && preset.options.allowCreateChildren
+          ? ` · ${this.$t('ai.childrenEnabled') || '可新增子节点'}`
+          : ''
+      const deleteText =
+        preset && preset.options && preset.options.allowDeleteNodes
+          ? ` · ${this.$t('ai.deleteNodesAllowed') || '可删除节点'}`
+          : ''
+      return `${this.$t('ai.scopeSubtree') || '含所有子节点'} · ${limit}${
+        this.$t('ai.contextCharLimitUnit') || '字'
+      }${createText}${deleteText}`
     }
   }
 }
@@ -185,69 +544,301 @@ export default {
 
 <style lang="less" scoped>
 .sidebarContent {
-  padding: 20px;
-  padding-top: 10px;
+  padding: 16px;
+  padding-top: 8px;
 
   &.isDark {
-    .title { color: #fff; }
-    .name { color: hsla(0, 0%, 100%, 0.6); }
-    .nodeNameDisplay { color: hsla(0, 0%, 100%, 0.7); }
-    .configHint { color: #e6a23c; }
-    .streamContent { background: #1e2226; color: hsla(0, 0%, 100%, 0.7); }
+    .sectionLabel,
+    .presetHint,
+    .contextLimitLabel,
+    .contextLimitUnit,
+    .permissionSwitchTitle,
+    .permissionSwitchTip {
+      color: hsla(0, 0%, 100%, 0.55);
+    }
+
+    .targetChip,
+    .presetInsertBtn,
+    .streamContent {
+      color: hsla(0, 0%, 100%, 0.78);
+      background: #1e2226;
+      border-color: rgba(255, 255, 255, 0.08);
+    }
+
+    .permissionSwitchRow {
+      background: #1e2226;
+      border-color: rgba(255, 255, 255, 0.08);
+    }
+
+    .presetInsertTitle {
+      color: hsla(0, 0%, 100%, 0.9);
+    }
+
+    .presetInsertMeta {
+      color: hsla(0, 0%, 100%, 0.45);
+    }
+
+    .requirementInput /deep/ .el-textarea__inner {
+      color: hsla(0, 0%, 100%, 0.78);
+      background: #1e2226;
+      border-color: rgba(255, 255, 255, 0.08);
+    }
+
+    .presetSection {
+      border-top-color: rgba(255, 255, 255, 0.08);
+    }
   }
 
-  .title {
-    font-size: 14px;
+  .sectionBlock + .sectionBlock {
+    margin-top: 16px;
+  }
+
+  .sectionLabel {
+    margin-bottom: 8px;
+    color: #606266;
+    font-size: 12px;
     font-weight: 500;
-    margin-top: 20px;
-    margin-bottom: 10px;
+    line-height: 1.4;
 
-    &.noTop { margin-top: 0; }
+    &.noMargin {
+      margin-bottom: 0;
+    }
   }
 
-  .row {
-    margin-bottom: 10px;
-  }
-
-  .rowItem {
-    display: flex;
-    align-items: center;
-  }
-
-  .nodeNameDisplay {
+  .targetChip {
+    padding: 8px 10px;
+    color: #303133;
     font-size: 13px;
-    color: #333;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 240px;
     font-weight: 500;
+    line-height: 1.5;
+    background: #f5f7fa;
+    border: 1px solid #ebeef5;
+    border-radius: 8px;
+    word-break: break-word;
   }
 
-  .actionRow {
+  .scopeGroup {
+    display: flex;
+    width: 100%;
+
+    /deep/ .el-radio-button {
+      flex: 1;
+    }
+
+    /deep/ .el-radio-button__inner {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 0;
+    }
+
+    /deep/ .el-radio-button:first-child .el-radio-button__inner {
+      border-radius: 8px 0 0 8px;
+    }
+
+    /deep/ .el-radio-button:last-child .el-radio-button__inner {
+      border-radius: 0 8px 8px 0;
+    }
+  }
+
+  .contextLimitRow {
     display: flex;
     align-items: center;
     gap: 8px;
+    margin-top: 10px;
+    padding: 8px 10px;
+    background: #fafbfc;
+    border: 1px solid #ebeef5;
+    border-radius: 8px;
+
+    /deep/ .el-input-number {
+      width: 108px;
+    }
+  }
+
+  .contextLimitLabel,
+  .contextLimitUnit {
+    color: #909399;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .permissionSwitchRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 8px;
+    padding: 9px 10px;
+    background: #fafbfc;
+    border: 1px solid #ebeef5;
+    border-radius: 8px;
+  }
+
+  .permissionSwitchText {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .permissionSwitchTitle {
+    color: #606266;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .permissionSwitchTip {
+    margin-top: 2px;
+    color: #909399;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
+  .requirementInput {
+    width: 100%;
+
+    /deep/ .el-textarea__inner {
+      min-height: 112px !important;
+      padding: 10px 12px;
+      line-height: 1.6;
+      border-radius: 8px;
+      resize: vertical;
+    }
+  }
+
+  .actionRow {
+    margin-top: 10px;
+
+    /deep/ .el-button {
+      width: 100%;
+      border-radius: 8px;
+    }
   }
 
   .configHint {
-    font-size: 12px;
+    margin-top: 8px;
     color: #e6a23c;
+    font-size: 12px;
+    line-height: 1.5;
   }
 
-  .streamContent {
+  .streamSection {
+    .streamContent {
+      margin: 0;
+      padding: 10px 12px;
+      max-height: 180px;
+      overflow-y: auto;
+      color: #606266;
+      font-size: 11px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        monospace;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-all;
+      background: #f8fafc;
+      border: 1px solid #ebeef5;
+      border-radius: 8px;
+    }
+  }
+
+  .presetSection {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid #f0f2f5;
+  }
+
+  .presetSectionHeader {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .presetHeaderMain {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .presetHint {
+    margin-top: 4px;
+    color: #909399;
     font-size: 11px;
-    font-family: monospace;
-    background: #f5f5f5;
-    border-radius: 4px;
-    padding: 8px;
-    max-height: 200px;
+    line-height: 1.4;
+  }
+
+  .presetList {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 220px;
     overflow-y: auto;
-    white-space: pre-wrap;
-    word-break: break-all;
-    color: #666;
-    width: 100%;
-    margin: 0;
+  }
+
+  .presetInsertBtn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    background: #fff;
+    border: 1px solid #e4e7ed;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+
+    &:hover:not(.disabled) {
+      border-color: #c6e2ff;
+      background: #f5faff;
+    }
+
+    &.disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+  }
+
+  .presetInsertMain {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .presetInsertTitle {
+    color: #303133;
+    font-size: 13px;
+    line-height: 1.4;
+    word-break: break-word;
+  }
+
+  .presetInsertMeta {
+    margin-top: 4px;
+    color: #909399;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
+  .presetDelete {
+    flex-shrink: 0;
+    color: #c0c4cc;
+    font-size: 14px;
+    cursor: pointer;
+
+    &:hover:not(.disabled) {
+      color: #f56c6c;
+    }
+
+    &.disabled {
+      color: #dcdfe6;
+      cursor: not-allowed;
+    }
+  }
+
+  .emptyPreset {
+    padding: 14px 10px;
+    color: #909399;
+    font-size: 12px;
+    text-align: center;
+    background: #fafbfc;
+    border: 1px dashed #e4e7ed;
+    border-radius: 8px;
   }
 }
 </style>

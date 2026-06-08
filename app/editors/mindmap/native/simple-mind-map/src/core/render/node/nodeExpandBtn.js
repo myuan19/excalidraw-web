@@ -51,11 +51,33 @@ function sumNode(data = []) {
     data.length
   )
 }
+
+function updateExpandBtnNum(node = this._openExpandNode) {
+  if (!node) {
+    return
+  }
+  let { expandBtnNumHandler } = this.mindMap.opt
+  let count = this.sumNode(this.nodeData.children || [])
+  if (typeof expandBtnNumHandler === 'function') {
+    const res = expandBtnNumHandler(count, this)
+    if (!isUndef(res)) {
+      count = res
+    }
+  }
+  node.text(String(count))
+}
+
 //  创建或更新展开收缩按钮内容
 function updateExpandBtnNode() {
   let { expand } = this.getData()
   // 如果本次和上次的展开状态一样则返回
-  if (expand === this._lastExpandBtnType) return
+  if (expand === this._lastExpandBtnType) {
+    const { isShowExpandNum } = this.mindMap.opt
+    if (isShowExpandNum && expand === false) {
+      this.updateExpandBtnNum()
+    }
+    return
+  }
   if (this._expandBtn) {
     this._expandBtn.clear()
   }
@@ -71,23 +93,14 @@ function updateExpandBtnNode() {
 
   if (this._expandBtn) {
     // 如果是收起按钮加上边框
-    let { isShowExpandNum, expandBtnStyle, expandBtnNumHandler } =
-      this.mindMap.opt
+    let { isShowExpandNum, expandBtnStyle } = this.mindMap.opt
     if (isShowExpandNum) {
       if (!expand) {
         // 数字按钮添加边框
         this._fillExpandNode.stroke({
           color: expandBtnStyle.strokeColor
         })
-        // 计算子节点数量
-        let count = this.sumNode(this.nodeData.children || [])
-        if (typeof expandBtnNumHandler === 'function') {
-          const res = expandBtnNumHandler(count, this)
-          if (!isUndef(res)) {
-            count = res
-          }
-        }
-        node.text(String(count))
+        this.updateExpandBtnNum(node)
       } else {
         this._fillExpandNode.stroke('none')
       }
@@ -204,6 +217,7 @@ export default {
   createExpandNodeContent,
   updateExpandBtnNode,
   updateExpandBtnHitPad,
+  updateExpandBtnNum,
   updateExpandBtnPos,
   renderExpandBtn,
   removeExpandBtn,

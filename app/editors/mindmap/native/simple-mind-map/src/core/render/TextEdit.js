@@ -38,6 +38,8 @@ export default class TextEdit {
     this.textNodePaddingX = 5
     this.textNodePaddingY = 3
     this.isNeedUpdateTextEditNode = false
+    this.nodeClickEditTimer = null
+    this.textEditShowVersion = 0
     this.mindMap.addEditNodeClass(SMM_NODE_EDIT_WRAP)
     this.bindEvent()
   }
@@ -47,9 +49,14 @@ export default class TextEdit {
     this.show = this.show.bind(this)
     this.onScale = this.onScale.bind(this)
     this.onKeydown = this.onKeydown.bind(this)
-    // 仅新建节点插入时通过双击事件进入编辑；普通节点双击不再进入编辑，避免与二次单击冲突
     this.mindMap.on('node_dblclick', (node, e, isInserting) => {
-      if (!isInserting) {
+      this.clearNodeClickEditTimer()
+      if (
+        this.mindMap.opt.readonly ||
+        e.ctrlKey ||
+        e.metaKey ||
+        this.isShowTextEdit()
+      ) {
         return
       }
       this.show({ node, e, isInserting })
@@ -61,14 +68,25 @@ export default class TextEdit {
         e.ctrlKey ||
         e.metaKey ||
         this.isShowTextEdit() ||
-        !node.getData('isActive')
+        !node.getData('isActive') ||
+        (e.detail && e.detail > 1)
       ) {
         return
       }
-      this.show({ node, e, useClickPosition: true })
+      this.clearNodeClickEditTimer()
+      const clickEvent = {
+        clientX: e.clientX,
+        clientY: e.clientY
+      }
+      this.nodeClickEditTimer = setTimeout(() => {
+        this.nodeClickEditTimer = null
+        if (this.isShowTextEdit()) return
+        this.show({ node, e: clickEvent, useClickPosition: true })
+      }, 220)
     })
     // 点击事件
     this.mindMap.on('draw_click', () => {
+      this.cancelPendingTextEdit()
       // 隐藏文本编辑框
       this.hideEditTextBox()
     })
@@ -78,21 +96,25 @@ export default class TextEdit {
     this.mindMap.on('body_click', () => {
       if (!this.hasBodyMousedown) return
       this.hasBodyMousedown = false
+      this.cancelPendingTextEdit()
       // 隐藏文本编辑框
       if (this.mindMap.opt.isEndNodeTextEditOnClickOuter) {
         this.hideEditTextBox()
       }
     })
     this.mindMap.on('svg_mousedown', () => {
+      this.cancelPendingTextEdit()
       // 隐藏文本编辑框
       this.hideEditTextBox()
     })
     // 展开收缩按钮点击事件
     this.mindMap.on('expand_btn_click', () => {
+      this.cancelPendingTextEdit()
       this.hideEditTextBox()
     })
     // 节点激活前事件
     this.mindMap.on('before_node_active', () => {
+      this.cancelPendingTextEdit()
       this.hideEditTextBox()
     })
     // 鼠标滚动事件
@@ -100,6 +122,7 @@ export default class TextEdit {
       if (
         this.mindMap.opt.mousewheelAction === CONSTANTS.MOUSE_WHEEL_ACTION.MOVE
       ) {
+        this.cancelPendingTextEdit()
         this.hideEditTextBox()
       }
     })
@@ -160,9 +183,21 @@ export default class TextEdit {
     })
   }
 
+  clearNodeClickEditTimer() {
+    if (!this.nodeClickEditTimer) return
+    clearTimeout(this.nodeClickEditTimer)
+    this.nodeClickEditTimer = null
+  }
+
+  cancelPendingTextEdit() {
+    this.clearNodeClickEditTimer()
+    this.textEditShowVersion += 1
+  }
+
   // 解绑事件
   unBindEvent() {
     window.removeEventListener('keydown', this.onKeydown)
+    this.clearNodeClickEditTimer()
   }
 
   // 按键事件
@@ -235,6 +270,7 @@ export default class TextEdit {
     isFromScale = false,
     useClickPosition = false
   }) {
+    const showVersion = this.textEditShowVersion
     // 使用了自定义节点内容那么不响应编辑事件
     if (node.isUseCustomNodeContent()) {
       return
@@ -254,8 +290,10 @@ export default class TextEdit {
         isShow = false
         this.mindMap.opt.errorHandler(ERROR_TYPES.BEFORE_TEXT_EDIT_ERROR, error)
       }
+      if (showVersion !== this.textEditShowVersion) return
       if (!isShow) return
     }
+    if (showVersion !== this.textEditShowVersion) return
     const { offsetLeft, offsetTop } = checkNodeOuter(this.mindMap, node)
     this.mindMap.view.translateXY(offsetLeft, offsetTop)
     const g = node._textData.node
@@ -648,6 +686,16 @@ export default class TextEdit {
       return this.mindMap.richText.hideEditText()
     }
     if (!this.showTextEdit) {
+      return
+    }
+    if (!this.currentNode) {
+      this.textEditNode.style.display = 'none'
+      this.textEditNode.innerHTML = ''
+      this.textEditNode.style.fontFamily = 'inherit'
+      this.textEditNode.style.fontSize = 'inherit'
+      this.textEditNode.style.fontWeight = 'normal'
+      this.textEditNode.style.transform = 'translateY(0)'
+      this.setIsShowTextEdit(false)
       return
     }
     const currentNode = this.currentNode

@@ -1,4 +1,5 @@
 import { normalizeAiOrganizeNode } from './aiTreeJson'
+import { createAiOperationPermissionError } from './aiOperationPolicy'
 
 const VALID_OPS = new Set([
   'update_current',
@@ -35,6 +36,11 @@ function normalizeOperation(raw, line, options = {}) {
   const op = normalizeRef(raw.op)
   if (!VALID_OPS.has(op)) {
     throw new Error(`unsupported ai operation: ${op}`)
+  }
+  if (Array.isArray(options.allowedOps) && !options.allowedOps.includes(op)) {
+    throw createAiOperationPermissionError({
+      op
+    })
   }
   const opId = normalizeRef(raw.op_id || raw.opId || raw.event_id || raw.eventId)
   const base = {
@@ -104,7 +110,12 @@ function parseLine(line, options) {
 
 export function parseAiOperationStreamChunk(
   content,
-  { offset = 0, final = false, allowInlineStyles = false } = {}
+  {
+    offset = 0,
+    final = false,
+    allowInlineStyles = false,
+    allowedOps = null
+  } = {}
 ) {
   const raw = String(content || '')
   const operations = []
@@ -117,7 +128,7 @@ export function parseAiOperationStreamChunk(
     const end = newlineIndex === -1 ? raw.length : newlineIndex
     const line = raw.slice(cursor, end).trim()
     if (line) {
-      const operation = parseLine(line, { allowInlineStyles })
+      const operation = parseLine(line, { allowInlineStyles, allowedOps })
       if (operation) {
         operations.push(operation)
       }

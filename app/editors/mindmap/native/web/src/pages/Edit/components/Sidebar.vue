@@ -20,7 +20,6 @@ import { store } from '@/config'
 import { mapState, mapMutations } from 'vuex'
 import { getSidebarTopMargin } from '@/utils/sidebarLayout'
 
-// 侧边栏容器
 export default {
   props: {
     title: {
@@ -37,7 +36,8 @@ export default {
   },
   computed: {
     ...mapState({
-      isDark: state => state.localConfig.isDark
+      isDark: state => state.localConfig.isDark,
+      previousActiveSidebar: state => state.previousActiveSidebar
     })
   },
   watch: {
@@ -45,6 +45,13 @@ export default {
       if (val && !oldVal) {
         this.zIndex = store.sidebarZIndex++
         this.updateSidebarTop()
+        if (this.previousActiveSidebar) {
+          this.$el.style.transition = 'none'
+          this.$nextTick(() => {
+            void this.$el.offsetHeight
+            this.$el.style.transition = ''
+          })
+        }
       }
     }
   },

@@ -420,7 +420,10 @@ export default {
     removeFormat: 'Xóa định dạng',
     textAlign: 'Căn chỉnh văn bản',
     textFormat: 'Định dạng văn bản',
-    selectTextHint: 'Nhấp đúp vào nút và chọn văn bản để chỉnh sửa định dạng'
+    selectTextHint: 'Nhấp đúp vào nút và chọn văn bản để chỉnh sửa định dạng',
+    selectNodeHint: 'Vui lòng chọn một nút trước',
+    applyToAll: 'Sẽ áp dụng cho tất cả văn bản trong nút',
+    showFloatingToolbar: 'Hiển thị thanh công cụ nổi khi chọn văn bản'
   },
   other: {
     loading: 'Đang tải, vui lòng đợi...'
@@ -486,10 +489,13 @@ export default {
     modifyAIConfiguration: 'Sửa đổi cấu hình AI',
     chatInputPlaceholder: 'Nhấn Enter để gửi, Shift+Enter để xuống dòng.',
     send: 'Gửi',
+    startPolish: 'Bắt đầu chỉnh sửa',
     stopGenerating: 'Dừng tạo',
     generationFailed: 'Tạo thất bại',
     aiGenerationSuccess: 'Tạo AI hoàn thành',
     stoppedGenerating: 'Đã dừng tạo',
+    aiCreatingOperationBlocked:
+      'Trong khi AI đang tạo, chỉ hỗ trợ xem, kéo canvas và mở rộng/thu gọn nút',
     AIConfiguration: 'Cấu hình AI',
     VolcanoArkLargeModelConfiguration: 'Cấu hình mô hình lớn Volcano Ark:',
     configTip:
@@ -514,6 +520,9 @@ export default {
     editScope: 'Phạm vi chỉnh sửa',
     scopeCurrentOnly: 'Chỉ nút hiện tại',
     scopeSubtree: 'Bao gồm tất cả nút con',
+    contextCharLimit: 'Giới hạn ngữ cảnh',
+    contextCharLimitUnit: 'ký tự',
+    promptPresetInsertTip: 'Nhấn để điền vào biểu mẫu phía trên; mẫu không được giữ chọn',
     rootNodeDefault: 'Nút gốc (toàn cục)',
     organizeCurrentNode: 'AI Tinh chỉnh',
     organizeCurrentNodeDesc:
@@ -523,7 +532,10 @@ export default {
       'AI sẽ trả về định dạng rich text mà MindMap hỗ trợ, không dùng Markdown.',
     allowCreateChildren: 'Tạo nút con mới',
     allowCreateChildrenTip:
-      'Khi bật, chỉ được tạo nút con bên dưới nút hiện tại.',
+      'Khi bật, AI có thể tạo nút con. Mặc định tắt.',
+    allowDeleteNodes: 'Cho phép xóa nút',
+    allowDeleteNodesTip:
+      'Khi bật, AI có thể xóa nút con. Mặc định tắt để tránh xóa nhầm.',
     currentNodeContent: 'Nội dung nút hiện tại',
     currentNodePreview: 'Xem trước nút đã chọn',
     emptyCurrentNode: 'Nút hiện tại chưa có nội dung',
@@ -534,9 +546,9 @@ export default {
     modifyRequirement: 'Yêu cầu chỉnh sửa',
     modifyRequirementPlaceholder:
       'Nhập yêu cầu, ví dụ: rút gọn tiêu đề, giữ số liệu chính, hoặc tách thành các bước.',
-    savedPromptPresets: 'Yêu cầu đã lưu',
+    savedPromptPresets: 'Mẫu',
     savedPromptPresetsGlobalTip:
-      'Lưu toàn cục, dùng chung cho mọi sơ đồ tư duy',
+      'Chỉ lưu prompt và tùy chọn, không gắn với nút',
     defaultPolishActions: 'Thao tác mặc định',
     defaultActionOrganizeCurrent: 'Sắp xếp nút hiện tại',
     defaultActionOrganizeCurrentDesc:
@@ -553,23 +565,21 @@ export default {
       'Chuyển thành tiêu đề ngắn gọn và rõ ràng hơn, giữ lại thông tin cốt lõi.',
     childrenEnabled: 'Tạo nút con',
     childrenDisabled: 'Không tạo nút con',
-    currentChildrenSetting: 'Nút con',
-    currentStyleSetting: 'Kiểu',
-    defaultThemeStyle: 'Chủ đề mặc định',
-    customStyleEnabled: 'Kiểu tùy chỉnh',
+    deleteNodesAllowed: 'Cho phép xóa',
+    deleteNodesForbidden: 'Chặn xóa',
     streamingPreview: 'Xem trước khi tạo',
     streamingPreviewTip:
       'Đầu ra AI dạng luồng sẽ hiển thị ở đây. Chỉ ghi vào nút sau khi kết quả cuối cùng hợp lệ.',
     waitingForAiOutput: 'Đang chờ AI trả lời...',
-    noPromptPresets: 'Chưa có yêu cầu đã lưu',
-    promptPresetNamePlaceholder: 'Tên cấu hình',
-    saveAsPromptPreset: 'Lưu cấu hình',
-    unnamedPromptPreset: 'Cấu hình chưa đặt tên',
+    noPromptPresets: 'Chưa có mẫu',
+    promptPresetNamePlaceholder: 'Tên mẫu',
+    saveAsPromptPreset: 'Lưu mẫu',
+    unnamedPromptPreset: 'Mẫu chưa đặt tên',
     modifyRequirementRequired: 'Vui lòng nhập yêu cầu',
-    promptPresetSaved: 'Đã lưu cấu hình prompt',
-    promptPresetSaveFailed: 'Lưu cấu hình prompt thất bại',
-    promptPresetDeleted: 'Đã xóa cấu hình prompt',
-    promptPresetDeleteFailed: 'Xóa cấu hình prompt thất bại'
+    promptPresetSaved: 'Đã lưu mẫu',
+    promptPresetSaveFailed: 'Lưu mẫu thất bại',
+    promptPresetDeleted: 'Đã xóa mẫu',
+    promptPresetDeleteFailed: 'Xóa mẫu thất bại'
   },
   note: {
     title: 'Ghi chú'

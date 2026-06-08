@@ -439,6 +439,11 @@ export const langList = [
 // Danh sách thanh bên
 export const sidebarTriggerList = [
   {
+    name: 'Định dạng',
+    value: 'textFormat',
+    icon: 'iconbianji1'
+  },
+  {
     name: 'Kiểu nút',
     value: 'nodeStyle',
     icon: 'iconzhuti'
@@ -467,11 +472,6 @@ export const sidebarTriggerList = [
     name: 'AI',
     value: 'ai',
     icon: 'iconAIshengcheng'
-  },
-  {
-    name: 'Định dạng',
-    value: 'textFormat',
-    icon: 'iconbianji1'
   },
   {
     name: 'Thiết lập',

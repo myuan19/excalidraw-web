@@ -557,8 +557,22 @@ class Render {
   // 渲染
   render(callback, source) {
     this.addRenderParams(callback, source)
+    const commandContext =
+      this.mindMap.command && this.mindMap.command.getContext
+        ? this.mindMap.command.getContext()
+        : null
     clearTimeout(this.renderTimer)
     this.renderTimer = setTimeout(() => {
+      if (
+        commandContext &&
+        this.mindMap.command &&
+        this.mindMap.command.runWithContext
+      ) {
+        this.mindMap.command.runWithContext(commandContext, () => {
+          this._render()
+        })
+        return
+      }
       this._render()
     }, 0)
   }
@@ -650,9 +664,16 @@ class Render {
 
   //  清除当前激活的节点列表
   clearActiveNodeList() {
+    let blocked = false
     this.activeNodeList.forEach(item => {
-      this.mindMap.execCommand('SET_NODE_ACTIVE', item, false)
+      const executed = this.mindMap.execCommand('SET_NODE_ACTIVE', item, false)
+      if (executed === false) {
+        blocked = true
+      }
     })
+    if (blocked) {
+      return
+    }
     this.activeNodeList = []
   }
 
@@ -668,7 +689,10 @@ class Render {
       if (!notEmitBeforeNodeActiveEvent) {
         this.mindMap.emit('before_node_active', node, this.activeNodeList)
       }
-      this.mindMap.execCommand('SET_NODE_ACTIVE', node, true)
+      const executed = this.mindMap.execCommand('SET_NODE_ACTIVE', node, true)
+      if (executed === false) {
+        return
+      }
       this.activeNodeList.push(node)
     }
   }
@@ -679,7 +703,10 @@ class Render {
     if (index === -1) {
       return
     }
-    this.mindMap.execCommand('SET_NODE_ACTIVE', node, false)
+    const executed = this.mindMap.execCommand('SET_NODE_ACTIVE', node, false)
+    if (executed === false) {
+      return
+    }
     this.activeNodeList.splice(index, 1)
   }
 
