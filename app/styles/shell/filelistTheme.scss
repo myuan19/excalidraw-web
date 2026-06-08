@@ -1,0 +1,200 @@
+/**
+ * 文件列表外壳主题层（L3 语义色）
+ *
+ * 分层约定：
+ * - L1 `notionUiTokens.scss` :root — 全局尺寸/编辑器默认色
+ * - L2 本文件 `.filelist.theme--*` — 首页亮/暗语义 token（Notion 中性灰）
+ * - L3 `_filelist-design-tokens.scss` — `.filelist` 上 `--fl-*` 别名（须在宿主计算）
+ * - L4 `FileList.scss` — 组件样式，只消费 `--fl-*` / `--nb-*`
+ *
+ * 与 `excalidraw-theme` / `.excalidraw.theme--dark` 完全独立。
+ */
+
+@mixin filelist-shell-theme-light {
+  color-scheme: light;
+
+  --nb-text: #37352f;
+  --nb-text-muted: rgba(55, 53, 47, 0.65);
+  --nb-text-faint: rgba(55, 53, 47, 0.45);
+  --nb-fill-ghost: rgba(55, 53, 47, 0.04);
+  --nb-fill-hover: rgba(55, 53, 47, 0.06);
+  --nb-fill-hover-strong: rgba(55, 53, 47, 0.1);
+  --nb-border: rgba(55, 53, 47, 0.09);
+  --nb-border-input: rgba(55, 53, 47, 0.16);
+
+  --nb-primary: #2383e2;
+  --nb-primary-hover: #1a73c7;
+  --nb-primary-soft: rgba(35, 131, 226, 0.12);
+  --nb-primary-focus: #1a73c7;
+  --nb-blue: #2383e2;
+  --nb-blue-hover: #1a73c7;
+  --nb-blue-soft: rgba(35, 131, 226, 0.12);
+  --nb-blue-focus: #1a73c7;
+
+  --nb-page-bg: #ffffff;
+  --nb-surface: #ffffff;
+  --nb-surface-high: #f7f7f5;
+  --nb-surface-muted: #f1f1ef;
+  --nb-surface-secondary: #fbfbfa;
+  --nb-surface-row-hover: #efefec;
+  --nb-surface-sidebar-top: #fbfbfa;
+  --nb-surface-sidebar-bottom: #f7f7f5;
+
+  --nb-nav-surface: transparent;
+  --nb-nav-surface-hover: var(--nb-fill-hover);
+  --nb-nav-surface-active: var(--nb-fill-hover-strong);
+  --nb-nav-border-divider: var(--nb-border);
+  --nb-nav-text-primary: #37352f;
+  --nb-nav-text-muted: rgba(55, 53, 47, 0.55);
+  --nb-nav-text-faint: rgba(55, 53, 47, 0.4);
+  --nb-nav-outline-drop: rgba(55, 53, 47, 0.2);
+
+  --nb-filelist-border: rgba(55, 53, 47, 0.09);
+  --nb-filelist-border-strong: rgba(55, 53, 47, 0.16);
+  --nb-filelist-muted: rgba(55, 53, 47, 0.03);
+  --nb-filelist-primary-soft: rgba(35, 131, 226, 0.1);
+  --nb-filelist-header-bg: rgba(255, 255, 255, 0.92);
+  --nb-filelist-header-line: rgba(55, 53, 47, 0.06);
+  --nb-filelist-thumb-bg: #f7f7f5;
+  --nb-filelist-thumb-faint: rgba(55, 53, 47, 0.12);
+  --nb-filelist-panel-glass: rgba(255, 255, 255, 0.96);
+  --nb-filelist-card-fade-bottom: rgba(255, 255, 255, 0.42);
+  --nb-filelist-action-fade-h: 1.75rem;
+  --nb-filelist-action-bg: rgba(255, 255, 255, 0.72);
+  --nb-filelist-import-block-bg: rgba(255, 255, 255, 0.72);
+  --nb-filelist-sheet-backdrop: rgba(15, 23, 42, 0.28);
+  --nb-filelist-move-active-bg: rgba(35, 131, 226, 0.1);
+  --nb-filelist-empty-icon-tint: rgba(35, 131, 226, 0.22);
+  --nb-filelist-hint-border: rgba(35, 131, 226, 0.2);
+  --nb-drop-line: rgba(35, 131, 226, 0.35);
+
+  --nb-shadow-ink: rgba(15, 15, 15, 0.04);
+  --nb-shadow-ink-md: rgba(15, 15, 15, 0.06);
+  --nb-shadow-ink-strong: rgba(15, 15, 15, 0.1);
+  --nb-shadow-card: 0 1px 3px var(--nb-shadow-ink),
+    0 0 0 1px rgba(55, 53, 47, 0.06);
+  --nb-shadow-card-hover: 0 4px 14px var(--nb-shadow-ink-strong),
+    0 0 0 1px rgba(55, 53, 47, 0.08);
+  --nb-shadow-focus-primary: 0 0 0 2px rgba(35, 131, 226, 0.28);
+  --nb-shell-accent-color: #2383e2;
+  --nb-shell-focus-border: rgba(35, 131, 226, 0.55);
+  --nb-shell-focus-ring: rgba(35, 131, 226, 0.2);
+
+  --nb-shimmer-from: #f3f3f1;
+  --nb-shimmer-mid: #ebebea;
+  --nb-shimmer-line-from: #ececea;
+  --nb-shimmer-line-mid: #e4e4e2;
+
+  --nb-ai-dialog-bg: var(--nb-surface);
+  --nb-ai-dialog-text: var(--nb-text);
+  --nb-ai-dialog-border: var(--nb-border);
+  --nb-ai-input-bg: var(--nb-page-bg);
+  --nb-ai-focus-border: var(--nb-primary-focus);
+  --nb-ai-focus-ring: var(--nb-primary-soft);
+}
+
+@mixin filelist-shell-theme-dark {
+  color-scheme: dark;
+
+  --nb-text: #d4d4d4;
+  --nb-text-muted: #9b9b9b;
+  --nb-text-faint: #6b6b6b;
+  --nb-fill-ghost: rgba(255, 255, 255, 0.04);
+  --nb-fill-hover: rgba(255, 255, 255, 0.06);
+  --nb-fill-hover-strong: rgba(255, 255, 255, 0.1);
+  --nb-border: rgba(255, 255, 255, 0.09);
+  --nb-border-input: rgba(255, 255, 255, 0.14);
+
+  --nb-primary: #529cca;
+  --nb-primary-hover: #6aafe0;
+  --nb-primary-soft: rgba(82, 156, 202, 0.18);
+  --nb-primary-focus: #6aafe0;
+  --nb-blue: #529cca;
+  --nb-blue-hover: #6aafe0;
+  --nb-blue-soft: rgba(82, 156, 202, 0.18);
+  --nb-blue-focus: #6aafe0;
+
+  --nb-page-bg: #191919;
+  --nb-surface: #252525;
+  --nb-surface-high: #2f2f2f;
+  --nb-surface-muted: #2a2a2a;
+  --nb-surface-secondary: #202020;
+  --nb-surface-row-hover: #333333;
+  --nb-surface-sidebar-top: #202020;
+  --nb-surface-sidebar-bottom: #1c1c1c;
+
+  --nb-nav-surface: transparent;
+  --nb-nav-surface-hover: var(--nb-fill-hover);
+  --nb-nav-surface-active: var(--nb-fill-hover-strong);
+  --nb-nav-border-divider: var(--nb-border);
+  --nb-nav-text-primary: #d4d4d4;
+  --nb-nav-text-muted: #9b9b9b;
+  --nb-nav-text-faint: #6b6b6b;
+  --nb-nav-outline-drop: rgba(255, 255, 255, 0.22);
+
+  --nb-filelist-border: rgba(255, 255, 255, 0.09);
+  --nb-filelist-border-strong: rgba(255, 255, 255, 0.14);
+  --nb-filelist-muted: rgba(255, 255, 255, 0.03);
+  --nb-filelist-primary-soft: rgba(82, 156, 202, 0.14);
+  --nb-filelist-header-bg: #191919;
+  --nb-filelist-header-line: rgba(255, 255, 255, 0.06);
+  --nb-filelist-thumb-bg: #2a2a2a;
+  --nb-filelist-thumb-faint: rgba(255, 255, 255, 0.14);
+  --nb-filelist-panel-glass: #252525;
+  --nb-filelist-card-fade-bottom: rgba(0, 0, 0, 0.28);
+  --nb-filelist-action-fade-h: 1.75rem;
+  --nb-filelist-action-bg: rgba(47, 47, 47, 0.58);
+  --nb-filelist-import-block-bg: rgba(25, 25, 25, 0.88);
+  --nb-filelist-sheet-backdrop: rgba(0, 0, 0, 0.55);
+  --nb-filelist-move-active-bg: rgba(82, 156, 202, 0.16);
+  --nb-filelist-empty-icon-tint: rgba(82, 156, 202, 0.35);
+  --nb-filelist-hint-border: rgba(82, 156, 202, 0.25);
+  --nb-drop-line: rgba(255, 255, 255, 0.28);
+
+  --nb-shadow-ink: rgba(0, 0, 0, 0.3);
+  --nb-shadow-ink-md: rgba(0, 0, 0, 0.4);
+  --nb-shadow-ink-strong: rgba(0, 0, 0, 0.5);
+  --nb-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.35),
+    0 0 0 1px var(--nb-filelist-border);
+  --nb-shadow-card-hover: 0 4px 14px rgba(0, 0, 0, 0.45),
+    0 0 0 1px var(--nb-filelist-border-strong);
+  --nb-shadow-focus-primary: 0 0 0 2px rgba(255, 255, 255, 0.14);
+  --nb-shell-accent-color: #9b9b9b;
+  --nb-shell-focus-border: rgba(255, 255, 255, 0.22);
+  --nb-shell-focus-ring: rgba(255, 255, 255, 0.08);
+
+  --nb-shimmer-from: #2a2a2a;
+  --nb-shimmer-mid: #323232;
+  --nb-shimmer-line-from: #262626;
+  --nb-shimmer-line-mid: #303030;
+
+  --nb-btn-primary-shadow: rgba(0, 0, 0, 0.35) 0 0 0 1px inset,
+    rgba(0, 0, 0, 0.25) 0 1px 2px;
+  --nb-btn-ghost-shadow: rgba(0, 0, 0, 0.3) 0 0 0 1px inset;
+
+  --nb-ai-dialog-bg: #252525;
+  --nb-ai-dialog-text: #d4d4d4;
+  --nb-ai-dialog-shadow: 0 24px 48px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.08);
+  --nb-ai-dialog-border: rgba(255, 255, 255, 0.1);
+  --nb-ai-desc-muted: #9b9b9b;
+  --nb-ai-error-bg: rgba(248, 113, 113, 0.12);
+  --nb-ai-error-border: rgba(248, 113, 113, 0.28);
+  --nb-ai-error-text: #fecaca;
+  --nb-ai-input-bg: #191919;
+  --nb-ai-input-border: rgba(255, 255, 255, 0.12);
+  --nb-ai-placeholder: rgba(212, 212, 212, 0.35);
+  --nb-ai-focus-border: rgba(255, 255, 255, 0.28);
+  --nb-ai-focus-ring: rgba(255, 255, 255, 0.08);
+  --nb-ai-secondary-bg: rgba(255, 255, 255, 0.06);
+  --nb-ai-secondary-border: rgba(255, 255, 255, 0.1);
+  --nb-ai-secondary-hover: rgba(255, 255, 255, 0.09);
+}
+
+.filelist.theme--light {
+  @include filelist-shell-theme-light;
+}
+
+.filelist.theme--dark {
+  @include filelist-shell-theme-dark;
+}

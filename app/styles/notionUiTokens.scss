@@ -83,14 +83,15 @@
   --nb-blue-focus: #5753d0;
   --nb-on-primary: #ffffff;
   --nb-on-primary-dark-contrast: #000000;
-  --nb-page-bg: #ffffff;
+  /* 极淡冷调底色：卡片/弹层保持纯白，自然浮起，营造层次与舒适感 */
+  --nb-page-bg: #fafafb;
   --nb-surface: #ffffff;
-  --nb-surface-high: #f1f0ff;
-  --nb-surface-muted: #f6f6f9;
-  --nb-surface-sidebar-top: #faf9fd;
-  --nb-surface-sidebar-bottom: #f4f3fa;
-  --nb-surface-secondary: #f3f3f9;
-  --nb-surface-row-hover: #e3e2fe;
+  --nb-surface-high: #f2f2f5;
+  --nb-surface-muted: #f6f6f8;
+  --nb-surface-sidebar-top: #f8f9fa;
+  --nb-surface-sidebar-bottom: #f1f3f5;
+  --nb-surface-secondary: #f7f7f9;
+  --nb-surface-row-hover: #ecebfb;
   --nb-danger: #b91c1c;
   --nb-danger-foreground: #dc2626;
   --nb-danger-soft-text-dark: #f87171;
@@ -145,11 +146,11 @@
   --nb-shadow-primary: rgba(105, 101, 219, 0.25);
   --nb-shadow-primary-strong: rgba(105, 101, 219, 0.28);
   --nb-shadow-primary-medium: rgba(105, 101, 219, 0.3);
-  --nb-shadow-card: 0 var(--nb-space-1) var(--nb-space-3) var(--nb-shadow-ink),
-    0 0 0 var(--nb-border-width) var(--nb-shadow-ink);
+  --nb-shadow-card: 0 var(--nb-space-1) var(--nb-space-4) var(--nb-shadow-ink),
+    0 0 0 var(--nb-border-width) rgba(27, 27, 31, 0.06);
   --nb-shadow-card-hover: 0 var(--nb-space-4) var(--nb-space-16)
       var(--nb-shadow-ink-strong),
-    0 0 0 var(--nb-border-width) var(--nb-shadow-ink-md);
+    0 0 0 var(--nb-border-width) rgba(27, 27, 31, 0.08);
   --nb-shadow-soft: 0 var(--nb-space-4) var(--nb-space-20)
       var(--nb-shadow-surface),
     0 var(--nb-space-1) var(--nb-space-6) var(--nb-shadow-surface-weak);
@@ -179,6 +180,9 @@
     var(--nb-shadow-primary-medium);
   --nb-shadow-focus-primary: 0 0 0 var(--nb-border-width-ring)
     var(--nb-primary-soft);
+  --nb-shell-accent-color: var(--nb-primary);
+  --nb-shell-focus-border: var(--nb-border-input);
+  --nb-shell-focus-ring: var(--nb-primary-soft);
   --nb-shadow-focus-danger: 0 0 0 var(--nb-border-width-ring)
     rgba(220, 38, 38, 0.12);
 
@@ -225,7 +229,8 @@
   --nb-filelist-blur-header: var(--nb-space-10);
   --nb-transition-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --nb-filelist-thumb-faint: rgba(27, 27, 31, 0.1);
-  --nb-filelist-card-fade-top: rgba(255, 255, 255, 0.92);
+  /* 缩略图留白底：干净中性冷调，避免整页偏紫显得厚重 */
+  --nb-filelist-thumb-bg: #f4f4f7;
   --nb-filelist-inset-drop: inset 0 0 0 var(--nb-border-width-thick)
     var(--nb-drop-line);
   --nb-filelist-hint-border: rgba(105, 101, 219, 0.15);
@@ -323,14 +328,6 @@
 /* Breakpoint tokens: use rem in @media (no px in query values). */
 /* --nb-bp-xs: 23.75rem (380px); --nb-bp-sm: 40rem (640px); etc. */
 
-.excalidraw-app.theme--dark .filelist,
-.excalidraw.theme--dark .filelist {
-  --nb-nav-surface: rgba(255, 255, 255, 0.04);
-  --nb-nav-surface-hover: var(--nb-fill-hover);
-  --nb-nav-surface-active: var(--nb-fill-hover-strong);
-  --nb-nav-border-divider: var(--nb-border);
-}
-
 .excalidraw.theme--dark {
   --nb-text: #e3e3e8;
   --nb-text-muted: rgba(227, 227, 232, 0.6);
@@ -352,6 +349,8 @@
   --nb-fork-home-text: #ececec;
   --nb-fork-home-muted: #a3a3a3;
 }
+
+@import "./shell/filelistTheme.scss";
 
 @media (prefers-color-scheme: dark) {
   :root {

@@ -34,7 +34,7 @@ function FileCardThumbPlaceholder({ kind }: { kind: string }) {
   );
 }
 
-function FileCardThumbBadge({ badge }: { badge: FileCardThumbBadge }) {
+function FileCardThumbBadgeLabel({ badge }: { badge: FileCardThumbBadge }) {
   if (badge === "temp") {
     return (
       <span
@@ -60,7 +60,7 @@ function FileCardThumbBadge({ badge }: { badge: FileCardThumbBadge }) {
 
 /** 文件列表卡片缩略图区域（含角标 / SVG / 加载 / 占位），供列表与最近悬停预览复用 */
 export const FileCardThumb = forwardRef<HTMLDivElement, FileCardThumbProps>(
-  function FileCardThumb(
+  (
     {
       kind,
       cardThumbSvg,
@@ -73,7 +73,7 @@ export const FileCardThumb = forwardRef<HTMLDivElement, FileCardThumbProps>(
       ...rest
     },
     ref,
-  ) {
+  ) => {
     const rootClass = ["filelist__card-thumb", className]
       .filter(Boolean)
       .join(" ");
@@ -85,7 +85,7 @@ export const FileCardThumb = forwardRef<HTMLDivElement, FileCardThumbProps>(
         style={thumbBg ? { background: thumbBg, ...style } : style}
         {...rest}
       >
-        <FileCardThumbBadge badge={badge} />
+        <FileCardThumbBadgeLabel badge={badge} />
         {cardThumbSvg ? (
           <div
             className="filelist__card-thumb-svg"

@@ -1,4 +1,4 @@
-/* 文件列表与弹层共用的局部 token（--fl-*）。弹层须挂在 .filelist-dialog-host 上。 */
+/* L3 别名层：--fl-* 须在 .filelist（或 .filelist-dialog-host）上定义，以便继承 L2 主题 token。 */
 @mixin filelist-design-tokens {
   --fl-bg: var(--nb-page-bg);
   --fl-panel: var(--nb-filelist-panel-glass);
@@ -24,4 +24,13 @@
   --fl-nav-text-muted: var(--nb-nav-text-muted);
   --fl-nav-text-faint: var(--nb-nav-text-faint);
   --fl-nav-outline-drop: var(--nb-nav-outline-drop);
+  --fl-shell-focus-border: var(--nb-shell-focus-border, var(--nb-border-input));
+  --fl-shell-focus-ring: var(--nb-shell-focus-ring, var(--nb-primary-soft));
+  --fl-shell-accent: var(--nb-shell-accent-color, var(--nb-primary));
+  /* 须在 .filelist 上定义，避免 :root 预计算渐变导致暗色侧栏仍为亮色 */
+  --fl-sidebar-gradient: linear-gradient(
+    180deg,
+    var(--nb-surface-sidebar-top) 0%,
+    var(--nb-surface-sidebar-bottom) 100%
+  );
 }

@@ -17,6 +17,7 @@ import {
   HOME_APP_TITLE,
   MAIN_SITE_ICON,
 } from "../lib/appBranding";
+import { useShellTheme } from "./useShellTheme";
 import { createLogger, logFileListOpen } from "../lib/logger";
 import {
   devDebug,
@@ -305,7 +306,9 @@ function iconPath(
     | "move"
     | "drag"
     | "embed"
-    | "settings",
+    | "settings"
+    | "sun"
+    | "moon",
 ) {
   const paths = {
     folder:
@@ -339,6 +342,8 @@ function iconPath(
       "M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0L19.2 12l-4.6-4.6L16 6l6 6-6 6-1.4-1.4z",
     settings:
       "M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 00-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z",
+    sun: "M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.79 1.42-1.41zM4 10.5H1v2h3v-2zm9-9.95h-2V3.5h2V.55zm7.45 3.91l-1.41-1.41-1.79 1.79 1.41 1.41 1.79-1.79zm-3.21 13.7l1.79 1.8 1.41-1.41-1.8-1.79-1.4 1.4zM20 10.5v2h3v-2h-3zm-8-5c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm-1 16.95h2V19.5h-2v2.95zm-7.45-3.91l1.41 1.41 1.79-1.8-1.41-1.41-1.79 1.8z",
+    moon: "M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 0 1-4.4 2.26 5.403 5.403 0 0 1-3.14-9.8c-.44-.06-.9-.1-1.36-.1z",
   };
   return paths[type];
 }
@@ -456,6 +461,7 @@ function getInitialFileListStateFromCache(): {
 }
 
 export function useFileListController({ onOpenFile, onReady }: FileListProps) {
+  const { shellTheme, toggleShellTheme } = useShellTheme();
   const handleOpenFile = useCallback(
     (opts: { id: string; kind: string }) => {
       recordRecentFileAccess(opts.id);
@@ -2269,6 +2275,15 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     <div className="filelist__sidebar-tools">
       <button
         type="button"
+        className="filelist__sidebar-tool filelist__theme-btn"
+        onClick={toggleShellTheme}
+        title={shellTheme === "dark" ? "切换为亮色" : "切换为暗色"}
+      >
+        <Icon type={shellTheme === "dark" ? "sun" : "moon"} size={16} />
+        <span>主题</span>
+      </button>
+      <button
+        type="button"
         className="filelist__sidebar-tool filelist__settings-btn"
         onClick={() => setShowSettings(true)}
         title="设置"
@@ -2584,7 +2599,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     : false;
 
   return (
-    <div className="filelist">
+    <div className={`filelist theme--${shellTheme}`}>
       {importing && (
         <div className="filelist__import-blocking" aria-busy>
           <span>正在导入…</span>

@@ -144,21 +144,26 @@
 .filelist__search {
   padding: var(--nb-space-3) var(--nb-space-5) var(--nb-space-3)
     calc(var(--nb-unit) * 15);
-  border: var(--nb-border-width) solid var(--fl-border);
-  border-radius: var(--nb-radius-md);
+  border: var(--nb-border-width) solid transparent;
+  border-radius: var(--nb-radius-lg);
   font-size: var(--nb-font-body-sm);
   width: var(--nb-filelist-search-width);
   outline: none;
   transition: border-color 80ms ease-in,
-    box-shadow var(--nb-dur-hover) var(--nb-ease-ui);
+    box-shadow var(--nb-dur-hover) var(--nb-ease-ui),
+    background-color var(--nb-dur-hover) var(--nb-ease-ui);
   background: var(--fl-surface-high);
   color: var(--nb-text);
   font-family: inherit;
 
+  &:hover:not(:focus) {
+    background: var(--nb-surface-muted);
+  }
+
   &:focus {
-    border-color: var(--fl-primary);
-    box-shadow: var(--nb-shadow-focus-primary);
-    background: var(--nb-page-bg);
+    border-color: var(--fl-shell-focus-border);
+    box-shadow: var(--fl-shell-focus-ring);
+    background: var(--nb-surface);
   }
 
   &::placeholder {
@@ -179,7 +184,7 @@
   padding: 0 var(--nb-space-6);
   min-height: var(--nb-space-16);
   border: none;
-  border-radius: var(--nb-radius-md);
+  border-radius: var(--nb-radius-lg);
   font-size: var(--nb-font-body-sm);
   font-weight: 500;
   cursor: pointer;
@@ -205,16 +210,22 @@
   }
 }
 
+.filelist__theme-btn,
 .filelist__import-scene-btn,
 .filelist__ai-btn,
 .filelist__settings-btn,
 .filelist__small-btn {
-  background: var(--fl-surface-high);
+  background: var(--nb-surface);
   color: var(--nb-text);
   border: var(--nb-border-width) solid var(--fl-border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+
+  .filelist.theme--dark & {
+    box-shadow: none;
+  }
 
   &:hover:not(:disabled):not(.filelist__import-scene-btn--busy) {
-    background: var(--nb-surface-row-hover);
+    background: var(--nb-surface-high);
     border-color: var(--fl-border-strong);
   }
 
@@ -301,20 +312,42 @@
   color: var(--nb-text-muted);
 
   select {
+    appearance: none;
+    accent-color: var(--fl-shell-accent);
     border: var(--nb-border-width) solid var(--fl-border);
-    border-radius: var(--nb-radius-sm);
-    padding: var(--nb-space-3) var(--nb-space-4);
+    border-radius: var(--nb-radius-md);
+    padding: var(--nb-space-3) calc(var(--nb-space-8) + var(--nb-space-2))
+      var(--nb-space-3) var(--nb-space-4);
     font-size: var(--nb-font-body-sm);
-    background: var(--fl-surface-high);
+    background-color: var(--fl-surface-high);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath fill='%239b9b9b' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right var(--nb-space-3) center;
     color: var(--nb-text);
     font-family: inherit;
+    cursor: pointer;
+    transition: border-color var(--nb-dur-hover) var(--nb-ease-ui),
+      background-color var(--nb-dur-hover) var(--nb-ease-ui);
+
+    &:hover {
+      background-color: var(--nb-surface-muted);
+    }
 
     &:focus {
       outline: none;
-      border-color: var(--fl-primary);
-      box-shadow: 0 0 0 var(--nb-border-width-thick) var(--nb-primary-soft);
+      border-color: var(--fl-shell-focus-border);
+      box-shadow: var(--fl-shell-focus-ring);
+    }
+
+    option {
+      background: var(--nb-surface);
+      color: var(--nb-text);
     }
   }
+}
+
+.filelist.theme--light .filelist__sort select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath fill='%2337352f' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
 }
 
 .filelist__sort-label {
@@ -391,6 +424,44 @@
   -webkit-overflow-scrolling: touch;
 }
 
+/* 细巧滚动条：默认隐于无形，悬停滚动区时浮现，保持页面清爽 */
+.filelist__body,
+.filelist__sidebar-scroll,
+.filelist__move-list {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color var(--nb-dur-hover) var(--nb-ease-ui);
+
+  &::-webkit-scrollbar {
+    width: var(--nb-space-4);
+    height: var(--nb-space-4);
+  }
+
+  &::-webkit-scrollbar-thumb {
+    border: var(--nb-space-1-5) solid transparent;
+    border-radius: var(--nb-radius-xl);
+    background-clip: padding-box;
+    background-color: transparent;
+    transition: background-color var(--nb-dur-hover) var(--nb-ease-ui);
+  }
+
+  &:hover {
+    scrollbar-color: var(--nb-fill-hover-strong) transparent;
+
+    &::-webkit-scrollbar-thumb {
+      background-color: var(--nb-fill-hover-strong);
+    }
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background-color: var(--nb-text-faint);
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
 /* ── Sidebar (left column) ── */
 .filelist__sidebar {
   grid-column: 1;
@@ -407,7 +478,7 @@
   max-width: min(21.25rem, var(--nb-filelist-sidebar-max-vw));
   box-sizing: border-box;
   border-right: var(--nb-border-width) solid var(--fl-border);
-  background: var(--fl-nav-surface);
+  background: var(--fl-sidebar-gradient);
 }
 
 .filelist__sidebar--nav {
@@ -419,15 +490,15 @@
   align-items: center;
   gap: var(--nb-space-3);
   flex-shrink: 0;
-  padding: var(--nb-nav-spacing-panel-y) var(--nb-nav-spacing-panel-x);
+  padding: var(--nb-space-6) var(--nb-nav-spacing-panel-x);
   border-bottom: var(--nb-border-width) solid var(--fl-nav-border-divider);
 }
 
 .filelist__sidebar-brand-title {
   font-size: var(--nb-font-title-sm);
   font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--fl-nav-text-primary);
+  letter-spacing: -0.015em;
+  color: var(--nb-nav-text-primary);
 }
 
 .filelist__sidebar-scroll {
@@ -463,7 +534,7 @@
   border: none;
   border-radius: var(--nb-nav-radius-item);
   background: transparent;
-  color: var(--fl-nav-text-primary);
+  color: var(--nb-nav-text-muted);
   font-family: inherit;
   font-size: var(--nb-nav-font-label);
   font-weight: var(--nb-nav-font-weight-label);
@@ -473,6 +544,7 @@
 
   &:hover {
     background: var(--fl-nav-surface-hover);
+    color: var(--nb-nav-text-primary);
   }
 }
 
@@ -494,25 +566,25 @@
   border: none;
   border-radius: var(--nb-nav-radius-item);
   background: transparent;
-  color: var(--fl-nav-text-primary);
+  color: var(--nb-nav-text-muted);
   font-family: inherit;
   font-size: var(--nb-nav-font-label);
   font-weight: var(--nb-nav-font-weight-label);
   text-align: left;
   cursor: pointer;
   white-space: nowrap;
-  transition:
-    background-color var(--nb-dur-hover) var(--nb-ease-ui),
+  transition: background-color var(--nb-dur-hover) var(--nb-ease-ui),
     color var(--nb-dur-hover) var(--nb-ease-ui);
 
   &:hover {
     background: var(--fl-nav-surface-hover);
+    color: var(--nb-nav-text-primary);
   }
 }
 
 .filelist__sidebar-menu-item--active {
   background: var(--fl-nav-surface-active);
-  color: var(--fl-nav-text-primary);
+  color: var(--nb-nav-text-primary);
   font-weight: var(--nb-nav-font-weight-active);
 }
 
@@ -522,11 +594,11 @@
   align-items: center;
   justify-content: center;
   width: var(--nb-nav-icon-size);
-  color: var(--fl-nav-text-muted);
+  color: var(--nb-nav-text-faint);
 
   .filelist__sidebar-menu-item--active &,
   .filelist__sidebar-menu-row--active & {
-    color: var(--fl-nav-text-primary);
+    color: var(--nb-nav-text-primary);
   }
 }
 
@@ -590,16 +662,16 @@
   border: none;
   border-radius: 0 var(--nb-nav-radius-item) var(--nb-nav-radius-item) 0;
   background: transparent;
-  color: var(--fl-nav-text-faint);
+  color: var(--nb-nav-text-faint);
   cursor: pointer;
 
   &:hover {
-    color: var(--fl-nav-text-muted);
+    color: var(--nb-nav-text-muted);
     background: var(--fl-nav-surface-hover);
   }
 
   .filelist__sidebar-menu-row--active & {
-    color: var(--fl-nav-text-muted);
+    color: var(--nb-nav-text-muted);
   }
 
   .filelist__sidebar-menu-row--active &:hover {
@@ -636,13 +708,13 @@
   border: none;
   border-radius: var(--nb-nav-radius-item);
   background: transparent;
-  color: var(--fl-nav-text-muted);
+  color: var(--nb-nav-text-muted);
   font-family: inherit;
   font-size: var(--nb-nav-font-caption);
   cursor: pointer;
 
   &:hover {
-    color: var(--fl-nav-text-primary);
+    color: var(--nb-nav-text-primary);
     background: var(--fl-nav-surface-hover);
   }
 }
@@ -655,7 +727,7 @@
 
   .filelist__tree-row--active {
     background: var(--fl-nav-surface-active);
-    color: var(--fl-nav-text-primary);
+    color: var(--nb-nav-text-primary);
   }
 
   .filelist__tree-name {
@@ -947,8 +1019,8 @@
     auto-fill,
     minmax(var(--nb-filelist-grid-min), 1fr)
   );
-  gap: var(--nb-space-7);
-  padding: var(--nb-space-8) var(--nb-space-12) var(--nb-space-16);
+  gap: var(--nb-space-8);
+  padding: var(--nb-space-9) var(--nb-space-12) var(--nb-space-16);
 }
 
 /* ── New file card (recent view) ── */
@@ -969,12 +1041,12 @@
   }
 
   &:hover .filelist__card-thumb--new {
-    border-color: var(--nb-primary, #6965db);
-    background: color-mix(in srgb, var(--nb-primary, #6965db) 6%, #fff);
+    border-color: var(--nb-primary);
+    background: var(--fl-primary-soft);
   }
 
   &:hover .filelist__card-new-plus {
-    color: var(--nb-primary, #6965db);
+    color: var(--nb-primary);
   }
 }
 
@@ -983,20 +1055,20 @@
 .filelist__card {
   background: var(--fl-panel-solid);
   border: var(--nb-border-width) solid var(--fl-border);
-  border-radius: var(--fl-radius-md);
+  border-radius: var(--nb-radius-lg);
   overflow: hidden;
   cursor: pointer;
   box-shadow: var(--fl-shadow-card);
   transition: border-color var(--nb-dur-hover) var(--nb-ease-ui),
-    box-shadow 0.2s var(--nb-ease-ui),
-    transform 0.2s var(--fl-transition-spring);
+    box-shadow 0.24s var(--nb-ease-ui),
+    transform 0.24s var(--fl-transition-spring);
   position: relative;
   animation: fadeSlideUp 0.25s var(--nb-ease-ui) both;
 
   &:hover {
     border-color: var(--fl-border-strong);
     box-shadow: var(--fl-shadow-card-hover);
-    transform: translateY(calc(-1 * var(--nb-border-width-thick)));
+    transform: translateY(calc(-1 * var(--nb-space-2)));
   }
 }
 
@@ -1010,7 +1082,7 @@
   text-align: left;
   color: var(--nb-text);
   font-family: inherit;
-  border-radius: var(--nb-radius-md);
+  border-radius: var(--nb-radius-lg);
   min-height: unset;
 
   &:hover {
@@ -1055,10 +1127,10 @@
   width: 100%;
   max-height: clamp(6rem, 13vw, 8.25rem);
   height: auto;
-  /* 与画布比例不一致时两侧/上下留白用主色浅底，而非中性灰 */
-  background: var(--fl-primary-soft);
+  /* 与画布比例不一致时两侧/上下留白用干净中性冷底，整页更清爽 */
+  background: var(--nb-filelist-thumb-bg);
   overflow: hidden;
-  border-radius: var(--fl-radius-md) var(--fl-radius-md) 0 0;
+  border-radius: var(--nb-radius-lg) var(--nb-radius-lg) 0 0;
 }
 
 .filelist__card-thumb-loading {
@@ -1120,27 +1192,39 @@
   color: var(--nb-filelist-thumb-faint);
 }
 
-/* ── Card Actions – overlay on thumbnail ── */
+/* ── Card Actions – 矮淡渐变 + 半透明浮动按钮 ── */
 .filelist__card-actions {
   position: absolute;
   bottom: 0;
-  left: 0;
   right: 0;
+  left: 0;
   display: flex;
   gap: var(--nb-space-2);
-  padding: var(--nb-space-3) var(--nb-space-4);
-  background: linear-gradient(
-    to top,
-    var(--nb-filelist-card-fade-top) 50%,
-    transparent
-  );
+  padding: var(--nb-space-2) var(--nb-space-3) var(--nb-space-3);
+  background: none;
   opacity: 0;
-  /* 仅按钮接收点击，条带空白区不挡住下方预览图的打开 */
+  /* 仅按钮接收点击，空白区不挡住预览图打开 */
   pointer-events: none;
-  transform: translateY(var(--nb-space-4));
+  transform: translateY(var(--nb-space-2));
   transition: opacity 0.18s var(--nb-ease-ui), transform 0.18s var(--nb-ease-ui);
   z-index: 2;
   justify-content: flex-end;
+
+  &::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: var(--nb-filelist-action-fade-h);
+    background: linear-gradient(
+      to top,
+      var(--nb-filelist-card-fade-bottom) 0%,
+      transparent 100%
+    );
+    pointer-events: none;
+    z-index: -1;
+  }
 }
 
 .filelist__card-action {
@@ -1148,21 +1232,23 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: calc(var(--nb-unit) * 15);
-  height: calc(var(--nb-unit) * 15);
-  border: none;
-  border-radius: var(--nb-radius-sm);
+  width: calc(var(--nb-unit) * 14);
+  height: calc(var(--nb-unit) * 14);
+  border: var(--nb-border-width) solid var(--fl-border);
+  border-radius: var(--nb-radius-md);
   background: var(--nb-filelist-action-bg);
   color: var(--nb-text-muted);
   cursor: pointer;
-  backdrop-filter: blur(var(--nb-blur-sheet));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(calc(var(--nb-blur-sheet) * 0.75));
   transition: background-color 80ms ease-in, color 80ms ease-in,
-    transform 0.1s ease;
+    border-color 80ms ease-in, transform 0.1s ease;
 
   &:hover {
-    background: var(--fl-surface-high);
-    color: var(--fl-primary);
-    transform: scale(1.08);
+    background: var(--nb-surface);
+    border-color: var(--fl-border-strong);
+    color: var(--nb-text);
+    transform: scale(1.06);
   }
 }
 
@@ -1216,8 +1302,8 @@
   color: var(--nb-text);
 
   &:focus {
-    border-color: var(--fl-primary);
-    box-shadow: var(--nb-shadow-focus-primary);
+    border-color: var(--fl-shell-focus-border);
+    box-shadow: var(--fl-shell-focus-ring);
   }
 }
 
@@ -1246,7 +1332,7 @@
 .filelist__skeleton-card {
   background: var(--fl-panel-solid);
   border: var(--nb-border-width) solid var(--fl-border);
-  border-radius: var(--fl-radius-md);
+  border-radius: var(--nb-radius-lg);
   overflow: hidden;
   animation: fadeSlideUp 0.25s var(--nb-ease-ui) both;
 }
@@ -1415,7 +1501,7 @@
     gap: var(--nb-space-3);
     padding: var(--nb-space-5);
     border: var(--nb-border-width) solid var(--fl-border);
-    border-radius: var(--nb-radius-md);
+    border-radius: var(--nb-radius-lg);
     background: var(--fl-surface-high);
     color: var(--nb-text);
     font-family: inherit;
@@ -1431,9 +1517,9 @@
   }
 
   .filelist__kind-option--active {
-    border-color: var(--fl-primary);
-    background: var(--fl-primary-soft);
-    color: var(--fl-primary);
+    border-color: var(--fl-shell-focus-border);
+    background: var(--fl-nav-surface-active);
+    color: var(--nb-text);
   }
 
   .filelist__new-file-input {
@@ -1640,6 +1726,7 @@
   }
 
   .filelist__sort,
+  .filelist__theme-btn,
   .filelist__sidebar-tool,
   .filelist__ai-btn,
   .filelist__settings-btn,
