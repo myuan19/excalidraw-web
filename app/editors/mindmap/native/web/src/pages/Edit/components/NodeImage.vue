@@ -1,6 +1,7 @@
 <template>
   <el-dialog
     class="nodeImageDialog"
+    v-bind="nodeDialogProps"
     :title="$t('nodeImage.title')"
     :visible.sync="dialogVisible"
     :width="isMobile ? '90%' : '600px'"
@@ -38,6 +39,7 @@
 
 <script>
 import ImgUpload from '@/components/ImgUpload/index.vue'
+import { NODE_DIALOG_PROPS } from '@/utils/nodeDialogOptions'
 import { getImageSize, isMobile } from 'simple-mind-map/src/utils/index'
 
 // 节点图片内容设置
@@ -47,6 +49,7 @@ export default {
   },
   data() {
     return {
+      nodeDialogProps: NODE_DIALOG_PROPS,
       dialogVisible: false,
       img: '',
       imgUrl: '',

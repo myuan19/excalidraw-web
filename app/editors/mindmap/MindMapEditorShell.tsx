@@ -90,7 +90,10 @@ import {
 } from "../../lib/appBranding";
 import { devDebug } from "../../lib/devDebug";
 import { useMindMapNativeAIConfig } from "./useMindMapNativeAIConfig";
-import { useMindMapRootNameSync } from "./useMindMapRootNameSync";
+import {
+  resolveMindMapOpenDisplayName,
+  useMindMapRootNameSync,
+} from "./useMindMapRootNameSync";
 import {
   adoptMindMapNativeBaseline,
   getMindMapModificationState,
@@ -615,7 +618,7 @@ const MindMapEditorShell = () => {
     if (document) {
       const synced = syncFileNameToRootIfNeeded(fileName, document.data);
       if (synced) {
-        debugMindMapOpen("synced file display name to root node on settle", {
+        debugMindMapOpen("reconciled root title and file display name on settle", {
           fileName,
         });
       }
@@ -674,8 +677,12 @@ const MindMapEditorShell = () => {
           if (isMindMapSingleRootOnly(document)) {
             clearMindMapBrowserView(fileId);
           }
-          const localName = LocalDraftSessions.get(fileId)?.name ?? DEFAULT_DOCUMENT_DISPLAY_NAME;
-          setFileName(localName);
+          setFileName(
+            resolveMindMapOpenDisplayName(
+              data,
+              LocalDraftSessions.get(fileId)?.name ?? null,
+            ),
+          );
           initSyncedText(data);
           latestDocumentRef.current = document;
           logMindMapOpenPhase("preparing_surface");
@@ -710,7 +717,6 @@ const MindMapEditorShell = () => {
             return;
           }
 
-          setFileName(serverFile.name || DEFAULT_DOCUMENT_DISPLAY_NAME);
           needsInitialThumbnailRef.current = !serverFile.has_thumbnail;
           const parseStart = performance.now();
           saveMindMapBrowserViewFromData(resolvedId, serverFile.data);
@@ -719,6 +725,12 @@ const MindMapEditorShell = () => {
             : createEmptyMindMapData(
                 serverFile.name || DEFAULT_DOCUMENT_DISPLAY_NAME,
               );
+          setFileName(
+            resolveMindMapOpenDisplayName(
+              data,
+              serverFile.name || null,
+            ),
+          );
           debugMindMapOpen("after MindMapAdapter.parse", {
             elapsed: Math.round(performance.now() - parseStart),
             rootChildren: data.root?.children?.length ?? 0,
@@ -754,7 +766,10 @@ const MindMapEditorShell = () => {
           cached
         ) {
           setFileName(
-            getCachedFileListName(resolvedId) || DEFAULT_DOCUMENT_DISPLAY_NAME,
+            resolveMindMapOpenDisplayName(
+              cached.data,
+              getCachedFileListName(resolvedId),
+            ),
           );
           latestDocumentRef.current = cached;
           initSyncedText(cached.data);

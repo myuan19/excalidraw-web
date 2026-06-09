@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useRef } from "react";
 
+import { patchFileListTreeCacheFileName } from "../../data/fileListSessionCache";
 import { getMindMapRootText } from "../../data/formats/MindMapAdapter";
 import { isLocalDraftFileId } from "../../data/localDraftFileId";
 import { LocalDraftSessions } from "../../data/localDraftSessions";
 import { ServerSync } from "../../data/ServerSync";
 
+import { reconcileMindMapRootAndFileName } from "./mindMapRootNamePolicy";
+
 import type { MindMapDocumentData } from "../../data/formats/MindMapAdapter";
+
+export { resolveMindMapOpenDisplayName } from "./mindMapRootNamePolicy";
 
 /**
  * Bidirectional sync between MindMap root-node text and the file display name.
@@ -40,22 +45,52 @@ export function useMindMapRootNameSync({
     lastSyncedTextRef.current = getMindMapRootText(data);
   }, []);
 
-  /** 打开已有文件时：文件名已与根节点不同步则把显示名推回画布根节点 */
+  const promoteRootToFileName = useCallback(
+    (name: string) => {
+      lastSyncedTextRef.current = name;
+      setFileName(name);
+      if (!fileId) {
+        return;
+      }
+      if (!isLocalDraftFileId(fileId)) {
+        patchFileListTreeCacheFileName(fileId, name);
+        void ServerSync.renameFile(fileId, name).catch(() => {});
+        return;
+      }
+      const session = LocalDraftSessions.get(fileId);
+      if (session) {
+        LocalDraftSessions.upsert({
+          ...session,
+          name,
+          updated_at: new Date().toISOString(),
+        });
+      }
+    },
+    [fileId, setFileName],
+  );
+
+  /** hydrate settle 后对齐根节点与文件显示名，避免过期「未命名」覆盖自定义根标题。 */
   const syncFileNameToRootIfNeeded = useCallback(
     (displayName: string, data?: MindMapDocumentData | null) => {
-      const name = String(displayName || "").trim();
-      if (!name || !isBridgeReady) {
+      if (!isBridgeReady) {
         return false;
       }
-      const rootText = data ? getMindMapRootText(data) : lastSyncedTextRef.current;
-      if (!rootText || rootText === name) {
+      const rootText = data
+        ? getMindMapRootText(data)
+        : (lastSyncedTextRef.current ?? "");
+      const action = reconcileMindMapRootAndFileName(displayName, rootText);
+      if (action.kind === "noop") {
         return false;
       }
-      lastSyncedTextRef.current = name;
-      postToNative("updateRootText", { text: name });
+      if (action.kind === "promote-root-to-file") {
+        promoteRootToFileName(action.name);
+        return true;
+      }
+      lastSyncedTextRef.current = action.text;
+      postToNative("updateRootText", { text: action.text });
       return true;
     },
-    [isBridgeReady, postToNative],
+    [isBridgeReady, postToNative, promoteRootToFileName],
   );
 
   const onDocumentChanged = useCallback(
@@ -65,22 +100,9 @@ export function useMindMapRootNameSync({
       if (!rootText || rootText === lastSyncedTextRef.current) {
         return;
       }
-      lastSyncedTextRef.current = rootText;
-      setFileName(rootText);
-      if (!isLocalDraftFileId(fileId)) {
-        void ServerSync.renameFile(fileId, rootText).catch(() => {});
-      } else {
-        const session = LocalDraftSessions.get(fileId);
-        if (session) {
-          LocalDraftSessions.upsert({
-            ...session,
-            name: rootText,
-            updated_at: new Date().toISOString(),
-          });
-        }
-      }
+      promoteRootToFileName(rootText);
     },
-    [fileId, setFileName],
+    [fileId, promoteRootToFileName],
   );
 
   useEffect(() => {

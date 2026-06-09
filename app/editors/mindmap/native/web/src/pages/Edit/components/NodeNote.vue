@@ -1,6 +1,7 @@
 <template>
   <el-dialog
     class="nodeNoteDialog"
+    v-bind="nodeDialogProps"
     :title="$t('nodeNote.title')"
     :visible.sync="dialogVisible"
     :width="isMobile ? '90%' : '50%'"
@@ -25,6 +26,7 @@
 </template>
 
 <script>
+import { NODE_DIALOG_PROPS } from '@/utils/nodeDialogOptions'
 import { isMobile } from 'simple-mind-map/src/utils/index'
 
 let toastEditorPromise = null
@@ -59,6 +61,7 @@ export default {
   name: 'NodeNote',
   data() {
     return {
+      nodeDialogProps: NODE_DIALOG_PROPS,
       dialogVisible: false,
       note: '',
       activeNodes: [],

@@ -1,6 +1,7 @@
 <template>
   <el-dialog
     class="nodeHyperlinkDialog"
+    v-bind="nodeDialogProps"
     :title="$t('nodeHyperlink.title')"
     :visible.sync="dialogVisible"
     :width="isMobile ? '90%' : '50%'"
@@ -11,17 +12,10 @@
       <el-input
         v-model="link"
         size="mini"
-        placeholder="http://xxxx.com/"
+        placeholder="example.com 或 https://example.com"
         @keyup.native.stop
         @keydown.native.stop
-        @blur="handleUrl()"
-      >
-        <el-select v-model="protocol" slot="prepend" style="width: 80px;">
-          <el-option label="https" value="https"></el-option>
-          <el-option label="http" value="http"></el-option>
-          <el-option label="无" value="none"></el-option>
-        </el-select>
-      </el-input>
+      ></el-input>
     </div>
     <div class="item">
       <span class="name">{{ $t('nodeHyperlink.name') }}</span>
@@ -42,17 +36,22 @@
 </template>
 
 <script>
+import {
+  NODE_DIALOG_PROPS,
+  normalizeNodeHyperlinkUrl,
+  stripUrlProtocol
+} from '@/utils/nodeDialogOptions'
 import { isMobile } from 'simple-mind-map/src/utils/index'
 
 // 节点超链接内容设置
 export default {
   data() {
     return {
+      nodeDialogProps: NODE_DIALOG_PROPS,
       dialogVisible: false,
       link: '',
       linkTitle: '',
       activeNodes: [],
-      protocol: 'https',
       isMobile: isMobile()
     }
   },
@@ -67,10 +66,13 @@ export default {
   methods: {
     handleNodeActive(...args) {
       this.activeNodes = [...args[1]]
+      this.syncFieldsFromActiveNode()
+    },
+
+    syncFieldsFromActiveNode() {
       if (this.activeNodes.length > 0) {
-        let firstNode = this.activeNodes[0]
-        this.link = firstNode.getData('hyperlink') || ''
-        this.handleUrl(true)
+        const firstNode = this.activeNodes[0]
+        this.link = stripUrlProtocol(firstNode.getData('hyperlink'))
         this.linkTitle = firstNode.getData('hyperlinkTitle') || ''
       } else {
         this.link = ''
@@ -78,23 +80,8 @@ export default {
       }
     },
 
-    removeProtocol(url) {
-      return url.replace(/^https?:\/\//, '')
-    },
-
-    handleUrl(setProtocolNoneIfNotExist) {
-      const res = this.link.match(/^(https?):\/\//)
-      if (res && res[1]) {
-        this.protocol = res[1]
-      } else if (!this.link) {
-        this.protocol = 'https'
-      } else if (setProtocolNoneIfNotExist) {
-        this.protocol = 'none'
-      }
-      this.link = this.removeProtocol(this.link)
-    },
-
     handleShowNodeLink() {
+      this.syncFieldsFromActiveNode()
       this.dialogVisible = true
     },
 
@@ -103,13 +90,18 @@ export default {
     },
 
     confirm() {
+      const href = normalizeNodeHyperlinkUrl(this.link)
+      const title = (this.linkTitle || '').trim()
+      const shouldClear = !href && !title
+
       this.activeNodes.forEach(node => {
-        node.setHyperlink(
-          (this.protocol === 'none' ? '' : this.protocol + '://') + this.link,
-          this.linkTitle
-        )
-        this.cancel()
+        if (shouldClear) {
+          node.setHyperlink('', '')
+        } else {
+          node.setHyperlink(href, title)
+        }
       })
+      this.cancel()
     }
   }
 }
@@ -125,6 +117,7 @@ export default {
     .name {
       display: block;
       width: 50px;
+      flex-shrink: 0;
     }
   }
 }

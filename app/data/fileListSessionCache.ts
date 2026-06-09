@@ -49,3 +49,28 @@ export function hasFileListTreeCache(): boolean {
     return false;
   }
 }
+
+/** 根节点改名等场景下就地更新列表缓存中的显示名，避免下次打开仍读到「未命名」。 */
+export function patchFileListTreeCacheFileName(
+  fileId: string,
+  name: string,
+): void {
+  const tree = readFileListTreeCache();
+  if (!tree) {
+    return;
+  }
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return;
+  }
+  const index = tree.files.findIndex((file) => file.id === fileId);
+  if (index === -1) {
+    return;
+  }
+  if (tree.files[index].name === trimmed) {
+    return;
+  }
+  const nextFiles = [...tree.files];
+  nextFiles[index] = { ...nextFiles[index], name: trimmed };
+  writeFileListTreeCache({ folders: tree.folders, files: nextFiles });
+}
