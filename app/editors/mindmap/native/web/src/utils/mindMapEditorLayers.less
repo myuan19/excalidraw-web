@@ -1,0 +1,22 @@
+/* 与 mindMapEditorLayers.js 中 getMindMapLayerCssVars 配套，由 .editContainer 注入 CSS 变量 */
+
+.editContainer {
+  .mindMapContainer {
+    z-index: var(--mm-layer-canvas);
+  }
+
+  .mindMapOverlayRoot {
+    position: fixed;
+    inset: 0;
+    z-index: var(--mm-layer-node-text-edit);
+    pointer-events: none;
+
+    > * {
+      pointer-events: auto;
+    }
+  }
+}
+
+.richTextToolbar {
+  z-index: var(--mm-layer-rich-text-toolbar);
+}

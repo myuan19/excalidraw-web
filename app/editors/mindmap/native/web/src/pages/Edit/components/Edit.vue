@@ -1,6 +1,7 @@
 <template>
   <div
     class="editContainer"
+    :style="mindMapLayerCssVars"
     @dragenter.stop.prevent="onDragenter"
     @dragleave.stop.prevent
     @dragover.stop.prevent
@@ -54,10 +55,10 @@
       v-if="!isEmbedMode && activeSidebar === 'shortcutKey'"
     ></ShortcutKey>
     <Contextmenu v-if="mindMap && !isEmbedMode" :mindMap="mindMap"></Contextmenu>
-    <RichTextToolbar
-      v-if="mindMap && !isEmbedMode"
-      :mindMap="mindMap"
-    ></RichTextToolbar>
+    <div
+      ref="mindMapOverlayRoot"
+      :class="MINDMAP_OVERLAY_ROOT_CLASS"
+    ></div>
     <NodeNoteContentShow
       v-if="mindMap && !isEmbedMode"
       :mindMap="mindMap"
@@ -107,6 +108,10 @@
       v-if="mindMap && !isEmbedMode && activeSidebar === 'textFormat'"
       :mindMap="mindMap"
     ></TextFormatSidebar>
+    <RichTextToolbar
+      v-if="mindMap && !isEmbedMode"
+      :mindMap="mindMap"
+    ></RichTextToolbar>
     <AiSidebar
       v-if="mindMap && enableAi && !isEmbedMode && mountedSidebars.ai"
       v-show="activeSidebar === 'ai'"
@@ -191,6 +196,11 @@ import {
 
 import { isMindmapDevDebugEnabled, mindmapDevDebug } from '@/utils/mindmapDevDebug'
 import { sidebarDebug, sidebarDebugBus, sidebarMemoryDebug } from '@/utils/sidebarDebug'
+import {
+  getMindMapLayerCssVars,
+  getMindMapRuntimeOverlayOptions,
+  MINDMAP_OVERLAY_ROOT_CLASS
+} from '@/utils/mindMapEditorLayers'
 import { createMindMapShortcutEnableCheck } from '@/utils/mindMapShortcut'
 import { editHistoryDebug } from '@/utils/editHistoryDebug'
 import {
@@ -332,6 +342,8 @@ export default {
   },
   data() {
     return {
+      mindMapLayerCssVars: getMindMapLayerCssVars(),
+      MINDMAP_OVERLAY_ROOT_CLASS,
       enableShowLoading: true,
       mindMap: null,
       mindMapData: null,
@@ -719,8 +731,7 @@ export default {
         theme: theme.template,
         themeConfig: theme.config,
         viewData: view,
-        nodeTextEditZIndex: 1000,
-        nodeNoteTooltipZIndex: 1000,
+        ...getMindMapRuntimeOverlayOptions(this.$refs.mindMapOverlayRoot),
         customNoteContentShow: {
           show: (content, left, top, node) => {
             this.$bus.$emit('showNoteContent', content, left, top, node)
@@ -745,7 +756,6 @@ export default {
         useLeftKeySelectionRightKeyDrag: this.useLeftKeySelectionRightKeyDrag,
         enableShortcutOnlyWhenMouseInSvg: false,
         customCheckEnableShortcut: createMindMapShortcutEnableCheck(() => this.mindMap),
-        customInnerElsAppendTo: null,
         customHandleClipboardText: handleClipboardText,
         onlyPasteTextWhenHasImgAndText: false,
         defaultNodeImage: require('../../../assets/img/图片加载失败.svg'),
@@ -1452,4 +1462,8 @@ export default {
     height: 100%;
   }
 }
+</style>
+
+<style lang="less">
+@import '@/utils/mindMapEditorLayers.less';
 </style>

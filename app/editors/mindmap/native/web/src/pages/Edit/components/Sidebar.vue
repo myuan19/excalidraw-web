@@ -205,7 +205,6 @@ export default {
   bottom: 0;
   width: 300px; // 与 SIDEBAR_PANEL_WIDTH 保持一致
   height: 100vh;
-  z-index: 10100; // 与 SIDEBAR_UI_Z_INDEX_BASE 保持一致
   background-color: #fff;
   border-left: 1px solid #e8e8e8;
   display: flex;

@@ -182,9 +182,6 @@ export default {
   created() {
     this.$bus.$on('rich_text_selection_change', this.onRichTextSelectionChange)
   },
-  mounted() {
-    document.body.append(this.$refs.richTextToolbar)
-  },
   beforeDestroy() {
     this.$bus.$off('rich_text_selection_change', this.onRichTextSelectionChange)
   },
@@ -271,7 +268,6 @@ export default {
 <style lang="less" scoped>
 .richTextToolbar {
   position: fixed;
-  z-index: 2000;
   height: 55px;
   background: #fff;
   border: 1px solid rgba(0, 0, 0, 0.06);
