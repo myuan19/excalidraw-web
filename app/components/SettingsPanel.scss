@@ -1,42 +1,55 @@
 .settings-panel-overlay {
+  --settings-drawer-duration: 280ms;
+  --settings-drawer-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --settings-drawer-width: min(480px, 90vw);
+  /* 仅向左投影，避免滑入期底部/右侧阴影带被误读为「多一层」 */
+  --settings-drawer-shadow: -8px 0 32px rgba(15, 23, 42, 0.14);
+
   position: fixed;
   inset: 0;
   z-index: var(--nb-z-modal);
-  display: flex;
+  overflow: hidden;
   font-family: var(--nb-font-ui), system-ui, sans-serif;
-  animation: settings-overlay-in 0.2s ease;
+  pointer-events: auto;
 }
 
 .settings-panel-overlay__backdrop {
-  flex: 1;
-  min-width: 0;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  cursor: default;
   background: var(--nb-overlay-scrim);
+  opacity: 0;
+  backdrop-filter: blur(0);
+  -webkit-backdrop-filter: blur(0);
+  transition:
+    opacity var(--settings-drawer-duration) var(--settings-drawer-ease),
+    backdrop-filter var(--settings-drawer-duration) var(--settings-drawer-ease),
+    -webkit-backdrop-filter var(--settings-drawer-duration) var(--settings-drawer-ease);
+}
+
+.settings-panel-overlay--active .settings-panel-overlay__backdrop {
+  opacity: 1;
   backdrop-filter: blur(var(--nb-blur-overlay));
   -webkit-backdrop-filter: blur(var(--nb-blur-overlay));
-  cursor: default;
-}
-
-@keyframes settings-overlay-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes settings-panel-slide {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
 }
 
 .settings-panel {
-  flex-shrink: 0;
-  width: min(480px, 90vw);
-  height: 100vh;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  width: var(--settings-drawer-width);
   display: flex;
   flex-direction: column;
   background: var(--nb-ai-dialog-bg);
   color: var(--nb-ai-dialog-text);
   border-left: var(--nb-border-width) solid var(--nb-ai-dialog-border);
-  box-shadow: var(--nb-ai-dialog-shadow);
-  animation: settings-panel-slide 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: var(--settings-drawer-shadow);
+  transform: translateX(100%);
+  transition: transform var(--settings-drawer-duration) var(--settings-drawer-ease);
+  will-change: transform;
 
   .settings-panel__header {
     display: flex;
@@ -332,7 +345,26 @@
   }
 }
 
+.settings-panel-overlay--active .settings-panel {
+  transform: translateX(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-panel-overlay__backdrop,
+  .settings-panel {
+    transition: none;
+  }
+}
+
+.filelist.theme--dark .settings-panel-overlay {
+  --settings-drawer-shadow: -8px 0 40px rgba(0, 0, 0, 0.45);
+}
+
 @media (prefers-color-scheme: dark) {
+  .settings-panel-overlay {
+    --settings-drawer-shadow: -8px 0 40px rgba(0, 0, 0, 0.45);
+  }
+
   .settings-panel label input {
     border-color: var(--nb-ai-input-border);
   }

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { useDrawerTransition } from "../hooks/useDrawerTransition";
 import { useStrictOverlayDismiss } from "../hooks/useStrictOverlayDismiss";
 
 import {
@@ -41,9 +42,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<"general" | "ai">("general");
+  const { mounted, active, onDrawerTransitionEnd } = useDrawerTransition(open);
 
   useEffect(() => {
-    if (!open) {
+    if (!mounted) {
       return;
     }
     setLoadError(null);
@@ -64,7 +66,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [mounted]);
 
   useEffect(() => {
     return subscribeAppSettings(() => {
@@ -73,7 +75,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   }, []);
 
   useEffect(() => {
-    if (!open) {
+    if (!mounted) {
       return;
     }
     const onKey = (e: KeyboardEvent) => {
@@ -83,7 +85,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [mounted, onClose]);
 
   const handleSaveAI = useCallback(async () => {
     setLoadError(null);
@@ -106,12 +108,15 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   const overlayDismiss = useStrictOverlayDismiss(onClose);
 
-  if (!open) {
+  if (!mounted) {
     return null;
   }
 
   return createPortal(
-    <div className="settings-panel-overlay" role="presentation">
+    <div
+      className={`settings-panel-overlay${active ? " settings-panel-overlay--active" : ""}`}
+      role="presentation"
+    >
       <div
         className="settings-panel-overlay__backdrop"
         aria-hidden
@@ -122,7 +127,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         role="dialog"
         aria-modal
         aria-label="设置"
+        aria-hidden={!active}
         onPointerDown={(e) => e.stopPropagation()}
+        onTransitionEnd={onDrawerTransitionEnd}
       >
         <div className="settings-panel__header">
           <h2>设置</h2>
