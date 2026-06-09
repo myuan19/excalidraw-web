@@ -1,11 +1,12 @@
 <template>
-  <Sidebar ref="sidebar" :title="$t('ai.sidebarTitle') || 'AI 润色'">
-    <div class="sidebarContent customScrollbar" :class="{ isDark: isDark }">
-      <section class="sectionBlock">
-        <div class="sectionLabel">{{ $t('ai.targetNode') || '目标节点' }}</div>
-        <div class="targetChip" v-html="targetNodeName"></div>
-      </section>
-
+  <Sidebar ref="sidebar" :title="$t('ai.sidebarTitle') || 'AI 润色'" panelKey="ai">
+    <div class="aiSidebarBox" :class="{ isDark: isDark }">
+      <NodePreviewStage :mindMap="mindMap" :isDark="isDark">
+        <div class="nodePreviewNode" :style="targetNodePreviewStyle">
+          {{ targetNodePreviewText }}
+        </div>
+      </NodePreviewStage>
+      <div class="aiPanelContent customScrollbar">
       <section class="sectionBlock">
         <div class="sectionLabel">{{ $t('ai.editScope') || '编辑范围' }}</div>
         <el-radio-group
@@ -21,7 +22,7 @@
             $t('ai.scopeSubtree') || '含所有子节点'
           }}</el-radio-button>
         </el-radio-group>
-        <div class="contextLimitRow" v-if="scope === 'subtree'">
+        <div class="contextLimitRow" v-show="scope === 'subtree'">
           <span class="contextLimitLabel">{{
             $t('ai.contextCharLimit') || '上下文上限'
           }}</span>
@@ -38,7 +39,7 @@
             $t('ai.contextCharLimitUnit') || '字'
           }}</span>
         </div>
-        <div class="permissionSwitchRow" v-if="scope === 'subtree'">
+        <div class="permissionSwitchRow" v-show="scope === 'subtree'">
           <div class="permissionSwitchText">
             <div class="permissionSwitchTitle">{{
               $t('ai.allowCreateChildren') || '允许新增子节点'
@@ -53,7 +54,7 @@
             :disabled="isAiCreating"
           ></el-switch>
         </div>
-        <div class="permissionSwitchRow" v-if="scope === 'subtree'">
+        <div class="permissionSwitchRow" v-show="scope === 'subtree'">
           <div class="permissionSwitchText">
             <div class="permissionSwitchTitle">{{
               $t('ai.allowDeleteNodes') || '允许删除节点'
@@ -149,12 +150,14 @@
           {{ $t('ai.noPromptPresets') || '暂无模板' }}
         </div>
       </section>
+      </div>
     </div>
   </Sidebar>
 </template>
 
 <script>
 import Sidebar from './Sidebar.vue'
+import NodePreviewStage from '@/components/sidebar/NodePreviewStage.vue'
 import { mapState } from 'vuex'
 import {
   deleteMindMapOrganizePromptPreset,
@@ -166,9 +169,15 @@ import {
   normalizeContextCharLimit
 } from '@/utils/aiContext'
 import { mindmapDevDebug } from '@/utils/mindmapDevDebug'
+import { sidebarMemoryDebug } from '@/utils/sidebarDebug'
+import sidebarPanelDebug from '@/mixins/sidebarPanelDebug'
+import sidebarHistorySync from '@/mixins/sidebarHistorySync'
+import { buildNodeDomPreviewStyle } from '@/utils/nodePreviewStyle'
 
 export default {
-  components: { Sidebar },
+  name: 'AiSidebar',
+  mixins: [sidebarPanelDebug, sidebarHistorySync],
+  components: { Sidebar, NodePreviewStage },
   props: {
     mindMap: { type: Object }
   },
@@ -204,19 +213,33 @@ export default {
         String(this.aiConfig.key || '').trim() &&
         String(this.aiConfig.model || '').trim()
       )
+    },
+    targetNodePreviewText() {
+      return this.stripHtml(this.targetNodeName).slice(0, 18) || '(空)'
+    },
+    targetNodePreviewStyle() {
+      const node = this.getPreviewNode()
+      return buildNodeDomPreviewStyle(node, { isDark: this.isDark })
     }
   },
   watch: {
-    activeSidebar(val) {
-      if (!this.$refs.sidebar) return
+    activeSidebar(val, oldVal) {
+      this.logSidebarPanelWatch('ai', val, oldVal)
+      if (!this.$refs.sidebar) {
+        this.logSidebarPanelWatch('ai', val, oldVal, { branch: 'missing-ref' })
+        return
+      }
       if (val === 'ai') {
         this.$refs.sidebar.show = true
         this.syncActiveNodes()
+        this.logSidebarPanelWatch('ai', val, oldVal, { branch: 'show-true' })
       } else if (this.$refs.sidebar.show) {
         this.$refs.sidebar.show = false
+        this.logSidebarPanelWatch('ai', val, oldVal, { branch: 'show-false' })
       }
     },
-    scope(val) {
+    scope(val, oldVal) {
+      if (val === oldVal) return
       if (val !== 'subtree') {
         this.allowCreateChildren = false
         this.allowDeleteNodes = false
@@ -224,23 +247,48 @@ export default {
     }
   },
   mounted() {
-    if (this.activeSidebar === 'ai' && this.$refs.sidebar) {
-      this.$refs.sidebar.show = true
-    }
+    this.logSidebarPanelMounted('ai')
+    sidebarMemoryDebug('ai sidebar mounted', {
+      activeSidebar: this.activeSidebar || null
+    })
+    this.syncActiveNodes()
+    this.scheduleDeferredInit()
   },
   created() {
+    this.logSidebarPanelCreated('ai')
     this.$bus.$on('node_active', this.onNodeActive)
     this.$bus.$on('ai_create_status', this.onAiStatus)
     this.$bus.$on('ai_stream_content', this.onAiStream)
-    this.syncActiveNodes()
-    this.loadPromptPresets()
   },
   beforeDestroy() {
+    sidebarMemoryDebug('ai sidebar destroy', {})
     this.$bus.$off('node_active', this.onNodeActive)
     this.$bus.$off('ai_create_status', this.onAiStatus)
     this.$bus.$off('ai_stream_content', this.onAiStream)
   },
   methods: {
+    scheduleDeferredInit() {
+      const run = () => {
+        sidebarMemoryDebug('ai sidebar deferred init start', {})
+        const startedAt = performance.now()
+        this.loadPromptPresets().finally(() => {
+          sidebarMemoryDebug('ai sidebar deferred init done', {
+            ms: Math.round(performance.now() - startedAt)
+          })
+        })
+      }
+      if (typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(run, { timeout: 1500 })
+      } else {
+        window.setTimeout(run, 0)
+      }
+    },
+
+    syncFromEditHistory() {
+      if (!this.mindMap || this.isAiCreating) return
+      this.syncActiveNodes()
+    },
+
     syncActiveNodes() {
       if (!this.mindMap) return
       if (this.isAiCreating) {
@@ -264,7 +312,7 @@ export default {
     },
 
     updateTargetName() {
-      const node = this.activeNodes.length > 0 ? this.activeNodes[0] : null
+      const node = this.getPreviewNode()
       if (node) {
         const text = node.nodeData && node.nodeData.data && node.nodeData.data.text
         this.targetNodeName = text
@@ -273,6 +321,26 @@ export default {
       } else {
         this.targetNodeName = this.$t('ai.rootNodeDefault') || '根节点 (全局)'
       }
+    },
+
+    getPreviewNode() {
+      if (this.activeNodes.length > 0) {
+        return this.activeNodes[0]
+      }
+      return this.mindMap &&
+        this.mindMap.renderer &&
+        this.mindMap.renderer.root
+        ? this.mindMap.renderer.root
+        : null
+    },
+
+    stripHtml(value) {
+      return String(value || '')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/p\s*>/gi, '\n')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .trim()
     },
 
     syncTargetNodeByUid(uid) {
@@ -543,11 +611,25 @@ export default {
 </script>
 
 <style lang="less" scoped>
-.sidebarContent {
-  padding: 16px;
-  padding-top: 8px;
+@import '@/styles/nodePreview.less';
 
-  &.isDark {
+.aiSidebarBox {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.aiPanelContent {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+  padding-top: 12px;
+}
+
+.aiSidebarBox.isDark {
+  .aiPanelContent {
     .sectionLabel,
     .presetHint,
     .contextLimitLabel,
@@ -557,7 +639,6 @@ export default {
       color: hsla(0, 0%, 100%, 0.55);
     }
 
-    .targetChip,
     .presetInsertBtn,
     .streamContent {
       color: hsla(0, 0%, 100%, 0.78);
@@ -588,7 +669,9 @@ export default {
       border-top-color: rgba(255, 255, 255, 0.08);
     }
   }
+}
 
+.aiPanelContent {
   .sectionBlock + .sectionBlock {
     margin-top: 16px;
   }
@@ -603,18 +686,6 @@ export default {
     &.noMargin {
       margin-bottom: 0;
     }
-  }
-
-  .targetChip {
-    padding: 8px 10px;
-    color: #303133;
-    font-size: 13px;
-    font-weight: 500;
-    line-height: 1.5;
-    background: #f5f7fa;
-    border: 1px solid #ebeef5;
-    border-radius: 8px;
-    word-break: break-word;
   }
 
   .scopeGroup {

@@ -22,7 +22,8 @@ import {
   handleGetSvgDataExtraContent,
   getNodeTreeBoundingRect,
   mergeTheme,
-  createUidForAppointNodes
+  createUidForAppointNodes,
+  getRenderTreeFromHistorySnapshot
 } from './src/utils'
 import defaultTheme, {
   checkIsNodeSizeIndependenceConfig
@@ -380,7 +381,11 @@ class MindMap {
     this.execCommand('CLEAR_ACTIVE_NODE')
     this.opt.theme = theme
     if (!notRender) {
+      this.initTheme()
       this.render(null, CONSTANTS.CHANGE_THEME)
+      if (!this.command.isPause) {
+        this.command.addHistory()
+      }
     }
     this.emit('view_theme_change', theme)
   }
@@ -392,13 +397,22 @@ class MindMap {
 
   //  设置主题配置
   setThemeConfig(config, notRender = false) {
+    const nextThemeConfig = mergeTheme(
+      theme[this.opt.theme] || theme.default,
+      config
+    )
     // 计算改变了的配置
-    const changedConfig = getObjectChangedProps(this.themeConfig, config)
+    const changedConfig = getObjectChangedProps(this.themeConfig, nextThemeConfig)
     this.opt.themeConfig = config
+    this.themeConfig = nextThemeConfig
+    Style.setBackgroundStyle(this.el, this.themeConfig)
     if (!notRender) {
       // 检查改变的是否是节点大小无关的主题属性
       const res = checkIsNodeSizeIndependenceConfig(changedConfig)
       this.render(null, res ? '' : CONSTANTS.CHANGE_THEME)
+      if (!this.command.isPause) {
+        this.command.addHistory()
+      }
     }
   }
 
@@ -443,6 +457,9 @@ class MindMap {
     this.renderer.setLayout()
     if (!notRender) {
       this.render(null, CONSTANTS.CHANGE_LAYOUT)
+      if (!this.command.isPause) {
+        this.command.addHistory()
+      }
     }
     this.emit('layout_change', layout)
   }
@@ -453,10 +470,14 @@ class MindMap {
   }
 
   // 更新画布数据，如果新的数据是在当前画布节点数据基础上增删改查后形成的，那么可以使用该方法来更新画布数据
-  updateData(data) {
+  updateData(data, options = {}) {
     data = this.handleData(data)
     this.emit('before_update_data', data)
     this.renderer.setData(data)
+    const preserveView = !!(options && options.preserveView)
+    if (preserveView) {
+      this.renderer.scheduleViewRestore(this.view.getTransformData())
+    }
     this.render()
     this.command.addHistory()
     this.emit('update_data', data)
@@ -501,7 +522,8 @@ class MindMap {
     if (this.renderer && this.renderer.textEdit) {
       this.renderer.textEdit.syncEditingTextToNode()
     }
-    let nodeData = this.command.getCopyData()
+    const historyData = this.command.getCopyData()
+    let nodeData = getRenderTreeFromHistorySnapshot(historyData)
     let data = {}
     if (withConfig) {
       data = {

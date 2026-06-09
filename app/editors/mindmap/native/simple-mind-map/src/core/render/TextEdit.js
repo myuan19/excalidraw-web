@@ -259,6 +259,14 @@ export default class TextEdit {
     }
   }
 
+  // 新建节点渲染完成后进入编辑（不经由用户指针事件）
+  openAfterInsert(node) {
+    if (this.mindMap.opt.readonly || this.isShowTextEdit()) {
+      return
+    }
+    this.show({ node, isInserting: true })
+  }
+
   // 显示文本编辑框
   // isInserting：是否是刚创建的节点
   // isFromKeyDown：是否是在按键事件进入的编辑

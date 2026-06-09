@@ -9,6 +9,7 @@ import {
   camelCaseToHyphen,
   getNodeRichTextStyles
 } from '../../../utils'
+import { linkifyRichTextHtml } from '../../../utils/urlAutoLink'
 import { Image as SVGImage, SVG, A, G, Rect, Text } from '@svgdotjs/svg.js'
 import iconsSvg from '../../../svg/icons'
 import { noneRichTextNodeLineHeight } from '../../../constants/constant'
@@ -176,6 +177,7 @@ function createRichTextNode(specifyText) {
   Object.keys(nodeRichTextStyles).forEach(prop => {
     nodeTextStyleList.push([prop, nodeRichTextStyles[prop]])
   })
+  text = linkifyRichTextHtml(text)
   // 测量文本大小
   if (!this.mindMap.commonCaches.measureRichtextNodeTextSizeEl) {
     this.mindMap.commonCaches.measureRichtextNodeTextSizeEl =

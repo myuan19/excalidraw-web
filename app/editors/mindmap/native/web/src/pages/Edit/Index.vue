@@ -4,14 +4,12 @@
     :class="{ isDark: isDark, activeSidebar: activeSidebar }"
   >
     <template v-if="show">
-      <Toolbar v-if="!isZenMode && !isEmbedMode"></Toolbar>
       <Edit></Edit>
     </template>
   </div>
 </template>
 
 <script>
-import Toolbar from './components/Toolbar.vue'
 import Edit from './components/Edit.vue'
 import { mapState, mapMutations } from 'vuex'
 import { getLocalConfig } from '@/api'
@@ -24,7 +22,6 @@ const debugMindMapOpen = (label, data = {}) => {
 
 export default {
   components: {
-    Toolbar,
     Edit
   },
   data() {

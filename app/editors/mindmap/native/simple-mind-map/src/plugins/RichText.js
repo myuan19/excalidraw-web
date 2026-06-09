@@ -14,6 +14,12 @@ import {
   loadImage,
   getSvgNodeVisibleRect
 } from '../utils'
+import {
+  bindRichTextLinkClicks,
+  isWholeUrlText,
+  linkifyRichTextHtml,
+  normalizeUrl
+} from '../utils/urlAutoLink'
 import { richTextSupportStyleList } from '../constants/constant'
 import MindMapNode from '../core/render/node/MindMapNode'
 import { Scope } from 'parchment'
@@ -67,6 +73,7 @@ class RichText {
     this.extendQuill()
     this.appendCss()
     this.bindEvent()
+    bindRichTextLinkClicks(this.mindMap.el)
 
     this.handleDataToRichTextOnInit()
   }
@@ -101,6 +108,13 @@ class RichText {
       .smm-richtext-node-wrap {
         word-break: break-all;
         user-select: none;
+      }
+
+      .smm-richtext-node-wrap a {
+        color: #0984e3;
+        text-decoration: underline;
+        cursor: pointer;
+        pointer-events: all;
       }
 
       .ql-editor .ql-align-left, 
@@ -450,7 +464,7 @@ class RichText {
     if (typeof beforeHideRichTextEdit === 'function') {
       beforeHideRichTextEdit(this)
     }
-    const html = this.getEditText()
+    const html = linkifyRichTextHtml(this.getEditText())
     const list = nodes && nodes.length > 0 ? nodes : [this.node]
     const node = this.node
     this.textEditNode.style.display = 'none'
@@ -543,7 +557,8 @@ class RichText {
         'size',
         'indent',
         'formula',
-        'align'
+        'align',
+        'link'
       ], // 明确指定允许的格式，不包含有序列表，无序列表等
       theme: 'snow'
     })
@@ -590,9 +605,14 @@ class RichText {
       delta.ops.forEach(op => {
         // 过滤出文本内容，过滤掉换行
         if (op.insert && typeof op.insert === 'string') {
+          const insertText = this.formatPasteText(op.insert)
+          const attributes = { ...style }
+          if (isWholeUrlText(insertText)) {
+            attributes.link = normalizeUrl(insertText)
+          }
           ops.push({
-            attributes: { ...style },
-            insert: this.formatPasteText(op.insert)
+            attributes,
+            insert: insertText
           })
         }
       })
@@ -826,7 +846,7 @@ class RichText {
       this.mindMap.execCommand(
         'SET_NODE_TEXT',
         this.node,
-        this.getEditText(),
+        linkifyRichTextHtml(this.getEditText()),
         true
       )
     )

@@ -1,11 +1,15 @@
 <template>
-  <Sidebar ref="sidebar" :title="$t('baseStyle.title')">
+  <Sidebar ref="sidebar" :title="$t('baseStyle.title')" panelKey="baseStyle">
     <div
       class="sidebarContent customScrollbar"
       :class="{ isDark: isDark }"
       v-if="data"
     >
-      <!-- 背景 -->
+      <el-tabs v-model="sectionTab" class="baseStyleSectionTabs">
+        <el-tab-pane
+          :label="$t('baseStyle.sectionCanvas')"
+          name="canvas"
+        >
       <div class="title noTop">{{ $t('baseStyle.background') }}</div>
       <div class="row">
         <el-tabs class="tab" v-model="activeTab">
@@ -125,17 +129,18 @@
           </el-tab-pane>
         </el-tabs>
       </div>
-      <!-- 连线 -->
-      <div class="title">{{ $t('baseStyle.line') }}</div>
+        </el-tab-pane>
+        <el-tab-pane :label="$t('baseStyle.sectionLine')" name="line">
+      <div class="title noTop">{{ $t('baseStyle.line') }}</div>
       <div class="row">
         <div class="rowItem">
           <span class="name">{{ $t('baseStyle.color') }}</span>
-          <span
-            class="block"
-            v-popover:popover
-            :style="{ backgroundColor: style.lineColor }"
-          ></span>
-          <el-popover ref="popover" placement="bottom" trigger="click">
+          <DelayedPopover placement="bottom">
+            <span
+              slot="reference"
+              class="block"
+              :style="{ backgroundColor: style.lineColor }"
+            ></span>
             <Color
               :color="style.lineColor"
               @change="
@@ -144,7 +149,7 @@
                 }
               "
             ></Color>
-          </el-popover>
+          </DelayedPopover>
         </div>
         <div class="rowItem">
           <span class="name">{{ $t('baseStyle.width') }}</span>
@@ -305,11 +310,7 @@
       <div class="title">{{ $t('baseStyle.rainbowLines') }}</div>
       <div class="row">
         <div class="rowItem">
-          <el-popover
-            placement="right"
-            trigger="click"
-            v-model="rainbowLinesPopoverVisible"
-          >
+          <DelayedPopover placement="right">
             <div class="rainbowLinesOptionsBox" :class="{ isDark: isDark }">
               <div
                 class="optionItem"
@@ -342,7 +343,7 @@
               </div>
               <span v-else>{{ $t('baseStyle.notUseRainbowLines') }}</span>
             </div>
-          </el-popover>
+          </DelayedPopover>
         </div>
       </div>
       <!-- 概要连线 -->
@@ -350,12 +351,12 @@
       <div class="row">
         <div class="rowItem">
           <span class="name">{{ $t('baseStyle.color') }}</span>
-          <span
-            class="block"
-            v-popover:popover2
-            :style="{ backgroundColor: style.generalizationLineColor }"
-          ></span>
-          <el-popover ref="popover2" placement="bottom" trigger="click">
+          <DelayedPopover placement="bottom">
+            <span
+              slot="reference"
+              class="block"
+              :style="{ backgroundColor: style.generalizationLineColor }"
+            ></span>
             <Color
               :color="style.generalizationLineColor"
               @change="
@@ -364,7 +365,7 @@
                 }
               "
             ></Color>
-          </el-popover>
+          </DelayedPopover>
         </div>
         <div class="rowItem">
           <span class="name">{{ $t('baseStyle.width') }}</span>
@@ -395,17 +396,21 @@
           </el-select>
         </div>
       </div>
-      <!-- 关联线 -->
-      <div class="title">{{ $t('baseStyle.associativeLine') }}</div>
+        </el-tab-pane>
+        <el-tab-pane
+          :label="$t('baseStyle.sectionAssociative')"
+          name="associative"
+        >
+      <div class="title noTop">{{ $t('baseStyle.associativeLine') }}</div>
       <div class="row">
         <div class="rowItem">
           <span class="name">{{ $t('baseStyle.associativeLineColor') }}</span>
-          <span
-            class="block"
-            v-popover:popover4
-            :style="{ backgroundColor: style.associativeLineColor }"
-          ></span>
-          <el-popover ref="popover4" placement="bottom" trigger="click">
+          <DelayedPopover placement="bottom">
+            <span
+              slot="reference"
+              class="block"
+              :style="{ backgroundColor: style.associativeLineColor }"
+            ></span>
             <Color
               :color="style.associativeLineColor"
               @change="
@@ -414,7 +419,7 @@
                 }
               "
             ></Color>
-          </el-popover>
+          </DelayedPopover>
         </div>
         <div class="rowItem">
           <span class="name">{{ $t('baseStyle.associativeLineWidth') }}</span>
@@ -450,12 +455,12 @@
           <span class="name">{{
             $t('baseStyle.associativeLineActiveColor')
           }}</span>
-          <span
-            class="block"
-            v-popover:popover5
-            :style="{ backgroundColor: style.associativeLineActiveColor }"
-          ></span>
-          <el-popover ref="popover5" placement="bottom" trigger="click">
+          <DelayedPopover placement="bottom">
+            <span
+              slot="reference"
+              class="block"
+              :style="{ backgroundColor: style.associativeLineActiveColor }"
+            ></span>
             <Color
               :color="style.associativeLineActiveColor"
               @change="
@@ -464,7 +469,7 @@
                 }
               "
             ></Color>
-          </el-popover>
+          </DelayedPopover>
         </div>
         <div class="rowItem">
           <span class="name">{{
@@ -563,12 +568,12 @@
       <div class="row">
         <div class="rowItem">
           <span class="name">{{ $t('baseStyle.color') }}</span>
-          <span
-            class="block"
-            v-popover:popover6
-            :style="{ backgroundColor: style.associativeLineTextColor }"
-          ></span>
-          <el-popover ref="popover6" placement="bottom" trigger="click">
+          <DelayedPopover placement="bottom">
+            <span
+              slot="reference"
+              class="block"
+              :style="{ backgroundColor: style.associativeLineTextColor }"
+            ></span>
             <Color
               :color="style.associativeLineTextColor"
               @change="
@@ -577,7 +582,7 @@
                 }
               "
             ></Color>
-          </el-popover>
+          </DelayedPopover>
         </div>
         <div class="rowItem">
           <span class="name">{{ $t('baseStyle.fontSize') }}</span>
@@ -599,110 +604,27 @@
           </el-select>
         </div>
       </div>
-      <!-- 节点边框风格 -->
-      <template v-if="showNodeUseLineStyle">
-        <div class="title">{{ $t('baseStyle.nodeBorderType') }}</div>
-        <div class="row">
+        </el-tab-pane>
+        <el-tab-pane :label="$t('baseStyle.sectionNode')" name="node">
+      <section v-if="showNodeUseLineStyle" class="configSection">
+        <div class="title noTop">{{ $t('baseStyle.nodeBorderType') }}</div>
+        <div class="row noBottom">
           <div class="rowItem">
             <el-checkbox
               v-model="style.nodeUseLineStyle"
-              @change="
-                value => {
-                  update('nodeUseLineStyle', value)
-                }
-              "
+              @change="value => update('nodeUseLineStyle', value)"
               >{{ $t('baseStyle.nodeUseLineStyle') }}</el-checkbox
             >
           </div>
         </div>
-      </template>
-      <!-- 内边距 -->
-      <div class="title">{{ $t('baseStyle.nodePadding') }}</div>
-      <div class="row noBottom">
-        <div class="rowItem">
-          <span class="name">{{ $t('baseStyle.horizontal') }}</span>
-          <el-slider
-            style="width: 200px"
-            v-model="style.paddingX"
-            @change="
-              value => {
-                update('paddingX', value)
-              }
-            "
-          ></el-slider>
-        </div>
-      </div>
-      <div class="row">
-        <div class="rowItem">
-          <span class="name">{{ $t('baseStyle.vertical') }}</span>
-          <el-slider
-            style="width: 200px"
-            v-model="style.paddingY"
-            @change="
-              value => {
-                update('paddingY', value)
-              }
-            "
-          ></el-slider>
-        </div>
-      </div>
-      <!-- 图片 -->
-      <div class="title">{{ $t('baseStyle.image') }}</div>
-      <div class="row noBottom">
-        <div class="rowItem">
-          <span class="name">{{ $t('baseStyle.maximumWidth') }}</span>
-          <el-slider
-            style="width: 140px"
-            v-model="style.imgMaxWidth"
-            :min="10"
-            :max="500"
-            @change="
-              value => {
-                update('imgMaxWidth', value)
-              }
-            "
-          ></el-slider>
-        </div>
-      </div>
-      <div class="row">
-        <div class="rowItem">
-          <span class="name">{{ $t('baseStyle.maximumHeight') }}</span>
-          <el-slider
-            style="width: 140px"
-            v-model="style.imgMaxHeight"
-            :min="10"
-            :max="500"
-            @change="
-              value => {
-                update('imgMaxHeight', value)
-              }
-            "
-          ></el-slider>
-        </div>
-      </div>
-      <!-- 图标 -->
-      <div class="title">{{ $t('baseStyle.icon') }}</div>
-      <div class="row">
-        <div class="rowItem">
-          <span class="name">{{ $t('baseStyle.size') }}</span>
-          <el-slider
-            style="width: 200px"
-            v-model="style.iconSize"
-            :min="12"
-            :max="50"
-            @change="
-              value => {
-                update('iconSize', value)
-              }
-            "
-          ></el-slider>
-        </div>
-      </div>
-      <!-- 二级节点外边距 -->
-      <div class="title">{{ $t('baseStyle.nodeMargin') }}</div>
-      <div class="row column noBottom">
+      </section>
+      <section class="configSection">
+        <div class="title" :class="{ noTop: !showNodeUseLineStyle }">{{
+          $t('baseStyle.nodeMargin')
+        }}</div>
+        <div class="sectionHint">{{ $t('baseStyle.nodeMarginHint') }}</div>
         <el-tabs
-          class="tab"
+          class="tab marginLevelTabs"
           v-model="marginActiveTab"
           @tab-click="initMarginStyle"
         >
@@ -715,63 +637,112 @@
             name="node"
           ></el-tab-pane>
         </el-tabs>
-        <div class="rowItem">
-          <span class="name">{{ $t('baseStyle.horizontal') }}</span>
-          <el-slider
-            :max="200"
-            style="width: 200px"
+        <div class="row noBottom">
+          <ThemeSlider
+            :mindMap="mindMap"
+            :label="$t('baseStyle.horizontal')"
             v-model="style.marginX"
-            @change="
-              value => {
-                updateMargin('marginX', value)
-              }
-            "
-          ></el-slider>
-        </div>
-        <div class="rowItem">
-          <span class="name">{{ $t('baseStyle.vertical') }}</span>
-          <el-slider
             :max="200"
-            style="width: 200px"
+            @input="value => previewMargin('marginX', value)"
+            @change="value => updateMargin('marginX', value)"
+          ></ThemeSlider>
+        </div>
+        <div class="row">
+          <ThemeSlider
+            :mindMap="mindMap"
+            :label="$t('baseStyle.vertical')"
             v-model="style.marginY"
-            @change="
-              value => {
-                updateMargin('marginY', value)
-              }
-            "
-          ></el-slider>
+            :max="200"
+            @input="value => previewMargin('marginY', value)"
+            @change="value => updateMargin('marginY', value)"
+          ></ThemeSlider>
         </div>
-      </div>
-      <!-- 外框内边距 -->
-      <div class="title">{{ $t('baseStyle.outerFramePadding') }}</div>
-      <div class="row noBottom">
-        <div class="rowItem">
-          <span class="name">{{ $t('baseStyle.horizontal') }}</span>
-          <el-slider
-            style="width: 200px"
+      </section>
+      <section class="configSection">
+        <div class="title">{{ $t('baseStyle.nodePadding') }}</div>
+        <div class="row noBottom">
+          <ThemeSlider
+            :mindMap="mindMap"
+            :label="$t('baseStyle.horizontal')"
+            v-model="style.paddingX"
+            @input="value => previewThemeKey('paddingX', value)"
+            @change="value => update('paddingX', value)"
+          ></ThemeSlider>
+        </div>
+        <div class="row">
+          <ThemeSlider
+            :mindMap="mindMap"
+            :label="$t('baseStyle.vertical')"
+            v-model="style.paddingY"
+            @input="value => previewThemeKey('paddingY', value)"
+            @change="value => update('paddingY', value)"
+          ></ThemeSlider>
+        </div>
+      </section>
+      <section class="configSection">
+        <div class="title">{{ $t('baseStyle.image') }}</div>
+        <div class="row noBottom">
+          <ThemeSlider
+            :mindMap="mindMap"
+            :label="$t('baseStyle.maximumWidth')"
+            v-model="style.imgMaxWidth"
+            width="140px"
+            :min="10"
+            :max="500"
+            @input="value => previewThemeKey('imgMaxWidth', value)"
+            @change="value => update('imgMaxWidth', value)"
+          ></ThemeSlider>
+        </div>
+        <div class="row">
+          <ThemeSlider
+            :mindMap="mindMap"
+            :label="$t('baseStyle.maximumHeight')"
+            v-model="style.imgMaxHeight"
+            width="140px"
+            :min="10"
+            :max="500"
+            @input="value => previewThemeKey('imgMaxHeight', value)"
+            @change="value => update('imgMaxHeight', value)"
+          ></ThemeSlider>
+        </div>
+      </section>
+      <section class="configSection">
+        <div class="title">{{ $t('baseStyle.icon') }}</div>
+        <div class="row">
+          <ThemeSlider
+            :mindMap="mindMap"
+            :label="$t('baseStyle.size')"
+            v-model="style.iconSize"
+            :min="12"
+            :max="50"
+            @input="value => previewThemeKey('iconSize', value)"
+            @change="value => update('iconSize', value)"
+          ></ThemeSlider>
+        </div>
+      </section>
+      <section class="configSection configSection--last">
+        <div class="title">{{ $t('baseStyle.outerFramePadding') }}</div>
+        <div class="row noBottom">
+          <ThemeSlider
+            :mindMap="mindMap"
+            :label="$t('baseStyle.horizontal')"
             v-model="outerFramePadding.outerFramePaddingX"
-            @change="
-              value => {
-                updateOuterFramePadding('outerFramePaddingX', value)
-              }
-            "
-          ></el-slider>
+            @input="value => previewOuterFramePaddingKey('outerFramePaddingX', value)"
+            @change="value => updateOuterFramePadding('outerFramePaddingX', value)"
+          ></ThemeSlider>
         </div>
-      </div>
-      <div class="row">
-        <div class="rowItem">
-          <span class="name">{{ $t('baseStyle.vertical') }}</span>
-          <el-slider
-            style="width: 200px"
+        <div class="row">
+          <ThemeSlider
+            :mindMap="mindMap"
+            :label="$t('baseStyle.vertical')"
             v-model="outerFramePadding.outerFramePaddingY"
-            @change="
-              value => {
-                updateOuterFramePadding('outerFramePaddingY', value)
-              }
-            "
-          ></el-slider>
+            @input="value => previewOuterFramePaddingKey('outerFramePaddingY', value)"
+            @change="value => updateOuterFramePadding('outerFramePaddingY', value)"
+          ></ThemeSlider>
         </div>
-      </div>
+      </section>
+        </el-tab-pane>
+      </el-tabs>
     </div>
   </Sidebar>
 </template>
@@ -779,6 +750,7 @@
 <script>
 import Sidebar from './Sidebar.vue'
 import Color from './Color.vue'
+import ThemeSlider from '@/components/ThemeSlider.vue'
 import {
   lineWidthList,
   lineStyleList,
@@ -801,13 +773,31 @@ import {
   supportRootLineKeepSameInCurveLayouts,
   rainbowLinesOptions
 } from '@/config/constant'
+import sidebarPanelDebug from '@/mixins/sidebarPanelDebug'
+import sidebarHistorySync from '@/mixins/sidebarHistorySync'
+import {
+  applyRainbowLinesConfig,
+  commitOuterFramePadding,
+  commitThemeField,
+  commitThemeMargin,
+  normalizeThemeFieldValue,
+  persistThemeConfig,
+  previewOuterFramePadding,
+  previewThemeField,
+  previewThemeMargin,
+  readThemeMargin
+} from '@/utils/editHistory'
 
 // 基础样式
 export default {
+  name: 'BaseStyle',
+  mixins: [sidebarPanelDebug, sidebarHistorySync],
   components: {
     Sidebar,
     Color,
-    ImgUpload
+    ImgUpload,
+    ThemeSlider,
+    DelayedPopover: () => import('@/components/DelayedPopover.vue')
   },
   props: {
     data: {
@@ -827,6 +817,7 @@ export default {
       fontSizeList,
       lineStyleMap,
       activeTab: 'color',
+      sectionTab: 'canvas',
       marginActiveTab: 'second',
       style: {
         backgroundColor: '',
@@ -863,7 +854,6 @@ export default {
         marginY: 0,
         nodeUseLineStyle: false
       },
-      rainbowLinesPopoverVisible: false,
       curRainbowLineColorList: null,
       currentLayout: '', // 当前结构
       outerFramePadding: {
@@ -934,15 +924,23 @@ export default {
     }
   },
   watch: {
-    activeSidebar(val) {
+    sectionTab(val) {
+      if (val === 'node') {
+        this.initMarginStyle()
+      }
+    },
+    activeSidebar(val, oldVal) {
+      this.logSidebarPanelWatch('baseStyle', val, oldVal)
       if (val === 'baseStyle') {
         this.$refs.sidebar.show = true
         this.initStyle()
         this.initRainbowLines()
         this.initOuterFramePadding()
         this.currentLayout = this.mindMap.getLayout()
+        this.logSidebarPanelWatch('baseStyle', val, oldVal, { branch: 'show-true' })
       } else {
         this.$refs.sidebar.show = false
+        this.logSidebarPanelWatch('baseStyle', val, oldVal, { branch: 'show-false' })
       }
     },
     lineStyleListShow: {
@@ -958,6 +956,7 @@ export default {
     }
   },
   mounted() {
+    this.logSidebarPanelMounted('baseStyle')
     if (this.activeSidebar === 'baseStyle' && this.$refs.sidebar) {
       this.$refs.sidebar.show = true
       this.initStyle()
@@ -967,6 +966,7 @@ export default {
     }
   },
   created() {
+    this.logSidebarPanelCreated('baseStyle')
     this.$bus.$on('setData', this.onSetData)
   },
   beforeDestroy() {
@@ -980,9 +980,20 @@ export default {
       }, 0)
     },
 
+    syncFromEditHistory() {
+      if (!this.mindMap || !this.data) return
+      this.data.theme.config = this.mindMap.getCustomThemeConfig()
+      this.initStyle()
+      this.initRainbowLines()
+      this.initOuterFramePadding()
+      this.currentLayout = this.mindMap.getLayout()
+    },
+
     // 初始样式
     initStyle() {
+      const marginKeys = ['marginX', 'marginY']
       Object.keys(this.style).forEach(key => {
+        if (marginKeys.includes(key)) return
         this.style[key] = this.mindMap.getThemeConfig(key)
         if (key === 'backgroundImage' && this.style[key] === 'none') {
           this.style[key] = ''
@@ -1007,40 +1018,35 @@ export default {
         'outerFramePaddingX'
       )
       this.outerFramePadding.outerFramePaddingY = this.mindMap.getConfig(
-        'outerFramePaddingX'
+        'outerFramePaddingY'
       )
     },
 
     // margin初始值
     initMarginStyle() {
-      ;['marginX', 'marginY'].forEach(key => {
-        this.style[key] = this.mindMap.getThemeConfig()[this.marginActiveTab][
-          key
-        ]
-      })
+      const margin = readThemeMargin(this.mindMap, this.marginActiveTab)
+      this.style.marginX = Number(margin.marginX ?? 0)
+      this.style.marginY = Number(margin.marginY ?? 0)
     },
 
-    // 更新配置
+    previewThemeKey(key, value) {
+      const normalized = normalizeThemeFieldValue(key, value)
+      this.style[key] = normalized
+      previewThemeField(this.mindMap, key, normalized)
+    },
+
+    // 更新配置（松手提交，写入一条历史）
     update(key, value) {
-      if (key === 'backgroundImage' && value === 'none') {
-        this.style[key] = ''
-      } else {
-        this.style[key] = value
-      }
-      this.data.theme.config[key] = value
+      const normalized = normalizeThemeFieldValue(key, value)
+      this.style[key] = normalized
+      this.data.theme.config[key] = normalized
       this.$bus.$emit('showLoading')
-      this.mindMap.setThemeConfig(this.data.theme.config)
-      storeData({
-        theme: {
-          template: this.mindMap.getTheme(),
-          config: this.data.theme.config
-        }
-      })
+      commitThemeField(this.mindMap, key, normalized)
+      persistThemeConfig(this.mindMap, this.data.theme.config)
     },
 
     // 更新彩虹线条配置
     updateRainbowLinesConfig(item) {
-      this.rainbowLinesPopoverVisible = false
       this.curRainbowLineColorList = item.list || null
       let newConfig = null
       if (item.list) {
@@ -1054,35 +1060,36 @@ export default {
         }
       }
       this.configData.rainbowLinesConfig = newConfig
-      this.mindMap.rainbowLines.updateRainLinesConfig(newConfig)
+      applyRainbowLinesConfig(this.mindMap, newConfig)
       storeConfig(this.configData)
     },
 
-    // 更新外框
+    previewOuterFramePaddingKey(prop, value) {
+      this.outerFramePadding[prop] = value
+      previewOuterFramePadding(this.mindMap, { [prop]: value })
+    },
+
     updateOuterFramePadding(prop, value) {
       this.outerFramePadding[prop] = value
       this.configData[prop] = value
-      this.mindMap.updateConfig({
-        [prop]: value
-      })
+      commitOuterFramePadding(this.mindMap, { [prop]: value })
       storeConfig(this.configData)
-      this.mindMap.render()
     },
 
-    // 设置margin
+    previewMargin(type, value) {
+      this.style[type] = value
+      previewThemeMargin(this.mindMap, this.marginActiveTab, type, value)
+    },
+
     updateMargin(type, value) {
       this.style[type] = value
-      if (!this.data.theme.config[this.marginActiveTab]) {
-        this.data.theme.config[this.marginActiveTab] = {}
-      }
-      this.data.theme.config[this.marginActiveTab][type] = value
-      this.mindMap.setThemeConfig(this.data.theme.config)
-      storeData({
-        theme: {
-          template: this.mindMap.getTheme(),
-          config: this.data.theme.config
+      commitThemeMargin(this.mindMap, this.marginActiveTab, type, value)
+      if (this.data.theme && this.data.theme.config) {
+        if (!this.data.theme.config[this.marginActiveTab]) {
+          this.data.theme.config[this.marginActiveTab] = {}
         }
-      })
+        this.data.theme.config[this.marginActiveTab][type] = value
+      }
     },
 
     useBg(bg) {
@@ -1093,9 +1100,67 @@ export default {
 </script>
 
 <style lang="less" scoped>
+.baseStyleSectionTabs {
+  /deep/ .el-tabs__header {
+    margin-bottom: 12px;
+  }
+
+  /deep/ .el-tabs__item {
+    font-size: 13px;
+    padding: 0 10px;
+  }
+
+  /deep/ .el-tabs__content {
+    overflow: visible;
+  }
+}
+
+.configSection {
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid #eceef2;
+
+  &--last {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+}
+
+.marginLevelTabs {
+  margin-bottom: 8px;
+}
+
+.sliderWrap {
+  width: 100%;
+  min-height: 32px;
+
+  /deep/ .el-slider {
+    flex: 1;
+    min-width: 120px;
+  }
+}
+
+.sectionHint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #888;
+  margin-bottom: 10px;
+}
+
 .sidebarContent {
   padding: 20px;
   padding-top: 10px;
+
+  &.isDark {
+    .configSection {
+      border-bottom-color: rgba(255, 255, 255, 0.08);
+    }
+
+    .sectionHint {
+      color: hsla(0, 0%, 100%, 0.55);
+    }
+  }
 
   &.isDark {
     .title {

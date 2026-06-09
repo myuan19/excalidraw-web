@@ -1,5 +1,5 @@
 <template>
-  <Sidebar ref="sidebar" :title="$t('richTextToolbar.title') || '文本格式'">
+  <Sidebar ref="sidebar" :title="$t('richTextToolbar.title') || '文本格式'" panelKey="textFormat">
     <div class="sidebarContent customScrollbar" :class="{ isDark: isDark }">
       <div class="toolbarSwitchRow">
         <el-checkbox v-model="showFloatingToolbarOnSelection">
@@ -50,7 +50,7 @@
 
         <div class="divider"></div>
 
-        <el-popover placement="left" trigger="hover">
+        <DelayedPopover placement="left">
           <div class="fontOptionsList" :class="{ isDark: isDark }">
             <div
               class="fontOptionItem"
@@ -71,9 +71,9 @@
               {{ getFontFamilyLabel(formatInfo.font) }}
             </span>
           </div>
-        </el-popover>
+        </DelayedPopover>
 
-        <el-popover placement="left" trigger="hover">
+        <DelayedPopover placement="left">
           <div class="fontOptionsList" :class="{ isDark: isDark }">
             <div
               class="fontOptionItem"
@@ -95,20 +95,20 @@
             <span class="label">{{ $t('richTextToolbar.fontSize') || '字号' }}</span>
             <span class="valueText">{{ formatInfo.size || '' }}</span>
           </div>
-        </el-popover>
+        </DelayedPopover>
 
         <div class="divider"></div>
 
-        <el-popover placement="left" trigger="hover">
+        <DelayedPopover placement="left">
           <Color :color="fontColor" @change="changeFontColor"></Color>
           <div class="formatRow" slot="reference" @mousedown.prevent.stop>
             <span class="icon iconfont iconzitiyanse" :style="{ color: formatInfo.color }"></span>
             <span class="label">{{ $t('richTextToolbar.color') || '字色' }}</span>
             <span class="colorPreview" :style="{ backgroundColor: formatInfo.color || 'transparent' }"></span>
           </div>
-        </el-popover>
+        </DelayedPopover>
 
-        <el-popover placement="left" trigger="hover">
+        <DelayedPopover placement="left">
           <Color
             :color="fontBackgroundColor"
             @change="changeFontBackgroundColor"
@@ -118,11 +118,11 @@
             <span class="label">{{ $t('richTextToolbar.backgroundColor') || '背景色' }}</span>
             <span class="colorPreview" :style="{ backgroundColor: formatInfo.background || 'transparent' }"></span>
           </div>
-        </el-popover>
+        </DelayedPopover>
 
         <div class="divider"></div>
 
-        <el-popover placement="left" trigger="hover">
+        <DelayedPopover placement="left">
           <div class="fontOptionsList" :class="{ isDark: isDark }">
             <div
               class="fontOptionItem"
@@ -140,7 +140,7 @@
             <span class="label">{{ $t('richTextToolbar.textAlign') || '对齐' }}</span>
             <span class="valueText">{{ getAlignLabel(formatInfo.align) }}</span>
           </div>
-        </el-popover>
+        </DelayedPopover>
 
         <div class="divider"></div>
 
@@ -163,9 +163,15 @@ import Sidebar from './Sidebar.vue'
 import Color from './Color.vue'
 import { fontFamilyList, fontSizeList, alignList } from '@/config'
 import { mapMutations, mapState } from 'vuex'
+import sidebarPanelDebug from '@/mixins/sidebarPanelDebug'
 
 export default {
-  components: { Sidebar, Color },
+  mixins: [sidebarPanelDebug],
+  components: {
+    Sidebar,
+    Color,
+    DelayedPopover: () => import('@/components/DelayedPopover.vue')
+  },
   props: {
     mindMap: { type: Object }
   },
@@ -205,21 +211,26 @@ export default {
     }
   },
   watch: {
-    activeSidebar(val) {
+    activeSidebar(val, oldVal) {
+      this.logSidebarPanelWatch('textFormat', val, oldVal)
       if (val === 'textFormat') {
         this.$refs.sidebar.show = true
         this.syncActiveNode()
+        this.logSidebarPanelWatch('textFormat', val, oldVal, { branch: 'show-true' })
       } else {
         this.$refs.sidebar.show = false
+        this.logSidebarPanelWatch('textFormat', val, oldVal, { branch: 'show-false' })
       }
     }
   },
   mounted() {
+    this.logSidebarPanelMounted('textFormat')
     if (this.activeSidebar === 'textFormat' && this.$refs.sidebar) {
       this.$refs.sidebar.show = true
     }
   },
   created() {
+    this.logSidebarPanelCreated('textFormat')
     this.$bus.$on('rich_text_selection_change', this.onRichTextSelectionChange)
     this.$bus.$on('node_active', this.onNodeActive)
     this.syncActiveNode()

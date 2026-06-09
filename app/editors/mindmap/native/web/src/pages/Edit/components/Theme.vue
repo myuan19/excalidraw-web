@@ -1,5 +1,5 @@
 <template>
-  <Sidebar ref="sidebar" :title="$t('theme.title')">
+  <Sidebar ref="sidebar" :title="$t('theme.title')" panelKey="theme">
     <div class="themeGroupList" :class="{ isDark: isDark }">
       <el-tabs v-model="activeName" class="tabBox">
         <el-tab-pane
@@ -33,9 +33,13 @@ import { storeData } from '@/api'
 import { mapState, mapMutations } from 'vuex'
 import themeImgMap from 'simple-mind-map-plugin-themes/themeImgMap'
 import themeList from 'simple-mind-map-plugin-themes/themeList'
+import sidebarPanelDebug from '@/mixins/sidebarPanelDebug'
+import sidebarHistorySync from '@/mixins/sidebarHistorySync'
 
 // 主题
 export default {
+  name: 'Theme',
+  mixins: [sidebarPanelDebug, sidebarHistorySync],
   components: {
     Sidebar
   },
@@ -82,22 +86,33 @@ export default {
     }
   },
   watch: {
-    activeSidebar(val) {
-      if (val === 'theme') {
-        this.theme = this.mindMap.getTheme()
-        this.$refs.sidebar.show = true
-      } else {
-        this.$refs.sidebar.show = false
-      }
+    activeSidebar(val, oldVal) {
+      this.logSidebarPanelWatch('theme', val, oldVal)
+      this.$nextTick(() => {
+        if (!this.$refs.sidebar) {
+          this.logSidebarPanelWatch('theme', val, oldVal, { branch: 'missing-ref' })
+          return
+        }
+        if (val === 'theme') {
+          this.theme = this.mindMap.getTheme()
+          this.$refs.sidebar.show = true
+          this.logSidebarPanelWatch('theme', val, oldVal, { branch: 'show-true' })
+        } else if (this.$refs.sidebar.show) {
+          this.$refs.sidebar.show = false
+          this.logSidebarPanelWatch('theme', val, oldVal, { branch: 'show-false' })
+        }
+      })
     }
   },
   mounted() {
+    this.logSidebarPanelMounted('theme')
     if (this.activeSidebar === 'theme' && this.$refs.sidebar) {
       this.theme = this.mindMap.getTheme()
       this.$refs.sidebar.show = true
     }
   },
   created() {
+    this.logSidebarPanelCreated('theme')
     this.initGroup()
     this.theme = this.mindMap.getTheme()
     this.mindMap.on('view_theme_change', this.handleViewThemeChange)
@@ -107,6 +122,15 @@ export default {
   },
   methods: {
     ...mapMutations(['setLocalConfig']),
+
+    syncFromEditHistory() {
+      if (!this.mindMap) return
+      this.theme = this.mindMap.getTheme()
+      if (this.data && this.data.theme) {
+        this.data.theme.config = this.mindMap.getCustomThemeConfig()
+      }
+      this.handleDark()
+    },
 
     handleViewThemeChange() {
       this.theme = this.mindMap.getTheme()
@@ -252,11 +276,6 @@ export default {
 
       &:last-of-type {
         border: none;
-      }
-
-      &:hover {
-        box-shadow: 0 1px 2px -2px rgba(0, 0, 0, 0.16),
-          0 3px 6px 0 rgba(0, 0, 0, 0.12), 0 5px 12px 4px rgba(0, 0, 0, 0.09);
       }
 
       &.active {

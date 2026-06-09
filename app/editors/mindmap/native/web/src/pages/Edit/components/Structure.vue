@@ -1,5 +1,5 @@
 <template>
-  <Sidebar ref="sidebar" :title="$t('strusture.title')">
+  <Sidebar ref="sidebar" :title="$t('strusture.title')" panelKey="structure">
     <div class="layoutGroupList" :class="{ isDark: isDark }">
       <div
         class="laytouGroup"
@@ -29,9 +29,13 @@ import { storeData } from '@/api'
 import { mapState } from 'vuex'
 import { layoutImgMap } from '@/config/constant.js'
 import { layoutGroupList } from '@/config'
+import sidebarPanelDebug from '@/mixins/sidebarPanelDebug'
+import sidebarHistorySync from '@/mixins/sidebarHistorySync'
 
 // 结构
 export default {
+  name: 'Structure',
+  mixins: [sidebarPanelDebug, sidebarHistorySync],
   components: {
     Sidebar
   },
@@ -66,22 +70,41 @@ export default {
     }
   },
   watch: {
-    activeSidebar(val) {
-      if (val === 'structure') {
-        this.layout = this.mindMap.getLayout()
-        this.$refs.sidebar.show = true
-      } else {
-        this.$refs.sidebar.show = false
-      }
+    activeSidebar(val, oldVal) {
+      this.logSidebarPanelWatch('structure', val, oldVal)
+      this.$nextTick(() => {
+        if (!this.$refs.sidebar) {
+          this.logSidebarPanelWatch('structure', val, oldVal, { branch: 'missing-ref' })
+          return
+        }
+        if (val === 'structure') {
+          this.layout = this.mindMap.getLayout()
+          this.$refs.sidebar.show = true
+          this.logSidebarPanelWatch('structure', val, oldVal, { branch: 'show-true' })
+        } else if (this.$refs.sidebar.show) {
+          this.$refs.sidebar.show = false
+          this.logSidebarPanelWatch('structure', val, oldVal, { branch: 'show-false' })
+        }
+      })
     }
   },
+  created() {
+    this.logSidebarPanelCreated('structure')
+  },
   mounted() {
+    this.logSidebarPanelMounted('structure')
     if (this.activeSidebar === 'structure' && this.$refs.sidebar) {
       this.layout = this.mindMap.getLayout()
       this.$refs.sidebar.show = true
     }
   },
   methods: {
+    syncFromEditHistory() {
+      if (this.mindMap) {
+        this.layout = this.mindMap.getLayout()
+      }
+    },
+
     useLayout(layout) {
       this.layout = layout
       this.mindMap.setLayout(layout)
@@ -133,11 +156,6 @@ export default {
         margin-bottom: 12px;
         padding: 5px;
         border-radius: 5px;
-
-        &:hover {
-          box-shadow: 0 1px 2px -2px rgba(0, 0, 0, 0.16),
-            0 3px 6px 0 rgba(0, 0, 0, 0.12), 0 5px 12px 4px rgba(0, 0, 0, 0.09);
-        }
 
         &.active {
           border: 1px solid #409eff;

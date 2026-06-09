@@ -2,6 +2,7 @@ import Vue from 'vue'
 import Vuex from 'vuex'
 import { storeLocalConfig } from '@/api'
 import { mindmapDevDebug } from '@/utils/mindmapDevDebug'
+import { sidebarDebugSetActiveSidebar } from '@/utils/sidebarDebug'
 
 Vue.use(Vuex)
 
@@ -133,8 +134,10 @@ const store = new Vuex.Store({
 
     // 设置当前显示的侧边栏
     setActiveSidebar(state, data) {
-      state.previousActiveSidebar = state.activeSidebar
+      const previous = state.activeSidebar
+      state.previousActiveSidebar = previous
       state.activeSidebar = data
+      sidebarDebugSetActiveSidebar(previous, data, 'mutation')
     },
 
 

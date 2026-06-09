@@ -1,5 +1,5 @@
 <template>
-  <Sidebar ref="sidebar" :title="$t('formulaSidebar.title')">
+  <Sidebar ref="sidebar" :title="$t('formulaSidebar.title')" panelKey="formulaSidebar">
     <div class="box" :class="{ isDark: isDark }">
       <div class="formulaInputBox">
         <el-input
@@ -34,8 +34,11 @@
 import Sidebar from './Sidebar.vue'
 import { mapState, mapMutations } from 'vuex'
 import { formulaList } from '@/config/constant'
+import sidebarPanelDebug from '@/mixins/sidebarPanelDebug'
+import { sidebarDebugSetActiveSidebar } from '@/utils/sidebarDebug'
 
 export default {
+  mixins: [sidebarPanelDebug],
   components: {
     Sidebar
   },
@@ -58,21 +61,26 @@ export default {
     })
   },
   watch: {
-    activeSidebar(val) {
+    activeSidebar(val, oldVal) {
+      this.logSidebarPanelWatch('formulaSidebar', val, oldVal)
       if (val === 'formulaSidebar') {
         this.$refs.sidebar.show = true
+        this.logSidebarPanelWatch('formulaSidebar', val, oldVal, { branch: 'show-true' })
       } else {
         this.$refs.sidebar.show = false
+        this.logSidebarPanelWatch('formulaSidebar', val, oldVal, { branch: 'show-false' })
       }
     }
   },
   created() {
+    this.logSidebarPanelCreated('formulaSidebar')
     this.$bus.$on('node_active', this.handleNodeActive)
   },
   beforeDestroy() {
     this.$bus.$off('node_active', this.handleNodeActive)
   },
   mounted() {
+    this.logSidebarPanelMounted('formulaSidebar')
     if (this.activeSidebar === 'formulaSidebar' && this.$refs.sidebar) {
       this.$refs.sidebar.show = true
     }
@@ -100,6 +108,7 @@ export default {
         this.activeNodes.length <= 0 &&
         this.activeSidebar === 'formulaSidebar'
       ) {
+        sidebarDebugSetActiveSidebar('formulaSidebar', null, 'FormulaSidebar.noActiveNode')
         this.setActiveSidebar(null)
       }
     },

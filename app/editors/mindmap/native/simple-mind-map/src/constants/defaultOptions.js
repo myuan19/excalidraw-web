@@ -363,7 +363,7 @@ export const defaultOpt = {
     width: 2
   },
   // 节点拖拽放置目标命中区域灵敏度，越大越容易识别为交换/移动
-  dragDropTargetSensitivity: 1.08,
+  dragDropTargetSensitivity: 1.04,
   // 节点拖拽吸附阈值，单位为屏幕像素
   dragSnapThreshold: 10,
   // 节点拖拽时的透明度配置

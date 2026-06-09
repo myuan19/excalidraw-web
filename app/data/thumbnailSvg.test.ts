@@ -553,4 +553,37 @@ describe("MindMap SVG thumbnails", () => {
     expect(normalized).not.toContain("&lt;p&gt;");
     expect(normalized).not.toContain("&lt;br&gt;");
   });
+
+  it("keeps native rich text when outer frames use nested groups in exported SVG", () => {
+    const svg =
+      '<svg width="900" height="540">' +
+      '<g class="smm-container" transform="matrix(1,0,0,1,0,0)">' +
+      '<g class="smm-line-container"><path d="M100 50L200 50" stroke="#888"/></g>' +
+      '<g class="smm-node-container">' +
+      '<g class="smm-node" transform="matrix(1,0,0,1,180,250)">' +
+      '<path class="smm-node-shape" d="M0 0H154V45H0Z" fill="#fff"></path>' +
+      '<foreignObject width="118" height="29">' +
+      '<style>* { margin: 0; padding: 0; box-sizing: border-box; }</style>' +
+      '<div class="smm-richtext-node-wrap" xmlns="http://www.w3.org/1999/xhtml">中心主题</div>' +
+      "</foreignObject>" +
+      "</g>" +
+      "</g>" +
+      '<g class="smm-outer-frame-container">' +
+      '<rect width="220" height="120" fill="rgba(9,132,227,0.05)"></rect>' +
+      '<g><text>分组</text></g>' +
+      "</g>" +
+      "</g></svg>";
+
+    const normalized = normalizeMindMapThumbnailSvg(svg);
+
+    expect(normalized).toContain("smm-richtext-node-wrap");
+    expect(normalized).toContain("中心主题");
+    expect(normalized).toContain("* { margin: 0;");
+    expect(normalized).toContain("smm-node-shape");
+    expect(normalized).not.toContain("smm-outer-frame-container");
+    expect(normalized).not.toMatch(/<text\b[^>]*>\* \{ margin: 0;/);
+    expect((normalized.match(/<\/g>/g) ?? []).length).toBe(
+      (normalized.match(/<g\b/g) ?? []).length,
+    );
+  });
 });

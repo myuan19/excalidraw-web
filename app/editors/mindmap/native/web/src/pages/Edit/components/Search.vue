@@ -75,6 +75,7 @@
 <script>
 import { mapState } from 'vuex'
 import { isUndef, getTextFromHtml } from 'simple-mind-map/src/utils/index'
+import { sidebarDebugBus } from '@/utils/sidebarDebug'
 
 // 搜索替换
 export default {
@@ -153,6 +154,11 @@ export default {
     },
 
     showSearch() {
+      sidebarDebugBus('closeSideBar emit', {
+        source: 'Search.showSearch',
+        targetKey: null,
+        note: 'closes all visible sidebars'
+      })
       this.$bus.$emit('closeSideBar')
       this.show = true
       this.$refs.searchInputRef.focus()

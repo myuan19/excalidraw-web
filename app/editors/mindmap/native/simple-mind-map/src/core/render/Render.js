@@ -35,7 +35,8 @@ import {
   throttle,
   debounce,
   checkClipboardReadEnable,
-  isNodeNotNeedRenderData
+  isNodeNotNeedRenderData,
+  getRenderTreeFromHistorySnapshot
 } from '../../utils'
 import { shapeList } from './node/Shape'
 import { lineStyleProps } from '../../theme/default'
@@ -99,6 +100,8 @@ class Render {
     // 防抖定时器
     this.emitNodeActiveEventTimer = null
     this.renderTimer = null
+    // 非布局类重渲染结束后恢复视口（渲染管线唯一出口 onRenderEnd，含 hasWaitRendering 链式渲染）
+    this.pendingViewRestore = null
     // 根节点
     this.root = null
     // 文本编辑框，需要再bindEvent之前实例化，否则单击事件只能触发隐藏文本编辑框，而无法保存文本修改
@@ -542,6 +545,13 @@ class Render {
     return false
   }
 
+  // 在随后完成的渲染管线结束时恢复视口
+  scheduleViewRestore(viewData) {
+    if (viewData) {
+      this.pendingViewRestore = viewData
+    }
+  }
+
   // 渲染完毕的操作
   onRenderEnd() {
     this.renderCallbackList.forEach(fn => {
@@ -551,6 +561,11 @@ class Render {
     this.reRender = false
     this.renderCallbackList = []
     this.renderSourceList = []
+    if (this.pendingViewRestore) {
+      const preservedView = this.pendingViewRestore
+      this.pendingViewRestore = null
+      this.mindMap.view.setTransformData(preservedView, { silent: true })
+    }
     this.mindMap.emit('node_tree_render_end')
   }
 
@@ -776,12 +791,54 @@ class Render {
   // 前进回退
   backForward(type, step) {
     this.mindMap.execCommand('CLEAR_ACTIVE_NODE')
+    const viewData = this.mindMap.view.getTransformData()
+    const prevLayout = this.mindMap.getLayout()
     const data = this.mindMap.command[type](step)
     if (data) {
-      this.renderTree = data
+      const historySnapshot = simpleDeepClone(data)
+      const themeConfig = historySnapshot.themeConfig
+      const theme = historySnapshot.theme
+      const layout = historySnapshot.layout
+      const outerFramePaddingX = historySnapshot.outerFramePaddingX
+      const outerFramePaddingY = historySnapshot.outerFramePaddingY
+      const rainbowLinesConfig = historySnapshot.rainbowLinesConfig
+      this.renderTree = getRenderTreeFromHistorySnapshot(historySnapshot)
+      if (theme) {
+        this.mindMap.opt.theme = theme
+      }
+      if (themeConfig) {
+        this.mindMap.opt.themeConfig = themeConfig
+        this.mindMap.initTheme()
+      }
+      const layoutChanged = layout && layout !== prevLayout
+      if (layoutChanged) {
+        this.mindMap.opt.layout = layout
+        this.mindMap.view.reset()
+        this.mindMap.renderer.setLayout()
+      }
+      if (outerFramePaddingX !== undefined) {
+        this.mindMap.updateConfig({
+          outerFramePaddingX,
+          outerFramePaddingY
+        })
+      }
+      if (rainbowLinesConfig) {
+        this.mindMap.updateConfig({ rainbowLinesConfig })
+        if (this.mindMap.rainbowLines) {
+          this.mindMap.rainbowLines.updateRainLinesConfig(rainbowLinesConfig)
+        }
+      }
+      if (!layoutChanged) {
+        this.scheduleViewRestore(viewData)
+      }
       this.mindMap.render()
+      this.mindMap.emit('data_change', historySnapshot)
+      this.mindMap.emit(
+        'edit_history_restored',
+        this.mindMap.command.activeHistoryIndex,
+        this.mindMap.command.history.length
+      )
     }
-    this.mindMap.emit('data_change', data)
   }
 
   // 获取创建新节点的行为

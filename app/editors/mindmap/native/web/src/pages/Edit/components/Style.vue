@@ -1,11 +1,22 @@
 <template>
-  <Sidebar ref="sidebar" :title="$t('style.title')">
+  <Sidebar ref="sidebar" :title="$t('style.title')" panelKey="nodeStyle">
     <div
       class="styleBox"
       :class="{ isDark: isDark }"
-      v-if="activeNodes.length > 0"
     >
-      <div class="sidebarContent customScrollbar">
+      <NodePreviewStage
+        :mindMap="mindMap"
+        :isDark="isDark"
+        :show="activeStyleNodes.length > 0"
+      >
+        <div class="nodePreviewNode" :style="nodePreviewStyle">
+          {{ nodePreviewText }}
+        </div>
+      </NodePreviewStage>
+      <div
+        class="sidebarContent customScrollbar"
+        v-if="activeStyleNodes.length > 0"
+      >
         <!-- 文字 -->
         <div class="title noTop">{{ $t('style.text') }}</div>
         <div class="row">
@@ -68,13 +79,16 @@
         <div class="row">
           <div class="btnGroup">
             <el-tooltip :content="$t('style.color')" placement="bottom">
-              <div class="styleBtn" v-popover:popover>
-                A
-                <span
-                  class="colorShow"
-                  :style="{ backgroundColor: style.color || '#eee' }"
-                ></span>
-              </div>
+              <DelayedPopover placement="bottom">
+                <div slot="reference" class="styleBtn">
+                  A
+                  <span
+                    class="colorShow"
+                    :style="{ backgroundColor: style.color || '#eee' }"
+                  ></span>
+                </div>
+                <Color :color="style.color" @change="changeFontColor"></Color>
+              </DelayedPopover>
             </el-tooltip>
             <el-tooltip :content="$t('style.addFontWeight')" placement="bottom">
               <div
@@ -102,55 +116,52 @@
               :content="$t('style.textDecoration')"
               placement="bottom"
             >
-              <div
-                class="styleBtn u"
-                :style="{ textDecoration: style.textDecoration || 'none' }"
-                v-popover:popover2
-              >
-                U
-              </div>
+              <DelayedPopover placement="bottom">
+                <div
+                  slot="reference"
+                  class="styleBtn u"
+                  :style="{ textDecoration: style.textDecoration || 'none' }"
+                >
+                  U
+                </div>
+                <el-radio-group
+                  size="mini"
+                  v-model="style.textDecoration"
+                  @change="update('textDecoration')"
+                >
+                  <el-radio-button label="none">{{
+                    $t('style.none')
+                  }}</el-radio-button>
+                  <el-radio-button label="underline">{{
+                    $t('style.underline')
+                  }}</el-radio-button>
+                  <el-radio-button label="line-through">{{
+                    $t('style.lineThrough')
+                  }}</el-radio-button>
+                  <el-radio-button label="overline">{{
+                    $t('style.overline')
+                  }}</el-radio-button>
+                </el-radio-group>
+              </DelayedPopover>
             </el-tooltip>
           </div>
-          <el-popover ref="popover" placement="bottom" trigger="hover">
-            <Color :color="style.color" @change="changeFontColor"></Color>
-          </el-popover>
-          <el-popover ref="popover2" placement="bottom" trigger="hover">
-            <el-radio-group
-              size="mini"
-              v-model="style.textDecoration"
-              @change="update('textDecoration')"
-            >
-              <el-radio-button label="none">{{
-                $t('style.none')
-              }}</el-radio-button>
-              <el-radio-button label="underline">{{
-                $t('style.underline')
-              }}</el-radio-button>
-              <el-radio-button label="line-through">{{
-                $t('style.lineThrough')
-              }}</el-radio-button>
-              <el-radio-button label="overline">{{
-                $t('style.overline')
-              }}</el-radio-button>
-            </el-radio-group>
-          </el-popover>
         </div>
         <!-- 边框 -->
         <div class="title">{{ $t('style.border') }}</div>
         <div class="row">
           <div class="rowItem">
             <span class="name">{{ $t('style.color') }}</span>
-            <span
-              class="block"
-              v-popover:popover3
-              :style="{ width: '80px', backgroundColor: style.borderColor }"
-            ></span>
-            <el-popover ref="popover3" placement="bottom" trigger="hover">
+            <DelayedPopover placement="bottom">
+              <span
+                slot="reference"
+                class="block"
+                :style="{ width: '80px', backgroundColor: style.borderColor }"
+              ></span>
               <Color
                 :color="style.borderColor"
                 @change="changeBorderColor"
               ></Color>
-            </el-popover>
+            </DelayedPopover>
           </div>
           <div class="rowItem">
             <span class="name">{{ $t('style.style') }}</span>
@@ -237,14 +248,14 @@
         <div class="row">
           <div class="rowItem">
             <span class="name">{{ $t('style.color') }}</span>
-            <span
-              class="block"
-              v-popover:popover4
-              :style="{ backgroundColor: style.fillColor }"
-            ></span>
-            <el-popover ref="popover4" placement="bottom" trigger="hover">
+            <DelayedPopover placement="bottom">
+              <span
+                slot="reference"
+                class="block"
+                :style="{ backgroundColor: style.fillColor }"
+              ></span>
               <Color :color="style.fillColor" @change="changeFillColor"></Color>
-            </el-popover>
+            </DelayedPopover>
             <span class="name" style="margin-left: 20px;">{{
               $t('style.gradientStyle')
             }}</span>
@@ -257,28 +268,28 @@
         <div class="row" v-if="style.gradientStyle">
           <div class="rowItem">
             <span class="name">{{ $t('style.startColor') }}</span>
-            <span
-              class="block"
-              v-popover:popover6
-              :style="{ backgroundColor: style.startColor }"
-            ></span>
-            <el-popover ref="popover6" placement="bottom" trigger="hover">
+            <DelayedPopover placement="bottom">
+              <span
+                slot="reference"
+                class="block"
+                :style="{ backgroundColor: style.startColor }"
+              ></span>
               <Color
                 :color="style.startColor"
                 @change="changeStartColor"
               ></Color>
-            </el-popover>
+            </DelayedPopover>
           </div>
           <div class="rowItem">
             <span class="name">{{ $t('style.endColor') }}</span>
-            <span
-              class="block"
-              v-popover:popover7
-              :style="{ backgroundColor: style.endColor }"
-            ></span>
-            <el-popover ref="popover7" placement="bottom" trigger="hover">
+            <DelayedPopover placement="bottom">
+              <span
+                slot="reference"
+                class="block"
+                :style="{ backgroundColor: style.endColor }"
+              ></span>
               <Color :color="style.endColor" @change="changeEndColor"></Color>
-            </el-popover>
+            </DelayedPopover>
           </div>
           <div class="rowItem">
             <span class="name">{{ $t('style.direction') }}</span>
@@ -345,14 +356,14 @@
         <div class="row">
           <div class="rowItem">
             <span class="name">{{ $t('style.color') }}</span>
-            <span
-              class="block"
-              v-popover:popover5
-              :style="{ width: '80px', backgroundColor: style.lineColor }"
-            ></span>
-            <el-popover ref="popover5" placement="bottom" trigger="hover">
+            <DelayedPopover placement="bottom">
+              <span
+                slot="reference"
+                class="block"
+                :style="{ width: '80px', backgroundColor: style.lineColor }"
+              ></span>
               <Color :color="style.lineColor" @change="changeLineColor"></Color>
-            </el-popover>
+            </DelayedPopover>
           </div>
           <div class="rowItem">
             <span class="name">{{ $t('style.style') }}</span>
@@ -442,21 +453,25 @@
         <div class="row noBottom">
           <div class="rowItem">
             <span class="name">{{ $t('style.horizontal') }}</span>
-            <el-slider
-              style="width: 200px"
+            <ThemeSlider
+              :mindMap="mindMap"
+              width="200px"
               v-model="style.paddingX"
+              @input="previewNodeStyle('paddingX')"
               @change="update('paddingX')"
-            ></el-slider>
+            ></ThemeSlider>
           </div>
         </div>
         <div class="row">
           <div class="rowItem">
             <span class="name">{{ $t('style.vertical') }}</span>
-            <el-slider
-              style="width: 200px"
+            <ThemeSlider
+              :mindMap="mindMap"
+              width="200px"
               v-model="style.paddingY"
+              @input="previewNodeStyle('paddingY')"
               @change="update('paddingY')"
-            ></el-slider>
+            ></ThemeSlider>
           </div>
         </div>
         <!-- 节点图片布局 -->
@@ -504,10 +519,10 @@
           </div>
         </div>
       </div>
-    </div>
-    <div class="tipBox" v-else>
-      <div class="tipIcon iconfont icontianjiazijiedian"></div>
-      <div class="tipText">{{ $t('style.selectNodeTip') }}</div>
+      <div class="tipBox" v-else>
+        <div class="tipIcon iconfont icontianjiazijiedian"></div>
+        <div class="tipText">{{ $t('style.selectNodeTip') }}</div>
+      </div>
     </div>
   </Sidebar>
 </template>
@@ -527,12 +542,28 @@ import {
   alignList
 } from '@/config'
 import { mapState } from 'vuex'
+import sidebarPanelDebug from '@/mixins/sidebarPanelDebug'
+import sidebarHistorySync from '@/mixins/sidebarHistorySync'
+import { sidebarDebug } from '@/utils/sidebarDebug'
+import ThemeSlider from '@/components/ThemeSlider.vue'
+import NodePreviewStage from '@/components/sidebar/NodePreviewStage.vue'
+import { buildNodeDomPreviewStyleFromState } from '@/utils/nodePreviewStyle'
+import {
+  commitNodeStylesOnNodes,
+  commitNodeStyleOnNodes,
+  previewNodeStyleOnNodes
+} from '@/utils/editHistory'
 
 // 节点样式设置
 export default {
+  name: 'Style',
+  mixins: [sidebarPanelDebug, sidebarHistorySync],
   components: {
     Sidebar,
-    Color
+    Color,
+    ThemeSlider,
+    NodePreviewStage,
+    DelayedPopover: () => import('@/components/DelayedPopover.vue')
   },
   props: {
     mindMap: {
@@ -621,52 +652,154 @@ export default {
     },
     alignList() {
       return alignList[this.$i18n.locale] || alignList.zh
+    },
+    activeStyleNodes() {
+      return this.getStyleTargetNodes(this.activeNodes)
+    },
+    nodePreviewText() {
+      const node = this.getCurrentStyleTargetNode()
+      if (!node) {
+        return ''
+      }
+      const text =
+        node.nodeData &&
+        node.nodeData.data &&
+        node.nodeData.data.text
+      return this.stripHtml(text || '').slice(0, 18) || '(空)'
+    },
+    nodePreviewStyle() {
+      return buildNodeDomPreviewStyleFromState(this.style, {
+        isDark: this.isDark
+      })
     }
   },
   watch: {
-    activeSidebar(val) {
-      if (val === 'nodeStyle') {
-        this.$refs.sidebar.show = true
-      } else {
-        this.$refs.sidebar.show = false
-      }
+    activeSidebar(val, oldVal) {
+      this.logSidebarPanelWatch('nodeStyle', val, oldVal)
+      this.$nextTick(() => {
+        if (!this.$refs.sidebar) {
+          this.logSidebarPanelWatch('nodeStyle', val, oldVal, { branch: 'missing-ref' })
+          return
+        }
+        if (val === 'nodeStyle') {
+          this.$refs.sidebar.show = true
+          this.logSidebarPanelWatch('nodeStyle', val, oldVal, { branch: 'show-true' })
+        } else if (this.$refs.sidebar.show) {
+          this.$refs.sidebar.show = false
+          this.logSidebarPanelWatch('nodeStyle', val, oldVal, { branch: 'show-false' })
+        }
+      })
     }
   },
   mounted() {
-    if (this.activeSidebar === 'nodeStyle' && this.$refs.sidebar) {
-      this.$refs.sidebar.show = true
-    }
+    const mountStartedAt = performance.now()
+    this.logSidebarPanelMounted('nodeStyle')
+    sidebarDebug('Style mounted start', {
+      activeSidebar: this.activeSidebar || null
+    })
+    this.$nextTick(() => {
+      try {
+        if (this.activeSidebar === 'nodeStyle' && this.$refs.sidebar) {
+          this.$refs.sidebar.show = true
+        }
+        this.activeNodes = this.mindMap.renderer
+          ? [...(this.mindMap.renderer.activeNodeList || [])]
+          : []
+        this.initNodeStyle()
+        sidebarDebug('Style mounted done', {
+          activeSidebar: this.activeSidebar || null,
+          activeNodes: this.activeNodes.length,
+          ms: Math.round(performance.now() - mountStartedAt)
+        })
+      } catch (error) {
+        sidebarDebug('Style mounted error', {
+          message: error && error.message,
+          stack: error && error.stack
+        })
+        throw error
+      }
+    })
   },
   created() {
+    this.logSidebarPanelCreated('nodeStyle')
     this.$bus.$on('node_active', this.onNodeActive)
   },
   beforeDestroy() {
     this.$bus.$off('node_active', this.onNodeActive)
   },
   methods: {
+    syncFromEditHistory() {
+      if (!this.mindMap) return
+      this.activeNodes = this.mindMap.renderer
+        ? [...(this.mindMap.renderer.activeNodeList || [])]
+        : []
+      this.initNodeStyle()
+    },
+
+    getStyleTargetNodes(nodes = []) {
+      return (nodes || []).filter(node => {
+        return node && !node.isRoot && !node.isGeneralization
+      })
+    },
+
+    getCurrentStyleTargetNode() {
+      return this.activeStyleNodes.length > 0 ? this.activeStyleNodes[0] : null
+    },
+
     // 监听节点激活事件
     onNodeActive(...args) {
-      this.$nextTick(() => {
-        this.activeNodes = [...args[1]]
-        this.initNodeStyle()
+      const startedAt = performance.now()
+      sidebarDebug('Style onNodeActive', {
+        argCount: args.length,
+        nodeCount: Array.isArray(args[1]) ? args[1].length : 0
       })
+      this.$nextTick(() => {
+        try {
+          this.activeNodes = Array.isArray(args[1]) ? [...args[1]] : []
+          this.initNodeStyle()
+          sidebarDebug('Style onNodeActive done', {
+            activeNodes: this.activeNodes.length,
+            ms: Math.round(performance.now() - startedAt)
+          })
+        } catch (error) {
+          sidebarDebug('Style onNodeActive error', {
+            message: error && error.message,
+            stack: error && error.stack
+          })
+          throw error
+        }
+      })
+    },
+
+    stripHtml(value) {
+      return String(value || '')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/p\s*>/gi, '\n')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .trim()
     },
 
     // 初始节点样式
     initNodeStyle() {
-      if (this.activeNodes.length <= 0) {
+      const node = this.getCurrentStyleTargetNode()
+      if (!node) {
         return
       }
       Object.keys(this.style).forEach(item => {
-        this.style[item] = this.activeNodes[0].getStyle(item, false)
+        this.style[item] = node.getStyle(item, false)
       })
       this.initLinearGradientDir()
     },
 
     // 初始化渐变方向样式
     initLinearGradientDir() {
-      const startDir = this.activeNodes[0].getStyle('startDir', false)
-      const endDir = this.activeNodes[0].getStyle('endDir', false)
+      const node = this.getCurrentStyleTargetNode()
+      if (!node) {
+        return
+      }
+      const startDir = node.getStyle('startDir', false)
+      const endDir = node.getStyle('endDir', false)
       const target = this.linearGradientDirList.find(item => {
         return (
           item.start[0] === startDir[0] &&
@@ -680,22 +813,30 @@ export default {
       }
     },
 
-    // 修改样式
+    previewNodeStyle(prop) {
+      previewNodeStyleOnNodes(
+        this.activeStyleNodes,
+        prop,
+        this.style[prop]
+      )
+    },
+
+    // 修改样式（松手或选择后提交一条历史）
     update(prop) {
       if (prop === 'linearGradientDir') {
         const target = this.linearGradientDirList.find(item => {
           return item.value === this.style.linearGradientDir
         })
-        this.activeNodes.forEach(node => {
-          node.setStyles({
-            startDir: [...target.start],
-            endDir: [...target.end]
-          })
+        commitNodeStylesOnNodes(this.activeStyleNodes, {
+          startDir: [...target.start],
+          endDir: [...target.end]
         })
       } else {
-        this.activeNodes.forEach(node => {
-          node.setStyle(prop, this.style[prop])
-        })
+        commitNodeStyleOnNodes(
+          this.activeStyleNodes,
+          prop,
+          this.style[prop]
+        )
       }
     },
 
@@ -790,21 +931,28 @@ export default {
   .tab {
     flex-grow: 0;
     flex-shrink: 0;
-    padding: 0 20px;
+    width: 100%;
   }
 }
 
+@import '@/styles/nodePreview.less';
+
 .tipBox {
-  width: 100%;
-  height: 100%;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
   align-items: center;
   color: #666;
+  padding: 24px 20px 8px;
+  box-sizing: border-box;
 
   .tipIcon {
-    font-size: 100px;
+    font-size: 52px;
+  }
+
+  .tipText {
+    margin-top: 6px;
+    font-size: 13px;
   }
 }
 

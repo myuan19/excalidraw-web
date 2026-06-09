@@ -42,7 +42,13 @@ export default {
     notUseRainbowLines: '不使用彩虹線條',
     outerFramePadding: '外框內距',
     associativeLineStyle: '關聯線樣式',
-    builtInBackgroundImage: '內置背景圖片'
+    builtInBackgroundImage: '內置背景圖片',
+    sectionCanvas: '畫布',
+    sectionLine: '連線',
+    sectionNode: '節點',
+    sectionAssociative: '關聯線',
+    nodeMarginHint:
+      '調整同級節點之間的水平與垂直距離，鬆手後生效，作用於當前主題全域佈局。'
   },
   setting: {
     title: '設置',
@@ -231,7 +237,9 @@ export default {
     title: '大綱',
     nodeDefaultText: '分支節點',
     print: '打印',
-    fullscreen: '全屏'
+    fullscreen: '全屏',
+    expandAll: '全部展開',
+    collapseAll: '全部收起'
   },
   scale: {
     zoomIn: '放大',
@@ -275,6 +283,11 @@ export default {
     arrowDirStart: '頭部',
     arrowDirEnd: '尾部',
     selectNodeTip: '請選擇壹個節點',
+    currentNodeStyle: '當前節點',
+    globalLayoutStyle: '全域布局',
+    previewNodeDefault: '主題',
+    siblingSpacing: '同級節點間距',
+    siblingSpacingHint: '調整同級節點之間的水平與垂直距離（全域布局，對所有節點生效）',
     openLineFlow: '開啓流動效果',
     lineFlowDuration: '一個流動周期的時間',
     forward: '正向',

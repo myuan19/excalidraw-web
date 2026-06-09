@@ -42,7 +42,13 @@ export default {
     notUseRainbowLines: 'Không sử dụng đường cầu vồng',
     outerFramePadding: 'Đệm khung ngoài',
     associativeLineStyle: 'Kiểu đường liên kết',
-    builtInBackgroundImage: 'Hình nền tích hợp'
+    builtInBackgroundImage: 'Hình nền tích hợp',
+    sectionCanvas: 'Canvas',
+    sectionLine: 'Đường nối',
+    sectionNode: 'Nút',
+    sectionAssociative: 'Liên kết',
+    nodeMarginHint:
+      'Điều chỉnh khoảng cách ngang/dọc giữa các nút cùng cấp. Áp dụng khi thả chuột cho bố cục chủ đề toàn cục.'
   },
   setting: {
     title: 'Cài đặt',
@@ -235,7 +241,9 @@ export default {
     title: 'Dàn bài',
     nodeDefaultText: 'Nhánh nút',
     print: 'In',
-    fullscreen: 'Toàn màn hình'
+    fullscreen: 'Toàn màn hình',
+    expandAll: 'Mở rộng tất cả',
+    collapseAll: 'Thu gọn tất cả'
   },
   scale: {
     zoomIn: 'Phóng to',
@@ -280,6 +288,12 @@ export default {
     arrowDirEnd: 'Kết thúc',
     direction: 'Hướng',
     selectNodeTip: 'Vui lòng chọn một nút',
+    currentNodeStyle: 'Nút hiện tại',
+    globalLayoutStyle: 'Bố cục toàn cục',
+    previewNodeDefault: 'Chủ đề',
+    siblingSpacing: 'Khoảng cách nút cùng cấp',
+    siblingSpacingHint:
+      'Điều chỉnh khoảng cách ngang và dọc giữa các nút cùng cấp (bố cục toàn cục)',
     openLineFlow: 'Mở luồng đường kẻ',
     lineFlowDuration: 'Thời lượng luồng đường kẻ',
     forward: 'Tiến tới',

@@ -8,6 +8,8 @@ class TouchEvent {
   constructor({ mindMap }) {
     this.mindMap = mindMap
     this.touchesNum = 0
+    /** 当前单指手势是否起始于画布内；仅此时才合成 mouse/click，避免与画布外原生 click 重复 */
+    this.gestureInMindMap = false
     this.singleTouchstartEvent = null
     this.clickNum = 0
     this.touchStartScaleView = null
@@ -44,9 +46,12 @@ class TouchEvent {
     this.touchStartScaleView = null
     if (this.touchesNum === 1) {
       let touch = e.touches[0]
-      if (this.isInMindMap(touch.target)) {
-        e.preventDefault()
+      this.gestureInMindMap = this.isInMindMap(touch.target)
+      if (!this.gestureInMindMap) {
+        this.singleTouchstartEvent = null
+        return
       }
+      e.preventDefault()
       if (this.lastTouchStartPosition) {
         this.lastTouchStartDistance = getTwoPointDistance(
           this.lastTouchStartPosition.x,
@@ -60,19 +65,22 @@ class TouchEvent {
         y: touch.clientY
       }
       this.singleTouchstartEvent = touch
-      DBG('touchstart -> mousedown | client:', touch.clientX, touch.clientY)
       this.dispatchMouseEvent('mousedown', touch.target, touch)
+      return
     }
+    this.gestureInMindMap = false
+    this.singleTouchstartEvent = null
   }
 
   // 手指移动事件
   onTouchmove(e) {
     let len = e.touches.length
     if (len === 1) {
-      let touch = e.touches[0]
-      if (this.isInMindMap(touch.target)) {
-        e.preventDefault()
+      if (!this.gestureInMindMap) {
+        return
       }
+      let touch = e.touches[0]
+      e.preventDefault()
       this.dispatchMouseEvent('mousemove', touch.target, touch)
     } else if (len === 2) {
       let { disableTouchZoom, minTouchZoomScale, maxTouchZoomScale } =
@@ -143,12 +151,10 @@ class TouchEvent {
   // 手指松开事件
   onTouchend(e) {
     const touch = e.changedTouches && e.changedTouches[0]
-    if (touch && this.isInMindMap(touch.target)) {
+    const shouldSynthesize = this.touchesNum === 1 && this.gestureInMindMap
+    if (shouldSynthesize) {
       e.preventDefault()
-    }
-    DBG('touchend -> mouseup | client:', touch ? touch.clientX : 'none', touch ? touch.clientY : 'none')
-    this.dispatchMouseEvent('mouseup', touch ? touch.target : e.target, touch)
-    if (this.touchesNum === 1) {
+      this.dispatchMouseEvent('mouseup', touch ? touch.target : e.target, touch)
       // 模拟双击事件
       this.clickNum++
       setTimeout(() => {
@@ -173,6 +179,7 @@ class TouchEvent {
       }
     }
     this.touchesNum = 0
+    this.gestureInMindMap = false
     this.singleTouchstartEvent = null
     this.touchStartScaleView = null
   }

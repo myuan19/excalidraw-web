@@ -228,6 +228,15 @@ export const copyRenderTree = (tree, root, removeActiveState = false) => {
   return tree
 }
 
+export {
+  TRANSIENT_RENDER_TREE_NODE_KEYS,
+  HISTORY_RENDER_TREE_NODE_KEYS,
+  HISTORY_SNAPSHOT_META_KEYS,
+  sanitizeRenderTreeSnapshot,
+  getRenderTreeFromHistorySnapshot,
+  getHistoryTreeFingerprint
+} from './historySnapshot'
+
 //  复制节点树数据
 export const copyNodeTree = (
   tree,

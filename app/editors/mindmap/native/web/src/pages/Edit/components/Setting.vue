@@ -1,5 +1,5 @@
 <template>
-  <Sidebar ref="sidebar" :title="$t('setting.title')">
+  <Sidebar ref="sidebar" :title="$t('setting.title')" panelKey="setting">
     <div
       class="sidebarContent customScrollbar"
       :class="{ isDark: isDark }"
@@ -376,8 +376,10 @@ import Sidebar from './Sidebar.vue'
 import { storeConfig } from '@/api'
 import { mapState, mapMutations } from 'vuex'
 import Color from './Color.vue'
+import sidebarPanelDebug from '@/mixins/sidebarPanelDebug'
 
 export default {
+  mixins: [sidebarPanelDebug],
   components: {
     Sidebar,
     Color
@@ -436,17 +438,21 @@ export default {
     })
   },
   watch: {
-    activeSidebar(val) {
+    activeSidebar(val, oldVal) {
+      this.logSidebarPanelWatch('setting', val, oldVal)
       if (val === 'setting') {
         this.$refs.sidebar.show = true
         this.initConfig()
         this.initWatermark()
+        this.logSidebarPanelWatch('setting', val, oldVal, { branch: 'show-true' })
       } else {
         this.$refs.sidebar.show = false
+        this.logSidebarPanelWatch('setting', val, oldVal, { branch: 'show-false' })
       }
     }
   },
   mounted() {
+    this.logSidebarPanelMounted('setting')
     if (this.activeSidebar === 'setting' && this.$refs.sidebar) {
       this.$refs.sidebar.show = true
       this.initConfig()
@@ -454,6 +460,7 @@ export default {
     }
   },
   created() {
+    this.logSidebarPanelCreated('setting')
     this.initLoacalConfig()
     this.$bus.$on('toggleOpenNodeRichText', this.onToggleOpenNodeRichText)
   },

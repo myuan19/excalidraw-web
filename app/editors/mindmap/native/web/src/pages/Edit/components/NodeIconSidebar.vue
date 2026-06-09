@@ -1,5 +1,5 @@
 <template>
-  <Sidebar ref="sidebar" :title="$t('nodeIconSidebar.title')">
+  <Sidebar ref="sidebar" :title="$t('nodeIconSidebar.title')" panelKey="nodeIconSidebar">
     <div class="box" :class="{ isDark: isDark }">
       <el-tabs v-model="activeName">
         <el-tab-pane
@@ -61,8 +61,10 @@ import { nodeIconList } from 'simple-mind-map/src/svg/icons'
 import { mergerIconList } from 'simple-mind-map/src/utils/index'
 import icon from '@/config/icon'
 import image from '@/config/image'
+import sidebarPanelDebug from '@/mixins/sidebarPanelDebug'
 
 export default {
+  mixins: [sidebarPanelDebug],
   components: {
     Sidebar
   },
@@ -77,6 +79,7 @@ export default {
     }
   },
   mounted() {
+    this.logSidebarPanelMounted('nodeIconSidebar')
     if (this.mindMap && this.mindMap.opt) {
       this.mindMap.opt.iconList = [...icon]
     }
@@ -92,15 +95,19 @@ export default {
     })
   },
   watch: {
-    activeSidebar(val) {
+    activeSidebar(val, oldVal) {
+      this.logSidebarPanelWatch('nodeIconSidebar', val, oldVal)
       if (val === 'nodeIconSidebar') {
         this.$refs.sidebar.show = true
+        this.logSidebarPanelWatch('nodeIconSidebar', val, oldVal, { branch: 'show-true' })
       } else {
         this.$refs.sidebar.show = false
+        this.logSidebarPanelWatch('nodeIconSidebar', val, oldVal, { branch: 'show-false' })
       }
     }
   },
   created() {
+    this.logSidebarPanelCreated('nodeIconSidebar')
     this.$bus.$on('node_active', this.handleNodeActive)
   },
   beforeDestroy() {

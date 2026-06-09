@@ -1,5 +1,5 @@
 <template>
-  <Sidebar ref="sidebar" :title="$t('shortcutKey.title')">
+  <Sidebar ref="sidebar" :title="$t('shortcutKey.title')" panelKey="shortcutKey">
     <div class="box" :class="{ isDark: isDark }">
       <div v-for="item in shortcutKeyList" :key="item.type">
         <div class="title">{{ item.type }}</div>
@@ -23,9 +23,11 @@
 import Sidebar from './Sidebar.vue'
 import { shortcutKeyList } from '@/config'
 import { mapState } from 'vuex'
+import sidebarPanelDebug from '@/mixins/sidebarPanelDebug'
 
 // 快捷键
 export default {
+  mixins: [sidebarPanelDebug],
   components: {
     Sidebar
   },
@@ -43,15 +45,22 @@ export default {
     }
   },
   watch: {
-    activeSidebar(val) {
+    activeSidebar(val, oldVal) {
+      this.logSidebarPanelWatch('shortcutKey', val, oldVal)
       if (val === 'shortcutKey') {
         this.$refs.sidebar.show = true
+        this.logSidebarPanelWatch('shortcutKey', val, oldVal, { branch: 'show-true' })
       } else {
         this.$refs.sidebar.show = false
+        this.logSidebarPanelWatch('shortcutKey', val, oldVal, { branch: 'show-false' })
       }
     }
   },
+  created() {
+    this.logSidebarPanelCreated('shortcutKey')
+  },
   mounted() {
+    this.logSidebarPanelMounted('shortcutKey')
     if (this.activeSidebar === 'shortcutKey' && this.$refs.sidebar) {
       this.$refs.sidebar.show = true
     }

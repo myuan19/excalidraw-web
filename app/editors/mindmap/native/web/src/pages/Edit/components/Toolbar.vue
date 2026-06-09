@@ -584,7 +584,8 @@ export default {
     font-family: PingFangSC-Regular, PingFang SC;
     font-weight: 400;
     color: rgba(26, 26, 26, 0.8);
-    z-index: 2;
+    /* 低于侧栏(10100+)，且与 Edit 同层叠上下文内渲染 */
+    z-index: 100;
 
     .toolbarBlock {
       display: flex;

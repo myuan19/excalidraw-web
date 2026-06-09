@@ -166,7 +166,8 @@ class View {
   }
 
   //  动态设置变换状态数据
-  setTransformData(viewData) {
+  // silent：仅恢复矩阵，不派发 scale/translate/view_data_change（用于渲染管线内视口恢复）
+  setTransformData(viewData, { silent = false } = {}) {
     if (viewData) {
       Object.keys(viewData.state).forEach(prop => {
         this[prop] = viewData.state[prop]
@@ -174,9 +175,11 @@ class View {
       this.mindMap.draw.transform({
         ...viewData.transform
       })
-      this.mindMap.emit('view_data_change', this.getTransformData())
-      this.emitEvent('scale')
-      this.emitEvent('translate')
+      if (!silent) {
+        this.mindMap.emit('view_data_change', this.getTransformData())
+        this.emitEvent('scale')
+        this.emitEvent('translate')
+      }
     }
   }
 

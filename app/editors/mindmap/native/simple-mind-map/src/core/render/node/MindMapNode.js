@@ -670,13 +670,11 @@ class MindMapNode {
     } else {
       callback()
     }
-    // 手动插入的节点立即获得焦点并且开启编辑模式
+    // 手动插入的节点：走文本编辑入口，不伪造 dblclick 事件
     if (this.nodeData.inserting) {
       delete this.nodeData.inserting
       this.active()
-      // setTimeout(() => {
-      this.mindMap.emit('node_dblclick', this, null, true)
-      // }, 0)
+      this.mindMap.renderer.textEdit.openAfterInsert(this)
     }
   }
 

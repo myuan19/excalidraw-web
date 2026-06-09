@@ -511,13 +511,8 @@ class Drag extends Base {
         this.offsetX = rectWidth / 2
         this.offsetY = rectHeight / 2
       } else {
-        // 否则克隆当前的节点
-        this.clone = node.group.clone()
-        // 删除展开收起按钮元素
-        const expandEl = this.clone.findOne('.smm-expand-btn')
-        if (expandEl) {
-          expandEl.remove()
-        }
+        // 否则克隆当前节点的可见子树，拖动时能看到整支内容一起移动
+        this.clone = this.createDragSubtreeClone(node)
         this.mindMap.otherDraw.add(this.clone)
         if (typeof handleDragCloneNode === 'function') {
           handleDragCloneNode(this.clone)
@@ -549,6 +544,53 @@ class Drag extends Base {
         node.startDrag()
       })
     }
+  }
+
+  createDragSubtreeClone(node) {
+    const root = this.mindMap.otherDraw.group()
+    const content = root.group()
+    content.translate(-node.left, -node.top)
+    this.collectVisibleDragCloneItems(node).forEach(item => {
+      content.add(item)
+    })
+    return root
+  }
+
+  collectVisibleDragCloneItems(node) {
+    const list = []
+    if (!node || !node.group) {
+      return list
+    }
+    const nodeClone = node.group.clone()
+    this.removeDragCloneControls(nodeClone)
+    list.push(nodeClone)
+    if (node.getData('expand') === false) {
+      return list
+    }
+    node._lines.forEach(line => {
+      if (line) {
+        list.push(line.clone())
+      }
+    })
+    node.children.forEach(child => {
+      list.push(...this.collectVisibleDragCloneItems(child))
+    })
+    return list
+  }
+
+  removeDragCloneControls(clone) {
+    ;[
+      '.smm-expand-btn',
+      '.smm-quick-create-child-btn',
+      '.smm-node-add',
+      '.smm-hover-node'
+    ].forEach(selector => {
+      clone.find(selector).forEach(item => {
+        item.remove()
+      })
+    })
+    clone.removeClass('active')
+    clone.removeClass('smm-node-highlight')
   }
 
   //  移除克隆节点

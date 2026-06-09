@@ -836,9 +836,14 @@ router.post("/:id/restore/:archiveId", (req, res) => {
   writeFileSync(currentPath(req.params.id), JSON.stringify(parsed), "utf-8");
 
   const now = new Date().toISOString();
-  db.prepare("UPDATE files SET updated_at = ? WHERE id = ?").run(now, req.params.id);
+  const sha = hashSceneDataJson(parsed);
+  db.prepare("UPDATE files SET updated_at = ?, content_sha256 = ? WHERE id = ?").run(
+    now,
+    sha,
+    req.params.id,
+  );
 
-  res.json({ ok: true, restored_from: req.params.archiveId });
+  res.json({ ok: true, restored_from: req.params.archiveId, content_sha256: sha });
 });
 
 router.delete("/:id/archives/:archiveId", (req, res) => {

@@ -42,7 +42,13 @@ export default {
     notUseRainbowLines: 'Not use rainbow lines',
     outerFramePadding: 'Outer frame padding',
     associativeLineStyle: 'Associative line style',
-    builtInBackgroundImage: 'Built in background image'
+    builtInBackgroundImage: 'Built in background image',
+    sectionCanvas: 'Canvas',
+    sectionLine: 'Lines',
+    sectionNode: 'Nodes',
+    sectionAssociative: 'Assoc. lines',
+    nodeMarginHint:
+      'Adjust horizontal and vertical spacing between sibling nodes. Applied on release to the global theme layout.'
   },
   setting: {
     title: 'Setting',
@@ -236,7 +242,9 @@ export default {
     title: 'Outline',
     nodeDefaultText: 'Branch node',
     print: 'Print',
-    fullscreen: 'Fullscreen'
+    fullscreen: 'Fullscreen',
+    expandAll: 'Expand all',
+    collapseAll: 'Collapse all'
   },
   scale: {
     zoomIn: 'Zoom in',
@@ -281,6 +289,12 @@ export default {
     arrowDirEnd: 'End',
     direction: 'Direction',
     selectNodeTip: 'Please select a node',
+    currentNodeStyle: 'Current node',
+    globalLayoutStyle: 'Global layout',
+    previewNodeDefault: 'Topic',
+    siblingSpacing: 'Sibling spacing',
+    siblingSpacingHint:
+      'Adjust horizontal and vertical distance between sibling nodes (global layout)',
     openLineFlow: 'Open line flow',
     lineFlowDuration: 'Line flow duration',
     forward: 'Forward',

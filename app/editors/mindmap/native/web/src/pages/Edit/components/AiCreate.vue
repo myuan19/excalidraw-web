@@ -601,6 +601,37 @@ export default {
       return getStrWithBrFromHtml(node.getData('note') || '').trim()
     },
 
+    getNodeStylePromptSummary(node) {
+      if (!node || !node.getStyle) {
+        return '{}'
+      }
+      const keys = [
+        'shape',
+        'fillColor',
+        'borderColor',
+        'borderWidth',
+        'borderRadius',
+        'color',
+        'fontFamily',
+        'fontSize',
+        'fontWeight',
+        'fontStyle',
+        'textDecoration',
+        'textAlign',
+        'lineColor',
+        'lineWidth',
+        'lineDasharray'
+      ]
+      const summary = {}
+      keys.forEach(key => {
+        const value = node.getStyle(key, false)
+        if (value !== undefined && value !== null && value !== '') {
+          summary[key] = value
+        }
+      })
+      return JSON.stringify(summary)
+    },
+
     getAiEditScope() {
       return normalizeAiEditScope(this.organizeEditScope)
     },
@@ -1298,6 +1329,9 @@ export default {
       const currentRichText = this.escapePromptXml(
         JSON.stringify(currentRichTextJson)
       )
+      const currentStyle = this.escapePromptXml(
+        this.getNodeStylePromptSummary(node)
+      )
       const note = this.escapePromptXml(this.getNodeNoteText(node))
       const childrenContext = permission.canEditChildren
         ? buildAiChildrenContext(node, this.organizeContextCharLimit)
@@ -1352,6 +1386,7 @@ export default {
   <id>current</id>
   <text>${currentText}</text>
   <rich_text_json>${currentRichText}</rich_text_json>
+  <current_node_style>${currentStyle}</current_node_style>
   <note>${note}</note>
 ${childrenSummaryXml.trimEnd()}
 </selected_node>
@@ -1377,6 +1412,8 @@ ${contextReferenceXml}
   如果 user_requirement 只是要求调整样式、格式、颜色、高亮、下划线、缩进或空格，不要改写、删除或新增任何文本内容。
   纯样式修改时必须保留原文；需要修改哪个节点，就输出该节点完整原文对应的 text.paragraphs/spans，只在对应 span 上增减样式字段。
   如果要求“全部/所有/整体”应用某种样式，必须对 edit_scope 范围内每个需要保留的节点分别输出 update_current 或 update_node，并给每个对应 span 都写上该样式字段。
+  视觉参考只使用 selected_node.current_node_style 和当前选中节点 current；不要根据整张图或子节点推断目标样式。需要预览/渲染效果时，只把 current 当作唯一目标节点。
+  如果 user_requirement 要求“保持当前样式/参考当前节点样式”，应尽量保留 current_node_style 对应的视觉特征，只调整用户明确要求修改的文字或富文本样式字段。
   新增、删除、更新子节点等能力只以 operation_protocol.permission_rules 和 operations 为准。
 </edit_intent_rules>
 <format_reference>

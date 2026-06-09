@@ -11,6 +11,7 @@
       id="mindMapContainer"
       ref="mindMapContainer"
     ></div>
+    <Toolbar v-if="!isZenMode && !isEmbedMode"></Toolbar>
     <Count :mindMap="mindMap" v-if="!isZenMode && !isEmbedMode"></Count>
     <Navigator v-if="mindMap" :mindMap="mindMap"></Navigator>
     <NavigatorToolbar
@@ -18,15 +19,18 @@
       v-if="!isZenMode && !isEmbedMode"
     ></NavigatorToolbar>
     <OutlineSidebar
-      v-if="mindMap && !isEmbedMode && activeSidebar === 'outline'"
+      v-if="mindMap && !isEmbedMode && mountedSidebars.outline"
+      v-show="activeSidebar === 'outline' && !isOutlineEdit"
       :mindMap="mindMap"
     ></OutlineSidebar>
     <Style
-      v-if="mindMap && !isZenMode && !isEmbedMode && activeSidebar === 'nodeStyle'"
+      v-if="mindMap && !isZenMode && !isEmbedMode && mountedSidebars.nodeStyle"
+      v-show="activeSidebar === 'nodeStyle'"
       :mindMap="mindMap"
     ></Style>
     <BaseStyle
-      v-if="mindMap && !isEmbedMode && activeSidebar === 'baseStyle'"
+      v-if="mindMap && !isEmbedMode && mountedSidebars.baseStyle"
+      v-show="activeSidebar === 'baseStyle'"
       :data="mindMapData"
       :configData="mindMapConfig"
       :mindMap="mindMap"
@@ -36,12 +40,14 @@
       :mindMap="mindMap"
     ></AssociativeLineStyle>
     <Theme
-      v-if="mindMap && !isEmbedMode && activeSidebar === 'theme'"
+      v-if="mindMap && !isEmbedMode && mountedSidebars.theme"
+      v-show="activeSidebar === 'theme'"
       :data="mindMapData"
       :mindMap="mindMap"
     ></Theme>
     <Structure
-      v-if="mindMap && !isEmbedMode && activeSidebar === 'structure'"
+      v-if="mindMap && !isEmbedMode && mountedSidebars.structure"
+      v-show="activeSidebar === 'structure'"
       :mindMap="mindMap"
     ></Structure>
     <ShortcutKey
@@ -102,7 +108,8 @@
       :mindMap="mindMap"
     ></TextFormatSidebar>
     <AiSidebar
-      v-if="mindMap && enableAi && !isEmbedMode"
+      v-if="mindMap && enableAi && !isEmbedMode && mountedSidebars.ai"
+      v-show="activeSidebar === 'ai'"
       :mindMap="mindMap"
     ></AiSidebar>
     <AiCreate
@@ -148,12 +155,13 @@ import NodeBase64ImageStorage from 'simple-mind-map/src/plugins/NodeBase64ImageS
 import Themes from 'simple-mind-map-plugin-themes'
 // 协同编辑插件
 // import Cooperate from 'simple-mind-map/src/plugins/Cooperate.js'
+import Toolbar from './Toolbar.vue'
 import Count from './Count.vue'
 import NavigatorToolbar from './NavigatorToolbar.vue'
 import Contextmenu from './Contextmenu.vue'
 import RichTextToolbar from './RichTextToolbar.vue'
 import NodeNoteContentShow from './NodeNoteContentShow.vue'
-import { getData, getConfig, storeData } from '@/api'
+import { getData, getConfig, storeData, storeConfig } from '@/api'
 import { isHostMode, requestSave } from '@/utils/hostBridge'
 import Navigator from './Navigator.vue'
 import NodeImgPreview from './NodeImgPreview.vue'
@@ -182,6 +190,13 @@ import {
 } from '../../../../../../mindMapFocusedViewBox.js'
 
 import { isMindmapDevDebugEnabled, mindmapDevDebug } from '@/utils/mindmapDevDebug'
+import { sidebarDebug, sidebarDebugBus, sidebarMemoryDebug } from '@/utils/sidebarDebug'
+import { createMindMapShortcutEnableCheck } from '@/utils/mindMapShortcut'
+import { editHistoryDebug } from '@/utils/editHistoryDebug'
+import {
+  getMindMapTreeFingerprint,
+  normalizeMindMapTreeRoot
+} from '@/utils/editHistory'
 import {
   mindmapLoadMark,
   mindmapLoadSummary,
@@ -204,6 +219,7 @@ const Setting = () => import('./Setting.vue')
 const NodeIconSidebar = () => import('./NodeIconSidebar.vue')
 const TextFormatSidebar = () => import('./TextFormatSidebar.vue')
 const AiSidebar = () => import('./AiSidebar.vue')
+
 const builtInNodeIconTypes = new Set(builtInNodeIconList.map(item => item.type))
 
 function walkMindMapNodeData(node, visit) {
@@ -283,6 +299,7 @@ if (typeof MoreThemes !== 'undefined') {
 
 export default {
   components: {
+    Toolbar,
     OutlineSidebar,
     Style,
     BaseStyle,
@@ -325,7 +342,8 @@ export default {
       editorPreviewInitialApplied: false,
       embedBaselineViewport: null,
       hadInitialView: false,
-      isEmbedMode: window.takeOverAppEmbedMode === true
+      isEmbedMode: window.takeOverAppEmbedMode === true,
+      mountedSidebars: {}
     }
   },
   computed: {
@@ -339,10 +357,27 @@ export default {
       extraTextOnExport: state => state.extraTextOnExport,
       isDragOutlineTreeNode: state => state.isDragOutlineTreeNode,
       activeSidebar: state => state.activeSidebar,
+      isOutlineEdit: state => state.isOutlineEdit,
       enableAi: state => state.localConfig.enableAi
     })
   },
   watch: {
+    activeSidebar: {
+      immediate: true,
+      handler(val, oldVal) {
+        if (val) {
+          this.$set(this.mountedSidebars, val, true)
+        }
+        sidebarDebug('Edit activeSidebar changed', {
+          from: oldVal || null,
+          to: val || null
+        })
+        sidebarMemoryDebug('activeSidebar switch', {
+          from: oldVal || null,
+          to: val || null
+        })
+      }
+    },
     openNodeRichText() {
       if (this.openNodeRichText) {
         this.addRichTextPlugin()
@@ -358,6 +393,12 @@ export default {
       }
     }
   },
+  created() {
+    sidebarDebug('Edit created', {
+      activeSidebar: this.activeSidebar || null
+    })
+    this.$bus.$on('closeSideBar', this.onDebugCloseSideBar)
+  },
   mounted() {
     resetMindmapLoadTimeline('Edit mounted')
     mindmapLoadMark('vue Edit mounted start')
@@ -371,6 +412,7 @@ export default {
     this.$bus.$on('paddingChange', this.onPaddingChange)
     this.$bus.$on('export', this.export)
     this.$bus.$on('setData', this.setData)
+    this.$bus.$on('syncTreeData', this.syncTreeData)
     this.$bus.$on('startTextEdit', this.handleStartTextEdit)
     this.$bus.$on('endTextEdit', this.handleEndTextEdit)
     this.$bus.$on('createAssociativeLine', this.handleCreateLineFromActiveNode)
@@ -382,11 +424,13 @@ export default {
     debugMindMapOpen('mounted end')
   },
   beforeDestroy() {
+    this.$bus.$off('closeSideBar', this.onDebugCloseSideBar)
     this.$bus.$off('execCommand', this.execCommand)
     this.$bus.$off('toolbarCanvasAction', this.handleToolbarCanvasAction)
     this.$bus.$off('paddingChange', this.onPaddingChange)
     this.$bus.$off('export', this.export)
     this.$bus.$off('setData', this.setData)
+    this.$bus.$off('syncTreeData', this.syncTreeData)
     this.$bus.$off('startTextEdit', this.handleStartTextEdit)
     this.$bus.$off('endTextEdit', this.handleEndTextEdit)
     this.$bus.$off('createAssociativeLine', this.handleCreateLineFromActiveNode)
@@ -399,6 +443,16 @@ export default {
     this.mindMap.destroy()
   },
   methods: {
+    onDebugCloseSideBar(targetKey) {
+      sidebarDebugBus('closeSideBar received', {
+        targetKey: targetKey || null,
+        activeSidebar: this.activeSidebar || null
+      })
+      sidebarMemoryDebug('closeSideBar bus', {
+        targetKey: targetKey || null
+      })
+    },
+
     onLocalStorageExceeded() {
       this.$notify({
         type: 'warning',
@@ -499,7 +553,52 @@ export default {
     // 存储数据当数据有变时
     bindSaveEvent() {
       this.$bus.$on('data_change', data => {
-        storeData({ root: data })
+        const root = normalizeMindMapTreeRoot(data)
+        if (!root) {
+          return
+        }
+        const hasField = key =>
+          data && Object.prototype.hasOwnProperty.call(data, key)
+        editHistoryDebug('bindSaveEvent data_change', {
+          hasTheme: hasField('theme'),
+          hasThemeConfig: hasField('themeConfig')
+        })
+        const payload = { root }
+        if (hasField('theme') || hasField('themeConfig')) {
+          payload.theme = {
+            template: hasField('theme') ? data.theme : this.mindMap.getTheme(),
+            config: hasField('themeConfig')
+              ? data.themeConfig
+              : this.mindMap.getCustomThemeConfig()
+          }
+        }
+        if (hasField('layout')) {
+          payload.layout = data.layout
+        }
+        this.mindMapData = {
+          ...(this.mindMapData || {}),
+          ...payload
+        }
+        storeData(payload)
+        const configPatch = {}
+        ;['outerFramePaddingX', 'outerFramePaddingY'].forEach(key => {
+          if (hasField(key)) {
+            configPatch[key] = data[key]
+          }
+        })
+        if (hasField('rainbowLinesConfig')) {
+          configPatch.rainbowLinesConfig = data.rainbowLinesConfig
+        }
+        if (Object.keys(configPatch).length > 0) {
+          this.mindMapConfig = {
+            ...(this.mindMapConfig || {}),
+            ...configPatch
+          }
+          storeConfig(this.mindMapConfig)
+        }
+      })
+      this.$bus.$on('back_forward', (index, length) => {
+        editHistoryDebug('back_forward bus', { index, length })
       })
       this.$bus.$on('view_data_change', data => {
         if (window.takeOverApp) {
@@ -591,6 +690,8 @@ export default {
           : {}),
         ...(extendedIconList.length > 0 ? { iconList: extendedIconList } : {}),
         useLeftKeySelectionRightKeyDrag: this.useLeftKeySelectionRightKeyDrag,
+        enableShortcutOnlyWhenMouseInSvg: false,
+        customCheckEnableShortcut: createMindMapShortcutEnableCheck(() => this.mindMap),
         customInnerElsAppendTo: null,
         customHandleClipboardText: handleClipboardText,
         onlyPasteTextWhenHasImgAndText: false,
@@ -697,6 +798,7 @@ export default {
         'data_change',
         'view_data_change',
         'back_forward',
+        'edit_history_restored',
         'node_contextmenu',
         'node_click',
         'draw_click',
@@ -763,6 +865,9 @@ export default {
       }
       // 协同测试
       this.cooperateTest()
+      if (!this.isEmbedMode) {
+        this.warmSidebarPanels()
+      }
       mindmapLoadSummary('vue Edit init end', {
         totalElapsed: Math.round(performance.now() - initStart),
         slowResources: getSlowMindMapResources()
@@ -771,6 +876,38 @@ export default {
         totalElapsed: Math.round(performance.now() - initStart),
         slowResources: getSlowMindMapResources()
       })
+    },
+
+    warmSidebarPanels() {
+      const loaders = [
+        import('./Style.vue'),
+        import('./BaseStyle.vue'),
+        import('./Theme.vue'),
+        import('./Structure.vue')
+      ]
+      if (this.enableAi) {
+        loaders.push(import('./AiSidebar.vue'))
+      }
+      const mountKeys = ['baseStyle', 'theme', 'structure']
+      if (!this.isZenMode) {
+        mountKeys.unshift('nodeStyle')
+      }
+      if (this.enableAi) {
+        mountKeys.push('ai')
+      }
+      const run = () => {
+        Promise.all(loaders).then(() => {
+          mountKeys.forEach(key => {
+            this.$set(this.mountedSidebars, key, true)
+          })
+          sidebarDebug('sidebar panels warmed', { keys: mountKeys })
+        })
+      }
+      if (typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(run, { timeout: 2500 })
+      } else {
+        window.setTimeout(run, 200)
+      }
     },
 
     // 加载相关插件
@@ -786,9 +923,27 @@ export default {
       return /\.(smm|json|xmind|xlsx)$/.test(fileURL)
     },
 
+    // 同步大纲等场景的树数据，保留当前画布视口
+    syncTreeData(treeData) {
+      if (!this.mindMap || !treeData) {
+        return
+      }
+      const nextFp = JSON.stringify(normalizeMindMapTreeRoot(treeData))
+      const currentFp = getMindMapTreeFingerprint(this.mindMap)
+      if (nextFp === currentFp) {
+        editHistoryDebug('syncTreeData skipped unchanged tree')
+        return
+      }
+      this.mindMap.updateData(treeData, { preserveView: true })
+      this.manualSave()
+    },
+
     // 动态设置思维导图数据
-    setData(data) {
-      this.handleShowLoading()
+    setData(data, options = {}) {
+      const preserveView = !!(options && options.preserveView)
+      if (!preserveView) {
+        this.handleShowLoading()
+      }
       let rootNodeData = null
       if (data.root) {
         this.mindMap.setFullData(data)
@@ -797,7 +952,9 @@ export default {
         this.mindMap.setData(data)
         rootNodeData = data
       }
-      this.mindMap.view.reset()
+      if (!preserveView) {
+        this.mindMap.view.reset()
+      }
       this.manualSave()
       // 如果导入的是富文本内容，那么自动开启富文本模式
       if (rootNodeData.data.richText && !this.openNodeRichText) {

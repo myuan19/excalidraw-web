@@ -3,7 +3,8 @@ import {
   simpleDeepClone,
   throttle,
   isSameObject,
-  transformTreeDataToObject
+  transformTreeDataToObject,
+  sanitizeRenderTreeSnapshot
 } from '../../utils'
 import { ERROR_TYPES } from '../../constants/constant'
 import pkg from '../../../package.json'
@@ -237,7 +238,15 @@ class Command {
     if (!this.mindMap.renderer.renderTree) return null
     const res = copyRenderTree({}, this.mindMap.renderer.renderTree, true)
     res.smmVersion = pkg.version
-    return res
+    res.theme = this.mindMap.getTheme()
+    res.themeConfig = simpleDeepClone(this.mindMap.getCustomThemeConfig())
+    res.layout = this.mindMap.getLayout()
+    res.outerFramePaddingX = this.mindMap.opt.outerFramePaddingX
+    res.outerFramePaddingY = this.mindMap.opt.outerFramePaddingY
+    res.rainbowLinesConfig = simpleDeepClone(
+      this.mindMap.getConfig('rainbowLinesConfig') || {}
+    )
+    return sanitizeRenderTreeSnapshot(res)
   }
 
   // 移除节点数据中的uid

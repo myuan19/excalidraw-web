@@ -47,12 +47,19 @@ import {
   htmlEscape,
   handleInputPasteText
 } from 'simple-mind-map/src/utils'
+import { editHistoryDebug } from '@/utils/editHistoryDebug'
+import { getMindMapTreeFingerprint } from '@/utils/editHistory'
 
 // 大纲树
 export default {
+  name: 'Outline',
   props: {
     mindMap: {
       type: Object
+    },
+    panelActive: {
+      type: Boolean,
+      default: true
     }
   },
   data() {
@@ -63,11 +70,14 @@ export default {
       },
       currentData: null,
       notHandleDataChange: false,
+      isPrinting: false,
       isHandleNodeTreeRenderEnd: false,
       beInsertNodeUid: '',
       insertType: '',
       isInTreArea: false,
-      isAfterCreateNewNode: false
+      isAfterCreateNewNode: false,
+      lastOutlineTreeFp: '',
+      pendingTreeRefresh: false
     }
   },
   computed: {
@@ -81,6 +91,13 @@ export default {
     this.$bus.$on('data_change', this.handleDataChange)
     this.$bus.$on('node_tree_render_end', this.handleNodeTreeRenderEnd)
     this.$bus.$on('hide_text_edit', this.handleHideTextEdit)
+  },
+  watch: {
+    panelActive(val) {
+      if (val) {
+        this.flushPendingRefreshIfNeeded()
+      }
+    }
   },
   mounted() {
     this.refresh()
@@ -101,8 +118,17 @@ export default {
       }
     },
 
+    setPrinting(val) {
+      this.isPrinting = !!val
+      editHistoryDebug('outline setPrinting', { isPrinting: this.isPrinting })
+    },
+
     handleDataChange() {
       // 在大纲里操作节点时不要响应该事件，否则会重新刷新树
+      if (this.isPrinting) {
+        editHistoryDebug('outline skip data_change while printing')
+        return
+      }
       if (this.notHandleDataChange) {
         this.notHandleDataChange = false
         this.isAfterCreateNewNode = false
@@ -112,6 +138,30 @@ export default {
         this.isAfterCreateNewNode = false
         return
       }
+      const fp = getMindMapTreeFingerprint(this.mindMap)
+      if (fp && fp === this.lastOutlineTreeFp) {
+        editHistoryDebug('outline skip data_change tree unchanged', { fpLen: fp.length })
+        return
+      }
+      if (!this.panelActive) {
+        this.pendingTreeRefresh = true
+        editHistoryDebug('outline defer refresh while inactive')
+        return
+      }
+      editHistoryDebug('outline refresh on data_change')
+      this.refresh()
+    },
+
+    flushPendingRefreshIfNeeded() {
+      if (!this.pendingTreeRefresh) {
+        return
+      }
+      const fp = getMindMapTreeFingerprint(this.mindMap)
+      if (fp && fp === this.lastOutlineTreeFp) {
+        this.pendingTreeRefresh = false
+        return
+      }
+      editHistoryDebug('outline flush deferred refresh')
       this.refresh()
     },
 
@@ -132,8 +182,66 @@ export default {
       }
     },
 
-    // 刷新树数据
+    getScrollContainer() {
+      let el = this.$el
+      while (el) {
+        if (
+          el.classList &&
+          (el.classList.contains('outlineTreePanel') ||
+            el.classList.contains('sidebarContent') ||
+            el.classList.contains('outlineSidebarBody'))
+        ) {
+          return el
+        }
+        el = el.parentElement
+      }
+      return null
+    },
+
+    withPreservedOutlineView(fn) {
+      const scrollEl = this.getScrollContainer()
+      const scrollTop = scrollEl ? scrollEl.scrollTop : 0
+      const currentUid = this.currentData && this.currentData.uid
+      fn()
+      this.$nextTick(() => {
+        if (scrollEl) {
+          scrollEl.scrollTop = scrollTop
+        }
+        if (currentUid && this.$refs.tree) {
+          this.$refs.tree.setCurrentKey(currentUid)
+        }
+      })
+    },
+
+    expandAllNodes() {
+      const tree = this.$refs.tree
+      if (!tree || !tree.store) return
+      this.withPreservedOutlineView(() => {
+        tree.store._getAllNodes().forEach(node => {
+          node.expanded = true
+        })
+      })
+    },
+
+    collapseAllNodes() {
+      const tree = this.$refs.tree
+      if (!tree || !tree.store) return
+      this.withPreservedOutlineView(() => {
+        tree.store._getAllNodes().forEach(node => {
+          node.expanded = node.level <= 1
+        })
+      })
+    },
+
+    // 刷新树数据（仅在树指纹变化时调用；滚动由 DOM 保活或本地恢复）
     refresh() {
+      const scrollEl = this.getScrollContainer()
+      const scrollTop = scrollEl ? scrollEl.scrollTop : 0
+      const currentUid = this.currentData && this.currentData.uid
+      editHistoryDebug('outline refresh', {
+        scrollTop,
+        currentUid: currentUid || null
+      })
       let data = this.mindMap.getData()
       data.root = true // 标记根节点
       let walk = root => {
@@ -153,6 +261,20 @@ export default {
       }
       walk(data)
       this.data = [data]
+      this.lastOutlineTreeFp = getMindMapTreeFingerprint(this.mindMap)
+      this.pendingTreeRefresh = false
+      this.$nextTick(() => {
+        if (scrollEl) {
+          scrollEl.scrollTop = scrollTop
+        }
+        if (currentUid && this.$refs.tree) {
+          this.$refs.tree.setCurrentKey(currentUid)
+        }
+        editHistoryDebug('outline refresh restored', {
+          scrollTop: scrollEl ? scrollEl.scrollTop : null,
+          currentUid: currentUid || null
+        })
+      })
     },
 
     // 插入了新节点之后

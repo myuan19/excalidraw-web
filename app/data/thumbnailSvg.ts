@@ -387,14 +387,74 @@ function cropMindMapViewBox(svgMarkup: string): string {
   );
 }
 
-function removeElementsByClass(svgMarkup: string, className: string): string {
-  return svgMarkup.replace(
-    new RegExp(
-      `<([a-zA-Z][\\w:-]*)\\b(?=[^>]*\\bclass="[^"]*\\b${className}\\b[^"]*")[^>]*(?:/>|>[\\s\\S]*?</\\1>)`,
-      "gi",
-    ),
-    "",
+function removeElementByClassAt(
+  svgMarkup: string,
+  className: string,
+  fromIndex = 0,
+): { svg: string; removed: boolean } {
+  const pattern = new RegExp(
+    `<([a-zA-Z][\\w:-]*)\\b(?=[^>]*\\bclass="[^"]*\\b${className}\\b[^"]*")[^>]*>`,
+    "gi",
   );
+  pattern.lastIndex = fromIndex;
+  const openMatch = pattern.exec(svgMarkup);
+  if (!openMatch || openMatch.index === undefined) {
+    return { svg: svgMarkup, removed: false };
+  }
+
+  const tagName = openMatch[1];
+  const openEnd = openMatch.index + openMatch[0].length;
+  if (/\/>\s*$/i.test(openMatch[0])) {
+    return {
+      svg:
+        svgMarkup.slice(0, openMatch.index) + svgMarkup.slice(openEnd),
+      removed: true,
+    };
+  }
+
+  const closeTag = `</${tagName}>`;
+  let depth = 1;
+  let cursor = openEnd;
+  const openTagPattern = new RegExp(`<${tagName}\\b[^>]*>`, "gi");
+  const closeTagPattern = new RegExp(`</${tagName}>`, "gi");
+
+  while (depth > 0 && cursor < svgMarkup.length) {
+    openTagPattern.lastIndex = cursor;
+    closeTagPattern.lastIndex = cursor;
+    const nextOpen = openTagPattern.exec(svgMarkup);
+    const nextClose = closeTagPattern.exec(svgMarkup);
+    if (!nextClose) {
+      break;
+    }
+    if (nextOpen && nextOpen.index < nextClose.index) {
+      depth += 1;
+      cursor = nextOpen.index + nextOpen[0].length;
+      continue;
+    }
+    depth -= 1;
+    cursor = nextClose.index + closeTag.length;
+    if (depth === 0) {
+      const next = removeElementByClassAt(
+        svgMarkup.slice(0, openMatch.index) + svgMarkup.slice(cursor),
+        className,
+        openMatch.index,
+      );
+      return { svg: next.svg, removed: true };
+    }
+  }
+
+  return { svg: svgMarkup, removed: false };
+}
+
+function removeElementsByClass(svgMarkup: string, className: string): string {
+  let svg = svgMarkup;
+  let removed = true;
+  while (removed) {
+    const result = removeElementByClassAt(svg, className);
+    svg = result.svg;
+    removed = result.removed;
+  }
+  return svg;
 }
 
 function removeMindMapNodeControls(svgMarkup: string): string {

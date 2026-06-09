@@ -9,6 +9,26 @@
       <el-tooltip
         class="item"
         effect="dark"
+        :content="$t('outline.expandAll')"
+        placement="top"
+      >
+        <div class="btn" @click="onExpandAll">
+          <span class="icon iconfont iconzhankai"></span>
+        </div>
+      </el-tooltip>
+      <el-tooltip
+        class="item"
+        effect="dark"
+        :content="$t('outline.collapseAll')"
+        placement="top"
+      >
+        <div class="btn" @click="onCollapseAll">
+          <span class="icon iconfont iconzhankai1"></span>
+        </div>
+      </el-tooltip>
+      <el-tooltip
+        class="item"
+        effect="dark"
         :content="$t('outline.print')"
         placement="top"
       >
@@ -75,6 +95,7 @@ import {
 } from 'simple-mind-map/src/utils'
 import { storeData } from '@/api'
 import { printOutline } from '@/utils'
+import { editHistoryDebug } from '@/utils/editHistoryDebug'
 
 // 大纲侧边栏
 export default {
@@ -89,7 +110,8 @@ export default {
       defaultProps: {
         label: 'label'
       },
-      currentData: null
+      currentData: null,
+      isPrinting: false
     }
   },
   computed: {
@@ -158,6 +180,9 @@ export default {
 
     // 失去焦点更新节点文本
     onBlur(e, node) {
+      if (this.isPrinting) {
+        return
+      }
       // 节点数据没有修改
       if (node.data.textCache === e.target.innerHTML) {
         return
@@ -241,15 +266,72 @@ export default {
       return Math.random()
     },
 
-    // 打印
-    onPrint() {
-      printOutline(this.$refs.outlineEditBox)
+    withPreservedOutlineView(fn) {
+      const container = this.$refs.outlineEditBox
+      const scrollTop = container ? container.scrollTop : 0
+      const currentUid = this.currentData && this.currentData.uid
+      fn()
+      this.$nextTick(() => {
+        if (container) {
+          container.scrollTop = scrollTop
+        }
+        if (currentUid && this.$refs.tree) {
+          this.$refs.tree.setCurrentKey(currentUid)
+        }
+      })
     },
 
-    // 关闭
+    onExpandAll() {
+      const tree = this.$refs.tree
+      if (!tree || !tree.store) return
+      this.withPreservedOutlineView(() => {
+        tree.store._getAllNodes().forEach(node => {
+          node.expanded = true
+        })
+      })
+    },
+
+    onCollapseAll() {
+      const tree = this.$refs.tree
+      if (!tree || !tree.store) return
+      this.withPreservedOutlineView(() => {
+        tree.store._getAllNodes().forEach(node => {
+          node.expanded = node.level <= 1
+        })
+      })
+    },
+
+    restorePrintScroll(scrollTop) {
+      const container = this.$refs.outlineEditBox
+      if (!container) {
+        return
+      }
+      container.scrollTop = scrollTop
+      editHistoryDebug('outline fullscreen scroll restored', { scrollTop })
+    },
+
+    // 打印
+    async onPrint() {
+      const container = this.$refs.outlineEditBox
+      const scrollTop = container ? container.scrollTop : 0
+      editHistoryDebug('outline fullscreen print start', { scrollTop })
+      this.isPrinting = true
+      try {
+        await printOutline(container)
+      } finally {
+        this.isPrinting = false
+        const restore = () => this.restorePrintScroll(scrollTop)
+        restore()
+        this.$nextTick(restore)
+        setTimeout(restore, 50)
+        setTimeout(restore, 200)
+      }
+    },
+
+    // 关闭：仅同步树变更，不重置画布视口
     onClose() {
       this.setIsOutlineEdit(false)
-      this.$bus.$emit('setData', this.getData())
+      this.$bus.$emit('syncTreeData', this.getData())
     },
 
     // 滚动
@@ -297,7 +379,7 @@ export default {
   top: 0;
   width: 100%;
   height: 100%;
-  z-index: 1999;
+  z-index: 10150;
   background-color: #fff;
   overflow: hidden;
 

@@ -80,24 +80,66 @@ export const setImgToClipboard = img => {
 
 // 打印大纲
 export const printOutline = el => {
-  const printContent = el.outerHTML
-  const iframe = document.createElement('iframe')
-  iframe.setAttribute('style', 'position: absolute; width: 0; height: 0;')
-  document.body.appendChild(iframe)
-  const iframeDoc = iframe.contentWindow.document
-  // 将当前页面的所有样式添加到iframe中
-  const styleList = document.querySelectorAll('style')
-  Array.from(styleList).forEach(el => {
-    iframeDoc.write(el.outerHTML)
+  return new Promise(resolve => {
+    if (!el) {
+      resolve()
+      return
+    }
+
+    const iframe = document.createElement('iframe')
+    iframe.setAttribute(
+      'style',
+      'position: fixed; right: 0; bottom: 0; width: 0; height: 0; border: 0;'
+    )
+    document.body.appendChild(iframe)
+
+    const win = iframe.contentWindow
+    const doc = win.document
+    doc.open()
+    doc.write('<!DOCTYPE html><html><head><meta charset="utf-8">')
+
+    document.querySelectorAll('link[rel="stylesheet"]').forEach(link => {
+      if (link.href) {
+        doc.write(`<link rel="stylesheet" href="${link.href}">`)
+      }
+    })
+    document.querySelectorAll('style').forEach(styleEl => {
+      doc.write(styleEl.outerHTML)
+    })
+
+    doc.write(
+      '<style media="print">@page { size: portrait; margin: 12mm; } body { margin: 0; }</style>'
+    )
+    doc.write('</head><body>')
+    doc.write(`<div class="outlinePrintRoot">${el.outerHTML}</div>`)
+    doc.write('</body></html>')
+    doc.close()
+
+    const cleanup = () => {
+      if (iframe.parentNode) {
+        document.body.removeChild(iframe)
+      }
+      resolve()
+    }
+
+    const triggerPrint = () => {
+      try {
+        win.focus()
+        win.print()
+      } catch (error) {
+        console.error(error)
+        cleanup()
+      }
+    }
+
+    if ('onafterprint' in win) {
+      win.onafterprint = cleanup
+    } else {
+      setTimeout(cleanup, 1500)
+    }
+
+    setTimeout(triggerPrint, 300)
   })
-  // 设置打印展示方式 - 纵向展示
-  iframeDoc.write('<style media="print">@page {size: portrait;}</style>')
-  // 写入内容
-  iframeDoc.write('<div>' + printContent + '</div>')
-  setTimeout(function() {
-    iframe.contentWindow?.print()
-    document.body.removeChild(iframe)
-  }, 500)
 }
 
 export const getParentWithClass = (el, className) => {

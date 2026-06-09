@@ -210,6 +210,7 @@
 
 <script>
 import { mapState, mapMutations } from 'vuex'
+import { sidebarDebugSetActiveSidebar } from '@/utils/sidebarDebug'
 
 export default {
   props: {
@@ -306,11 +307,21 @@ export default {
     // 显示节点图标侧边栏
     showNodeIcon() {
       this.$bus.$emit('close_node_icon_toolbar')
+      sidebarDebugSetActiveSidebar(
+        this.$store.state.activeSidebar,
+        'nodeIconSidebar',
+        'ToolbarNodeBtnList'
+      )
       this.setActiveSidebar('nodeIconSidebar')
     },
 
     // 打开公式侧边栏
     showFormula() {
+      sidebarDebugSetActiveSidebar(
+        this.$store.state.activeSidebar,
+        'formulaSidebar',
+        'ToolbarNodeBtnList'
+      )
       this.setActiveSidebar('formulaSidebar')
     },
 

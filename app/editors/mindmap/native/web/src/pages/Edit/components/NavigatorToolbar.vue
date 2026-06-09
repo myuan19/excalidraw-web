@@ -130,6 +130,7 @@ import { mapState, mapMutations } from 'vuex'
 import pkg from 'simple-mind-map/package.json'
 import Demonstrate from './Demonstrate.vue'
 import { isHostMode } from '@/utils/hostBridge'
+import { sidebarDebugSetActiveSidebar } from '@/utils/sidebarDebug'
 
 // 导航器工具栏
 export default {
@@ -198,6 +199,11 @@ export default {
 
     handleCommand(command) {
       if (command === 'shortcutKey') {
+        sidebarDebugSetActiveSidebar(
+          this.$store.state.activeSidebar,
+          'shortcutKey',
+          'NavigatorToolbar'
+        )
         this.setActiveSidebar('shortcutKey')
         return
       }

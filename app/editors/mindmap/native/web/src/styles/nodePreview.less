@@ -1,0 +1,50 @@
+// 侧栏节点预览：外圈（贴边）+ 内层渐变舞台 + 节点芯片
+.nodeStyleHeader {
+  flex-shrink: 0;
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid #e5e5e5;
+  background: #f7f8fa;
+
+  .nodePreviewStage {
+    margin-bottom: 10px;
+  }
+}
+
+.nodePreviewStage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 140px;
+  padding: 14px;
+  border: 1px solid #e6e8eb;
+  border-radius: 8px;
+  background-color: #f8fafc;
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: cover;
+}
+
+.nodePreviewNode {
+  max-width: 220px;
+  min-width: 72px;
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.35;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+.isDark,
+.styleBox.isDark,
+.aiSidebarBox.isDark {
+  .nodeStyleHeader {
+    background: #1e2226;
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .nodePreviewStage {
+    background-color: #20252a;
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+}

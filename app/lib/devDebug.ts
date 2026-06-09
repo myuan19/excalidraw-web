@@ -22,7 +22,7 @@ const CHANNEL_ENV_FLAG: Record<DevDebugChannel, string> = {
   "editor-open": "VITE_APP_ENABLE_EDITOR_OPEN_DEBUG",
   "mindmap-open": "VITE_APP_ENABLE_MINDMAP_DEBUG",
   "mindmap-bridge": "VITE_APP_ENABLE_MINDMAP_DEBUG",
-  "mindmap-thumbnail": "VITE_APP_ENABLE_MINDMAP_DEBUG",
+  "mindmap-thumbnail": "VITE_APP_ENABLE_MINDMAP_THUMBNAIL_DEBUG",
   "ai-config": "VITE_APP_ENABLE_AI_CONFIG_DEBUG",
   embed: "VITE_APP_ENABLE_EMBED_DEBUG",
   "file-list": "VITE_APP_ENABLE_FILE_LIST_DEBUG",
@@ -41,6 +41,9 @@ function isDeployDebugBuild(): boolean {
 
 function isLocalStorageDebugEnabled(channel: DevDebugChannel): boolean {
   if (typeof window === "undefined") {
+    return false;
+  }
+  if (channel === "mindmap-thumbnail") {
     return false;
   }
   try {

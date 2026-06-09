@@ -1,3 +1,5 @@
+import { SIDEBAR_UI_Z_INDEX_BASE } from '@/utils/sidebarLayout'
+
 // 字体列表
 export const fontFamilyList = [
   {
@@ -262,7 +264,7 @@ export const backgroundSizeList = [
 
 // 数据存储
 export const store = {
-  sidebarZIndex: 1 //侧边栏zIndex
+  sidebarZIndex: SIDEBAR_UI_Z_INDEX_BASE //侧边栏zIndex
 }
 const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
 const ctrl = isMac ? '⌘' : 'Ctrl'

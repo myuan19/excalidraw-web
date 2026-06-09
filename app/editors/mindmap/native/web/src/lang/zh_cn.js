@@ -41,7 +41,13 @@ export default {
     notUseRainbowLines: '不使用彩虹线条',
     outerFramePadding: '外框内边距',
     associativeLineStyle: '关联线样式',
-    builtInBackgroundImage: '内置背景图片'
+    builtInBackgroundImage: '内置背景图片',
+    sectionCanvas: '画布',
+    sectionLine: '连线',
+    sectionNode: '节点',
+    sectionAssociative: '关联线',
+    nodeMarginHint:
+      '调整同级节点之间的水平与垂直距离，松手后生效，作用于当前主题全局布局。'
   },
   setting: {
     title: '设置',
@@ -230,7 +236,9 @@ export default {
     title: '大纲',
     nodeDefaultText: '分支节点',
     print: '打印',
-    fullscreen: '全屏'
+    fullscreen: '全屏',
+    expandAll: '全部展开',
+    collapseAll: '全部收起'
   },
   scale: {
     zoomIn: '放大',
@@ -275,6 +283,11 @@ export default {
     arrowDirEnd: '尾部',
     direction: '方向',
     selectNodeTip: '请选择一个节点',
+    currentNodeStyle: '当前节点',
+    globalLayoutStyle: '全局布局',
+    previewNodeDefault: '主题',
+    siblingSpacing: '同级节点间距',
+    siblingSpacingHint: '调整同级节点之间的水平与垂直距离（全局布局，对所有节点生效）',
     openLineFlow: '开启流动效果',
     lineFlowDuration: '一个流动周期的时间',
     forward: '正向',
