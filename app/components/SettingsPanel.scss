@@ -3,12 +3,17 @@
   inset: 0;
   z-index: var(--nb-z-modal);
   display: flex;
-  justify-content: flex-end;
+  font-family: var(--nb-font-ui), system-ui, sans-serif;
+  animation: settings-overlay-in 0.2s ease;
+}
+
+.settings-panel-overlay__backdrop {
+  flex: 1;
+  min-width: 0;
   background: var(--nb-overlay-scrim);
   backdrop-filter: blur(var(--nb-blur-overlay));
   -webkit-backdrop-filter: blur(var(--nb-blur-overlay));
-  font-family: var(--nb-font-ui), system-ui, sans-serif;
-  animation: settings-overlay-in 0.2s ease;
+  cursor: default;
 }
 
 @keyframes settings-overlay-in {
@@ -22,6 +27,7 @@
 }
 
 .settings-panel {
+  flex-shrink: 0;
   width: min(480px, 90vw);
   height: 100vh;
   display: flex;

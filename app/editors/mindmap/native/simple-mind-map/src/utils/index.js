@@ -19,7 +19,7 @@ const isZeroViewportRect = rect => {
   )
 }
 
-const isMindMapDebugEnabled = () => {
+export const isMindMapDebugEnabled = () => {
   if (typeof window === 'undefined') return false
   if (window.__MINDMAP_DEBUG__ === true) return true
   try {

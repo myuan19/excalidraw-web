@@ -3,6 +3,9 @@
  * 与 AI 配置独立，AI 配置走 server SQLite。
  */
 
+/** 空闲自动保存可选等待时间（秒） */
+export const AUTO_SAVE_IDLE_SEC_OPTIONS = [1, 2, 5, 10, 30, 60, 120, 300] as const;
+
 export interface AppSettings {
   /** 切换到后台（visibilitychange → hidden）时自动保存到服务器 */
   autoSaveOnBlur: boolean;
@@ -57,7 +60,9 @@ function load(): AppSettings {
             : DEFAULT_SETTINGS.autoSaveEnabled,
         autoSaveIdleSec:
           typeof parsed.autoSaveIdleSec === "number" &&
-          parsed.autoSaveIdleSec >= 5
+          (AUTO_SAVE_IDLE_SEC_OPTIONS as readonly number[]).includes(
+            parsed.autoSaveIdleSec,
+          )
             ? parsed.autoSaveIdleSec
             : DEFAULT_SETTINGS.autoSaveIdleSec,
         autoSaveOnExit:

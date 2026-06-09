@@ -194,6 +194,7 @@ import { sidebarDebug, sidebarDebugBus, sidebarMemoryDebug } from '@/utils/sideb
 import { createMindMapShortcutEnableCheck } from '@/utils/mindMapShortcut'
 import { editHistoryDebug } from '@/utils/editHistoryDebug'
 import {
+  compactCustomThemeConfig,
   getMindMapTreeFingerprint,
   normalizeMindMapTreeRoot
 } from '@/utils/editHistory'
@@ -340,6 +341,7 @@ export default {
       showDragMask: false,
       embedPreviewInitialApplied: false,
       editorPreviewInitialApplied: false,
+      awaitingPostViewportRender: false,
       embedBaselineViewport: null,
       hadInitialView: false,
       isEmbedMode: window.takeOverAppEmbedMode === true,
@@ -403,7 +405,7 @@ export default {
     resetMindmapLoadTimeline('Edit mounted')
     mindmapLoadMark('vue Edit mounted start')
     debugMindMapOpen('mounted start')
-    showLoading()
+    showLoading('Edit-mounted')
     this.getData()
     this.$bus.$on('node_tree_render_end', this.handleHideLoading)
     this.init()
@@ -485,7 +487,7 @@ export default {
     // 显示loading
     handleShowLoading() {
       this.enableShowLoading = true
-      showLoading()
+      showLoading('bus-showLoading')
     },
 
     // 渲染结束后关闭loading
@@ -495,22 +497,24 @@ export default {
       })
       debugMindMapOpen('node_tree_render_end hide loading', {
         enableShowLoading: this.enableShowLoading,
+        awaitingPostViewportRender: this.awaitingPostViewportRender,
         slowResources: getSlowMindMapResources()
       })
       const hideCurrentLoading = () => {
         if (this.enableShowLoading) {
           this.enableShowLoading = false
-          hideLoading()
+          hideLoading('node_tree_render_end')
           debugMindMapOpen('node_tree_render_end loading hidden')
         }
       }
+      if (this.awaitingPostViewportRender) {
+        this.awaitingPostViewportRender = false
+        hideCurrentLoading()
+        return
+      }
       if (this.isEmbedMode && !this.embedPreviewInitialApplied) {
         this.$nextTick(() => {
-          const result = this.applyEmbedFocusedViewport('initial-render-end')
-          if (result && result.ok) {
-            this.embedPreviewInitialApplied = true
-          }
-          hideCurrentLoading()
+          this.tryRevealEmbedAfterInitialViewport(hideCurrentLoading)
         })
         return
       }
@@ -521,11 +525,47 @@ export default {
         !this.editorPreviewInitialApplied
       ) {
         this.$nextTick(() => {
-          const result = this.applyEditorFocusedViewport('editor-initial-render-end')
-          if (result && result.ok) {
-            this.editorPreviewInitialApplied = true
-          }
-          hideCurrentLoading()
+          this.tryRevealEditorAfterInitialViewport(hideCurrentLoading)
+        })
+        return
+      }
+      hideCurrentLoading()
+    },
+
+    tryRevealEmbedAfterInitialViewport(hideCurrentLoading, attempt = 0) {
+      const result = this.applyEmbedFocusedViewport('initial-render-end')
+      if (result && result.ok) {
+        this.embedPreviewInitialApplied = true
+        if (result.resizeTriggeredRender) {
+          this.awaitingPostViewportRender = true
+          return
+        }
+        hideCurrentLoading()
+        return
+      }
+      if (attempt < 12) {
+        requestAnimationFrame(() => {
+          this.tryRevealEmbedAfterInitialViewport(hideCurrentLoading, attempt + 1)
+        })
+        return
+      }
+      hideCurrentLoading()
+    },
+
+    tryRevealEditorAfterInitialViewport(hideCurrentLoading, attempt = 0) {
+      const result = this.applyEditorFocusedViewport('editor-initial-render-end')
+      if (result && result.ok) {
+        this.editorPreviewInitialApplied = true
+        if (result.resizeTriggeredRender) {
+          this.awaitingPostViewportRender = true
+          return
+        }
+        hideCurrentLoading()
+        return
+      }
+      if (attempt < 12) {
+        requestAnimationFrame(() => {
+          this.tryRevealEditorAfterInitialViewport(hideCurrentLoading, attempt + 1)
         })
         return
       }
@@ -565,11 +605,13 @@ export default {
         })
         const payload = { root }
         if (hasField('theme') || hasField('themeConfig')) {
+          const template = hasField('theme') ? data.theme : this.mindMap.getTheme()
+          const config = hasField('themeConfig')
+            ? data.themeConfig
+            : this.mindMap.getCustomThemeConfig()
           payload.theme = {
-            template: hasField('theme') ? data.theme : this.mindMap.getTheme(),
-            config: hasField('themeConfig')
-              ? data.themeConfig
-              : this.mindMap.getCustomThemeConfig()
+            template,
+            config: compactCustomThemeConfig(config || {}, template)
           }
         }
         if (hasField('layout')) {
@@ -642,6 +684,16 @@ export default {
         theme = exampleData.theme
         view = null
       }
+      const themeTemplate =
+        theme && theme.template ? theme.template : exampleData.theme.template
+      theme = {
+        template: themeTemplate,
+        config: compactCustomThemeConfig((theme && theme.config) || {}, themeTemplate)
+      }
+      this.mindMapData = {
+        ...(this.mindMapData || {}),
+        theme
+      }
       const embedFit = window.takeOverAppEmbedMode === true
       if (embedFit) {
         view = null
@@ -657,6 +709,7 @@ export default {
           groupCount: extendedIconList.length
         })
       }
+      this.syncInitialOptionalPlugins()
       const newMindMapStart = performance.now()
       this.mindMap = new MindMap({
         el: this.$refs.mindMapContainer,
@@ -774,18 +827,6 @@ export default {
         this.mindMap.setMode('readonly')
         this.$bus.$emit('host_readonly_mode', true)
       }
-      const loadPluginsStart = performance.now()
-      this.loadPlugins()
-      mindmapLoadMark('vue Edit loadPlugins end', {
-        elapsed: Math.round(performance.now() - loadPluginsStart),
-        openNodeRichText: this.openNodeRichText,
-        isShowScrollbar: this.isShowScrollbar
-      })
-      debugMindMapOpen('loadPlugins end', {
-        elapsed: Math.round(performance.now() - loadPluginsStart),
-        openNodeRichText: this.openNodeRichText,
-        isShowScrollbar: this.isShowScrollbar
-      })
       this.mindMap.keyCommand.addShortcut('Control+s', () => {
         this.manualSave()
       })
@@ -910,10 +951,17 @@ export default {
       }
     },
 
-    // 加载相关插件
-    loadPlugins() {
-      if (this.openNodeRichText) this.addRichTextPlugin()
-      if (this.isShowScrollbar) this.addScrollbarPlugin()
+    syncInitialPlugin(plugin, enabled) {
+      if (enabled) {
+        MindMap.usePlugin(plugin)
+      } else {
+        MindMap.removePlugin(plugin)
+      }
+    },
+
+    syncInitialOptionalPlugins() {
+      this.syncInitialPlugin(RichText, this.openNodeRichText)
+      this.syncInitialPlugin(ScrollbarPlugin, this.isShowScrollbar)
     },
 
     // url中是否存在要打开的文件
@@ -1018,9 +1066,7 @@ export default {
         scaleBefore: this.mindMap.view.scale || null,
         rootPosition: this.mindMap.opt.initRootNodePosition || null
       })
-      if (typeof this.mindMap.resize === 'function') {
-        this.mindMap.resize()
-      }
+      const resizeTriggeredRender = this.syncMindMapContainerSize()
       const shouldRecomputeFocused =
         reason === 'initial-render-end' ||
         reason === 'preview-resize' ||
@@ -1086,8 +1132,19 @@ export default {
         reason,
         scale: viewport.scale,
         x: viewport.x,
-        y: viewport.y
+        y: viewport.y,
+        resizeTriggeredRender
       }
+    },
+
+    syncMindMapContainerSize() {
+      if (!this.mindMap || typeof this.mindMap.resize !== 'function') {
+        return false
+      }
+      const oldWidth = this.mindMap.width
+      const oldHeight = this.mindMap.height
+      this.mindMap.resize()
+      return this.mindMap.width !== oldWidth || this.mindMap.height !== oldHeight
     },
 
     notifyEmbedPreviewViewportApplied(payload) {
@@ -1223,9 +1280,7 @@ export default {
         size,
         rootPosition: this.mindMap.opt.initRootNodePosition || null
       })
-      if (typeof this.mindMap.resize === 'function') {
-        this.mindMap.resize()
-      }
+      const resizeTriggeredRender = this.syncMindMapContainerSize()
       const viewBox = this.computeEditorFocusedViewBox()
       if (!viewBox) {
         debugMindMapOpen('applyEditorFocusedViewport failed: no viewBox', {
@@ -1241,13 +1296,15 @@ export default {
         scale: applied ? this.mindMap.view.scale || null : null,
         x: applied ? this.mindMap.view.x : null,
         y: applied ? this.mindMap.view.y : null,
-        viewBox
+        viewBox,
+        resizeTriggeredRender
       }
       debugMindMapOpen('applyEditorFocusedViewport done', {
         reason,
         scaleAfter: this.mindMap.view.scale || null,
         viewBox,
-        applied: result.applied
+        applied: result.applied,
+        resizeTriggeredRender
       })
       return result
     },

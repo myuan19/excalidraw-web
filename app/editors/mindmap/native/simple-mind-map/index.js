@@ -759,13 +759,13 @@ class MindMap {
   removePlugin(plugin) {
     let index = MindMap.hasPlugin(plugin)
     if (index !== -1) {
-      MindMap.pluginList.splice(index, 1)
       if (this[plugin.instanceName]) {
         if (this[plugin.instanceName].beforePluginRemove) {
           this[plugin.instanceName].beforePluginRemove()
         }
         delete this[plugin.instanceName]
       }
+      MindMap.removePlugin(plugin)
     }
   }
 
@@ -848,6 +848,13 @@ MindMap.usePlugin = (plugin, opt = {}) => {
   if (MindMap.hasPlugin(plugin) !== -1) return MindMap
   plugin.pluginOpt = opt
   MindMap.pluginList.push(plugin)
+  return MindMap
+}
+MindMap.removePlugin = plugin => {
+  const index = MindMap.hasPlugin(plugin)
+  if (index !== -1) {
+    MindMap.pluginList.splice(index, 1)
+  }
   return MindMap
 }
 MindMap.hasPlugin = plugin => {

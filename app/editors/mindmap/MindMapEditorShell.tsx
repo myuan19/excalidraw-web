@@ -31,7 +31,6 @@ import {
 import { getDocumentKindFromHash } from "../../lib/appBranding";
 import { editorRegistry } from "../../editors";
 import { FileSyncState } from "../../data/FileSyncState";
-import { evaluateCurrentFileModificationState } from "../../data/fileModificationState";
 import { readFileListTreeCache } from "../../data/fileListSessionCache";
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
 import { LocalThumbnailCache } from "../../data/localThumbnailCache";
@@ -92,6 +91,11 @@ import {
 import { devDebug } from "../../lib/devDebug";
 import { useMindMapNativeAIConfig } from "./useMindMapNativeAIConfig";
 import { useMindMapRootNameSync } from "./useMindMapRootNameSync";
+import {
+  adoptMindMapNativeBaseline,
+  getMindMapModificationState,
+} from "./mindMapDraftState";
+import { useMindMapNativeHydrate } from "./useMindMapNativeHydrate";
 
 import "./MindMapEditorShell.scss";
 
@@ -308,13 +312,6 @@ const MindMapEditorShell = () => {
   );
   const shellStartRef = useRef(performance.now());
   const initStartRef = useRef<number | null>(null);
-
-  const publishMindMapDataToNative = useCallback(
-    (data: MindMapDocumentData, reason: string) => {
-      publishDocument(toBridgePayload(data, fileId), reason);
-    },
-    [fileId, publishDocument],
-  );
 
   useEditorDocumentTitle(fileId ? fileName : null);
 
@@ -595,13 +592,55 @@ const MindMapEditorShell = () => {
 
   useMindMapNativeAIConfig({ isBridgeReady, postToNative });
 
-  const { initSyncedText, onDocumentChanged: syncRootTextToFileName } =
-    useMindMapRootNameSync({
-      fileId,
-      setFileName,
-      isBridgeReady,
-      postToNative,
-    });
+  const {
+    initSyncedText,
+    onDocumentChanged: syncRootTextToFileName,
+    syncFileNameToRootIfNeeded,
+  } = useMindMapRootNameSync({
+    fileId,
+    setFileName,
+    isBridgeReady,
+    postToNative,
+  });
+
+  const onNativeHydrateSettleEnd = useCallback(() => {
+    const document = latestDocumentRef.current;
+    if (document && fileId) {
+      adoptMindMapNativeBaseline(fileId, document);
+      setStatus("");
+      debugMindMapOpen("native hydrate settle aligned", {
+        fileId8: fileId.slice(0, 8),
+      });
+    }
+    if (document) {
+      const synced = syncFileNameToRootIfNeeded(fileName, document.data);
+      if (synced) {
+        debugMindMapOpen("synced file display name to root node on settle", {
+          fileName,
+        });
+      }
+    }
+  }, [fileId, fileName, setStatus, syncFileNameToRootIfNeeded]);
+
+  const {
+    isHydratingRef: nativeHydratingRef,
+    extendSettle: extendNativeHydrateSettle,
+    dispose: disposeNativeHydrate,
+  } = useMindMapNativeHydrate({
+    onSettleEnd: onNativeHydrateSettleEnd,
+    onSettleExtended: (reason) =>
+      debugMindMapOpen("native hydrate settle extended", { reason }),
+    onSettleComplete: (reason) =>
+      debugMindMapOpen("native hydrate settle end", { reason }),
+  });
+
+  const publishMindMapDataToNative = useCallback(
+    (data: MindMapDocumentData, reason: string) => {
+      extendNativeHydrateSettle(`publish:${reason}`);
+      publishDocument(toBridgePayload(data, fileId), reason);
+    },
+    [extendNativeHydrateSettle, fileId, publishDocument],
+  );
 
   useEffect(() => {
     if (!isBridgeReady) {
@@ -800,10 +839,11 @@ const MindMapEditorShell = () => {
         window.clearTimeout(saveTimeoutRef.current);
         saveTimeoutRef.current = null;
       }
+      disposeNativeHydrate();
       saveResolveRef.current = null;
       savePromiseRef.current = null;
     };
-  }, [fileId, logMindMapOpenPhase, publishMindMapDataToNative]);
+  }, [disposeNativeHydrate, fileId, logMindMapOpenPhase, publishMindMapDataToNative]);
 
   useEffect(() => {
     if (!fileId) {
@@ -862,6 +902,7 @@ const MindMapEditorShell = () => {
           event.data.type === "appInited")
       ) {
         if (event.data.type === "appInited") {
+          extendNativeHydrateSettle("appInited");
           debugMindMapOpen("request draft thumbnail export");
           postToNative("hostExportDraftThumbnail", {});
           if (
@@ -972,6 +1013,16 @@ const MindMapEditorShell = () => {
                 document,
                 thumbnail: savePayload.thumbnail,
               });
+            } else if (nativeHydratingRef.current) {
+              extendNativeHydrateSettle("draft-push");
+              if (fileId) {
+                adoptMindMapNativeBaseline(fileId, document);
+                setStatus("");
+              }
+              debugMindMapOpen("hydrate draft saveMindMapData aligned", {
+                revision: savePayload.revision ?? null,
+                fileId8: fileId?.slice(0, 8) ?? null,
+              });
             } else {
               markDocumentChanged(document);
             }
@@ -1027,8 +1078,17 @@ const MindMapEditorShell = () => {
         return;
       }
       if (event.data.type === "mindMapDirtyState") {
-        setStatus("有未保存更改");
-        notifyEdit();
+        if (nativeHydratingRef.current) {
+          debugMindMapOpen("mindMapDirtyState suppressed during hydrate");
+          return;
+        }
+        const current = latestDocumentRef.current;
+        if (current) {
+          markDocumentChanged(current);
+        } else {
+          setStatus("有未保存更改");
+          notifyEdit();
+        }
         return;
       }
       const current = latestDocumentRef.current;
@@ -1081,6 +1141,7 @@ const MindMapEditorShell = () => {
       window.removeEventListener("message", onMessage);
     };
   }, [
+    extendNativeHydrateSettle,
     fileId,
     handleBridgeLifecycleMessage,
     handleNativeClipboardMessage,
@@ -1093,6 +1154,7 @@ const MindMapEditorShell = () => {
     postToNative,
     requestNativeSave,
     saveCurrentFileToServer,
+    setStatus,
     updateLatestDocument,
   ]);
 
@@ -1204,11 +1266,10 @@ const MindMapEditorShell = () => {
       if (!fileId || !latestDocumentRef.current) {
         return;
       }
-      const state = evaluateCurrentFileModificationState({
+      const state = getMindMapModificationState(
         fileId,
-        kind: "mindmap",
-        mindMapDocument: latestDocumentRef.current,
-      });
+        latestDocumentRef.current,
+      );
       const hash =
         state.modified
           ? (state.contentHash ?? hashDocumentSnapshot(latestDocumentRef.current))

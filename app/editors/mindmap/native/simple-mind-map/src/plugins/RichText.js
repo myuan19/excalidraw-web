@@ -1021,13 +1021,15 @@ class RichText {
 
   // 插件实例化时处理思维导图数据，转换为富文本数据
   handleDataToRichTextOnInit() {
-    // 处理数据，转成富文本格式
-    if (this.mindMap.renderer.renderTree) {
-      // 如果已经存在渲染树了，那么直接更新渲染树，并且触发重新渲染
-      this.handleSetData(this.mindMap.renderer.renderTree)
+    const renderTree = this.mindMap.renderer.renderTree
+    const data = renderTree || this.mindMap.opt.data
+    if (!data) {
+      return
+    }
+    // 构造期 renderTree 已存在但还没首渲染：只转换数据，不触发 render/history。
+    this.handleSetData(data)
+    if (this.mindMap.renderer.root) {
       this.afterHandleData()
-    } else if (this.mindMap.opt.data) {
-      this.handleSetData(this.mindMap.opt.data)
     }
   }
 

@@ -37,7 +37,11 @@ const defaultTagStyle = {
 // 因为如果注册了NodeBase64ImageStorage插件，那么节点图片字段保存的实际是一个id，所以如果要获取图片真实的url可以通过该方法
 function getImageUrl() {
   const img = this.getData('image')
-  return (this.mindMap.renderer.renderTree.data.imgMap || {})[img] || img
+  const imgMap = (this.mindMap.renderer.renderTree.data.imgMap || {})
+  if (/^smm_img_key_/.test(img) && !imgMap[img]) {
+    return ''
+  }
+  return imgMap[img] || img
 }
 
 //  创建图片节点
@@ -46,7 +50,6 @@ function createImgNode() {
   if (!img) {
     return
   }
-  img = (this.mindMap.renderer.renderTree.data.imgMap || {})[img] || img
   const imgSize = this.getImgShowSize()
   const node = new SVGImage().load(img).size(...imgSize)
   // 如果指定了加载失败显示的图片，那么加载一下图片检测是否失败
@@ -62,7 +65,6 @@ function createImgNode() {
     node.attr('title', this.getData('imageTitle'))
   }
   node.on('click', e => {
-    console.log('[DEBUG] nodeCreateContents.imgNode.click | button:', e.button, '| client:', e.clientX, e.clientY)
     this.mindMap.emit('node_img_click', this, node, e)
   })
   node.on('dblclick', e => {
@@ -78,13 +80,11 @@ function createImgNode() {
     this.mindMap.emit('node_img_mousemove', this, node, e)
   })
   node.on('contextmenu', e => {
-    console.log('[DEBUG] nodeCreateContents.imgNode.contextmenu | button:', e.button, '| client:', e.clientX, e.clientY)
     e.preventDefault()
     e.stopPropagation()
     this.mindMap.emit('node_img_contextmenu', this, node, e)
   })
   node.on('mousedown', e => {
-    console.log('[DEBUG] nodeCreateContents.imgNode.mousedown | button:', e.button, '| client:', e.clientX, e.clientY)
     this.mindMap.emit('node_img_mousedown', this, node, e)
   })
   return {
@@ -208,13 +208,17 @@ function createRichTextNode(specifyText) {
     el.style.width = ''
   }
   let { width, height } = el.getBoundingClientRect()
-  // 如果文本为空，那么需要计算一个默认高度
+  // 首帧测量偶发为 0 时，用字号估算单行高度，避免占位长文本导致节点先高后矮
   if (height <= 0) {
-    div.innerHTML = `<p>${emptyTextMeasureHeightText}</p>`
-    let elTmp = div.children[0]
-    elTmp.classList.add('smm-richtext-node-wrap')
-    height = elTmp.getBoundingClientRect().height
-    div.innerHTML = html
+    const fontSize = Number(this.getStyle('fontSize', false)) || 16
+    height = Math.ceil(fontSize * 1.2)
+    if (height <= 0) {
+      div.innerHTML = `<p>${emptyTextMeasureHeightText}</p>`
+      let elTmp = div.children[0]
+      elTmp.classList.add('smm-richtext-node-wrap')
+      height = elTmp.getBoundingClientRect().height
+      div.innerHTML = html
+    }
   }
   width = Math.min(Math.ceil(width) + 1, textAutoWrapWidth) // 修复getBoundingClientRect方法对实际宽度是小数的元素获取到的值是整数，导致宽度不够文本发生换行的问题
   height = Math.ceil(height)

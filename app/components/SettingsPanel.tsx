@@ -1,4 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+
+import { useStrictOverlayDismiss } from "../hooks/useStrictOverlayDismiss";
 
 import {
   type AISettingsConfig,
@@ -8,6 +11,7 @@ import {
   saveAIConfigToServer,
 } from "../data/aiConfig";
 import {
+  AUTO_SAVE_IDLE_SEC_OPTIONS,
   type AppSettings,
   getAppSettings,
   updateAppSettings,
@@ -100,32 +104,24 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     [],
   );
 
-  const backdropProps = useMemo(
-    () => {
-      const downOnBackdrop = { current: false };
-      return {
-        onPointerDown: (e: React.PointerEvent) => {
-          downOnBackdrop.current = e.target === e.currentTarget;
-        },
-        onPointerUp: (e: React.PointerEvent) => {
-          if (e.target === e.currentTarget && downOnBackdrop.current) {
-            onClose();
-          }
-          downOnBackdrop.current = false;
-        },
-      };
-    },
-    [onClose],
-  );
+  const overlayDismiss = useStrictOverlayDismiss(onClose);
 
   if (!open) {
     return null;
   }
 
-  return (
-    <div className="settings-panel-overlay" {...backdropProps}>
+  return createPortal(
+    <div className="settings-panel-overlay" role="presentation">
+      <div
+        className="settings-panel-overlay__backdrop"
+        aria-hidden
+        {...overlayDismiss}
+      />
       <div
         className="settings-panel"
+        role="dialog"
+        aria-modal
+        aria-label="设置"
         onPointerDown={(e) => e.stopPropagation()}
       >
         <div className="settings-panel__header">
@@ -223,19 +219,27 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     <select
                       className="settings-panel__select"
                       value={appSettings.autoSaveIdleSec}
-                      onChange={(e) =>
+                      onChange={(e) => {
                         handleAppSettingChange(
                           "autoSaveIdleSec",
                           Number(e.target.value),
-                        )
-                      }
+                        );
+                        e.currentTarget.blur();
+                      }}
                     >
-                      <option value={5}>5 秒</option>
-                      <option value={10}>10 秒</option>
-                      <option value={30}>30 秒</option>
-                      <option value={60}>1 分钟</option>
-                      <option value={120}>2 分钟</option>
-                      <option value={300}>5 分钟</option>
+                      {AUTO_SAVE_IDLE_SEC_OPTIONS.map((sec) => (
+                        <option key={sec} value={sec}>
+                          {sec < 60
+                            ? `${sec} 秒`
+                            : sec === 60
+                              ? "1 分钟"
+                              : sec === 120
+                                ? "2 分钟"
+                                : sec === 300
+                                  ? "5 分钟"
+                                  : `${sec / 60} 分钟`}
+                        </option>
+                      ))}
                     </select>
                   </div>
                   <div className="settings-panel__option settings-panel__option--sub">
@@ -456,6 +460,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };

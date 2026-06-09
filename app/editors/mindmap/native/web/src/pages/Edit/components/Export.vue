@@ -4,10 +4,8 @@
     :class="{ isMobile: isMobile, isDark: isDark }"
     :title="$t('export.title')"
     :visible.sync="dialogVisible"
-    v-loading.fullscreen.lock="loading"
-    :element-loading-text="loadingText"
-    element-loading-spinner="el-icon-loading"
-    element-loading-background="rgba(0, 0, 0, 0.8)"
+    append-to-body
+    :close-on-click-modal="false"
     :width="isMobile ? '90%' : '800px'"
     :top="isMobile ? '20px' : '15vh'"
   >
@@ -148,6 +146,7 @@
 import { mapState, mapMutations } from 'vuex'
 import { downTypeList } from '@/config'
 import { isMobile } from 'simple-mind-map/src/utils/index'
+import { mindmapDevDebug } from '@/utils/mindmapDevDebug'
 
 // 导出
 export default {
@@ -212,7 +211,11 @@ export default {
     ...mapMutations(['setExtraTextOnExport']),
 
     handleShowExport() {
+      this.loading = false
       this.dialogVisible = true
+      mindmapDevDebug('mindmap-host', 'Export dialog open', {
+        dialogVisible: this.dialogVisible
+      })
     },
 
     onPaddingChange() {

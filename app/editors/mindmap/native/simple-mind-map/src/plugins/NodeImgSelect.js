@@ -1,9 +1,13 @@
 // 图片选中管理插件
 // 实现：单击选中节点后再点击图片 → 选中图片 → 蓝色边框 + 右下角缩放手柄
 // 缩放逻辑内置，不依赖 NodeImgAdjust
-import { resizeImgSizeByOriginRatio } from '../utils/index'
+import { isMindMapDebugEnabled, resizeImgSizeByOriginRatio } from '../utils/index'
 
-const DBG = (...args) => console.log('[DEBUG] NodeImgSelect |', ...args)
+const DBG = (...args) => {
+  if (isMindMapDebugEnabled()) {
+    console.log('[DEBUG] NodeImgSelect |', ...args)
+  }
+}
 const RESIZE_EVENT_CAPTURE = true
 const Z_INDEX = {
   highlight: 9999,

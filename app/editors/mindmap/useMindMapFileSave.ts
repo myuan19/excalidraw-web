@@ -12,6 +12,7 @@ import {
   shouldPromptEditorHomeNavDialog,
 } from "../../data/editorLeaveHome";
 import { evaluateCurrentFileModificationState } from "../../data/fileModificationState";
+import { clearMindMapDraftIfUnchanged } from "./mindMapDraftState";
 import { isLocalDraftFileId } from "../../data/localDraftFileId";
 import { notifyLocalDraftEdited } from "../../data/localDraftSessions";
 import { discardLocalDraftSession } from "../../data/discardLocalDraftSession";
@@ -184,17 +185,12 @@ export function useMindMapFileSave(opts: {
       if (!fileId) {
         return;
       }
-      updateDraftHashDebouncedRef.current(fileId, () => document);
-      notifyEdit();
-      const state = evaluateCurrentFileModificationState({
-        fileId,
-        kind: "mindmap",
-        mindMapDocument: document,
-      });
-      if (!state.modified) {
+      if (clearMindMapDraftIfUnchanged(fileId, document)) {
         setStatus("");
         return;
       }
+      updateDraftHashDebouncedRef.current(fileId, () => document);
+      notifyEdit();
       setStatus("有未保存更改");
     },
     [setStatus],

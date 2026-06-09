@@ -35,6 +35,7 @@ import themeImgMap from 'simple-mind-map-plugin-themes/themeImgMap'
 import themeList from 'simple-mind-map-plugin-themes/themeList'
 import sidebarPanelDebug from '@/mixins/sidebarPanelDebug'
 import sidebarHistorySync from '@/mixins/sidebarHistorySync'
+import { compactCustomThemeConfig } from '@/utils/editHistory'
 
 // 主题
 export default {
@@ -184,10 +185,13 @@ export default {
 
     useTheme(theme) {
       if (theme.value === this.theme) return
-      this.theme = theme.value
-      this.handleDark()
+      const currentTheme = this.mindMap.getTheme()
       const customThemeConfig = this.mindMap.getCustomThemeConfig()
-      const hasCustomThemeConfig = Object.keys(customThemeConfig).length > 0
+      const compactThemeConfig = compactCustomThemeConfig(
+        customThemeConfig,
+        currentTheme
+      )
+      const hasCustomThemeConfig = Object.keys(compactThemeConfig).length > 0
       if (hasCustomThemeConfig) {
         this.$confirm(this.$t('theme.coverTip'), this.$t('theme.tip'), {
           confirmButtonText: this.$t('theme.cover'),
@@ -200,18 +204,25 @@ export default {
               this.data.theme.config = {}
               this.changeTheme(theme, {})
             } else if (action === 'cancel') {
-              this.changeTheme(theme, customThemeConfig)
+              this.changeTheme(theme, compactThemeConfig)
             }
           }
         })
       } else {
-        this.changeTheme(theme, customThemeConfig)
+        this.changeTheme(theme, compactThemeConfig)
       }
     },
 
     changeTheme(theme, config) {
       this.$bus.$emit('showLoading')
-      this.mindMap.setTheme(theme.value)
+      this.mindMap.setTheme(theme.value, true)
+      this.mindMap.setThemeConfig(config)
+      this.theme = this.mindMap.getTheme()
+      this.handleDark()
+      if (this.data && this.data.theme) {
+        this.data.theme.template = theme.value
+        this.data.theme.config = config
+      }
       storeData({
         theme: {
           template: theme.value,

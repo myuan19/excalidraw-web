@@ -40,6 +40,24 @@ export function useMindMapRootNameSync({
     lastSyncedTextRef.current = getMindMapRootText(data);
   }, []);
 
+  /** 打开已有文件时：文件名已与根节点不同步则把显示名推回画布根节点 */
+  const syncFileNameToRootIfNeeded = useCallback(
+    (displayName: string, data?: MindMapDocumentData | null) => {
+      const name = String(displayName || "").trim();
+      if (!name || !isBridgeReady) {
+        return false;
+      }
+      const rootText = data ? getMindMapRootText(data) : lastSyncedTextRef.current;
+      if (!rootText || rootText === name) {
+        return false;
+      }
+      lastSyncedTextRef.current = name;
+      postToNative("updateRootText", { text: name });
+      return true;
+    },
+    [isBridgeReady, postToNative],
+  );
+
   const onDocumentChanged = useCallback(
     (data: MindMapDocumentData) => {
       if (!fileId) return;
@@ -83,5 +101,5 @@ export function useMindMapRootNameSync({
     };
   }, [fileId, isBridgeReady, postToNative, setFileName]);
 
-  return { initSyncedText, onDocumentChanged };
+  return { initSyncedText, onDocumentChanged, syncFileNameToRootIfNeeded };
 }

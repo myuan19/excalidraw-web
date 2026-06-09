@@ -1,6 +1,10 @@
-import { getTwoPointDistance } from '../utils'
+import { getTwoPointDistance, isMindMapDebugEnabled } from '../utils'
 
-const DBG = (...args) => console.log('[DEBUG] TouchEvent |', ...args)
+const DBG = (...args) => {
+  if (isMindMapDebugEnabled()) {
+    console.log('[DEBUG] TouchEvent |', ...args)
+  }
+}
 
 // 手势事件支持插件
 class TouchEvent {

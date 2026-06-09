@@ -1,5 +1,7 @@
 /* MindMap iframe host-takeover runtime. Built into public/mind-map via copy.js */
 ;(function () {
+      // Must match app/editors/mindmap/mindMapDraftState.ts NATIVE_HYDRATE_SETTLE_MS
+      const DIRTY_NOTIFY_SETTLE_MS = 2500
       const bridgeSource = 'simple-mind-map-native'
       const hostSource = 'excalidraw-web'
       const bridgeStartedAt = performance.now()
@@ -175,6 +177,8 @@
       const DRAFT_THUMB_EXPORT_DEBOUNCE_MS = 450
       let draftThumbExportTimer = null
       let draftThumbExportRevision = 0
+      let dirtyNotifyEnabled = false
+      let dirtyNotifyEnableTimer = null
       const bridgeRequests = new Map()
       const postToHost = (type, payload) => {
         if (window.parent && window.parent !== window) {
@@ -374,6 +378,7 @@
           data,
           thumbnail: null
         })
+        scheduleDirtyNotifyEnable('draft-push')
         scheduleDraftThumbnailExport(revision)
       }
       const resolveHostRequest = message => {
@@ -476,6 +481,20 @@
           slowResources: getSlowMindMapResources()
         })
         postToHost('appInited')
+        scheduleDirtyNotifyEnable('app-inited')
+      }
+
+      const scheduleDirtyNotifyEnable = (reason, delayMs = DIRTY_NOTIFY_SETTLE_MS) => {
+        dirtyNotifyEnabled = false
+        if (dirtyNotifyEnableTimer) {
+          clearTimeout(dirtyNotifyEnableTimer)
+          dirtyNotifyEnableTimer = null
+        }
+        dirtyNotifyEnableTimer = window.setTimeout(() => {
+          dirtyNotifyEnabled = true
+          dirtyNotifyEnableTimer = null
+          debugMindMapOpen('dirty notify enabled', { reason, delayMs })
+        }, delayMs)
       }
 
       const startTakeOverApp = data => {
@@ -522,7 +541,13 @@
           return
         }
         let textEditDirtyTimer = null
+        scheduleDirtyNotifyEnable('bootstrap-start')
         const notifyDirty = () => {
+          if (!dirtyNotifyEnabled) {
+            debugMindMapOpen('dirty notify suppressed', { phase: 'hydrating' })
+            return
+          }
+          debugMindMapOpen('dirty notify emit', { phase: 'user-edit' })
           postToHost('mindMapDirtyState', { dirty: true })
         }
         window.$bus.$on('data_change', notifyDirty)
@@ -648,6 +673,7 @@
           return
         }
         if (message.type === 'initMindMap') {
+          scheduleDirtyNotifyEnable('init-mind-map')
           mindmapLoadMark('received initMindMap message', {
             appStarted,
             hostAppInitedSent,
@@ -676,6 +702,7 @@
         }
         if (message.type === 'setMindMapData') {
           debugMindMapOpen('received setMindMapData message')
+          scheduleDirtyNotifyEnable('set-mind-map-data')
           setTakeOverAppMethods(message.payload)
           if (
             nativeMindMap &&
@@ -700,11 +727,19 @@
           }
         }
         if (message.type === 'mindMapHostOpenExport') {
+          debugMindMapOpen('mindMapHostOpenExport', {
+            hasBus: !!(window.$bus && typeof window.$bus.$emit === 'function'),
+            hasNativeMindMap: !!nativeMindMap
+          })
           if (!emitOnBus('showExport')) {
             debugMindMapOpen('mindMapHostOpenExport skipped: bus unavailable')
           }
         }
         if (message.type === 'mindMapHostOpenImport') {
+          debugMindMapOpen('mindMapHostOpenImport', {
+            hasBus: !!(window.$bus && typeof window.$bus.$emit === 'function'),
+            hasNativeMindMap: !!nativeMindMap
+          })
           if (!emitOnBus('showImport')) {
             debugMindMapOpen('mindMapHostOpenImport skipped: bus unavailable')
           }

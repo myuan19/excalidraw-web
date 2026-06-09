@@ -18,8 +18,10 @@ export { beginDragSession, endDragSession } from './dragSession'
 
 export {
   normalizeThemeFieldValue,
+  readThemeField,
   previewThemeField,
   commitThemeField,
+  compactCustomThemeConfig,
   persistThemeConfig,
   readThemeMargin,
   buildThemeMarginConfig,

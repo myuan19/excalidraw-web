@@ -3,6 +3,8 @@
 | File / dir | Role |
 |------------|------|
 | `MindMapEditorShell.tsx` | React host: iframe, postMessage bridge, AI/archive UI |
+| `mindMapDraftState.ts` | Draft/baseline 对齐与误报清除（纯函数） |
+| `useMindMapNativeHydrate.ts` | 打开后 iframe settle 窗口（滑动计时） |
 | `useMindMapFileSave.ts` | Draft hash, local cache, server save |
 | `native/` | **Source**: `simple-mind-map` library + `web/` Vue UI |
 | `../../public/mind-map/` | **Served build** at URL `/mind-map/` (sync from `native/` after build) |

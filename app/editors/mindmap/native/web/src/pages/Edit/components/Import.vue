@@ -4,6 +4,8 @@
       class="nodeImportDialog"
       :title="$t('import.title')"
       :visible.sync="dialogVisible"
+      append-to-body
+      :close-on-click-modal="false"
       width="350px"
     >
       <el-upload
@@ -59,6 +61,7 @@
 <script>
 import { mapMutations } from 'vuex'
 import Vue from 'vue'
+import { mindmapDevDebug } from '@/utils/mindmapDevDebug'
 
 // 导入
 export default {
@@ -99,6 +102,9 @@ export default {
 
     handleShowImport() {
       this.dialogVisible = true
+      mindmapDevDebug('mindmap-host', 'Import dialog open', {
+        dialogVisible: this.dialogVisible
+      })
     },
 
     getRegexp() {

@@ -783,6 +783,7 @@ import {
   normalizeThemeFieldValue,
   persistThemeConfig,
   previewOuterFramePadding,
+  readThemeField,
   previewThemeField,
   previewThemeMargin,
   readThemeMargin
@@ -994,7 +995,7 @@ export default {
       const marginKeys = ['marginX', 'marginY']
       Object.keys(this.style).forEach(key => {
         if (marginKeys.includes(key)) return
-        this.style[key] = this.mindMap.getThemeConfig(key)
+        this.style[key] = readThemeField(this.mindMap, key)
         if (key === 'backgroundImage' && this.style[key] === 'none') {
           this.style[key] = ''
         }
@@ -1039,10 +1040,12 @@ export default {
     update(key, value) {
       const normalized = normalizeThemeFieldValue(key, value)
       this.style[key] = normalized
-      this.data.theme.config[key] = normalized
       this.$bus.$emit('showLoading')
-      commitThemeField(this.mindMap, key, normalized)
-      persistThemeConfig(this.mindMap, this.data.theme.config)
+      const config = commitThemeField(this.mindMap, key, normalized) || {}
+      const persistedConfig = persistThemeConfig(this.mindMap, config)
+      if (this.data.theme) {
+        this.data.theme.config = persistedConfig
+      }
     },
 
     // 更新彩虹线条配置
@@ -1083,12 +1086,14 @@ export default {
 
     updateMargin(type, value) {
       this.style[type] = value
-      commitThemeMargin(this.mindMap, this.marginActiveTab, type, value)
-      if (this.data.theme && this.data.theme.config) {
-        if (!this.data.theme.config[this.marginActiveTab]) {
-          this.data.theme.config[this.marginActiveTab] = {}
-        }
-        this.data.theme.config[this.marginActiveTab][type] = value
+      const config = commitThemeMargin(
+        this.mindMap,
+        this.marginActiveTab,
+        type,
+        value
+      ) || {}
+      if (this.data.theme) {
+        this.data.theme.config = config
       }
     },
 
