@@ -4,6 +4,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { createLogger } from "../lib/logger";
 import { devDebug, isDevDebugChannelEnabled } from "../lib/devDebug";
 import { fetchThumbnailSvgForCard } from "../data/fetchThumbnailSvgForCard";
+import { patchFileListTreeCacheThumbnailMissing } from "../data/fileListSessionCache";
 import { isLocalDraftFileId } from "../data/localDraftFileId";
 import {
   markThumbnailServerMiss,
@@ -238,6 +239,7 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
               status === 404 &&
               markThumbnailServerMiss(item.id, item.contentSha)
             ) {
+              patchFileListTreeCacheThumbnailMissing(item.id, item.contentSha);
               onThumbnailServerMiss?.(item.id, item.contentSha);
             }
             return;

@@ -23,6 +23,10 @@ import {
 } from "../../data/autoSaveSession";
 import { isAutoSaveOnExitActive } from "../../data/appSettings";
 import { installExecutor, requestSaveAndWait } from "../../data/saveQueue";
+import {
+  matchesMindMapPersistedSnapshot,
+  noteMindMapPersistedSnapshot,
+} from "./mindMapPersistedSnapshot";
 
 import type { ManagedDocument } from "../../data/documentTypes";
 import type { MindMapDocumentData } from "../../data/formats/MindMapAdapter";
@@ -185,6 +189,13 @@ export function useMindMapFileSave(opts: {
       if (!fileId) {
         return;
       }
+      if (matchesMindMapPersistedSnapshot(fileId, document)) {
+        updateDraftHashDebouncedRef.current.cancel();
+        FileSyncState.alignHashes(fileId, hashDocumentSnapshot(document));
+        FileSyncState.clearLocalEditTime(fileId);
+        setStatus("");
+        return;
+      }
       if (clearMindMapDraftIfUnchanged(fileId, document)) {
         setStatus("");
         return;
@@ -277,6 +288,7 @@ export function useMindMapFileSave(opts: {
         if (result?.content_sha256) {
           FileSyncState.setServerHash(fileId, result.content_sha256);
         }
+        noteMindMapPersistedSnapshot(fileId, document);
         updateDraftHashDebouncedRef.current.cancel();
         FileSyncState.setLocalCache(fileId, toMindMapLocalCacheRecord(document));
         FileSyncState.alignHashes(fileId, hashDocumentSnapshot(document));

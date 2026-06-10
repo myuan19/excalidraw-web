@@ -2,6 +2,7 @@ import { evaluateCurrentFileModificationState } from "../../data/fileModificatio
 import { FileSyncState } from "../../data/FileSyncState";
 import { isLocalDraftFileId } from "../../data/localDraftFileId";
 import { hashDocumentSnapshot } from "../../data/sceneHash";
+import { noteMindMapPersistedSnapshot } from "./mindMapPersistedSnapshot";
 
 import type { ManagedDocument } from "../../data/documentTypes";
 import type { MindMapDocumentData } from "../../data/formats/MindMapAdapter";
@@ -33,6 +34,7 @@ export function adoptMindMapNativeBaseline(
   if (isLocalDraftFileId(fileId)) {
     return;
   }
+  noteMindMapPersistedSnapshot(fileId, document);
   FileSyncState.alignHashes(fileId, hashDocumentSnapshot(document));
   FileSyncState.clearLocalEditTime(fileId);
 }

@@ -286,6 +286,41 @@
           })
         })
       }
+      const waitForNextFrame = () => {
+        return new Promise(resolve => {
+          if (window.requestAnimationFrame) {
+            window.requestAnimationFrame(() => resolve())
+            return
+          }
+          window.setTimeout(resolve, 0)
+        })
+      }
+      const syncPendingTextEditForSnapshot = async reason => {
+        const textEdit =
+          nativeMindMap &&
+          nativeMindMap.renderer &&
+          nativeMindMap.renderer.textEdit
+        if (
+          !textEdit ||
+          typeof textEdit.syncEditingTextToNode !== 'function' ||
+          (typeof textEdit.isShowTextEdit === 'function' &&
+            !textEdit.isShowTextEdit())
+        ) {
+          return false
+        }
+        try {
+          const synced = textEdit.syncEditingTextToNode()
+          if (synced && typeof synced.then === 'function') {
+            await synced
+          }
+          await waitForNextFrame()
+          debugMindMapOpen('synced text edit before snapshot', { reason })
+          return !!synced
+        } catch (error) {
+          console.warn('Failed to sync MindMap text edit before snapshot', error)
+          return false
+        }
+      }
       const getMindMapThumbnail = async () => {
         if (!nativeMindMap || typeof nativeMindMap.export !== 'function') {
           return null
@@ -656,7 +691,7 @@
         })
       }
 
-      window.addEventListener('message', event => {
+      window.addEventListener('message', async event => {
         const message = event.data
         if (!message) return
         const isHostMessage = message.source === hostSource
@@ -766,6 +801,7 @@
             return
           }
           if (nativeMindMap && typeof nativeMindMap.getData === 'function') {
+            await syncPendingTextEditForSnapshot('request-save')
             bridgeState.mindMapData = nativeMindMap.getData(true)
           }
           postMindMapDataToHost(bridgeState.mindMapData, requestId)

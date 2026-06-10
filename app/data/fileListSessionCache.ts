@@ -74,3 +74,32 @@ export function patchFileListTreeCacheFileName(
   nextFiles[index] = { ...nextFiles[index], name: trimmed };
   writeFileListTreeCache({ folders: tree.folders, files: nextFiles });
 }
+
+/**
+ * 缩略图 404 后修正本 tab 的列表缓存，避免首页再次用旧 has_thumbnail
+ * 乐观拉取同一版本的缺失缩略图。
+ */
+export function patchFileListTreeCacheThumbnailMissing(
+  fileId: string,
+  contentSha: string | null | undefined,
+): boolean {
+  const tree = readFileListTreeCache();
+  if (!tree) {
+    return false;
+  }
+  const index = tree.files.findIndex((file) => file.id === fileId);
+  if (index === -1) {
+    return false;
+  }
+  const file = tree.files[index];
+  if (
+    !file.has_thumbnail ||
+    (file.content_sha256 ?? null) !== (contentSha ?? null)
+  ) {
+    return false;
+  }
+  const nextFiles = [...tree.files];
+  nextFiles[index] = { ...file, has_thumbnail: false };
+  writeFileListTreeCache({ folders: tree.folders, files: nextFiles });
+  return true;
+}

@@ -17,7 +17,7 @@ describe("MindMap bridge source contract", () => {
     (relativePath) => {
       const source = readBridgeShell(relativePath);
       const dataChangeBlock = source.slice(
-        source.indexOf("window.$bus.$on('data_change'"),
+        source.indexOf("const notifyDirty = () =>"),
         source.indexOf("window.$bus.$on('view_data_change'"),
       );
       const viewChangeBlock = source.slice(
@@ -26,6 +26,9 @@ describe("MindMap bridge source contract", () => {
       );
 
       expect(dataChangeBlock).toContain("postToHost('mindMapDirtyState'");
+      expect(dataChangeBlock).toContain(
+        "window.$bus.$on('data_change', notifyDirty)",
+      );
       expect(viewChangeBlock).toContain("postToHost('mindMapViewState'");
       expect(viewChangeBlock).toContain("viewData =>");
       expect(viewChangeBlock).toContain(
@@ -37,6 +40,27 @@ describe("MindMap bridge source contract", () => {
       expect(source).toContain("scheduleDraftThumbnailExport");
     },
   );
+
+  it("syncs active text edits before collecting save data and thumbnail", () => {
+    const source = readBridgeShell(
+      "editors/mindmap/native/web/src/bridge/takeoverShell.js",
+    );
+    const saveRequestBlock = source.slice(
+      source.indexOf("if (message.type === 'requestMindMapSave')"),
+      source.indexOf("if (message.type === 'updateRootText'"),
+    );
+
+    expect(source).toContain("syncPendingTextEditForSnapshot");
+    expect(saveRequestBlock).toContain(
+      "await syncPendingTextEditForSnapshot('request-save')",
+    );
+    expect(
+      saveRequestBlock.indexOf("syncPendingTextEditForSnapshot"),
+    ).toBeLessThan(saveRequestBlock.indexOf("nativeMindMap.getData(true)"));
+    expect(saveRequestBlock.indexOf("nativeMindMap.getData(true)")).toBeLessThan(
+      saveRequestBlock.indexOf("postMindMapDataToHost"),
+    );
+  });
 
   it("index.html loads external takeover bridge before vue bundles", () => {
     const html = readBridgeShell("editors/mindmap/native/web/public/index.html");

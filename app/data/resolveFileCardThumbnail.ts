@@ -1,5 +1,6 @@
 import { chooseFileCardThumbnail } from "./fileCardThumbnail";
 import { fetchThumbnailSvgForCard } from "./fetchThumbnailSvgForCard";
+import { patchFileListTreeCacheThumbnailMissing } from "./fileListSessionCache";
 import { FileSyncState } from "./FileSyncState";
 import { isLocalDraftFileId } from "./localDraftFileId";
 import { LocalThumbnailCache } from "./localThumbnailCache";
@@ -84,6 +85,7 @@ export async function resolveFileCardThumbnailSvg(
   if (!svg) {
     if (status === 404) {
       markThumbnailServerMiss(fileId, file.content_sha256);
+      patchFileListTreeCacheThumbnailMissing(fileId, file.content_sha256);
     }
     return null;
   }
