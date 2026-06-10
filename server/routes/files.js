@@ -45,6 +45,42 @@ function hashSceneDataJson(data) {
 /** 每次成功保存后追加一条版本快照（与 current.excalidraw 内容一致） */
 /** 每个文件最多保留的版本快照条数（更早的从 DB 与磁盘删除） */
 const MAX_ARCHIVES_PER_FILE = 8;
+const AUTO_ARCHIVE_LABEL_PREFIX = "auto:";
+
+function normalizeArchiveLabel(value) {
+  return typeof value === "string" ? value.trim().slice(0, 128) : "";
+}
+
+function isAutoArchiveLabel(label) {
+  return (
+    typeof label === "string" && label.startsWith(AUTO_ARCHIVE_LABEL_PREFIX)
+  );
+}
+
+function deleteArchiveRow(row) {
+  if (!row) {
+    return;
+  }
+  const absPath = join(DATA_DIR, row.path);
+  if (existsSync(absPath)) {
+    try {
+      rmSync(absPath);
+    } catch {
+      // ignore
+    }
+  }
+  db.prepare("DELETE FROM archives WHERE id = ?").run(row.id);
+}
+
+function deleteArchivesByLabel(fileId, label) {
+  if (!label) {
+    return;
+  }
+  const rows = db
+    .prepare("SELECT id, path FROM archives WHERE file_id = ? AND label = ?")
+    .all(fileId, label);
+  rows.forEach(deleteArchiveRow);
+}
 
 function normalizeFolderId(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -135,7 +171,7 @@ function wouldCreateFolderCycle(folderId, nextParentId) {
   return false;
 }
 
-/** 在插入新快照之前腾出位置，避免先出现第 9 条再删（与客户端「满 8 删最旧」一致） */
+/** 在插入新快照之前腾出位置：优先淘汰自动保存，其次才删最旧版本。 */
 function trimArchivesBeforeAppend(fileId) {
   for (;;) {
     const countRow = db
@@ -147,25 +183,26 @@ function trimArchivesBeforeAppend(fileId) {
     }
     const row = db
       .prepare(
-        `SELECT id, path FROM archives WHERE file_id = ? ORDER BY created_at ASC LIMIT 1`,
+        `SELECT id, path FROM archives
+         WHERE file_id = ?
+         ORDER BY
+           CASE WHEN label LIKE 'auto:%' THEN 0 ELSE 1 END,
+           created_at ASC
+         LIMIT 1`,
       )
       .get(fileId);
     if (!row) {
       return;
     }
-    const absPath = join(DATA_DIR, row.path);
-    if (existsSync(absPath)) {
-      try {
-        rmSync(absPath);
-      } catch {
-        // ignore
-      }
-    }
-    db.prepare("DELETE FROM archives WHERE id = ?").run(row.id);
+    deleteArchiveRow(row);
   }
 }
 
-function appendVersionSnapshot(fileId, dataObj) {
+function appendVersionSnapshot(fileId, dataObj, options = {}) {
+  const label = normalizeArchiveLabel(options.label);
+  if (isAutoArchiveLabel(label)) {
+    deleteArchivesByLabel(fileId, label);
+  }
   trimArchivesBeforeAppend(fileId);
   const archiveId = randomUUID();
   const now = new Date().toISOString();
@@ -176,7 +213,7 @@ function appendVersionSnapshot(fileId, dataObj) {
   writeFileSync(absPath, jsonStr, "utf-8");
   db.prepare(
     `INSERT INTO archives (id, file_id, label, created_at, path, content_sha256) VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(archiveId, fileId, "", now, relPath, sha);
+  ).run(archiveId, fileId, label, now, relPath, sha);
   return archiveId;
 }
 
@@ -548,6 +585,7 @@ router.put("/:id", (req, res) => {
   const hasData = !!req.body.data;
   const hasThumb = typeof req.body.thumbnail === "string" && req.body.thumbnail.length > 0;
   const hasName = !!req.body.name;
+  const archiveLabel = normalizeArchiveLabel(req.body.archiveLabel);
   const elementCount = hasData && Array.isArray(req.body.data?.elements) ? req.body.data.elements.length : 0;
   const fileCount = hasData && req.body.data?.files ? Object.keys(req.body.data.files).length : 0;
   const sceneSummary = hasData ? summarizeScenePayload(req.body.data) : null;
@@ -558,6 +596,7 @@ router.put("/:id", (req, res) => {
     hasData,
     hasName,
     name: req.body.name != null ? truncStr(String(req.body.name), 80) : "(unchanged)",
+    archiveLabel: archiveLabel || "",
     hasThumb,
     thumbLen: hasThumb ? req.body.thumbnail.length : 0,
     elementCount,
@@ -600,7 +639,7 @@ router.put("/:id", (req, res) => {
   if (req.body.data && !skipDataWrite) {
     ensureFileDir(id);
     writeFileSync(currentPath(id), JSON.stringify(req.body.data), "utf-8");
-    appendVersionSnapshot(id, req.body.data);
+    appendVersionSnapshot(id, req.body.data, { label: archiveLabel });
   }
 
   if (req.body.thumbnail) {
@@ -644,6 +683,7 @@ router.put("/:id", (req, res) => {
     wroteThumb: !!req.body.thumbnail,
     sha: contentSha256Out?.slice(0, 8) ?? "none",
     wroteData: !!(req.body.data && !skipDataWrite),
+    archiveLabel: archiveLabel || "",
   });
   res.json({
     ok: true,
@@ -863,15 +903,7 @@ router.delete("/:id/archives/:archiveId", (req, res) => {
     archiveId: req.params.archiveId.slice(0, 8),
   });
 
-  const absPath = join(DATA_DIR, archive.path);
-  db.prepare("DELETE FROM archives WHERE id = ?").run(req.params.archiveId);
-  if (existsSync(absPath)) {
-    try {
-      rmSync(absPath, { force: true });
-    } catch {
-      // ignore
-    }
-  }
+  deleteArchiveRow(archive);
 
   res.json({ ok: true });
 });

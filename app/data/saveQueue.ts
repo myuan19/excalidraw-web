@@ -7,14 +7,13 @@
  * 1. **合并**：短时间内（COALESCE_MS）多次触发只执行一次保存
  * 2. **串行**：上一次保存完成前不启动下一次，避免并发竞争
  * 3. **优先级**：合并时保留优先级最高的 source（用户主动 > 自动）
- * 4. **后处理**：保存成功后统一执行 broadcastFileSaved、manageSessionAutoArchive 等
+ * 4. **后处理**：保存成功后统一执行 broadcastFileSaved
  *
  * 编辑器只需在初始化时 `installExecutor(fn)` 注册实际保存函数，
  * 各触发点改为 `requestSave({ source })` 即可。
  */
 
 import type { SaveToServerSource } from "../hooks/types";
-import { manageSessionAutoArchive } from "./autoSaveSession";
 import { broadcastFileSaved } from "./crossTabFileSync";
 import { createLogger } from "../lib/logger";
 
@@ -98,9 +97,6 @@ async function drain(): Promise<SaveResult> {
 
       if (result.saved && result.fileId) {
         broadcastFileSaved(result.fileId);
-        if (req.source === "auto" && !result.skipped) {
-          void manageSessionAutoArchive(result.fileId);
-        }
       }
     } catch (e) {
       log.debug("save failed", e);
@@ -196,7 +192,7 @@ export function requestSaveAndWait(req: SaveRequest): Promise<SaveResult> {
  * - 设置 UI 提示（toast / hint）
  * - 返回 { saved, skipped, fileId }
  *
- * executor 不需要处理：broadcastFileSaved、manageSessionAutoArchive（队列统一做）
+ * executor 不需要处理：broadcastFileSaved（队列统一做）
  */
 export function installExecutor(fn: SaveExecutor): () => void {
   executor = fn;

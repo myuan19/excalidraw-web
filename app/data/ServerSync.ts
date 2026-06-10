@@ -231,24 +231,6 @@ export interface PutFileResult {
   content_sha256?: string;
 }
 
-/** 与 server/routes/files.js 中 MAX_ARCHIVES_PER_FILE 一致 */
-export const MAX_ARCHIVES_PER_FILE = 8;
-
-/** 上传前若已达存档上限，先删最旧一条，避免与服务端快照逻辑冲突或旧版服务端未先修剪时失败 */
-async function ensureArchiveHeadroomBeforeSave(fileId: string): Promise<void> {
-  const archives = await api<ArchiveEntry[]>(`/files/${fileId}/archives`);
-  if (archives.length < MAX_ARCHIVES_PER_FILE) {
-    return;
-  }
-  const oldest = [...archives].sort(
-    (a, b) =>
-      new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-  )[0];
-  if (oldest) {
-    await api(`/files/${fileId}/archives/${oldest.id}`, { method: "DELETE" });
-  }
-}
-
 export interface ServerFileHash {
   id: string;
   content_sha256: string | null;
@@ -340,23 +322,20 @@ export const ServerSync = {
     data: unknown,
     name?: string,
     thumbnail?: string,
-    opts?: { suppressSavedEvent?: boolean },
+    opts?: { suppressSavedEvent?: boolean; archiveLabel?: string },
   ): Promise<PutFileResult> {
     logSave.debug("saveFileImmediate", {
       id,
       hasThumb: typeof thumbnail === "string" && thumbnail.length > 0,
+      archiveLabel: opts?.archiveLabel ?? "",
     });
-    try {
-      await ensureArchiveHeadroomBeforeSave(id);
-    } catch {
-      // 服务端也会在写入前修剪；预删失败不阻断保存
-    }
     const result = await api<PutFileResult>(`/files/${id}`, {
       method: "PUT",
       body: JSON.stringify({
         data,
         ...(name ? { name } : {}),
         ...(thumbnail ? { thumbnail } : {}),
+        ...(opts?.archiveLabel ? { archiveLabel: opts.archiveLabel } : {}),
       }),
     });
     if (result?.content_sha256) {

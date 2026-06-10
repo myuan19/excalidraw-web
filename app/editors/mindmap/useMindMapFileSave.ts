@@ -23,6 +23,7 @@ import { clearAppShellPendingNavigation } from "../../shell/appShellNavigate";
 import {
   isAutoSaveEligibleFile,
   notifyEdit,
+  resolveAutoSaveArchiveLabel,
 } from "../../data/autoSaveSession";
 import { isAutoSaveOnExitActive } from "../../data/appSettings";
 import { installExecutor, requestSaveAndWait } from "../../data/saveQueue";
@@ -304,7 +305,10 @@ export function useMindMapFileSave(opts: {
           document,
           getFileName(),
           thumbnail ?? undefined,
-          { suppressSavedEvent: true },
+          {
+            suppressSavedEvent: true,
+            archiveLabel: resolveAutoSaveArchiveLabel(source),
+          },
         );
         if (result?.content_sha256) {
           FileSyncState.setServerHash(fileId, result.content_sha256);

@@ -24,7 +24,10 @@ import { notifyLocalDraftEdited } from "../../data/localDraftSessions";
 import { discardLocalDraftSession } from "../../data/discardLocalDraftSession";
 import { clearAppShellPendingNavigation } from "../../shell/appShellNavigate";
 import { isAutoSaveOnExitActive } from "../../data/appSettings";
-import { isAutoSaveEligibleFile } from "../../data/autoSaveSession";
+import {
+  isAutoSaveEligibleFile,
+  resolveAutoSaveArchiveLabel,
+} from "../../data/autoSaveSession";
 import { installExecutor, requestSaveAndWait } from "../../data/saveQueue";
 
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
@@ -247,7 +250,10 @@ export function useForkFileSave(opts: {
           sceneData,
           nameForPut,
           thumbnail,
-          { suppressSavedEvent: true },
+          {
+            suppressSavedEvent: true,
+            archiveLabel: resolveAutoSaveArchiveLabel(source),
+          },
         );
         logSave.debug(`saveToServer file=${fid.slice(0, 8)}, result`, result);
         const deltasAfterSave = await DeltaStorage.getAllPersistedDtos();

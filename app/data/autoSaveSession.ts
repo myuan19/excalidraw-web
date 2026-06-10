@@ -4,8 +4,8 @@
  * 核心逻辑：
  * 1. 每次编辑变更时调用 `notifyEdit()`，重置空闲计时器
  * 2. 空闲 N 秒后自动触发一次保存到服务器
- * 3. 保存产生的存档用 `auto:${sessionId}` 作为 label
- * 4. 同一 session 内的下次自动保存会先删除上一次的自动存档再创建新的
+ * 3. 自动保存请求携带 `auto:${sessionId}` label，由服务端在写入版本时覆盖同 session 旧档
+ * 4. `auto` 与 `visibility` 都按自动保存历史版本处理，避免后台保存污染普通历史
  * 5. session ID 只在内存中，页面关闭/导航离开即丢失
  *    → 下次打开同一文件时旧的自动存档永久保留
  */
@@ -13,7 +13,6 @@
 import { getAppSettings } from "./appSettings";
 import { getFileIdFromHash } from "./fileIdFromHash";
 import { isLocalDraftFileId } from "./localDraftFileId";
-import { ServerSync } from "./ServerSync";
 import { createLogger } from "../lib/logger";
 export {
   broadcastFileSaved,
@@ -52,44 +51,10 @@ export function isAutoSaveLabel(label: string): boolean {
   return label.startsWith(AUTO_LABEL_PREFIX);
 }
 
-/**
- * 保存成功后调用：把最新那条空 label 存档标记为当前 session 的自动存档，
- * 并删除同 session 之前的那条自动存档（如果有的话）。
- *
- * 这样同一 session 内始终只保留一条自动存档。
- */
-export async function manageSessionAutoArchive(
-  fileId: string,
-): Promise<void> {
-  const currentLabel = makeAutoLabel();
-  try {
-    const archives = await ServerSync.listArchives(fileId);
-
-    const oldAutoArchive = archives.find((a) => a.label === currentLabel);
-
-    const newestEmptyLabel = archives.find((a) => a.label === "");
-    if (newestEmptyLabel) {
-      await ServerSync.patchArchiveLabel(
-        fileId,
-        newestEmptyLabel.id,
-        currentLabel,
-      );
-      log.debug("labeled newest archive as session auto-save", {
-        fileId8: fileId.slice(0, 8),
-        archiveId: newestEmptyLabel.id.slice(0, 8),
-      });
-    }
-
-    if (oldAutoArchive) {
-      await ServerSync.deleteArchive(fileId, oldAutoArchive.id);
-      log.debug("deleted old session auto-archive", {
-        fileId8: fileId.slice(0, 8),
-        archiveId: oldAutoArchive.id.slice(0, 8),
-      });
-    }
-  } catch (e) {
-    log.debug("manage session auto-archive failed (non-fatal)", e);
-  }
+export function resolveAutoSaveArchiveLabel(source: string): string | undefined {
+  return source === "auto" || source === "visibility"
+    ? makeAutoLabel()
+    : undefined;
 }
 
 /** 重置 session（换文件 / 离开编辑器时调用） */

@@ -532,12 +532,16 @@ export default {
       }
       const appliedCount = tx.appliedCount
       this.endAiOperationTransaction()
+      this.commitAiRenderedMutation('transaction commit', {
+        appliedCount
+      })
+    },
+
+    commitAiRenderedMutation(reason, extra = {}) {
       if (this.mindMap.command && this.mindMap.command.addHistory) {
         this.mindMap.command.addHistory()
       }
-      mindmapDevDebug('mindmap-ai-opstream', 'transaction commit', {
-        appliedCount
-      })
+      mindmapDevDebug('mindmap-ai-opstream', reason, extra)
     },
 
     resolveAiOperationRef(ref) {
@@ -1197,7 +1201,7 @@ ${protocol.addChildExample}
       if (!targetRef) {
         throw new Error('target node missing')
       }
-      this.runAiOperationMutation(() => {
+      const committed = this.runAiOperationMutation(() => {
         const currentData = result.current.data
         const children = result.children || []
         Object.keys(currentData).forEach(key => {
@@ -1216,6 +1220,11 @@ ${protocol.addChildExample}
         this.mindMap.render()
         return true
       })
+      if (committed) {
+        this.commitAiRenderedMutation('fallback commit', {
+          childrenCount: result.children ? result.children.length : 0
+        })
+      }
     }
   }
 }

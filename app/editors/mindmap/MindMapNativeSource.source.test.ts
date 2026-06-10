@@ -324,4 +324,36 @@ describe("MindMap native source contract", () => {
     expect(richTextPluginSource).toContain(".smm-richtext-node-wrap p");
     expect(richTextPluginSource).toContain("margin: 0;");
   });
+
+  it("commits AI fallback writes through the native history save chain", () => {
+    const aiCreateSource = fs.readFileSync(
+      path.join(
+        appRoot,
+        "editors/mindmap/native/web/src/pages/Edit/components/AiCreate.vue",
+      ),
+      "utf8",
+    );
+    const commitHelperBlock = aiCreateSource.slice(
+      aiCreateSource.indexOf("commitAiRenderedMutation(reason"),
+      aiCreateSource.indexOf("resolveAiOperationRef(ref)"),
+    );
+    const fallbackBlock = aiCreateSource.slice(
+      aiCreateSource.indexOf("applyAiOrganizeResult(result)"),
+      aiCreateSource.indexOf("</script>"),
+    );
+
+    expect(commitHelperBlock).toContain("this.mindMap.command.addHistory()");
+    expect(aiCreateSource).toContain(
+      "this.commitAiRenderedMutation('transaction commit'",
+    );
+    expect(fallbackBlock).toContain(
+      "const committed = this.runAiOperationMutation",
+    );
+    expect(fallbackBlock).toContain(
+      "this.commitAiRenderedMutation('fallback commit'",
+    );
+    expect(fallbackBlock.indexOf("this.mindMap.render()")).toBeLessThan(
+      fallbackBlock.indexOf("this.commitAiRenderedMutation('fallback commit'"),
+    );
+  });
 });
