@@ -37,7 +37,9 @@ const store = new Vuex.Store({
       key: '',
       model: '',
       port: 3456,
-      method: 'POST'
+      method: 'POST',
+      transport: 'direct',
+      configured: false
     },
     // 扩展主题列表
     extendThemeGroupList: [],
@@ -100,7 +102,8 @@ const store = new Vuex.Store({
         keyLen: data && data.key ? data.key.length : 0,
         hasKey: !!(data && data.key),
         hasMethod: !!(data && data.method),
-        model: data && data.model
+        model: data && data.model,
+        transport: data && data.transport
       })
       if (!data || typeof data !== 'object') {
         mindmapDevDebug('mindmap-ai', 'store.setHostAiConfig ignored', {
@@ -111,9 +114,13 @@ const store = new Vuex.Store({
       state.aiConfig = {
         ...state.aiConfig,
         ...(data.api ? { api: data.api } : {}),
-        ...(data.key ? { key: data.key } : {}),
+        ...(Object.prototype.hasOwnProperty.call(data, 'key')
+          ? { key: data.key || '' }
+          : {}),
         ...(data.model ? { model: data.model } : {}),
         ...(data.method ? { method: data.method } : {}),
+        ...(data.transport ? { transport: data.transport } : {}),
+        configured: !!data.configured,
         port: null
       }
       mindmapDevDebug('mindmap-ai', 'store.setHostAiConfig after', {
@@ -122,11 +129,17 @@ const store = new Vuex.Store({
         keyLen: state.aiConfig.key ? state.aiConfig.key.length : 0,
         hasKey: !!state.aiConfig.key,
         model: state.aiConfig.model,
+        transport: state.aiConfig.transport,
+        configured: !!state.aiConfig.configured,
         method: state.aiConfig.method,
         port: state.aiConfig.port,
         complete: !!(
           String(state.aiConfig.api || '').trim() &&
-          String(state.aiConfig.key || '').trim() &&
+          (
+            state.aiConfig.transport === 'host-proxy'
+              ? state.aiConfig.configured
+              : String(state.aiConfig.key || '').trim()
+          ) &&
           String(state.aiConfig.model || '').trim()
         )
       })

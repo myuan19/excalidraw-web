@@ -1,15 +1,10 @@
 import { exportToSvg } from "@excalidraw/excalidraw/scene/export";
 import { registerLibraryAIActions } from "@excalidraw/excalidraw/data/libraryAIActions";
 
-import {
-  ensureAIConfigLoaded,
-  getCachedAIConfig,
-  isAIConfigured,
-  resolveAIModels,
-} from "./aiConfig";
-import { openAIIconTag } from "./openaiCompatibleStream";
-
 import type { NonDeletedExcalidrawElement } from "@excalidraw/element/types";
+
+import { ensureAIConfigLoaded, isAIConfigured } from "./aiConfig";
+import { openAIIconTag } from "./openaiCompatibleStream";
 
 const CONCURRENCY = 3;
 const PNG_SIZE = 512;
@@ -44,7 +39,11 @@ async function elementsToPngDataUrl(
     });
 
     const canvas = document.createElement("canvas");
-    const scale = Math.min(PNG_SIZE / (img.width || 1), PNG_SIZE / (img.height || 1), 1);
+    const scale = Math.min(
+      PNG_SIZE / (img.width || 1),
+      PNG_SIZE / (img.height || 1),
+      1,
+    );
     canvas.width = Math.max(1, Math.round((img.width || 100) * scale));
     canvas.height = Math.max(1, Math.round((img.height || 100) * scale));
     const ctx = canvas.getContext("2d")!;
@@ -69,9 +68,6 @@ async function generateIconTags(
       "请先在首页（文件列表）打开「AI 设置」，配置 Base URL 与 API Key。",
     );
   }
-  const cfg = getCachedAIConfig().excalidraw;
-  const models = resolveAIModels(cfg);
-
   const results = new Map<string, string>();
   const errors: string[] = [];
   let done = 0;
@@ -93,9 +89,6 @@ async function generateIconTags(
           break;
         }
         const tag = await openAIIconTag({
-          endpoint: cfg.endpoint,
-          apiKey: cfg.apiKey,
-          model: models.iconTag,
           imageDataUrl: dataUrl,
           signal,
         });

@@ -1,17 +1,26 @@
+/* eslint-disable import/order -- load env/logging side effects before route modules */
 import "./loadEnv.mjs";
 import "./initLogging.mjs";
+
 import { existsSync, statSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+
 import express from "express";
 import cors from "cors";
+
 import filesRouter from "./routes/files.js";
 import libraryRouter from "./routes/library.js";
 import aiSettingsRouter from "./routes/ai-settings.js";
 import aiPromptPresetsRouter from "./routes/ai-prompt-presets.js";
+import aiProxyRouter from "./routes/ai-proxy.js";
+import mindMapAiRouter from "./routes/mindmap-ai.js";
 import ttdChatsRouter from "./routes/ttd-chats.js";
 import logsRouter from "./routes/logs.js";
-import { tokenRouter as embedTokenRouter, pageRouter as embedPageRouter } from "./routes/embed.js";
+import {
+  tokenRouter as embedTokenRouter,
+  pageRouter as embedPageRouter,
+} from "./routes/embed.js";
 import { createLogger } from "./lib/logger.js";
 import {
   isClientLogIngestEnabled,
@@ -41,7 +50,9 @@ app.use("/api", (req, res, next) => {
   const t0 = Date.now();
   res.on("finish", () => {
     const pathname = req.originalUrl.split("?")[0];
-    if (pathname === "/api/health") return;
+    if (pathname === "/api/health") {
+      return;
+    }
 
     const traceAll = isHttpTraceEnabled();
     const filesRoute = pathname.startsWith("/api/files");
@@ -55,11 +66,20 @@ app.use("/api", (req, res, next) => {
         }),
       };
       if (res.statusCode >= 500) {
-        httpLog.error(`${req.method} ${req.originalUrl} → ${res.statusCode}`, meta);
+        httpLog.error(
+          `${req.method} ${req.originalUrl} → ${res.statusCode}`,
+          meta,
+        );
       } else if (res.statusCode >= 400) {
-        httpLog.warn(`${req.method} ${req.originalUrl} → ${res.statusCode}`, meta);
+        httpLog.warn(
+          `${req.method} ${req.originalUrl} → ${res.statusCode}`,
+          meta,
+        );
       } else {
-        httpLog.info(`${req.method} ${req.originalUrl} → ${res.statusCode}`, meta);
+        httpLog.info(
+          `${req.method} ${req.originalUrl} → ${res.statusCode}`,
+          meta,
+        );
       }
     }
   });
@@ -74,6 +94,8 @@ app.use("/api/files", filesRouter);
 app.use("/api/library", libraryRouter);
 app.use("/api/ai-settings", aiSettingsRouter);
 app.use("/api/ai-prompt-presets", aiPromptPresetsRouter);
+app.use("/api/ai", aiProxyRouter);
+app.use("/api/mindmap/ai", mindMapAiRouter);
 app.use("/api/ttd-chats", ttdChatsRouter);
 app.use("/api/embed-tokens", embedTokenRouter);
 
@@ -170,8 +192,8 @@ function servePrecompressedStatic(root) {
       raw === "1" || raw === "true"
         ? path.join(__dirname, "../app/build")
         : path.isAbsolute(raw)
-          ? raw
-          : path.join(__dirname, raw);
+        ? raw
+        : path.join(__dirname, raw);
     if (existsSync(root) && existsSync(path.join(root, "index.html"))) {
       app.use(servePrecompressedStatic(root));
       app.use(
@@ -182,7 +204,7 @@ function servePrecompressedStatic(root) {
           setHeaders: setSpaStaticCacheHeaders,
         }),
       );
-      console.log(`[excalidraw-server] also serving static from ${root}`);
+      httpLog.info("serving static SPA", { root });
     } else {
       console.warn(
         `[excalidraw-server] SERVE_SPA set but build not found (need index.html): ${root}`,
@@ -202,7 +224,9 @@ app.use((err, req, res, next) => {
       path: req.originalUrl,
       message: err.message,
     });
-    return res.status(400).json({ error: "invalid_json", message: err.message });
+    return res
+      .status(400)
+      .json({ error: "invalid_json", message: err.message });
   }
   if (err.type === "entity.too.large" || err.status === 413) {
     errLog.warn("payload too large", {

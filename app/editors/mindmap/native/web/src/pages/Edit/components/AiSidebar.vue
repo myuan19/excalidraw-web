@@ -1,11 +1,11 @@
 <template>
   <Sidebar ref="sidebar" :title="$t('ai.sidebarTitle') || 'AI 润色'" panelKey="ai">
     <div class="aiSidebarBox" :class="{ isDark: isDark }">
-      <NodePreviewStage :mindMap="mindMap" :isDark="isDark">
-        <div class="nodePreviewNode" :style="targetNodePreviewStyle">
-          {{ targetNodePreviewText }}
-        </div>
-      </NodePreviewStage>
+      <NodePreviewStage
+        :mindMap="mindMap"
+        :isDark="isDark"
+        :node="getPreviewNode()"
+      ></NodePreviewStage>
       <div class="aiPanelContent customScrollbar">
       <section class="sectionBlock">
         <div class="sectionLabel">{{ $t('ai.editScope') || '编辑范围' }}</div>
@@ -173,7 +173,6 @@ import { mindmapDevDebug } from '@/utils/mindmapDevDebug'
 import { sidebarMemoryDebug } from '@/utils/sidebarDebug'
 import sidebarPanelDebug from '@/mixins/sidebarPanelDebug'
 import sidebarHistorySync from '@/mixins/sidebarHistorySync'
-import { buildNodeDomPreviewStyle } from '@/utils/nodePreviewStyle'
 
 export default {
   name: 'AiSidebar',
@@ -208,19 +207,16 @@ export default {
       aiConfig: state => state.aiConfig
     }),
     hasAiConfig() {
+      const isHostProxy =
+        this.aiConfig && this.aiConfig.transport === 'host-proxy'
       return !!(
         this.aiConfig &&
         String(this.aiConfig.api || '').trim() &&
-        String(this.aiConfig.key || '').trim() &&
+        (isHostProxy
+          ? this.aiConfig.configured
+          : String(this.aiConfig.key || '').trim()) &&
         String(this.aiConfig.model || '').trim()
       )
-    },
-    targetNodePreviewText() {
-      return this.stripHtml(this.targetNodeName) || '(空)'
-    },
-    targetNodePreviewStyle() {
-      const node = this.getPreviewNode()
-      return buildNodeDomPreviewStyle(node, { isDark: this.isDark })
     }
   },
   watch: {

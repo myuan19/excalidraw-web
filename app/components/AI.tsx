@@ -15,12 +15,7 @@ import {
   openAIChatCompletionStream,
   openAIVisionHtml,
 } from "../data/openaiCompatibleStream";
-import {
-  ensureAIConfigLoaded,
-  getCachedAIConfig,
-  isAIConfigured,
-  resolveAIModels,
-} from "../data/aiConfig";
+import { ensureAIConfigLoaded, isAIConfigured } from "../data/aiConfig";
 import { devDebug } from "../lib/devDebug";
 
 export const AIComponents = ({
@@ -50,8 +45,6 @@ export const AIComponents = ({
             });
             throw new Error("AI 未配置");
           }
-          const cfg = getCachedAIConfig().excalidraw;
-          const models = resolveAIModels(cfg);
           const appState = excalidrawAPI.getAppState();
 
           const blob = await exportToBlob({
@@ -70,9 +63,6 @@ export const AIComponents = ({
           const textFromFrameChildren = getTextFromElements(children);
 
           const { html } = await openAIVisionHtml({
-            endpoint: cfg.endpoint,
-            apiKey: cfg.apiKey,
-            model: models.diagramToCode,
             imageDataUrl: dataURL,
             textContext: textFromFrameChildren,
           });
@@ -105,14 +95,9 @@ export const AIComponents = ({
               }),
             };
           }
-          const cfg = getCachedAIConfig().excalidraw;
-          const models = resolveAIModels(cfg);
           const { onChunk, onStreamCreated, signal, messages } = props;
 
           return openAIChatCompletionStream({
-            endpoint: cfg.endpoint,
-            apiKey: cfg.apiKey,
-            model: models.textToDiagram,
             messages,
             onChunk,
             onStreamCreated,

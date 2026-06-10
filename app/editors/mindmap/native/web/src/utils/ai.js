@@ -14,6 +14,7 @@ class Ai {
       this.baseData = {
         api: options.api,
         method: options.method,
+        transport: options.transport || 'direct',
         headers: {
           Authorization: 'Bearer ' + options.key
         },
@@ -30,7 +31,7 @@ class Ai {
       const res = await this.postMsg(data)
       const decoder = new TextDecoder()
       let ended = false
-      while (1) {
+      while (!this.controller.signal.aborted) {
         const { done, value } = await res.read()
         if (done) {
           if (!ended && this.content) {
@@ -80,22 +81,44 @@ class Ai {
   async postMsg(data) {
     this.controller = new AbortController()
     const endpoint = String(this.baseData.api || '').replace(/\/$/, '')
+    const isHostProxy = this.baseData.transport === 'host-proxy'
     const res = await fetch(endpoint, {
       signal: this.controller.signal,
       method: this.baseData.method || 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...this.baseData.headers
+        ...(isHostProxy ? {} : this.baseData.headers)
       },
-      body: JSON.stringify({
-        ...this.baseData.data,
-        ...data
-      })
+      body: JSON.stringify(
+        isHostProxy
+          ? data
+          : {
+              ...this.baseData.data,
+              ...data
+            }
+      )
     })
     if (res.status && res.status !== 200) {
-      throw new Error('请求失败')
+      throw new Error(await this.getResponseErrorMessage(res))
     }
     return res.body.getReader()
+  }
+
+  async getResponseErrorMessage(res) {
+    try {
+      const text = await res.text()
+      if (!text) {
+        return `请求失败（HTTP ${res.status}）`
+      }
+      try {
+        const json = JSON.parse(text)
+        return json.message || json.error || `请求失败（HTTP ${res.status}）`
+      } catch (error) {
+        return text || `请求失败（HTTP ${res.status}）`
+      }
+    } catch (error) {
+      return `请求失败（HTTP ${res.status}）`
+    }
   }
 
   handleChunkData(chunk) {

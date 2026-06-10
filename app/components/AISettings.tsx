@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   type AISettingsConfig,
@@ -152,17 +158,21 @@ export const AISettings: React.FC<AISettingsProps> = ({ open, onClose }) => {
         <h2>AI 配置</h2>
         <p className="ai-settings-desc">
           分别配置 Excalidraw 与 MindMap 的 OpenAI 兼容 API。设置保存在
-          <strong>服务器</strong>（SQLite），同一部署下所有浏览器共享；请求仍由本机浏览器直连你所填的 Base URL。
+          <strong>服务器</strong>（SQLite），同一部署下所有浏览器共享；所有 AI
+          请求均由服务器代理，避免浏览器 CORS，并避免 API Key 进入编辑器运行时。
         </p>
 
         {loadError ? (
-          <p className="ai-settings-desc ai-settings-desc--error">{loadError}</p>
+          <p className="ai-settings-desc ai-settings-desc--error">
+            {loadError}
+          </p>
         ) : null}
 
         <section className="ai-settings-section">
           <h3>Excalidraw AI</h3>
           <p className="ai-settings-section-desc">
-            用于文本生成图、图转代码和素材图标打标签。
+            用于文本生成图、图转代码和素材图标打标签；请求由服务器代理到该 Base
+            URL。
           </p>
           <label>
             Base URL（API 根地址）
@@ -197,7 +207,11 @@ export const AISettings: React.FC<AISettingsProps> = ({ open, onClose }) => {
                 type="button"
                 className="ai-settings-secret-toggle"
                 onClick={() => setShowExcalidrawKey((v) => !v)}
-                aria-label={showExcalidrawKey ? "隐藏 Excalidraw API Key" : "显示 Excalidraw API Key"}
+                aria-label={
+                  showExcalidrawKey
+                    ? "隐藏 Excalidraw API Key"
+                    : "显示 Excalidraw API Key"
+                }
               >
                 {showExcalidrawKey ? "隐藏" : "查看"}
               </button>
@@ -262,7 +276,8 @@ export const AISettings: React.FC<AISettingsProps> = ({ open, onClose }) => {
         <section className="ai-settings-section">
           <h3>MindMap AI</h3>
           <p className="ai-settings-section-desc">
-            用于 MindMap 内的 AI 生成，独立于 Excalidraw 配置。
+            用于 MindMap 内的 AI 生成，独立于 Excalidraw
+            配置；请求由服务器代理到该 Base URL。
           </p>
           <label>
             Base URL（API 根地址）
@@ -297,7 +312,11 @@ export const AISettings: React.FC<AISettingsProps> = ({ open, onClose }) => {
                 type="button"
                 className="ai-settings-secret-toggle"
                 onClick={() => setShowMindMapKey((v) => !v)}
-                aria-label={showMindMapKey ? "隐藏 MindMap API Key" : "显示 MindMap API Key"}
+                aria-label={
+                  showMindMapKey
+                    ? "隐藏 MindMap API Key"
+                    : "显示 MindMap API Key"
+                }
               >
                 {showMindMapKey ? "隐藏" : "查看"}
               </button>
@@ -321,10 +340,18 @@ export const AISettings: React.FC<AISettingsProps> = ({ open, onClose }) => {
         </section>
 
         <div className="ai-settings-buttons">
-          <button className="ai-btn-secondary" onClick={onClose} disabled={saving}>
+          <button
+            className="ai-btn-secondary"
+            onClick={onClose}
+            disabled={saving}
+          >
             取消
           </button>
-          <button className="ai-btn-primary" onClick={handleSave} disabled={saving}>
+          <button
+            className="ai-btn-primary"
+            onClick={handleSave}
+            disabled={saving}
+          >
             {saving ? "保存中…" : "保存"}
           </button>
         </div>

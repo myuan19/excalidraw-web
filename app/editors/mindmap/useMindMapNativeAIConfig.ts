@@ -11,6 +11,9 @@ import { devDebug } from "../../lib/devDebug";
 
 type PostToNative = (type: string, payload: unknown) => void;
 
+const MINDMAP_AI_PROXY_ENDPOINT = "/api/mindmap/ai/chat";
+const MINDMAP_AI_PROXY_TRANSPORT = "host-proxy";
+
 function summarizeMindMapAIConfig(reason: string) {
   const config = getCachedAIConfig().mindmap;
   const configured = isMindMapAIConfigured();
@@ -95,10 +98,11 @@ export function useMindMapNativeAIConfig(opts: {
       });
       postToNative("mindMapAiConfig", {
         configured,
-        api: resolvedEndpoint,
-        key: config.apiKey,
+        api: MINDMAP_AI_PROXY_ENDPOINT,
+        key: "",
         model,
         method: "POST",
+        transport: MINDMAP_AI_PROXY_TRANSPORT,
       });
     },
     [isBridgeReady, postToNative],

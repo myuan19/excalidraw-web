@@ -68,9 +68,12 @@ export default {
   computed: {
     ...mapState(['aiConfig']),
     hasAiConfig() {
+      const isHostProxy = this.aiConfig.transport === 'host-proxy'
       return !!(
         String(this.aiConfig.api || '').trim() &&
-        String(this.aiConfig.key || '').trim() &&
+        (isHostProxy
+          ? this.aiConfig.configured
+          : String(this.aiConfig.key || '').trim()) &&
         String(this.aiConfig.model || '').trim()
       )
     }
@@ -128,6 +131,8 @@ export default {
         keyLen: this.aiConfig.key ? String(this.aiConfig.key).length : 0,
         hasModel: !!String(this.aiConfig.model || '').trim(),
         model: this.aiConfig.model,
+        transport: this.aiConfig.transport,
+        configured: !!this.aiConfig.configured,
         method: this.aiConfig.method,
         port: this.aiConfig.port
       }

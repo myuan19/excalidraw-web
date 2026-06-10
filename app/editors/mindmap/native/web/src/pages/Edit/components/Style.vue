@@ -8,11 +8,8 @@
         :mindMap="mindMap"
         :isDark="isDark"
         :show="activeStyleNodes.length > 0"
-      >
-        <div class="nodePreviewNode" :style="nodePreviewStyle">
-          {{ nodePreviewText }}
-        </div>
-      </NodePreviewStage>
+        :node="getCurrentStyleTargetNode()"
+      ></NodePreviewStage>
       <div
         class="sidebarContent customScrollbar"
         v-if="activeStyleNodes.length > 0"
@@ -547,7 +544,6 @@ import sidebarHistorySync from '@/mixins/sidebarHistorySync'
 import { sidebarDebug } from '@/utils/sidebarDebug'
 import ThemeSlider from '@/components/ThemeSlider.vue'
 import NodePreviewStage from '@/components/sidebar/NodePreviewStage.vue'
-import { buildNodeDomPreviewStyleFromState } from '@/utils/nodePreviewStyle'
 import {
   commitNodeStylesOnNodes,
   commitNodeStyleOnNodes,
@@ -655,22 +651,6 @@ export default {
     },
     activeStyleNodes() {
       return this.getStyleTargetNodes(this.activeNodes)
-    },
-    nodePreviewText() {
-      const node = this.getCurrentStyleTargetNode()
-      if (!node) {
-        return ''
-      }
-      const text =
-        node.nodeData &&
-        node.nodeData.data &&
-        node.nodeData.data.text
-      return this.stripHtml(text || '') || '(空)'
-    },
-    nodePreviewStyle() {
-      return buildNodeDomPreviewStyleFromState(this.style, {
-        isDark: this.isDark
-      })
     }
   },
   watch: {
@@ -769,15 +749,6 @@ export default {
           throw error
         }
       })
-    },
-
-    stripHtml(value) {
-      return String(value || '')
-        .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<\/p\s*>/gi, '\n')
-        .replace(/<[^>]*>/g, '')
-        .replace(/&nbsp;/g, ' ')
-        .trim()
     },
 
     // 初始节点样式

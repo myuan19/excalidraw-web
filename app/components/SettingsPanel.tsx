@@ -114,7 +114,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   return createPortal(
     <div
-      className={`settings-panel-overlay${active ? " settings-panel-overlay--active" : ""}`}
+      className={`settings-panel-overlay${
+        active ? " settings-panel-overlay--active" : ""
+      }`}
       role="presentation"
     >
       <div
@@ -151,14 +153,18 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <nav className="settings-panel__tabs">
           <button
             type="button"
-            className={`settings-panel__tab ${activeTab === "general" ? "settings-panel__tab--active" : ""}`}
+            className={`settings-panel__tab ${
+              activeTab === "general" ? "settings-panel__tab--active" : ""
+            }`}
             onClick={() => setActiveTab("general")}
           >
             常规
           </button>
           <button
             type="button"
-            className={`settings-panel__tab ${activeTab === "ai" ? "settings-panel__tab--active" : ""}`}
+            className={`settings-panel__tab ${
+              activeTab === "ai" ? "settings-panel__tab--active" : ""
+            }`}
             onClick={() => setActiveTab("ai")}
           >
             AI 配置
@@ -239,12 +245,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                           {sec < 60
                             ? `${sec} 秒`
                             : sec === 60
-                              ? "1 分钟"
-                              : sec === 120
-                                ? "2 分钟"
-                                : sec === 300
-                                  ? "5 分钟"
-                                  : `${sec / 60} 分钟`}
+                            ? "1 分钟"
+                            : sec === 120
+                            ? "2 分钟"
+                            : sec === 300
+                            ? "5 分钟"
+                            : `${sec / 60} 分钟`}
                         </option>
                       ))}
                     </select>
@@ -286,7 +292,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <div className="settings-panel__section">
                 <h3>Excalidraw AI</h3>
                 <p className="settings-panel__section-desc">
-                  用于文本生成图、图转代码和素材图标打标签。
+                  用于文本生成图、图转代码和素材图标打标签；请求由服务器代理到该
+                  Base URL。
                 </p>
                 <label>
                   Base URL（API 根地址）
@@ -391,7 +398,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <div className="settings-panel__section">
                 <h3>MindMap AI</h3>
                 <p className="settings-panel__section-desc">
-                  用于 MindMap 内的 AI 生成，独立于 Excalidraw 配置。
+                  用于 MindMap 内的 AI 生成，独立于 Excalidraw
+                  配置；请求由服务器代理到该 Base URL。
                 </p>
                 <label>
                   Base URL（API 根地址）
