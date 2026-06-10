@@ -14,7 +14,8 @@ import {
   loadImage,
   fitPastedImageSizeToNodeText,
   handleTextEditSaveShortcut,
-  getSvgNodeVisibleRect
+  getSvgNodeVisibleRect,
+  normalizePastedText
 } from '../utils'
 import {
   bindRichTextLinkClicks,
@@ -675,6 +676,13 @@ class RichText {
                 console.error('RichText paste image failed:', err)
               })
           }
+          return
+        }
+        const text = e.clipboardData && e.clipboardData.getData('text')
+        if (text) {
+          e.preventDefault()
+          e.stopPropagation()
+          this.insertPastedText(text)
         }
       },
       true
@@ -732,10 +740,34 @@ class RichText {
     const { isSmm, data } = checkSmmFormatData(text)
     if (isSmm && data[0] && data[0].data) {
       // 只取第一个节点的纯文本
-      return getTextFromHtml(data[0].data.text)
+      return normalizePastedText(getTextFromHtml(data[0].data.text))
     } else {
-      return text
+      return normalizePastedText(text)
     }
+  }
+
+  // 插入纯文本粘贴内容，避免Quill把剪贴板末尾换行转换成额外空段落
+  insertPastedText(text) {
+    const insertText = this.formatPasteText(text)
+    if (!insertText) return
+    const range =
+      this.quill.getSelection() ||
+      this.pasteUseRange ||
+      this.lastRange || {
+        index: Math.max(this.quill.getLength() - 1, 0),
+        length: 0
+      }
+    const attributes = { ...this.getPasteTextStyle() }
+    if (isWholeUrlText(insertText)) {
+      attributes.link = normalizeUrl(insertText)
+    }
+    const delta = new Delta()
+      .retain(range.index)
+      .delete(range.length)
+      .insert(insertText, attributes)
+    this.quill.updateContents(delta, Quill.sources.USER)
+    this.quill.setSelection(range.index + insertText.length, Quill.sources.SILENT)
+    this.quill.focus()
   }
 
   // 正则输入中文

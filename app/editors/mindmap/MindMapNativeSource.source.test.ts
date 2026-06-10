@@ -76,6 +76,24 @@ describe("MindMap native source contract", () => {
     expect(editVueSource).toContain("this.manualSave()");
   });
 
+  it("normalizes pasted text before inserting it into text editors", () => {
+    const utilsSource = fs.readFileSync(
+      path.join(appRoot, "editors/mindmap/native/simple-mind-map/src/utils/index.js"),
+      "utf8",
+    );
+    const richTextSource = fs.readFileSync(
+      path.join(appRoot, "editors/mindmap/native/simple-mind-map/src/plugins/RichText.js"),
+      "utf8",
+    );
+
+    expect(utilsSource).toContain("export const normalizePastedText = text =>");
+    expect(utilsSource).toContain("replace(/[\\r\\n]+$/, '')");
+    expect(utilsSource).toContain("text = normalizePastedText(text)");
+    expect(richTextSource).toContain("normalizePastedText");
+    expect(richTextSource).toContain("insertPastedText(text)");
+    expect(richTextSource).toContain("避免Quill把剪贴板末尾换行转换成额外空段落");
+  });
+
   it("keeps AI polish context actions on the sidebar path without the old dialog", () => {
     const aiCreateSource = fs.readFileSync(
       path.join(appRoot, "editors/mindmap/native/web/src/pages/Edit/components/AiCreate.vue"),
@@ -113,7 +131,16 @@ describe("MindMap native source contract", () => {
       path.join(appRoot, "editors/mindmap/native/web/src/pages/Edit/components/AiCreate.vue"),
       "utf8",
     );
+    const aiTreeJsonSource = fs.readFileSync(
+      path.join(appRoot, "editors/mindmap/native/web/src/utils/aiTreeJson.js"),
+      "utf8",
+    );
 
+    expect(aiCreateSource).toContain("禁止把两个 JSON 对象连在同一行");
+    expect(aiCreateSource).toContain("parseAiFinalOrganizeResult");
+    expect(aiCreateSource).toContain("simpleMindMap 剪贴板 JSON 或整图 JSON");
+    expect(aiTreeJsonSource).toContain("parseAiSimpleMindMapJson");
+    expect(aiTreeJsonSource).toContain("parseAiFinalOrganizeResult");
     expect(aiCreateSource).toContain(
       "不要用 paragraph.indent 或 span.text 前导空格模拟思维导图层级",
     );

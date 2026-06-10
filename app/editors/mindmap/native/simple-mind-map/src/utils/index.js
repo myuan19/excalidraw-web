@@ -1418,7 +1418,12 @@ export const checkSmmFormatData = data => {
   }
 }
 
-// 处理输入框的粘贴事件，会去除文本的html格式、换行
+// 归一化剪贴板文本：只去掉来源常带的尾随换行，保留正文内部换行和普通空格
+export const normalizePastedText = text => {
+  return String(text == null ? '' : text).replace(/[\r\n]+$/, '')
+}
+
+// 处理输入框的粘贴事件，会去除文本的html格式和尾随换行
 export const handleInputPasteText = (e, text) => {
   e.preventDefault()
   const selection = window.getSelection()
@@ -1429,6 +1434,7 @@ export const handleInputPasteText = (e, text) => {
   text = htmlEscape(text)
   // 去除格式
   text = getTextFromHtml(text)
+  text = normalizePastedText(text)
   // 去除换行
   // text = text.replace(/\n/g, '')
   const textArr = text.split(/\n/g)

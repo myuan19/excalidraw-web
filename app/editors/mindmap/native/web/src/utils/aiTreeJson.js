@@ -485,6 +485,27 @@ function normalizeOptionalText(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
 
+function normalizeSmmDataNodeToAiInput(dataNode) {
+  if (!dataNode || typeof dataNode !== 'object' || !dataNode.data) {
+    throw new Error('invalid simpleMindMap node')
+  }
+  const data = dataNode.data || {}
+  const input = data.richText
+    ? quillHtmlToRichTextJson(data.text || '')
+    : {
+        text: data.text || ''
+      }
+  const note = normalizeOptionalText(data.note)
+  const hyperlink = normalizeOptionalText(data.hyperlink)
+  if (note) input.note = note
+  if (hyperlink) input.hyperlink = hyperlink
+  const children = Array.isArray(dataNode.children) ? dataNode.children : []
+  if (children.length > 0) {
+    input.children = children.map(child => normalizeSmmDataNodeToAiInput(child))
+  }
+  return input
+}
+
 export function normalizeAiOrganizeNode(input, allowChildren, options = {}) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new Error('invalid ai organize node')
@@ -505,6 +526,39 @@ export function normalizeAiOrganizeNode(input, allowChildren, options = {}) {
       : []
   return {
     data,
+    children
+  }
+}
+
+export function parseAiSimpleMindMapJson(
+  parsed,
+  { allowChildren = false, allowInlineStyles = false } = {}
+) {
+  if (!parsed || typeof parsed !== 'object' || !parsed.simpleMindMap) {
+    throw new Error('invalid simpleMindMap json')
+  }
+  const list = Array.isArray(parsed.data) ? parsed.data : [parsed.data]
+  const currentNode = list.find(item => item && item.data)
+  if (!currentNode) {
+    throw new Error('empty simpleMindMap data')
+  }
+  const options = { allowInlineStyles }
+  const current = normalizeAiOrganizeNode(
+    normalizeSmmDataNodeToAiInput(currentNode),
+    false,
+    options
+  )
+  const extraTopLevelNodes = list.filter(item => item && item !== currentNode)
+  const nestedChildren = Array.isArray(currentNode.children)
+    ? currentNode.children
+    : []
+  const children = allowChildren
+    ? [...nestedChildren, ...extraTopLevelNodes].map(child =>
+        normalizeAiOrganizeNode(normalizeSmmDataNodeToAiInput(child), true, options)
+      )
+    : []
+  return {
+    current,
     children
   }
 }
@@ -541,4 +595,16 @@ export function parseAiOrganizeJson(
     current,
     children
   }
+}
+
+export function parseAiFinalOrganizeResult(content, options = {}) {
+  const raw = String(content || '').trim()
+  if (!raw) {
+    throw new Error('empty ai organize content')
+  }
+  const parsed = JSON.parse(extractJsonText(raw))
+  if (parsed && typeof parsed === 'object' && parsed.simpleMindMap) {
+    return parseAiSimpleMindMapJson(parsed, options)
+  }
+  return parseAiOrganizeJson(raw, options)
 }

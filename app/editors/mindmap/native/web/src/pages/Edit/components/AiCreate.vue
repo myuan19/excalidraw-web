@@ -7,7 +7,7 @@
 <script>
 import Ai from '@/utils/ai'
 import {
-  parseAiOrganizeJson,
+  parseAiFinalOrganizeResult,
   quillHtmlToRichTextJson,
   summarizeRichTextJson
 } from '@/utils/aiTreeJson'
@@ -946,7 +946,7 @@ ${childrenSummaryXml.trimEnd()}
   <can_delete_nodes>${allowDeleteNodes}</can_delete_nodes>
 </mode>
 <operation_protocol>
-  <streaming_rule>只输出 NDJSON；每一行必须是一个完整 JSON 操作对象。不要输出 Markdown、代码块、解释文字或整体 JSON 数组。</streaming_rule>
+  <streaming_rule>只输出 NDJSON：每行一个完整 JSON 对象，对象之间必须换行。禁止输出 Markdown、代码块、解释文字、JSON 数组，禁止把两个 JSON 对象连在同一行。</streaming_rule>
   <operations>
 ${protocol.operations}
   </operations>
@@ -955,48 +955,18 @@ ${protocol.permissionRules}
   </permission_rules>
 </operation_protocol>
 ${contextReferenceXml}
-<edit_intent_rules>
-  如果 user_requirement 只是要求调整样式、格式、颜色、高亮、下划线、缩进或空格，不要改写、删除或新增任何文本内容。
-  纯样式修改时必须保留原文；需要修改哪个节点，就输出该节点完整原文对应的 text.paragraphs/spans，只在对应 span 上增减样式字段。
-  如果要求“全部/所有/整体”应用某种样式，必须对 edit_scope 范围内每个需要保留的节点分别输出 update_current 或 update_node，并给每个对应 span 都写上该样式字段。
-  视觉参考只使用 selected_node.current_node_style 和当前选中节点 current；不要根据整张图或子节点推断目标样式。需要预览/渲染效果时，只把 current 当作唯一目标节点。
-  如果 user_requirement 要求“保持当前样式/参考当前节点样式”，应尽量保留 current_node_style 对应的视觉特征，只调整用户明确要求修改的文字或富文本样式字段。
-  如果 user_requirement 包含层级、列表或大纲内容，且当前允许 add_child，应优先用 add_child 创建真实子节点；不要用 paragraph.indent 或 span.text 前导空格模拟思维导图层级。
-  如果当前不允许 add_child，则用无前导空格的普通段落表达层级内容；不要输出用于排版的前导空格、制表符或 HTML 实体。
-  新增、删除、更新子节点等能力只以 operation_protocol.permission_rules 和 operations 为准。
-</edit_intent_rules>
-<format_reference>
-  <node_fields>
-    <text required="true">使用 paragraphs/spans 表达，最终会转换为 Quill HTML。</text>
-    <note optional="true">普通文本备注。</note>
-    <hyperlink optional="true">URL 字符串。</hyperlink>
-${protocol.childrenField}
-  </node_fields>
-  <rich_text>
-    text 必须是对象：{"paragraphs":[{"spans":[{"text":"文本"}]}]}。
-    paragraph 表示段落，可带 align 和 indent；span 表示一段连续文本，可带文字样式。
-    禁止输出 HTML、Markdown、class、style 字符串；不要把 rich_text_json 原样当字符串输出。
-  </rich_text>
-  <style_fields>
-    paragraph.align 使用 "left"、"center"、"right" 表示段落对齐。
-    paragraph.indent 使用 0-8 的整数表示段落缩进层级，会转换为 Quill 的 ql-indent-N；仅在用户明确要求段落缩进时使用，不要用它表达思维导图层级、列表层级或大纲层级。
-    span.bold、span.italic、span.underline、span.strike 使用 true 表示加粗、斜体、下划线、删除线。
-    span.color 使用 "#RRGGBB" 表示文字颜色；span.background 使用 "#RRGGBB" 表示高亮/背景色。
-    span.font 表示字体；span.size 使用 px，例如 "16px"。
-    样式只作用于带该字段的 span；如果多个文字片段需要同一种样式，请给每个对应 span 都写上同样的字段。
-    动词高亮用 span.background；形容词下划线用 span.underline:true。
-    span.text 只能包含用户可见的纯文本，不能包含 &lt;u&gt;、&lt;mark&gt;、&lt;strong&gt;、&lt;span&gt;、**加粗**、__下划线__ 等任何标记。
-    span.text 必须输出普通字符，不要输出 HTML 实体；例如输出 "Star & Fork"，不要输出 "Star &amp; Fork"。
-    span.text 不要包含用于排版的前导空格或制表符；只有用户明确要求保留原始空白时，才保留正文中的连续普通空格。
-  </style_fields>
-  <default_style_rule>
-    默认不要输出 align、bold、italic、underline、strike、color、background、font、size 等样式字段。
-    selected_node.rich_text_json 是当前节点已有富文本结构；如果只是改写文字，需尽量保留原有 paragraph.align、paragraph.indent，以及 span 上的高亮、加粗、下划线、删除线、颜色、字号等样式字段。
-    未指定样式且原文无样式时只返回纯文本 span，系统会在创建节点时自动使用当前主题默认样式。
-    仅当 user_requirement 要求新增或调整某种样式时，才可新增或改变对应样式字段。
-  </default_style_rule>
-  <unsupported>不要输出 Markdown、HTML、表格、代码块、引用块或任务列表；所有样式必须使用上面列出的 JSON 字段表达。</unsupported>
-</format_reference>
+<rules>
+  <scope>新增、删除、更新子节点只以 operations 和 permission_rules 为准。</scope>
+  <content>按 user_requirement 修改；若只要求样式、格式、颜色、高亮、下划线、缩进或空格，必须保留原文，不改写、不删除、不新增文本。</content>
+  <style_scope>需要给“全部/所有/整体”加样式时，按 edit_scope 覆盖每个目标节点；输出完整 text.paragraphs/spans，只在对应 span 增减样式字段。</style_scope>
+  <visual_reference>视觉参考只使用 current_node_style 和 current；不要根据整图或子节点推断。若要求保持/参考当前样式，尽量保留现有富文本样式，只改用户明确要求的文字或样式。</visual_reference>
+  <hierarchy>层级、列表、大纲内容：允许 add_child 时优先创建真实子节点；否则用无前导空格的普通段落。不要用 paragraph.indent 或 span.text 前导空格模拟思维导图层级。</hierarchy>
+  <text_schema>text 必须是 {"paragraphs":[{"spans":[{"text":"文本"}]}]}。paragraph 可带 align/indent；span 是连续文本及样式。note 是普通文本；hyperlink 是 URL。${protocol.childrenField}</text_schema>
+  <style_schema>align 仅 left/center/right。indent 仅在用户明确要求段落缩进时使用。bold/italic/underline/strike 用 true；color/background 用 #RRGGBB；font 为字体；size 如 "16px"。样式只作用于带字段的 span，多个片段需分别写字段；动词高亮用 background，形容词下划线用 underline:true。</style_schema>
+  <text_limits>span.text 只能是普通可见文本；不要输出 HTML、Markdown、class、style、HTML 实体、用于排版的前导空格或制表符。例：输出 "Star & Fork"，不要输出 "Star &amp; Fork"。只有用户明确要求保留原始空白时，才保留正文中的连续普通空格。</text_limits>
+  <default_style>默认不要输出 align、bold、italic、underline、strike、color、background、font、size。仅用户要求样式变化时新增/改变样式；只改写文字时尽量保留 rich_text_json 中已有样式。</default_style>
+  <unsupported>禁止输出 HTML、Markdown、表格、代码块、引用块、任务列表、simpleMindMap 剪贴板 JSON 或整图 JSON；不要把 rich_text_json 原样当字符串输出。</unsupported>
+</rules>
 <output_examples>
 {"op":"update_current","text":{"paragraphs":[{"spans":[{"text":"整理后的内容"}]}]}}
 ${styledExample.trimEnd()}
@@ -1135,7 +1105,7 @@ ${protocol.addChildExample}
                 }
                 this.endAiOperationTransaction()
               }
-              const result = parseAiOrganizeJson(content, {
+              const result = parseAiFinalOrganizeResult(content, {
                 allowChildren: permission.canCreateChildren,
                 allowInlineStyles: permission.allowInlineStyles
               })

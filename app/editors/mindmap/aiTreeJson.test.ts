@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { parseAiOrganizeJson } from "./native/web/src/utils/aiTreeJson";
+import {
+  parseAiFinalOrganizeResult,
+  parseAiOrganizeJson,
+} from "./native/web/src/utils/aiTreeJson";
 
 const styledAiResponse = JSON.stringify({
   current: {
@@ -88,5 +91,109 @@ describe("parseAiOrganizeJson", () => {
     expect(result.current.data.text).toBe(
       '<p class="ql-indent-2"><span>Star &nbsp;&amp; Fork</span></p>',
     );
+  });
+
+  it("adapts simpleMindMap clipboard JSON into the final current result", () => {
+    const result = parseAiFinalOrganizeResult(
+      JSON.stringify({
+        simpleMindMap: true,
+        data: [
+          {
+            data: {
+              text: "<p><strong><span>标题</span></strong></p><p><span>正文</span></p>",
+              richText: true,
+              note: "备注",
+              hyperlink: "https://example.com",
+              isActive: true,
+              expand: true,
+              customTextWidth: 525,
+              paddingX: 15,
+              paddingY: 0,
+            },
+            children: [],
+          },
+        ],
+      }),
+      {
+        allowInlineStyles: true,
+      },
+    );
+
+    expect(result.current.data).toEqual({
+      text: "<p><strong><span>标题</span></strong></p><p><span>正文</span></p>",
+      richText: true,
+      note: "备注",
+      hyperlink: "https://example.com",
+    });
+  });
+
+  it("does not apply simpleMindMap children without child permissions", () => {
+    const result = parseAiFinalOrganizeResult(
+      JSON.stringify({
+        simpleMindMap: true,
+        data: [
+          {
+            data: {
+              text: "<p><span>当前</span></p>",
+              richText: true,
+            },
+            children: [
+              {
+                data: {
+                  text: "<p><span>子节点</span></p>",
+                  richText: true,
+                },
+                children: [],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(result.current.data.text).toBe("<p><span>当前</span></p>");
+    expect(result.children).toEqual([]);
+  });
+
+  it("converts simpleMindMap children only when child creation is allowed", () => {
+    const result = parseAiFinalOrganizeResult(
+      JSON.stringify({
+        simpleMindMap: true,
+        data: [
+          {
+            data: {
+              text: "<p><span>当前</span></p>",
+              richText: true,
+            },
+            children: [
+              {
+                data: {
+                  text: "<p><span>子节点</span></p>",
+                  richText: true,
+                },
+                children: [],
+              },
+            ],
+          },
+          {
+            data: {
+              text: "额外顶层",
+              richText: false,
+            },
+            children: [],
+          },
+        ],
+      }),
+      {
+        allowChildren: true,
+      },
+    );
+
+    expect(
+      result.children.map((child: { data: { text: string } }) => child.data.text),
+    ).toEqual([
+      "<p><span>子节点</span></p>",
+      "<p><span>额外顶层</span></p>",
+    ]);
   });
 });
