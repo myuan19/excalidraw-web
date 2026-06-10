@@ -11,6 +11,7 @@ export type MindMapSaveDocument = ManagedDocument<MindMapDocumentData>;
 
 /** iframe 初始化阶段与宿主 settle 结束共用的静默窗口（须与 takeoverShell 中 delayMs 一致） */
 export const NATIVE_HYDRATE_SETTLE_MS = 2500;
+const NATIVE_DIRTY_PENDING_HASH_PREFIX = "mindmap-native-dirty-pending:";
 
 export function getMindMapModificationState(
   fileId: string,
@@ -37,6 +38,31 @@ export function adoptMindMapNativeBaseline(
   noteMindMapPersistedSnapshot(fileId, document);
   FileSyncState.alignHashes(fileId, hashDocumentSnapshot(document));
   FileSyncState.clearLocalEditTime(fileId);
+}
+
+/**
+ * native 已通知有编辑，但最新完整文档快照还没到达宿主。
+ * 先保守标记为草稿，等后续 saveMindMapData / 保存快照到达后再用真实 hash 对齐。
+ */
+export function markMindMapNativeDirtyPending(fileId: string): boolean {
+  const baselineHash = FileSyncState.getBaselineHash(fileId);
+  const pendingHash = `${NATIVE_DIRTY_PENDING_HASH_PREFIX}${
+    baselineHash ?? "no-baseline"
+  }`;
+  if (FileSyncState.getDraftHash(fileId) === pendingHash) {
+    return false;
+  }
+  FileSyncState.setDraftHash(fileId, pendingHash);
+  FileSyncState.setLocalEditTime(fileId);
+  return true;
+}
+
+export function isMindMapNativeDirtyPending(fileId: string): boolean {
+  return (
+    FileSyncState.getDraftHash(fileId)?.startsWith(
+      NATIVE_DIRTY_PENDING_HASH_PREFIX,
+    ) ?? false
+  );
 }
 
 /**

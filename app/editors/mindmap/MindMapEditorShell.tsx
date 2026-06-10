@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getAppSettings } from "../../data/appSettings";
 import {
   isAutoSaveEligibleForCurrentFile,
-  notifyEdit,
   registerAutoSaveTrigger,
 } from "../../data/autoSaveSession";
 import { requestSave } from "../../data/saveQueue";
@@ -97,6 +96,7 @@ import {
 import {
   adoptMindMapNativeBaseline,
   getMindMapModificationState,
+  isMindMapNativeDirtyPending,
 } from "./mindMapDraftState";
 import { useMindMapNativeHydrate } from "./useMindMapNativeHydrate";
 
@@ -559,6 +559,7 @@ const MindMapEditorShell = () => {
     mindMapSaveHint,
     mindMapHomeNavDialogOpen,
     markDocumentChanged,
+    markNativeDocumentDirty,
     persistLocalDraftToCache,
     saveCurrentFileToServer,
     mindMapGoHomeWithServerSave,
@@ -1097,13 +1098,7 @@ const MindMapEditorShell = () => {
           debugMindMapOpen("mindMapDirtyState suppressed during hydrate");
           return;
         }
-        const current = latestDocumentRef.current;
-        if (current) {
-          markDocumentChanged(current);
-        } else {
-          setStatus("有未保存更改");
-          notifyEdit();
-        }
+        markNativeDocumentDirty();
         return;
       }
       const current = latestDocumentRef.current;
@@ -1165,6 +1160,7 @@ const MindMapEditorShell = () => {
     learnOrigin,
     learnedOrigin,
     markDocumentChanged,
+    markNativeDocumentDirty,
     mindMapGoHomeWithServerSave,
     postToNative,
     requestNativeSave,
@@ -1279,6 +1275,10 @@ const MindMapEditorShell = () => {
   useEffect(() => {
     const onBeforeUnload = () => {
       if (!fileId || !latestDocumentRef.current) {
+        return;
+      }
+      if (isMindMapNativeDirtyPending(fileId)) {
+        FileSyncState.setLocalEditTime(fileId);
         return;
       }
       const state = getMindMapModificationState(

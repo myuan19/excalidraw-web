@@ -1,13 +1,15 @@
 import { isExcalidrawDraftDirty } from "./draftDirty";
+import { DEFAULT_DOCUMENT_DISPLAY_NAME } from "./defaultDocumentName";
 import { FileSyncState } from "./FileSyncState";
 import { isLocalDraftFileId } from "./localDraftFileId";
 import { hashDocumentSnapshot, hashSceneSnapshot } from "./sceneHash";
 
 import type { ManagedDocument } from "./documentTypes";
-import type {
-  MindMapDocumentData,
+import {
+  getMindMapRootText,
+  isMindMapSingleRootOnly,
+  type MindMapDocumentData,
 } from "./formats/MindMapAdapter";
-import { isMindMapSingleRootOnly } from "./formats/MindMapAdapter";
 import type { ForkSceneSnapshot } from "./forkFileTypes";
 
 export type FileModificationDraftStatus = "idle" | "draft" | "synced";
@@ -40,7 +42,13 @@ function toState(
 }
 
 export function isMindMapTemplateDocument(document: unknown): boolean {
-  return isMindMapSingleRootOnly(document);
+  if (!isMindMapSingleRootOnly(document)) {
+    return false;
+  }
+  const data =
+    (document as { data?: MindMapDocumentData } | null)?.data ??
+    (document as MindMapDocumentData);
+  return getMindMapRootText(data) === DEFAULT_DOCUMENT_DISPLAY_NAME;
 }
 
 export function isLocalDraftSnapshotModified(
@@ -58,11 +66,14 @@ export function readStoredLocalDraftModified(
   fileId: string,
   kind: string | null | undefined,
 ): boolean {
+  if (FileSyncState.hasUnsavedChanges(fileId)) {
+    return true;
+  }
   const cache = FileSyncState.getLocalCache(fileId);
   if (cache) {
     return isLocalDraftSnapshotModified(kind, cache);
   }
-  return FileSyncState.hasUnsavedChanges(fileId);
+  return false;
 }
 
 export function readStoredFileModificationState(

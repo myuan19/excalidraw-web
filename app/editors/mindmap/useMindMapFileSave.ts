@@ -12,7 +12,10 @@ import {
   shouldPromptEditorHomeNavDialog,
 } from "../../data/editorLeaveHome";
 import { evaluateCurrentFileModificationState } from "../../data/fileModificationState";
-import { clearMindMapDraftIfUnchanged } from "./mindMapDraftState";
+import {
+  clearMindMapDraftIfUnchanged,
+  markMindMapNativeDirtyPending,
+} from "./mindMapDraftState";
 import { isLocalDraftFileId } from "../../data/localDraftFileId";
 import { notifyLocalDraftEdited } from "../../data/localDraftSessions";
 import { discardLocalDraftSession } from "../../data/discardLocalDraftSession";
@@ -207,6 +210,21 @@ export function useMindMapFileSave(opts: {
     [setStatus],
   );
 
+  const markNativeDocumentDirty = useCallback(() => {
+    const fileId = getFileIdFromHash();
+    if (!fileId) {
+      setStatus("有未保存更改");
+      notifyEdit();
+      return;
+    }
+    markMindMapNativeDirtyPending(fileId);
+    notifyEdit();
+    setStatus("有未保存更改");
+    if (isLocalDraftFileId(fileId)) {
+      notifyLocalDraftEdited(fileId);
+    }
+  }, [setStatus]);
+
   const persistLocalDraftToCache = useCallback(
     async (forcedFileId?: string): Promise<boolean> => {
       const fileId = forcedFileId ?? getFileIdFromHash();
@@ -214,7 +232,10 @@ export function useMindMapFileSave(opts: {
       if (!fileId) {
         return false;
       }
-      const document = getCurrentDocument();
+      const nativeSave = FileSyncState.hasUnsavedChanges(fileId)
+        ? await requestNativeMindMapData()
+        : null;
+      const document = nativeSave?.document ?? getCurrentDocument();
       if (!document || !FileSyncState.hasUnsavedChanges(fileId)) {
         return false;
       }
@@ -222,7 +243,7 @@ export function useMindMapFileSave(opts: {
       FileSyncState.setDraftHash(fileId, hashDocumentSnapshot(document));
       return true;
     },
-    [getCurrentDocument],
+    [getCurrentDocument, requestNativeMindMapData],
   );
 
   const saveCurrentFileToServer = useCallback(
@@ -458,6 +479,7 @@ export function useMindMapFileSave(opts: {
     mindMapSaveHint,
     mindMapHomeNavDialogOpen,
     markDocumentChanged,
+    markNativeDocumentDirty,
     persistLocalDraftToCache,
     saveCurrentFileToServer,
     mindMapGoHomeWithServerSave,
