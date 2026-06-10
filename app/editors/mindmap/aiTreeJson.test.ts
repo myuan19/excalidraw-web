@@ -93,6 +93,40 @@ describe("parseAiOrganizeJson", () => {
     );
   });
 
+  it("preserves requested leading spaces without adding them to bold headings", () => {
+    const result = parseAiOrganizeJson(
+      JSON.stringify({
+        current: {
+          paragraphs: [
+            {
+              spans: [
+                {
+                  text: "标题",
+                  bold: true,
+                },
+              ],
+            },
+            {
+              spans: [
+                {
+                  text: "  正文",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+      {
+        allowInlineStyles: true,
+        preserveLeadingSpaces: true,
+      },
+    );
+
+    expect(result.current.data.text).toBe(
+      "<p><strong><span>标题</span></strong></p><p><span>&nbsp;&nbsp;正文</span></p>",
+    );
+  });
+
   it("adapts simpleMindMap clipboard JSON into the final current result", () => {
     const result = parseAiFinalOrganizeResult(
       JSON.stringify({

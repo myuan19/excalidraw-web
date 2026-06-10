@@ -74,6 +74,21 @@ describe("parseAiOperationStreamChunk", () => {
     );
   });
 
+  it("preserves leading spaces in streaming operations when explicitly enabled", () => {
+    const result = parseAiOperationStreamChunk(
+      '{"op":"update_current","text":{"paragraphs":[{"spans":[{"text":"标题","bold":true}]},{"spans":[{"text":"  正文"}]}]}}\n',
+      {
+        allowInlineStyles: true,
+        preserveLeadingSpaces: true,
+      },
+    );
+    const operation = result.operations[0] as any;
+
+    expect(operation.data.text).toBe(
+      "<p><strong><span>标题</span></strong></p><p><span>&nbsp;&nbsp;正文</span></p>",
+    );
+  });
+
   it("uses add_child id as the idempotency key by default", () => {
     const result = parseAiOperationStreamChunk(
       '{"op":"add_child","id":"ai-1","parent":"current","text":{"paragraphs":[{"spans":[{"text":"A"}]}]}}\n',

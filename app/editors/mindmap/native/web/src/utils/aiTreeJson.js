@@ -131,18 +131,19 @@ const decodeHtmlTextEntities = value => {
     .replace(/&#x27;/gi, "'")
 }
 
-const normalizeAiSpanText = value => {
-  return decodeHtmlTextEntities(stripHtmlTagsFromText(value)).replace(/^\s+/, '')
+const normalizeAiSpanText = (value, options = {}) => {
+  const text = decodeHtmlTextEntities(stripHtmlTagsFromText(value))
+  return options.preserveLeadingSpaces ? text : text.replace(/^\s+/, '')
 }
 
 function normalizeSpan(span, options = {}) {
   if (!span || typeof span !== 'object' || Array.isArray(span)) {
     return {
-      text: normalizeAiSpanText(span)
+      text: normalizeAiSpanText(span, options)
     }
   }
   const formula = normalizeText(span.formula).trim()
-  const text = formula ? `$${formula}$` : normalizeAiSpanText(span.text)
+  const text = formula ? `$${formula}$` : normalizeAiSpanText(span.text, options)
   const result = {
     text
   }
@@ -532,7 +533,11 @@ export function normalizeAiOrganizeNode(input, allowChildren, options = {}) {
 
 export function parseAiSimpleMindMapJson(
   parsed,
-  { allowChildren = false, allowInlineStyles = false } = {}
+  {
+    allowChildren = false,
+    allowInlineStyles = false,
+    preserveLeadingSpaces = false
+  } = {}
 ) {
   if (!parsed || typeof parsed !== 'object' || !parsed.simpleMindMap) {
     throw new Error('invalid simpleMindMap json')
@@ -542,7 +547,7 @@ export function parseAiSimpleMindMapJson(
   if (!currentNode) {
     throw new Error('empty simpleMindMap data')
   }
-  const options = { allowInlineStyles }
+  const options = { allowInlineStyles, preserveLeadingSpaces }
   const current = normalizeAiOrganizeNode(
     normalizeSmmDataNodeToAiInput(currentNode),
     false,
@@ -565,7 +570,11 @@ export function parseAiSimpleMindMapJson(
 
 export function parseAiOrganizeJson(
   content,
-  { allowChildren = false, allowInlineStyles = false } = {}
+  {
+    allowChildren = false,
+    allowInlineStyles = false,
+    preserveLeadingSpaces = false
+  } = {}
 ) {
   const raw = String(content || '').trim()
   if (!raw) {
@@ -583,7 +592,7 @@ export function parseAiOrganizeJson(
       op: 'children'
     })
   }
-  const options = { allowInlineStyles }
+  const options = { allowInlineStyles, preserveLeadingSpaces }
   const current = normalizeAiOrganizeNode(parsed.current, false, options)
   const children =
     allowChildren && Array.isArray(parsed.children)

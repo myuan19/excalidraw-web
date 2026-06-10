@@ -479,6 +479,7 @@ export default {
       this._aiOpTransaction = {
         baseFullData,
         permission,
+        preserveLeadingSpaces: this.shouldPreserveAiLeadingSpaces(),
         targetUid: node.getData('uid'),
         originalRefToUid: refState.refToUid,
         allowedUidSet: refState.allowedUidSet,
@@ -492,6 +493,7 @@ export default {
       mindmapDevDebug('mindmap-ai-opstream', 'transaction start', {
         targetUid: this._aiOpTransaction.targetUid,
         editScope: permission.editScope,
+        preserveLeadingSpaces: this._aiOpTransaction.preserveLeadingSpaces,
         canCreateChildren: permission.canCreateChildren,
         canDeleteChildren: permission.canDeleteChildren,
         allowedOps: permission.allowedOps,
@@ -765,6 +767,7 @@ export default {
         offset: tx.offset,
         final,
         allowInlineStyles: tx.permission.allowInlineStyles,
+        preserveLeadingSpaces: tx.preserveLeadingSpaces,
         allowedOps: tx.permission.allowedOps
       })
       if (result.operations.length > 0) {
@@ -774,6 +777,7 @@ export default {
           toOffset: result.offset,
           operationCount: result.operations.length,
           allowInlineStyles: tx.permission.allowInlineStyles,
+          preserveLeadingSpaces: tx.preserveLeadingSpaces,
           allowedOps: tx.permission.allowedOps,
           operations: result.operations.map(operation =>
             this.summarizeAiOperation(operation)
@@ -811,6 +815,20 @@ export default {
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
+    },
+
+    shouldPreserveAiLeadingSpaces() {
+      const requirement = String(this.organizeRequirement || '')
+      if (!requirement.trim()) {
+        return false
+      }
+      const placement =
+        '(?:行首|开头|前导|前面|前缀|前置|每行|每段|没加粗|没有加粗|非加粗|未加粗|正文|普通行|普通文本)'
+      const spaces = '(?:空格|space|spaces)'
+      return (
+        new RegExp(`${placement}.{0,24}${spaces}`, 'i').test(requirement) ||
+        new RegExp(`${spaces}.{0,24}${placement}`, 'i').test(requirement)
+      )
     },
 
     handleAiOrganizeNode(arg) {
@@ -907,6 +925,10 @@ export default {
   如果某行 deep=-1，表示该节点或后续内容已因上下文上限被截断，不要据此编造未看到的后代内容。
 </context_reference>`
         : ''
+      const preserveLeadingSpaces = this.shouldPreserveAiLeadingSpaces()
+      const leadingSpaceRule = preserveLeadingSpaces
+        ? '<leading_spaces>user_requirement 明确要求行首/前导空格：允许在 span.text 开头输出对应数量普通空格，并且只给满足条件的行加空格，例如“没加粗/非加粗的行”才加；不要给已加粗标题行统一添加空格，也不要用这些空格模拟思维导图层级。</leading_spaces>'
+        : '<leading_spaces>默认不要输出 span.text 前导空格；若需要层级，优先使用真实子节点或 paragraph.indent。</leading_spaces>'
       const styledExample = [
         '{"op":"update_current","text":{"paragraphs":[{"spans":[{"text":"需要高亮的文字","background":"#fff2cc"}]}]}}',
         '{"op":"update_current","text":{"paragraphs":[{"spans":[{"text":"下划线","underline":true},{"text":" 删除线","strike":true},{"text":" 红色文字","color":"#d93025"}]}]}}',
@@ -928,6 +950,7 @@ export default {
         childrenContextNodeCount: childrenContext.nodeCount,
         childrenContextIncludedNodeCount: childrenContext.includedNodeCount,
         childrenContextTruncated: childrenContext.truncated,
+        preserveLeadingSpaces,
         styledExampleIncluded: !!styledExample,
         currentRichTextSummary
       })
@@ -965,10 +988,11 @@ ${contextReferenceXml}
   <content>按 user_requirement 修改；若只要求样式、格式、颜色、高亮、下划线、缩进或空格，必须保留原文，不改写、不删除、不新增文本。</content>
   <style_scope>需要给“全部/所有/整体”加样式时，按 edit_scope 覆盖每个目标节点；输出完整 text.paragraphs/spans，只在对应 span 增减样式字段。</style_scope>
   <visual_reference>视觉参考只使用 current_node_style 和 current；不要根据整图或子节点推断。若要求保持/参考当前样式，尽量保留现有富文本样式，只改用户明确要求的文字或样式。</visual_reference>
-  <hierarchy>层级、列表、大纲内容：允许 add_child 时优先创建真实子节点；否则用无前导空格的普通段落。不要用 paragraph.indent 或 span.text 前导空格模拟思维导图层级。</hierarchy>
+  <hierarchy>层级、列表、大纲内容：允许 add_child 时优先创建真实子节点；否则用普通段落。不要用 paragraph.indent 或 span.text 前导空格模拟思维导图层级。</hierarchy>
+  ${leadingSpaceRule}
   <text_schema>text 必须是 {"paragraphs":[{"spans":[{"text":"文本"}]}]}。paragraph 可带 align/indent；span 是连续文本及样式。note 是普通文本；hyperlink 是 URL。${protocol.childrenField}</text_schema>
   <style_schema>align 仅 left/center/right。indent 仅在用户明确要求段落缩进时使用。bold/italic/underline/strike 用 true；color/background 用 #RRGGBB；font 为字体；size 如 "16px"。样式只作用于带字段的 span，多个片段需分别写字段；动词高亮用 background，形容词下划线用 underline:true。</style_schema>
-  <text_limits>span.text 只能是普通可见文本；不要输出 HTML、Markdown、class、style、HTML 实体、用于排版的前导空格或制表符。例：输出 "Star & Fork"，不要输出 "Star &amp; Fork"。只有用户明确要求保留原始空白时，才保留正文中的连续普通空格。</text_limits>
+  <text_limits>span.text 只能是普通可见文本；不要输出 HTML、Markdown、class、style、HTML 实体或制表符。例：输出 "Star & Fork"，不要输出 "Star &amp; Fork"。只有 user_requirement 明确要求行首/前导空格或保留原始空白时，才保留对应普通空格。</text_limits>
   <default_style>默认不要输出 align、bold、italic、underline、strike、color、background、font、size。仅用户要求样式变化时新增/改变样式；只改写文字时尽量保留 rich_text_json 中已有样式。</default_style>
   <unsupported>禁止输出 HTML、Markdown、表格、代码块、引用块、任务列表、simpleMindMap 剪贴板 JSON 或整图 JSON；不要把 rich_text_json 原样当字符串输出。</unsupported>
 </rules>
@@ -1112,7 +1136,10 @@ ${protocol.addChildExample}
               }
               const result = parseAiFinalOrganizeResult(content, {
                 allowChildren: permission.canCreateChildren,
-                allowInlineStyles: permission.allowInlineStyles
+                allowInlineStyles: permission.allowInlineStyles,
+                preserveLeadingSpaces: tx
+                  ? tx.preserveLeadingSpaces
+                  : this.shouldPreserveAiLeadingSpaces()
               })
               mindmapDevDebug('mindmap-ai', 'AiCreate.confirmAiOrganize parsed', {
                 hasCurrent: !!(result && result.current),
