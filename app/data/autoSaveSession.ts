@@ -15,6 +15,10 @@ import { getFileIdFromHash } from "./fileIdFromHash";
 import { isLocalDraftFileId } from "./localDraftFileId";
 import { ServerSync } from "./ServerSync";
 import { createLogger } from "../lib/logger";
+export {
+  broadcastFileSaved,
+  onCrossTabFileSaved,
+} from "./crossTabFileSync";
 
 const log = createLogger({ module: "autoSave" });
 
@@ -157,63 +161,4 @@ export function registerAutoSaveTrigger(fn: AutoSaveTrigger): () => void {
     }
     clearIdleTimer();
   };
-}
-
-// ---------------------------------------------------------------------------
-// BroadcastChannel 跨 tab 同步
-// ---------------------------------------------------------------------------
-
-const CHANNEL_NAME = "editorhub-sync";
-
-type SyncMessage = {
-  type: "file-saved";
-  fileId: string;
-  timestamp: number;
-};
-
-let channel: BroadcastChannel | null = null;
-
-function getChannel(): BroadcastChannel | null {
-  if (typeof BroadcastChannel === "undefined") {
-    return null;
-  }
-  if (!channel) {
-    channel = new BroadcastChannel(CHANNEL_NAME);
-  }
-  return channel;
-}
-
-/**
- * 保存成功后调用，通知其他 tab 刷新
- */
-export function broadcastFileSaved(fileId: string): void {
-  try {
-    getChannel()?.postMessage({
-      type: "file-saved",
-      fileId,
-      timestamp: Date.now(),
-    } satisfies SyncMessage);
-  } catch {
-    // BroadcastChannel not available or closed
-  }
-}
-
-/**
- * 监听其他 tab 的保存事件。
- * 返回取消监听函数。
- */
-export function onCrossTabFileSaved(
-  callback: (fileId: string) => void,
-): () => void {
-  const ch = getChannel();
-  if (!ch) {
-    return () => {};
-  }
-  const handler = (event: MessageEvent<SyncMessage>) => {
-    if (event.data?.type === "file-saved" && event.data.fileId) {
-      callback(event.data.fileId);
-    }
-  };
-  ch.addEventListener("message", handler);
-  return () => ch.removeEventListener("message", handler);
 }

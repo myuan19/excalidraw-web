@@ -165,6 +165,62 @@ export const resizeImgSize = (width, height, maxWidth, maxHeight) => {
   return arr
 }
 
+function getNodeRenderedTextWidth(node) {
+  const textWidth = Number(node && node._textData && node._textData.width)
+  if (Number.isFinite(textWidth) && textWidth > 0) {
+    return textWidth
+  }
+  const svgTextWidth = Number(
+    node &&
+      node._textData &&
+      node._textData.node &&
+      node._textData.node.attr &&
+      node._textData.node.attr('data-width')
+  )
+  if (Number.isFinite(svgTextWidth) && svgTextWidth > 0) {
+    return svgTextWidth
+  }
+  return 0
+}
+
+function getNodeSixCharWidth(node) {
+  const fontSize = Number(
+    node && typeof node.getStyle === 'function'
+      ? node.getStyle('fontSize', false)
+      : 0
+  )
+  return (Number.isFinite(fontSize) && fontSize > 0 ? fontSize : 16) * 6
+}
+
+export const fitPastedImageSizeToNodeText = (node, size = {}) => {
+  const width = Number(size.width)
+  const height = Number(size.height)
+  if (
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width <= 0 ||
+    height <= 0
+  ) {
+    return size
+  }
+  const textWidth = getNodeRenderedTextWidth(node)
+  const sixCharWidth = getNodeSixCharWidth(node)
+  const targetWidth =
+    textWidth > 0 ? Math.min(textWidth, sixCharWidth) : sixCharWidth
+  if (
+    !Number.isFinite(targetWidth) ||
+    targetWidth <= 0 ||
+    width >= targetWidth
+  ) {
+    return { width, height }
+  }
+  const ratio = targetWidth / width
+  return {
+    width: Math.round(targetWidth),
+    height: Math.round(height * ratio)
+  }
+}
+
 //  缩放图片
 export const resizeImg = (imgUrl, maxWidth, maxHeight) => {
   return new Promise((resolve, reject) => {

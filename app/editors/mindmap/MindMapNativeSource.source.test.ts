@@ -23,4 +23,30 @@ describe("MindMap native source contract", () => {
       viewChangeBlock.indexOf("storeData({"),
     );
   });
+
+  it("sizes pasted node images through one shared text-width policy", () => {
+    const utilsSource = fs.readFileSync(
+      path.join(appRoot, "editors/mindmap/native/simple-mind-map/src/utils/index.js"),
+      "utf8",
+    );
+    const renderSource = fs.readFileSync(
+      path.join(appRoot, "editors/mindmap/native/simple-mind-map/src/core/render/Render.js"),
+      "utf8",
+    );
+    const textEditSource = fs.readFileSync(
+      path.join(appRoot, "editors/mindmap/native/simple-mind-map/src/core/render/TextEdit.js"),
+      "utf8",
+    );
+    const richTextSource = fs.readFileSync(
+      path.join(appRoot, "editors/mindmap/native/simple-mind-map/src/plugins/RichText.js"),
+      "utf8",
+    );
+    const pasteSources = [renderSource, textEditSource, richTextSource].join("\n");
+
+    expect(utilsSource).toContain("fitPastedImageSizeToNodeText");
+    expect(utilsSource).toContain("Math.min(textWidth, sixCharWidth)");
+    expect(
+      pasteSources.match(/const imageSize = fitPastedImageSizeToNodeText/g),
+    ).toHaveLength(3);
+  });
 });

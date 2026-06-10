@@ -10,6 +10,7 @@ import {
   isWhite,
   getVisibleColorFromTheme,
   loadImage,
+  fitPastedImageSizeToNodeText,
   getSvgNodeVisibleRect
 } from '../../utils'
 import {
@@ -440,11 +441,15 @@ export default class TextEdit {
                   })
           loadFn(imgFile)
             .then(imgData => {
+              const imageSize = fitPastedImageSizeToNodeText(
+                node,
+                imgData.size
+              )
               this.mindMap.execCommand('SET_NODE_IMAGE', node, {
                 url: imgData.url,
                 title: '',
-                width: imgData.size.width,
-                height: imgData.size.height
+                width: imageSize.width,
+                height: imageSize.height
               })
               if (this.currentNode === node) {
                 this.restoreNativeSelection(range)

@@ -33,8 +33,8 @@
                       : $t('ai.childrenDisabled')
                   }}
                 </span>
-              </div>
-            </div>
+      </div>
+      </div>
           </div>
           <div class="sidebarConfigSection">
             <div class="sidebarBlockTitle">{{ $t('ai.organizeSettings') }}</div>
@@ -99,14 +99,14 @@
                     class="el-icon-delete presetDelete"
                     @click.stop="deletePromptPreset(preset)"
                   ></i>
-                </div>
+        </div>
                 <div
                   class="presetCardBody"
                   v-show="expandedPresetPromptId === preset.id"
                 >
                   {{ preset.prompt }}
-                </div>
-              </div>
+        </div>
+      </div>
               <div
                 class="emptyPreset"
                 v-if="organizePromptPresets.length <= 0"
@@ -122,8 +122,8 @@
               ></el-input>
               <el-button size="small" @click="savePromptPreset">{{
                 $t('ai.saveAsPromptPreset')
-              }}</el-button>
-            </div>
+        }}</el-button>
+      </div>
           </div>
         </div>
         <div class="aiOrganizeMain">
@@ -166,8 +166,8 @@
             {{ $t('ai.mindMapAiConfigMissingTip') }}
             <el-button type="text" @click="showAiConfigDialog">{{
               $t('ai.openAISettings')
-            }}</el-button>
-          </div>
+      }}</el-button>
+    </div>
         </div>
       </div>
       <div slot="footer" class="dialog-footer">
@@ -572,7 +572,7 @@ export default {
     // 停止生成
     stopCreate() {
       if (this.aiInstance) {
-        this.aiInstance.stop()
+      this.aiInstance.stop()
         this.aiInstance = null
       }
       this.rollbackAiOperationTransaction('stopped')
@@ -667,8 +667,8 @@ export default {
       const allowedUidSet = new Set()
       const walk = (dataNode, ref) => {
         if (!dataNode || !dataNode.data || !dataNode.data.uid) {
-          return
-        }
+            return
+          }
         refToUid[ref] = dataNode.data.uid
         allowedUidSet.add(dataNode.data.uid)
         if (!permission.canEditChildren) {
@@ -1032,8 +1032,8 @@ export default {
         this.organizePreviewText = ''
         this.organizePreviewHtml = ''
         this.organizePreviewStyle = {}
-        return
-      }
+          return
+        }
       this.organizePreviewText = this.getNodePlainText(node)
       this.organizePreviewHtml = node.getData('text') || ''
       this.organizePreviewStyle = this.buildOrganizeNodePreviewBoxStyle(node)
@@ -1243,8 +1243,8 @@ export default {
       }
       if (!node) {
         this.$message.warning(this.$t('ai.emptyCurrentNode') || '没有可操作的节点')
-        return
-      }
+          return
+        }
       this._beingOrganizeNode = node
       this.beingOrganizeNodeUid = node.getData('uid') || ''
       this.organizeEditScope =
@@ -1277,8 +1277,8 @@ export default {
           hasNode: !!node,
           isGeneralization: !!(node && node.isGeneralization)
         })
-        return
-      }
+            return
+          }
       this._beingOrganizeNode = node
       this.beingOrganizeNodeUid = node.getData('uid') || ''
       this.organizeEditScope = AI_EDIT_SCOPE.CURRENT

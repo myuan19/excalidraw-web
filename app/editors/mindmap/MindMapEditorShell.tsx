@@ -5,6 +5,8 @@ import {
   isAutoSaveEligibleForCurrentFile,
   registerAutoSaveTrigger,
 } from "../../data/autoSaveSession";
+import { onCrossTabFileSaved } from "../../data/crossTabFileSync";
+import { decideRemoteFileRefresh } from "../../data/remoteFileRefreshPolicy";
 import { requestSave } from "../../data/saveQueue";
 import { SettingsPanel } from "../../components/SettingsPanel";
 import { ArchivePanel } from "../../components/ArchivePanel";
@@ -1169,11 +1171,15 @@ const MindMapEditorShell = () => {
     updateLatestDocument,
   ]);
 
-  const reloadMindMapFromServer = useCallback(async () => {
+  const reloadMindMapFromServer = useCallback(async (opts?: {
+    clearLocalCache?: boolean;
+    reason?: string;
+    status?: string;
+  }) => {
     if (!fileId) {
       return;
     }
-    const serverFile = await ServerSync.getFile(fileId);
+    const serverFile = await ServerSync.getFile(fileId, { force: true });
     saveMindMapBrowserViewFromData(fileId, serverFile.data);
     const data = serverFile.data
       ? await MindMapAdapter.parse(serverFile.data)
@@ -1182,17 +1188,65 @@ const MindMapEditorShell = () => {
         );
     const document = MindMapAdapter.toDocument(data);
     latestDocumentRef.current = document;
-    publishMindMapDataToNative(data, "history-restore");
+    publishMindMapDataToNative(data, opts?.reason ?? "history-restore");
     FileSyncState.alignHashes(fileId, hashDocumentSnapshot(document));
+    if (serverFile.content_sha256) {
+      FileSyncState.setServerHash(fileId, serverFile.content_sha256);
+    }
     FileSyncState.clearLocalEditTime(fileId);
-    FileSyncState.clearLocalCache(fileId);
+    if (opts?.clearLocalCache ?? true) {
+      FileSyncState.clearLocalCache(fileId);
+    } else {
+      FileSyncState.setLocalCache(fileId, toMindMapLocalCacheRecord(document));
+    }
     setFileName(serverFile.name || DEFAULT_DOCUMENT_DISPLAY_NAME);
     needsInitialThumbnailRef.current = !serverFile.has_thumbnail;
-    setStatus("已恢复历史版本");
+    setStatus(opts?.status ?? "已恢复历史版本");
     setError(null);
     window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
     window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
   }, [fileId, publishMindMapDataToNative]);
+
+  useEffect(() => {
+    if (!fileId || isLocalDraftFileId(fileId)) {
+      return;
+    }
+    let reloadInFlight = false;
+    return onCrossTabFileSaved((savedFileId) => {
+      const currentFileId = getFileIdFromHash();
+      const decision = decideRemoteFileRefresh({
+        currentFileId,
+        savedFileId,
+        hasUnsavedChanges: FileSyncState.hasUnsavedChanges(fileId),
+        localServerHash: FileSyncState.getServerHash(fileId),
+      });
+      if (decision === "ignore") {
+        return;
+      }
+      if (decision === "conflict") {
+        setStatus("远端已有新版本；当前有未保存修改，未自动覆盖");
+        return;
+      }
+      if (reloadInFlight) {
+        return;
+      }
+      reloadInFlight = true;
+      void reloadMindMapFromServer({
+        clearLocalCache: false,
+        reason: "cross-tab-file-saved",
+        status: "已同步远端更新",
+      })
+        .catch((error) => {
+          warnMindMapBridge("cross-tab reload failed", {
+            fileId8: fileId.slice(0, 8),
+            message: error?.message || String(error),
+          });
+        })
+        .finally(() => {
+          reloadInFlight = false;
+        });
+    });
+  }, [fileId, reloadMindMapFromServer]);
 
   useEffect(() => {
     const onSave = () => requestSave({ source: "sidebar" });

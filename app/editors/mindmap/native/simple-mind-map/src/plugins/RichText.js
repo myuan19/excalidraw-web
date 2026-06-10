@@ -12,6 +12,7 @@ import {
   htmlEscape,
   compareVersion,
   loadImage,
+  fitPastedImageSizeToNodeText,
   getSvgNodeVisibleRect
 } from '../utils'
 import {
@@ -650,11 +651,15 @@ class RichText {
                     })
             loadFn(imgFile)
               .then(imgData => {
+                const imageSize = fitPastedImageSizeToNodeText(
+                  node,
+                  imgData.size
+                )
                 this.mindMap.execCommand('SET_NODE_IMAGE', node, {
                   url: imgData.url,
                   title: '',
-                  width: imgData.size.width,
-                  height: imgData.size.height
+                  width: imageSize.width,
+                  height: imageSize.height
                 })
                 this.restoreSelection(range)
               })

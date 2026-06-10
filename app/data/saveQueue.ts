@@ -14,7 +14,8 @@
  */
 
 import type { SaveToServerSource } from "../hooks/types";
-import { broadcastFileSaved, manageSessionAutoArchive } from "./autoSaveSession";
+import { manageSessionAutoArchive } from "./autoSaveSession";
+import { broadcastFileSaved } from "./crossTabFileSync";
 import { createLogger } from "../lib/logger";
 
 const log = createLogger({ module: "saveQueue" });

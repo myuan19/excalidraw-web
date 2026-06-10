@@ -29,7 +29,7 @@ import {
   writeFileListTreeCache,
 } from "../data/fileListSessionCache";
 import { FileSyncState } from "../data/FileSyncState";
-import { onCrossTabFileSaved } from "../data/autoSaveSession";
+import { onCrossTabFileSaved } from "../data/crossTabFileSync";
 import { resolveFileCardThumbDisplay } from "../data/fileCardThumbDisplay";
 import { chooseFileCardThumbnail } from "../data/fileCardThumbnail";
 import {

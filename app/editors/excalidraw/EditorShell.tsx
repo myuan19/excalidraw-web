@@ -92,6 +92,8 @@ import { mountLibraryAIActions } from "../../data/libraryAIMount";
 import { DeltaStorage } from "../../data/DeltaStorage";
 import { FileSyncState } from "../../data/FileSyncState";
 import { notifyEdit } from "../../data/autoSaveSession";
+import { onCrossTabFileSaved } from "../../data/crossTabFileSync";
+import { decideRemoteFileRefresh } from "../../data/remoteFileRefreshPolicy";
 import { requestSave } from "../../data/saveQueue";
 import { hashSceneSnapshot } from "../../data/sceneHash";
 import {
@@ -508,7 +510,7 @@ const ExcalidrawWrapper = () => {
       return;
     }
     localPersistGenRef.current += 1;
-    const serverFile = await ServerSync.getFile(fid);
+    const serverFile = await ServerSync.getFile(fid, { force: true });
     const serverData = serverFile.data as ForkSceneSnapshot;
     if (!serverData || typeof serverData !== "object") {
       return;
@@ -519,6 +521,9 @@ const ExcalidrawWrapper = () => {
     };
     const h = hashSceneSnapshot(serverData);
     FileSyncState.alignHashes(fid, h);
+    if (serverFile.content_sha256) {
+      FileSyncState.setServerHash(fid, serverFile.content_sha256);
+    }
     await DeltaStorage.restoreSnapshot([]);
     const restoredAppState = restoreSceneAppState(mergedAppState);
     const currentAppState = excalidrawAPI.getAppState();
@@ -540,7 +545,49 @@ const ExcalidrawWrapper = () => {
     });
     revealForkCanvasAfterFit(excalidrawAPI, () => {});
     window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
+    window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
   }, [excalidrawAPI, localPersistGenRef]);
+
+  useEffect(() => {
+    if (!forkFileId || !excalidrawAPI || isLocalDraftFileId(forkFileId)) {
+      return;
+    }
+    let reloadInFlight = false;
+    return onCrossTabFileSaved((savedFileId) => {
+      const decision = decideRemoteFileRefresh({
+        currentFileId: getFileIdFromHash(),
+        savedFileId,
+        hasUnsavedChanges: FileSyncState.hasUnsavedChanges(forkFileId),
+        localServerHash: FileSyncState.getServerHash(forkFileId),
+      });
+      if (decision === "ignore") {
+        return;
+      }
+      if (decision === "conflict") {
+        excalidrawAPI.setToast({
+          message: "远端已有新版本；当前有未保存修改，未自动覆盖",
+        });
+        return;
+      }
+      if (reloadInFlight) {
+        return;
+      }
+      reloadInFlight = true;
+      void reloadSceneFromServer()
+        .then(() => {
+          excalidrawAPI.setToast({ message: "已同步远端更新" });
+        })
+        .catch((error) => {
+          logShell.warn("cross-tab reload failed", {
+            fileId8: forkFileId.slice(0, 8),
+            message: error?.message || String(error),
+          });
+        })
+        .finally(() => {
+          reloadInFlight = false;
+        });
+    });
+  }, [excalidrawAPI, forkFileId, reloadSceneFromServer]);
 
   // ---------------------------------------------------------------------------
   // onChange / onIncrement handlers

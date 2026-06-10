@@ -36,7 +36,8 @@ import {
   debounce,
   checkClipboardReadEnable,
   isNodeNotNeedRenderData,
-  getRenderTreeFromHistorySnapshot
+  getRenderTreeFromHistorySnapshot,
+  fitPastedImageSizeToNodeText
 } from '../../utils'
 import { shapeList } from './node/Shape'
 import { lineStyleProps } from '../../theme/default'
@@ -1436,11 +1437,15 @@ class Render {
             }
             if (this.activeNodeList.length > 0) {
               this.activeNodeList.forEach(node => {
+                const imageSize = fitPastedImageSizeToNodeText(
+                  node,
+                  imgData.size
+                )
                 this.mindMap.execCommand('SET_NODE_IMAGE', node, {
                   url: imgData.url,
                   title: '',
-                  width: imgData.size.width,
-                  height: imgData.size.height
+                  width: imageSize.width,
+                  height: imageSize.height
                 })
               })
             }

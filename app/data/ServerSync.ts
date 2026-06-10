@@ -305,10 +305,13 @@ export const ServerSync = {
     return api(`/files/folders/${id}`, { method: "DELETE" });
   },
 
-  async getFile(id: string): Promise<ServerFile> {
+  async getFile(
+    id: string,
+    opts?: { force?: boolean },
+  ): Promise<ServerFile> {
     const priorHash = FileSyncState.getServerHash(id);
     const headers: Record<string, string> = { Accept: "application/json" };
-    if (priorHash) {
+    if (priorHash && !opts?.force) {
       headers["If-None-Match"] = formatIfNoneMatchHeader(priorHash);
     }
     const res = await fetch(url(`/files/${id}`), { headers });
