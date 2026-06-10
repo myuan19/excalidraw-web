@@ -1,184 +1,6 @@
 <template>
   <div>
     <AiConfigDialog v-model="aiConfigDialogVisible"></AiConfigDialog>
-    <!-- AI润色当前节点 -->
-    <el-dialog
-      class="aiOrganizeDialog"
-      :title="$t('ai.organizeCurrentNode')"
-      :visible.sync="organizeDialogVisible"
-      width="780px"
-      append-to-body
-    >
-      <div class="aiOrganizeBox">
-        <div class="aiOrganizeSidebar">
-          <div class="defaultActionSection">
-            <div class="sidebarBlockTitle">{{ $t('ai.defaultPolishActions') }}</div>
-            <div
-              class="defaultActionCard"
-              :class="{ active: activeDefaultActionId === action.id }"
-              v-for="action in organizeDefaultActions"
-              :key="action.id"
-              @click="selectDefaultAction(action)"
-            >
-              <div class="defaultActionName">{{ action.name }}</div>
-              <div class="defaultActionDesc">{{ action.desc }}</div>
-              <div class="defaultActionMeta">
-                <span
-                  class="metaTag"
-                  :class="{ enabled: action.createChildren }"
-                >
-                  {{
-                    action.createChildren
-                      ? $t('ai.childrenEnabled')
-                      : $t('ai.childrenDisabled')
-                  }}
-                </span>
-      </div>
-      </div>
-          </div>
-          <div class="sidebarConfigSection">
-            <div class="sidebarBlockTitle">{{ $t('ai.organizeSettings') }}</div>
-            <div class="sidebarSwitchRow">
-              <div>
-                <div class="settingName">{{ $t('ai.allowCreateChildren') }}</div>
-                <div class="settingTip">{{ $t('ai.allowCreateChildrenTip') }}</div>
-              </div>
-              <el-switch v-model="organizeCreateChildren"></el-switch>
-            </div>
-            <div class="sidebarSwitchRow">
-              <div>
-                <div class="settingName">{{ $t('ai.allowDeleteNodes') }}</div>
-                <div class="settingTip">{{ $t('ai.allowDeleteNodesTip') }}</div>
-              </div>
-              <el-switch
-                v-model="organizeAllowDeleteNodes"
-                :disabled="organizeEditScope !== 'subtree'"
-              ></el-switch>
-            </div>
-          </div>
-          <div
-            class="presetSectionHeader"
-            @click="toggleOrganizePresetsExpanded"
-          >
-            <div class="presetSectionTitle">
-              <span class="titleText">{{ $t('ai.savedPromptPresets') }}</span>
-              <span class="titleTip">{{ $t('ai.savedPromptPresetsGlobalTip') }}</span>
-            </div>
-            <i
-              class="presetSectionToggle"
-              :class="
-                organizePresetsExpanded
-                  ? 'el-icon-arrow-up'
-                  : 'el-icon-arrow-down'
-              "
-            ></i>
-          </div>
-          <div class="presetPanel" v-show="organizePresetsExpanded">
-            <div class="presetList">
-              <div
-                class="presetCard"
-                :class="{
-                  active: activePromptPresetId === preset.id,
-                  expanded: expandedPresetPromptId === preset.id
-                }"
-                v-for="preset in organizePromptPresets"
-                :key="preset.id"
-              >
-                <div class="presetCardHead">
-                  <i
-                    class="presetExpandIcon el-icon-arrow-right"
-                    :class="{ rotated: expandedPresetPromptId === preset.id }"
-                    @click.stop="togglePresetPromptExpand(preset)"
-                  ></i>
-                  <span
-                    class="presetName"
-                    @click="selectPromptPreset(preset)"
-                    >{{ preset.name }}</span
-                  >
-                  <i
-                    class="el-icon-delete presetDelete"
-                    @click.stop="deletePromptPreset(preset)"
-                  ></i>
-        </div>
-                <div
-                  class="presetCardBody"
-                  v-show="expandedPresetPromptId === preset.id"
-                >
-                  {{ preset.prompt }}
-        </div>
-      </div>
-              <div
-                class="emptyPreset"
-                v-if="organizePromptPresets.length <= 0"
-              >
-                {{ $t('ai.noPromptPresets') }}
-              </div>
-            </div>
-            <div class="presetSaveBlock">
-              <el-input
-                size="small"
-                v-model="promptPresetName"
-                :placeholder="$t('ai.promptPresetNamePlaceholder')"
-              ></el-input>
-              <el-button size="small" @click="savePromptPreset">{{
-                $t('ai.saveAsPromptPreset')
-        }}</el-button>
-      </div>
-          </div>
-        </div>
-        <div class="aiOrganizeMain">
-          <div class="nodePreviewSection">
-            <div class="sectionLabel">{{ $t('ai.currentNodePreview') }}</div>
-            <div class="nodePreviewStage">
-              <div
-                class="nodePreviewChip"
-                :style="getOrganizeNodePreviewBoxStyle()"
-              >
-                <div
-                  v-if="organizePreviewHtml"
-                  class="nodePreviewRichText"
-                  v-html="organizePreviewHtml"
-                ></div>
-                <div v-else class="nodePreviewEmpty">
-                  {{ $t('ai.emptyCurrentNode') }}
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="requirementSection">
-            <div class="sectionLabel">{{ $t('ai.modifyRequirement') }}</div>
-            <div class="sectionDesc">{{ $t('ai.organizeSettingsDesc') }}</div>
-            <el-input
-              type="textarea"
-              :rows="4"
-              v-model="organizeRequirement"
-              :placeholder="$t('ai.modifyRequirementPlaceholder')"
-            ></el-input>
-          </div>
-          <div class="aiStreamingSection" v-if="isAiCreating || aiStreamingContent">
-            <div class="sectionLabel">{{ $t('ai.streamingPreview') }}</div>
-            <div class="sectionDesc">{{ $t('ai.streamingPreviewTip') }}</div>
-            <pre class="aiStreamingContent">{{
-              aiStreamingContent || $t('ai.waitingForAiOutput')
-            }}</pre>
-          </div>
-          <div class="configTip" v-if="!hasAiConfig">
-            {{ $t('ai.mindMapAiConfigMissingTip') }}
-            <el-button type="text" @click="showAiConfigDialog">{{
-              $t('ai.openAISettings')
-      }}</el-button>
-    </div>
-        </div>
-      </div>
-      <div slot="footer" class="dialog-footer">
-        <el-button @click="closeAiOrganizeDialog">{{
-          $t('ai.cancel')
-        }}</el-button>
-        <el-button type="primary" @click="confirmAiOrganize">{{
-          $t('ai.confirm')
-        }}</el-button>
-      </div>
-    </el-dialog>
   </div>
 </template>
 
@@ -204,11 +26,6 @@ import { mapState } from 'vuex'
 import AiConfigDialog from './AiConfigDialog.vue'
 import { isHostMode, openAISettings } from '@/utils/hostBridge'
 import { mindmapDevDebug } from '@/utils/mindmapDevDebug'
-import {
-  deleteMindMapOrganizePromptPreset,
-  listMindMapOrganizePromptPresets,
-  saveMindMapOrganizePromptPreset
-} from '@/utils/aiPromptPresets'
 import {
   AI_EDIT_SCOPE,
   assertAiOperationAllowed,
@@ -238,54 +55,18 @@ export default {
       isAiCreating: false,
       aiConfigDialogVisible: false,
 
-      organizeDialogVisible: false,
       organizeEditScope: AI_EDIT_SCOPE.CURRENT,
       organizeCreateChildren: false,
       organizeAllowDeleteNodes: false,
       organizeContextCharLimit: AI_CONTEXT_CHAR_LIMIT.DEFAULT,
-      organizePreviewText: '',
-      organizePreviewHtml: '',
       organizeRequirement: '',
-      organizePromptPresets: [],
-      organizePresetsExpanded: true,
-      expandedPresetPromptId: '',
-      activePromptPresetId: '',
-      promptPresetName: '',
-      promptPresetsLoaded: false,
       beingOrganizeNodeUid: '',
-      organizePreviewStyle: {},
-      activeDefaultActionId: 'organize-current',
       aiStreamingContent: '',
       isHostMode: isHostMode()
     }
   },
   computed: {
     ...mapState(['aiConfig']),
-    organizeDefaultActions() {
-      return [
-        {
-          id: 'organize-current',
-          name: this.$t('ai.defaultActionOrganizeCurrent'),
-          desc: this.$t('ai.defaultActionOrganizeCurrentDesc'),
-          requirement: '',
-          createChildren: false
-        },
-        {
-          id: 'split-children',
-          name: this.$t('ai.defaultActionSplitChildren'),
-          desc: this.$t('ai.defaultActionSplitChildrenDesc'),
-          requirement: this.$t('ai.defaultActionSplitChildrenPrompt'),
-          createChildren: true
-        },
-        {
-          id: 'shorten-title',
-          name: this.$t('ai.defaultActionShortenTitle'),
-          desc: this.$t('ai.defaultActionShortenTitleDesc'),
-          requirement: this.$t('ai.defaultActionShortenTitlePrompt'),
-          createChildren: false
-        }
-      ]
-    },
     hasAiConfig() {
       return !!(
         String(this.aiConfig.api || '').trim() &&
@@ -310,11 +91,6 @@ export default {
         value,
         ...this.getAiConfigDebugSummary()
       })
-    },
-    organizeCreateChildren(value) {
-      if (value) {
-        this.organizeEditScope = AI_EDIT_SCOPE.SUBTREE
-      }
     }
   },
   created() {
@@ -825,6 +601,13 @@ export default {
       return result
     },
 
+    markAiDataNodeNeedUpdate(uid) {
+      const targetRef = this.findAiDataNodeByUid(uid)
+      if (targetRef && targetRef.dataNode && targetRef.dataNode.data) {
+        targetRef.dataNode.data.needUpdate = true
+      }
+    },
+
     assertAiOperationNodeInScope(uid) {
       const tx = this._aiOpTransaction
       if (!tx || !uid) {
@@ -889,6 +672,7 @@ export default {
           parentRef.dataNode.children = []
         }
         parentRef.dataNode.children.push(child)
+        this.markAiDataNodeNeedUpdate(parentUid)
         tx.createdNodeIds[operation.id] = uid
         tx.createdUidSet.add(uid)
         if (operationKey) {
@@ -913,6 +697,9 @@ export default {
           })
         }
         targetRef.parent.children.splice(targetRef.index, 1)
+        if (targetRef.parent.data && targetRef.parent.data.uid) {
+          this.markAiDataNodeNeedUpdate(targetRef.parent.data.uid)
+        }
         if (operationKey) {
           tx.appliedOpIds.add(operationKey)
         }
@@ -933,6 +720,7 @@ export default {
       Object.keys(operation.data).forEach(key => {
         targetRef.dataNode.data[key] = operation.data[key]
       })
+      this.markAiDataNodeNeedUpdate(uid)
       if (operationKey) {
         tx.appliedOpIds.add(operationKey)
       }
@@ -1006,216 +794,11 @@ export default {
       }
     },
 
-    async loadPromptPresets() {
-      try {
-        this.organizePromptPresets = await listMindMapOrganizePromptPresets()
-        this.promptPresetsLoaded = true
-      } catch (error) {
-        console.log(error)
-        mindmapDevDebug('mindmap-ai-prompt', 'load presets failed', {
-          message: error && error.message ? error.message : String(error)
-        })
-      }
-    },
-
-    toggleOrganizePresetsExpanded() {
-      this.organizePresetsExpanded = !this.organizePresetsExpanded
-    },
-
-    togglePresetPromptExpand(preset) {
-      this.expandedPresetPromptId =
-        this.expandedPresetPromptId === preset.id ? '' : preset.id
-    },
-
-    updateOrganizeNodePreview(node) {
-      if (!node) {
-        this.organizePreviewText = ''
-        this.organizePreviewHtml = ''
-        this.organizePreviewStyle = {}
-          return
-        }
-      this.organizePreviewText = this.getNodePlainText(node)
-      this.organizePreviewHtml = node.getData('text') || ''
-      this.organizePreviewStyle = this.buildOrganizeNodePreviewBoxStyle(node)
-    },
-
-    buildOrganizeNodePreviewBoxStyle(node) {
-      if (!node || !node.style) {
-        return {}
-      }
-      const style = node.style
-      const fillColor = style.merge('fillColor')
-      const borderColor = style.merge('borderColor')
-      const borderWidth = style.merge('borderWidth') || 0
-      const borderRadius = style.merge('borderRadius') || 5
-      const color = style.merge('color')
-      const fontSize = style.merge('fontSize')
-      const fontFamily = style.merge('fontFamily')
-      const fontWeight = style.merge('fontWeight') || 'normal'
-      const paddingX = style.merge('paddingX') || 12
-      const paddingY = style.merge('paddingY') || 8
-      const gradientStyle = style.merge('gradientStyle')
-      const boxStyle = {
-        color,
-        fontSize: `${fontSize}px`,
-        fontFamily,
-        fontWeight,
-        borderColor: borderColor || 'transparent',
-        borderWidth: `${borderWidth}px`,
-        borderStyle: 'solid',
-        borderRadius: `${borderRadius}px`,
-        padding: `${paddingY}px ${paddingX}px`
-      }
-      if (gradientStyle) {
-        const startColor = style.merge('startColor')
-        const endColor = style.merge('endColor')
-        boxStyle.background = `linear-gradient(to right, ${startColor}, ${endColor})`
-      } else if (fillColor && fillColor !== 'transparent') {
-        boxStyle.backgroundColor = fillColor
-      } else {
-        boxStyle.backgroundColor = '#ffffff'
-      }
-      return boxStyle
-    },
-
-    getOrganizeNodePreviewBoxStyle() {
-      return this.organizePreviewStyle
-    },
-
     getBeingOrganizeNode() {
       if (this.beingOrganizeNodeUid && this.mindMap && this.mindMap.renderer) {
         return this.mindMap.renderer.findNodeByUid(this.beingOrganizeNodeUid)
       }
       return this._beingOrganizeNode
-    },
-
-    selectPromptPreset(preset) {
-      this.activeDefaultActionId = ''
-      this.activePromptPresetId = preset.id
-      this.promptPresetName = preset.name || ''
-      this.organizeRequirement = preset.prompt || ''
-      if (
-        preset.options &&
-        (preset.options.scope === AI_EDIT_SCOPE.CURRENT ||
-          preset.options.scope === AI_EDIT_SCOPE.SUBTREE)
-      ) {
-        this.organizeEditScope = preset.options.scope
-        this.organizeCreateChildren = !!preset.options.allowCreateChildren
-      } else if (
-        preset.options &&
-        Object.prototype.hasOwnProperty.call(
-          preset.options,
-          'organizeCreateChildren'
-        )
-      ) {
-        this.organizeCreateChildren = !!preset.options.organizeCreateChildren
-        this.organizeEditScope = this.organizeCreateChildren
-          ? AI_EDIT_SCOPE.SUBTREE
-          : AI_EDIT_SCOPE.CURRENT
-      }
-      if (preset.options && preset.options.contextCharLimit) {
-        this.organizeContextCharLimit = normalizeContextCharLimit(
-          preset.options.contextCharLimit
-        )
-      }
-      this.organizeAllowDeleteNodes = !!(
-        preset.options && preset.options.allowDeleteNodes
-      )
-      this.expandedPresetPromptId = preset.id
-      mindmapDevDebug('mindmap-ai-prompt', 'select preset', {
-        id: preset.id,
-        name: preset.name,
-        promptLen: this.organizeRequirement.length,
-        scope: this.organizeEditScope,
-        createChildren: this.organizeCreateChildren,
-        allowDeleteNodes: this.organizeAllowDeleteNodes,
-        contextCharLimit: this.organizeContextCharLimit
-      })
-    },
-
-    selectDefaultAction(action) {
-      this.activeDefaultActionId = action.id
-      this.activePromptPresetId = ''
-      this.expandedPresetPromptId = ''
-      this.promptPresetName = ''
-      this.organizeRequirement = action.requirement || ''
-      this.organizeEditScope = action.createChildren
-        ? AI_EDIT_SCOPE.SUBTREE
-        : AI_EDIT_SCOPE.CURRENT
-      this.organizeCreateChildren = !!action.createChildren
-      this.organizeAllowDeleteNodes = false
-      mindmapDevDebug('mindmap-ai-prompt', 'select default action', {
-        id: action.id,
-        scope: this.organizeEditScope,
-        createChildren: this.organizeCreateChildren,
-        allowDeleteNodes: this.organizeAllowDeleteNodes,
-        requirementLen: this.organizeRequirement.length
-      })
-    },
-
-    async savePromptPreset() {
-      const prompt = this.organizeRequirement.trim()
-      if (!prompt) {
-        this.$message.warning(this.$t('ai.modifyRequirementRequired'))
-        return
-      }
-      const name =
-        this.promptPresetName.trim() ||
-        prompt.slice(0, 20) ||
-        this.$t('ai.unnamedPromptPreset')
-      try {
-        const saved = await saveMindMapOrganizePromptPreset({
-          id: this.activePromptPresetId || undefined,
-          name,
-          prompt,
-          options: {
-            scope: this.organizeEditScope,
-            allowCreateChildren:
-              this.organizeEditScope === AI_EDIT_SCOPE.SUBTREE &&
-              !!this.organizeCreateChildren,
-            allowDeleteNodes:
-              this.organizeEditScope === AI_EDIT_SCOPE.SUBTREE &&
-              !!this.organizeAllowDeleteNodes,
-            contextCharLimit: normalizeContextCharLimit(
-              this.organizeContextCharLimit
-            )
-          },
-          sort_index: this.organizePromptPresets.findIndex(item => {
-            return item.id === this.activePromptPresetId
-          })
-        })
-        const index = this.organizePromptPresets.findIndex(item => {
-          return item.id === saved.id
-        })
-        if (index >= 0) {
-          this.$set(this.organizePromptPresets, index, saved)
-        } else {
-          this.organizePromptPresets.push(saved)
-        }
-        this.selectPromptPreset(saved)
-        this.$message.success(this.$t('ai.promptPresetSaved'))
-      } catch (error) {
-        console.log(error)
-        this.$message.error(this.$t('ai.promptPresetSaveFailed'))
-      }
-    },
-
-    async deletePromptPreset(preset) {
-      try {
-        await deleteMindMapOrganizePromptPreset(preset.id)
-        this.organizePromptPresets = this.organizePromptPresets.filter(item => {
-          return item.id !== preset.id
-        })
-        if (this.activePromptPresetId === preset.id) {
-          this.activePromptPresetId = ''
-          this.promptPresetName = ''
-          this.organizeRequirement = ''
-        }
-        this.$message.success(this.$t('ai.promptPresetDeleted'))
-      } catch (error) {
-        console.log(error)
-        this.$message.error(this.$t('ai.promptPresetDeleteFailed'))
-      }
     },
 
     escapePromptXml(value) {
@@ -1228,9 +811,12 @@ export default {
     handleAiOrganizeNode(arg) {
       if (arg && arg.fromSidebar) {
         this.handleSidebarAiOrganize(arg)
-      } else {
-        this.showAiOrganizeDialog(arg)
+        return
       }
+      mindmapDevDebug('mindmap-ai', 'AiCreate.handleAiOrganizeNode ignored', {
+        hasArg: !!arg,
+        fromSidebar: !!(arg && arg.fromSidebar)
+      })
     },
 
     handleSidebarAiOrganize(arg) {
@@ -1271,53 +857,14 @@ export default {
       this.confirmAiOrganize()
     },
 
-    showAiOrganizeDialog(node) {
-      if (!node || node.isGeneralization) {
-        mindmapDevDebug('mindmap-ai', 'AiCreate.showAiOrganizeDialog ignored', {
-          hasNode: !!node,
-          isGeneralization: !!(node && node.isGeneralization)
-        })
-            return
-          }
-      this._beingOrganizeNode = node
-      this.beingOrganizeNodeUid = node.getData('uid') || ''
-      this.organizeEditScope = AI_EDIT_SCOPE.CURRENT
-      this.organizeCreateChildren = false
-      this.organizeAllowDeleteNodes = false
-      this.organizeContextCharLimit = AI_CONTEXT_CHAR_LIMIT.DEFAULT
-      this.activeDefaultActionId = 'organize-current'
-      this.aiStreamingContent = ''
-      this.updateOrganizeNodePreview(node)
-      if (!this.promptPresetsLoaded) {
-        this.loadPromptPresets()
-      }
-      mindmapDevDebug('mindmap-ai', 'AiCreate.showAiOrganizeDialog', {
-        nodeUid: this.beingOrganizeNodeUid,
-        previewLen: this.organizePreviewText.length,
-        promptPresetsLoaded: this.promptPresetsLoaded,
-        hasAiConfig: this.hasAiConfig,
-        ...this.getAiConfigDebugSummary()
-      })
-      this.organizeDialogVisible = true
-    },
-
-    closeAiOrganizeDialog() {
-      if (this.isAiCreating) {
-        this.stopCreate()
-      }
-      this.organizeDialogVisible = false
+    resetAiOrganizeTarget() {
       this._beingOrganizeNode = null
       this.beingOrganizeNodeUid = ''
-      this.organizePreviewText = ''
-      this.organizePreviewHtml = ''
-      this.organizePreviewStyle = {}
       this.organizeEditScope = AI_EDIT_SCOPE.CURRENT
       this.organizeCreateChildren = false
       this.organizeAllowDeleteNodes = false
       this.organizeContextCharLimit = AI_CONTEXT_CHAR_LIMIT.DEFAULT
-      this.activePromptPresetId = ''
-      this.expandedPresetPromptId = ''
-      this.activeDefaultActionId = 'organize-current'
+      this.organizeRequirement = ''
       this.aiStreamingContent = ''
     },
 
@@ -1358,7 +905,7 @@ export default {
       const styledExample = [
         '{"op":"update_current","text":{"paragraphs":[{"spans":[{"text":"需要高亮的文字","background":"#fff2cc"}]}]}}',
         '{"op":"update_current","text":{"paragraphs":[{"spans":[{"text":"下划线","underline":true},{"text":" 删除线","strike":true},{"text":" 红色文字","color":"#d93025"}]}]}}',
-        '{"op":"update_current","text":{"paragraphs":[{"indent":1,"spans":[{"text":"    保留前导空格和连续  空格"}]}]}}'
+        '{"op":"update_current","text":{"paragraphs":[{"align":"center","spans":[{"text":"居中标题"}]}]}}'
       ].join('\n')
       mindmapDevDebug('mindmap-ai-richtext', 'build prompt rich text policy', {
         nodeUid: node && node.getData ? node.getData('uid') : '',
@@ -1414,6 +961,8 @@ ${contextReferenceXml}
   如果要求“全部/所有/整体”应用某种样式，必须对 edit_scope 范围内每个需要保留的节点分别输出 update_current 或 update_node，并给每个对应 span 都写上该样式字段。
   视觉参考只使用 selected_node.current_node_style 和当前选中节点 current；不要根据整张图或子节点推断目标样式。需要预览/渲染效果时，只把 current 当作唯一目标节点。
   如果 user_requirement 要求“保持当前样式/参考当前节点样式”，应尽量保留 current_node_style 对应的视觉特征，只调整用户明确要求修改的文字或富文本样式字段。
+  如果 user_requirement 包含层级、列表或大纲内容，且当前允许 add_child，应优先用 add_child 创建真实子节点；不要用 paragraph.indent 或 span.text 前导空格模拟思维导图层级。
+  如果当前不允许 add_child，则用无前导空格的普通段落表达层级内容；不要输出用于排版的前导空格、制表符或 HTML 实体。
   新增、删除、更新子节点等能力只以 operation_protocol.permission_rules 和 operations 为准。
 </edit_intent_rules>
 <format_reference>
@@ -1430,14 +979,15 @@ ${protocol.childrenField}
   </rich_text>
   <style_fields>
     paragraph.align 使用 "left"、"center"、"right" 表示段落对齐。
-    paragraph.indent 使用 0-8 的整数表示段落缩进层级，会转换为 Quill 的 ql-indent-N。
+    paragraph.indent 使用 0-8 的整数表示段落缩进层级，会转换为 Quill 的 ql-indent-N；仅在用户明确要求段落缩进时使用，不要用它表达思维导图层级、列表层级或大纲层级。
     span.bold、span.italic、span.underline、span.strike 使用 true 表示加粗、斜体、下划线、删除线。
     span.color 使用 "#RRGGBB" 表示文字颜色；span.background 使用 "#RRGGBB" 表示高亮/背景色。
     span.font 表示字体；span.size 使用 px，例如 "16px"。
     样式只作用于带该字段的 span；如果多个文字片段需要同一种样式，请给每个对应 span 都写上同样的字段。
     动词高亮用 span.background；形容词下划线用 span.underline:true。
     span.text 只能包含用户可见的纯文本，不能包含 &lt;u&gt;、&lt;mark&gt;、&lt;strong&gt;、&lt;span&gt;、**加粗**、__下划线__ 等任何标记。
-    前导空格、连续空格、制表符请直接写在 span.text 中，不要用 Markdown、HTML 或转义说明代替。
+    span.text 必须输出普通字符，不要输出 HTML 实体；例如输出 "Star & Fork"，不要输出 "Star &amp; Fork"。
+    span.text 不要包含用于排版的前导空格或制表符；只有用户明确要求保留原始空白时，才保留正文中的连续普通空格。
   </style_fields>
   <default_style_rule>
     默认不要输出 align、bold、italic、underline、strike、color、background、font、size 等样式字段。
@@ -1554,7 +1104,7 @@ ${protocol.addChildExample}
               }
               this.rollbackAiOperationTransaction('stream-error')
               this.resetOnAiCreatingStop()
-              this.closeAiOrganizeDialog()
+              this.resetAiOrganizeTarget()
               this.$message.error(this.$t('ai.invalidAiResult'))
             }
           },
@@ -1618,13 +1168,13 @@ ${protocol.addChildExample}
               this.$message.error(this.$t('ai.invalidAiResult'))
             } finally {
               this.resetOnAiCreatingStop()
-              this.closeAiOrganizeDialog()
+              this.resetAiOrganizeTarget()
             }
           },
           () => {
             this.rollbackAiOperationTransaction('request-error')
             this.resetOnAiCreatingStop()
-            this.closeAiOrganizeDialog()
+            this.resetAiOrganizeTarget()
             this.$message.error(this.$t('ai.generationFailed'))
           }
         )
@@ -1651,6 +1201,7 @@ ${protocol.addChildExample}
         Object.keys(currentData).forEach(key => {
           targetRef.dataNode.data[key] = currentData[key]
         })
+        this.markAiDataNodeNeedUpdate(this.beingOrganizeNodeUid)
         if (children.length > 0) {
           if (!Array.isArray(targetRef.dataNode.children)) {
             targetRef.dataNode.children = []
@@ -1658,6 +1209,7 @@ ${protocol.addChildExample}
           targetRef.dataNode.children.push(
             ...children.map(child => this.ensureAiNodeDataUid(this.cloneJson(child)))
           )
+          this.markAiDataNodeNeedUpdate(this.beingOrganizeNodeUid)
         }
         this.mindMap.render()
         return true
@@ -1667,343 +1219,3 @@ ${protocol.addChildExample}
 }
 </script>
 
-<style lang="less" scoped>
-.aiOrganizeDialog {
-  /deep/ .el-dialog__body {
-    padding: 12px 20px;
-  }
-}
-
-.aiOrganizeBox {
-  display: flex;
-  min-height: 360px;
-  border: 1px solid #ebeef5;
-  border-radius: 8px;
-  overflow: hidden;
-
-  .aiOrganizeSidebar {
-    width: 240px;
-    flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
-    background: #f7f8fa;
-    border-right: 1px solid #ebeef5;
-  }
-
-  .presetSectionHeader {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 14px 12px;
-    cursor: pointer;
-    user-select: none;
-
-    &:hover {
-      background: #f0f2f5;
-    }
-  }
-
-  .defaultActionSection,
-  .sidebarConfigSection {
-    padding: 12px;
-    border-bottom: 1px solid #ebeef5;
-  }
-
-  .sidebarBlockTitle {
-    margin-bottom: 8px;
-    color: #303133;
-    font-size: 13px;
-    font-weight: 600;
-  }
-
-  .defaultActionCard {
-    margin-bottom: 8px;
-    padding: 10px;
-    background: #fff;
-    border: 1px solid #e4e7ed;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
-
-    &:hover,
-    &.active {
-      border-color: #409eff;
-      box-shadow: 0 0 0 1px rgba(64, 158, 255, 0.12);
-    }
-  }
-
-  .defaultActionName {
-    color: #303133;
-    font-size: 13px;
-    font-weight: 500;
-  }
-
-  .defaultActionDesc {
-    margin-top: 4px;
-    color: #909399;
-    font-size: 12px;
-    line-height: 1.45;
-  }
-
-  .defaultActionMeta {
-    margin-top: 8px;
-  }
-
-  .metaTag {
-    display: inline-flex;
-    align-items: center;
-    height: 20px;
-    padding: 0 6px;
-    color: #909399;
-    font-size: 11px;
-    background: #f4f4f5;
-    border-radius: 999px;
-
-    &.enabled {
-      color: #409eff;
-      background: #ecf5ff;
-    }
-  }
-
-  .sidebarSwitchRow {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 10px;
-  }
-
-  .presetSectionTitle {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 0;
-  }
-
-  .titleText {
-    color: #303133;
-    font-size: 13px;
-    font-weight: 600;
-  }
-
-  .titleTip {
-    color: #909399;
-    font-size: 11px;
-    line-height: 1.4;
-  }
-
-  .presetSectionToggle {
-    margin-top: 2px;
-    color: #909399;
-    font-size: 14px;
-    flex-shrink: 0;
-  }
-
-  .presetPanel {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    min-height: 0;
-    padding: 0 12px 12px;
-  }
-
-  .presetList {
-    flex: 1;
-    min-height: 0;
-    max-height: 240px;
-    overflow: auto;
-  }
-
-  .presetCard {
-    margin-bottom: 8px;
-    border: 1px solid #e4e7ed;
-    border-radius: 6px;
-    background: #fff;
-    overflow: hidden;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
-
-    &.active {
-      border-color: #409eff;
-      box-shadow: 0 0 0 1px rgba(64, 158, 255, 0.12);
-    }
-  }
-
-  .presetCardHead {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 10px;
-  }
-
-  .presetExpandIcon {
-    color: #909399;
-    font-size: 12px;
-    cursor: pointer;
-    transition: transform 0.2s ease;
-
-    &.rotated {
-      transform: rotate(90deg);
-    }
-  }
-
-  .presetName {
-    flex: 1;
-    min-width: 0;
-    color: #303133;
-    font-size: 13px;
-    cursor: pointer;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .presetDelete {
-    color: #c0c4cc;
-    cursor: pointer;
-    flex-shrink: 0;
-
-    &:hover {
-      color: #f56c6c;
-    }
-  }
-
-  .presetCardBody {
-    padding: 0 10px 10px 28px;
-    color: #606266;
-    font-size: 12px;
-    line-height: 1.6;
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-
-  .emptyPreset {
-    padding: 12px 4px;
-    color: #c0c4cc;
-    font-size: 12px;
-    line-height: 1.5;
-  }
-
-  .presetSaveBlock {
-    display: flex;
-    gap: 8px;
-    margin-top: 10px;
-    padding-top: 10px;
-    border-top: 1px solid #ebeef5;
-  }
-
-  .aiOrganizeMain {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    padding: 16px;
-    gap: 16px;
-  }
-
-  .sectionLabel {
-    margin-bottom: 8px;
-    color: #303133;
-    font-size: 13px;
-    font-weight: 600;
-  }
-
-  .sectionDesc {
-    margin-bottom: 8px;
-    color: #909399;
-    font-size: 12px;
-    line-height: 1.5;
-  }
-
-  .nodePreviewSection {
-    flex-shrink: 0;
-  }
-
-  .nodePreviewStage {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 120px;
-    padding: 18px 16px;
-    background:
-      radial-gradient(circle at 1px 1px, #e5e7eb 1px, transparent 0) 0 0 / 16px
-        16px,
-      #f8fafc;
-    border: 1px solid #ebeef5;
-    border-radius: 8px;
-  }
-
-  .nodePreviewChip {
-    display: inline-block;
-    max-width: 100%;
-    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
-  }
-
-  .nodePreviewRichText {
-    word-break: break-word;
-    line-height: 1.4;
-
-    /deep/ p {
-      margin: 0;
-    }
-
-    /deep/ .ql-align-center {
-      text-align: center;
-    }
-
-    /deep/ .ql-align-right {
-      text-align: right;
-    }
-  }
-
-  .nodePreviewEmpty {
-    color: #909399;
-    font-size: 13px;
-    line-height: 1.5;
-  }
-
-  .requirementSection {
-    flex-shrink: 0;
-    min-height: 0;
-  }
-
-  .settingName {
-    color: #303133;
-    font-size: 13px;
-    font-weight: 500;
-  }
-
-  .settingTip {
-    margin-top: 4px;
-    color: #909399;
-    font-size: 12px;
-    line-height: 1.4;
-  }
-
-  .aiStreamingSection {
-    flex: 1;
-    min-height: 0;
-  }
-
-  .aiStreamingContent {
-    min-height: 100px;
-    max-height: 180px;
-    margin: 0;
-    padding: 10px 12px;
-    color: #606266;
-    font-size: 12px;
-    line-height: 1.6;
-    white-space: pre-wrap;
-    word-break: break-word;
-    overflow: auto;
-    background: #fbfdff;
-    border: 1px solid #ebeef5;
-    border-radius: 8px;
-  }
-
-  .configTip {
-    color: #e6a23c;
-    font-size: 12px;
-    line-height: 1.5;
-  }
-}
-</style>

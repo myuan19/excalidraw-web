@@ -147,6 +147,9 @@ function createIconNode() {
 
 // 创建富文本节点
 function createRichTextNode(specifyText) {
+  if (this.getData('needUpdate')) {
+    delete this.nodeData.data.needUpdate
+  }
   const hasCustomWidth = this.hasCustomWidth()
   let text =
     typeof specifyText === 'string' ? specifyText : this.getData('text')

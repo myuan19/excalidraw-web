@@ -30,7 +30,10 @@
   box-sizing: border-box;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  white-space: pre-wrap;
   line-height: 1.35;
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
 }

@@ -10,6 +10,9 @@ export const MINDMAP_CANVAS_Z_INDEX = 1
 /** 节点文本编辑框、备注 tooltip 等由 simple-mind-map 动态插入的 DOM */
 export const MINDMAP_NODE_TEXT_EDIT_Z_INDEX = LAYER_BASE + 90
 
+/** 顶部工具栏，需高于文本编辑框，低于右侧侧栏 */
+export const MINDMAP_TOOLBAR_Z_INDEX = LAYER_BASE + 95
+
 /** 右侧属性 / 文本格式等侧栏面板 */
 export const SIDEBAR_UI_Z_INDEX_BASE = LAYER_BASE + 100
 
@@ -23,6 +26,7 @@ export const MINDMAP_OVERLAY_ROOT_CLASS = 'mindMapOverlayRoot'
 const CSS_VARS = {
   canvas: '--mm-layer-canvas',
   nodeTextEdit: '--mm-layer-node-text-edit',
+  toolbar: '--mm-layer-toolbar',
   sidebar: '--mm-layer-sidebar',
   richTextToolbar: '--mm-layer-rich-text-toolbar'
 }
@@ -32,6 +36,7 @@ export function getMindMapLayerCssVars() {
   return {
     [CSS_VARS.canvas]: MINDMAP_CANVAS_Z_INDEX,
     [CSS_VARS.nodeTextEdit]: MINDMAP_NODE_TEXT_EDIT_Z_INDEX,
+    [CSS_VARS.toolbar]: MINDMAP_TOOLBAR_Z_INDEX,
     [CSS_VARS.sidebar]: SIDEBAR_UI_Z_INDEX_BASE,
     [CSS_VARS.richTextToolbar]: MINDMAP_RICH_TEXT_TOOLBAR_Z_INDEX
   }

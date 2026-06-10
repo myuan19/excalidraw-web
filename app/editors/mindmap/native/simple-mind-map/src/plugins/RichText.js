@@ -13,6 +13,7 @@ import {
   compareVersion,
   loadImage,
   fitPastedImageSizeToNodeText,
+  handleTextEditSaveShortcut,
   getSvgNodeVisibleRect
 } from '../utils'
 import {
@@ -109,6 +110,10 @@ class RichText {
       .smm-richtext-node-wrap {
         word-break: break-all;
         user-select: none;
+      }
+
+      .smm-richtext-node-wrap p {
+        margin: 0;
       }
 
       .smm-richtext-node-wrap a {
@@ -320,6 +325,9 @@ class RichText {
         e.stopPropagation()
       })
       this.textEditNode.addEventListener('keydown', e => {
+        if (handleTextEditSaveShortcut(e, this.mindMap)) {
+          return
+        }
         if (this.mindMap.renderer.textEdit.checkIsAutoEnterTextEditKey(e)) {
           e.stopPropagation()
         }

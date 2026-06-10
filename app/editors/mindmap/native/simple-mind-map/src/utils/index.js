@@ -221,6 +221,27 @@ export const fitPastedImageSizeToNodeText = (node, size = {}) => {
   }
 }
 
+export const isSaveShortcut = e => {
+  if (!e || (!e.ctrlKey && !e.metaKey) || e.altKey || e.shiftKey) {
+    return false
+  }
+  const key = String(e.key || '').toLowerCase()
+  return key === 's' || e.code === 'KeyS'
+}
+
+export const handleTextEditSaveShortcut = (e, mindMap) => {
+  if (!isSaveShortcut(e)) {
+    return false
+  }
+  e.preventDefault()
+  e.stopPropagation()
+  const handler = mindMap && mindMap.opt && mindMap.opt.handleTextEditSaveShortcut
+  if (typeof handler === 'function') {
+    handler()
+  }
+  return true
+}
+
 //  缩放图片
 export const resizeImg = (imgUrl, maxWidth, maxHeight) => {
   return new Promise((resolve, reject) => {

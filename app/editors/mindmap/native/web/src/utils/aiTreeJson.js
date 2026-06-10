@@ -121,14 +121,28 @@ const stripHtmlTagsFromText = value => {
     .replace(/&lt;\/?[a-z][a-z0-9]*(?:\s+[^&]*?)?&gt;/gi, '')
 }
 
+const decodeHtmlTextEntities = value => {
+  return normalizeText(value)
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/gi, "'")
+}
+
+const normalizeAiSpanText = value => {
+  return decodeHtmlTextEntities(stripHtmlTagsFromText(value)).replace(/^\s+/, '')
+}
+
 function normalizeSpan(span, options = {}) {
   if (!span || typeof span !== 'object' || Array.isArray(span)) {
     return {
-      text: stripHtmlTagsFromText(span)
+      text: normalizeAiSpanText(span)
     }
   }
   const formula = normalizeText(span.formula).trim()
-  const text = formula ? `$${formula}$` : stripHtmlTagsFromText(span.text)
+  const text = formula ? `$${formula}$` : normalizeAiSpanText(span.text)
   const result = {
     text
   }

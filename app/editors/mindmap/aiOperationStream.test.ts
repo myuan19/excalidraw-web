@@ -60,6 +60,20 @@ describe("parseAiOperationStreamChunk", () => {
     expect(operation.data.text).toBe("<p><span>Plain title</span></p>");
   });
 
+  it("normalizes AI layout spaces and text entities in streaming operations", () => {
+    const result = parseAiOperationStreamChunk(
+      '{"op":"update_current","text":{"paragraphs":[{"indent":1,"spans":[{"text":"    Star &amp; Fork"}]}]}}\n',
+      {
+        allowInlineStyles: true,
+      },
+    );
+    const operation = result.operations[0] as any;
+
+    expect(operation.data.text).toBe(
+      '<p class="ql-indent-1"><span>Star &amp; Fork</span></p>',
+    );
+  });
+
   it("uses add_child id as the idempotency key by default", () => {
     const result = parseAiOperationStreamChunk(
       '{"op":"add_child","id":"ai-1","parent":"current","text":{"paragraphs":[{"spans":[{"text":"A"}]}]}}\n',

@@ -74,6 +74,7 @@
       <section class="sectionBlock">
         <div class="sectionLabel">{{ $t('ai.modifyRequirement') || '修改要求' }}</div>
         <el-input
+          ref="requirementInput"
           class="requirementInput"
           type="textarea"
           :rows="5"
@@ -215,7 +216,7 @@ export default {
       )
     },
     targetNodePreviewText() {
-      return this.stripHtml(this.targetNodeName).slice(0, 18) || '(空)'
+      return this.stripHtml(this.targetNodeName) || '(空)'
     },
     targetNodePreviewStyle() {
       const node = this.getPreviewNode()
@@ -259,14 +260,31 @@ export default {
     this.$bus.$on('node_active', this.onNodeActive)
     this.$bus.$on('ai_create_status', this.onAiStatus)
     this.$bus.$on('ai_stream_content', this.onAiStream)
+    this.$bus.$on('focus_ai_prompt', this.focusPromptInput)
   },
   beforeDestroy() {
     sidebarMemoryDebug('ai sidebar destroy', {})
     this.$bus.$off('node_active', this.onNodeActive)
     this.$bus.$off('ai_create_status', this.onAiStatus)
     this.$bus.$off('ai_stream_content', this.onAiStream)
+    this.$bus.$off('focus_ai_prompt', this.focusPromptInput)
   },
   methods: {
+    focusPromptInput() {
+      this.$nextTick(() => {
+        const input = this.$refs.requirementInput
+        if (input && typeof input.focus === 'function') {
+          input.focus()
+          return
+        }
+        const textarea =
+          input && input.$el ? input.$el.querySelector('textarea') : null
+        if (textarea && typeof textarea.focus === 'function') {
+          textarea.focus()
+        }
+      })
+    },
+
     scheduleDeferredInit() {
       const run = () => {
         sidebarMemoryDebug('ai sidebar deferred init start', {})
@@ -316,7 +334,7 @@ export default {
       if (node) {
         const text = node.nodeData && node.nodeData.data && node.nodeData.data.text
         this.targetNodeName = text
-          ? String(text).replace(/<[^>]+>/g, '').slice(0, 40)
+          ? this.stripHtml(text)
           : '(空)'
       } else {
         this.targetNodeName = this.$t('ai.rootNodeDefault') || '根节点 (全局)'

@@ -665,7 +665,7 @@ export default {
         node.nodeData &&
         node.nodeData.data &&
         node.nodeData.data.text
-      return this.stripHtml(text || '').slice(0, 18) || '(空)'
+      return this.stripHtml(text || '') || '(空)'
     },
     nodePreviewStyle() {
       return buildNodeDomPreviewStyleFromState(this.style, {

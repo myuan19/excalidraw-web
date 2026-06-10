@@ -356,7 +356,7 @@ export default {
     }
   },
   methods: {
-    ...mapMutations(['setLocalConfig']),
+    ...mapMutations(['setLocalConfig', 'setActiveSidebar']),
 
     // 计算右键菜单元素的显示位置
     getShowPosition(x, y) {
@@ -605,7 +605,13 @@ export default {
     // AI润色（与顶部 AI 按钮相同）
     aiPolish() {
       if (!this.node || this.node.isGeneralization) return
-      this.$bus.$emit('ai_organize_node', this.node)
+      if (typeof this.node.active === 'function') {
+        this.node.active()
+      }
+      this.setActiveSidebar('ai')
+      this.$nextTick(() => {
+        this.$bus.$emit('focus_ai_prompt')
+      })
       this.hide()
     }
   }

@@ -11,6 +11,7 @@ import {
   getVisibleColorFromTheme,
   loadImage,
   fitPastedImageSizeToNodeText,
+  handleTextEditSaveShortcut,
   getSvgNodeVisibleRect
 } from '../../utils'
 import {
@@ -416,6 +417,9 @@ export default class TextEdit {
         e.stopPropagation()
       })
       this.textEditNode.addEventListener('keydown', e => {
+        if (handleTextEditSaveShortcut(e, this.mindMap)) {
+          return
+        }
         if (this.checkIsAutoEnterTextEditKey(e)) {
           e.stopPropagation()
         }

@@ -338,7 +338,10 @@ export default {
     // AI整理当前节点
     showAiOrganize() {
       if (this.activeNodes.length !== 1 || this.hasGeneralization) return
-      this.$bus.$emit('ai_organize_node', this.activeNodes[0])
+      this.setActiveSidebar('ai')
+      this.$nextTick(() => {
+        this.$bus.$emit('focus_ai_prompt')
+      })
     }
   }
 }

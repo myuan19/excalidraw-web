@@ -756,6 +756,9 @@ export default {
         useLeftKeySelectionRightKeyDrag: this.useLeftKeySelectionRightKeyDrag,
         enableShortcutOnlyWhenMouseInSvg: false,
         customCheckEnableShortcut: createMindMapShortcutEnableCheck(() => this.mindMap),
+        handleTextEditSaveShortcut: () => {
+          this.manualSave()
+        },
         customHandleClipboardText: handleClipboardText,
         onlyPasteTextWhenHasImgAndText: false,
         defaultNodeImage: require('../../../assets/img/图片加载失败.svg'),
