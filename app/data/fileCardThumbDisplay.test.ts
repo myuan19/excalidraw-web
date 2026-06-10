@@ -3,6 +3,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { LocalThumbnailCache } from "./localThumbnailCache";
 import { resolveFileCardThumbDisplay } from "./fileCardThumbDisplay";
 import { FileSyncState } from "./FileSyncState";
+import {
+  clearThumbnailServerMiss,
+  markThumbnailServerMiss,
+} from "./thumbnailServerFetchMiss";
 import type { ServerFile } from "./ServerSync";
 
 function mockFile(overrides: Partial<ServerFile> = {}): ServerFile {
@@ -47,5 +51,12 @@ describe("resolveFileCardThumbDisplay", () => {
     );
     expect(display.cardThumbSvg).toContain("<svg");
     expect(display.thumbLoading).toBe(false);
+  });
+
+  it("stops thumb loading after server thumbnail miss", () => {
+    markThumbnailServerMiss("file-1", "sha-1");
+    const display = resolveFileCardThumbDisplay("file-1", mockFile());
+    expect(display.thumbLoading).toBe(false);
+    clearThumbnailServerMiss("file-1");
   });
 });

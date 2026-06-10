@@ -5,6 +5,10 @@ import { createLogger } from "../lib/logger";
 import { devDebug, isDevDebugChannelEnabled } from "../lib/devDebug";
 import { fetchThumbnailSvgForCard } from "../data/fetchThumbnailSvgForCard";
 import { isLocalDraftFileId } from "../data/localDraftFileId";
+import {
+  markThumbnailServerMiss,
+  shouldFetchServerThumbnail,
+} from "../data/thumbnailServerFetchMiss";
 import { ensureLocalDraftThumbnailFromCache } from "../data/localDraftThumbnailRecovery";
 import type { ServerFile } from "../data/ServerSync";
 
@@ -51,6 +55,7 @@ export type ThumbPipelineDeps = {
   fetchedThumbHashByIdRef: MutableRefObject<Record<string, string | null>>;
   fileThumbHashByIdRef: MutableRefObject<Record<string, string | null>>;
   setFetchedThumbs: Dispatch<SetStateAction<Record<string, string>>>;
+  onThumbnailServerMiss?: (fileId: string, contentSha: string | null) => void;
 };
 
 /**
@@ -68,6 +73,7 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
     fetchedThumbHashByIdRef,
     fileThumbHashByIdRef,
     setFetchedThumbs,
+    onThumbnailServerMiss,
   } = deps;
 
   const thumbFetchingRef = useRef<Set<string>>(new Set());
@@ -85,6 +91,7 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
       localDraftThumb: 0,
       localDraftRecoverQueued: 0,
       serverNoThumbFlag: 0,
+      serverThumbMiss: 0,
       alreadyInFetched: 0,
       inFlightRef: 0,
     };
@@ -127,14 +134,24 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
         }
         continue;
       }
-      if (!f.has_thumbnail) {
-        debugThumbnailPipeline("skip server no thumbnail", {
-          id: f.id,
-          id8: f.id.slice(0, 8),
-          syncState,
-          contentSha: f.content_sha256 ?? null,
-        });
-        skipped.serverNoThumbFlag++;
+      if (!shouldFetchServerThumbnail(f.id, f)) {
+        if (!f.has_thumbnail) {
+          debugThumbnailPipeline("skip server no thumbnail", {
+            id: f.id,
+            id8: f.id.slice(0, 8),
+            syncState,
+            contentSha: f.content_sha256 ?? null,
+          });
+          skipped.serverNoThumbFlag++;
+        } else {
+          debugThumbnailPipeline("skip server thumbnail miss", {
+            id: f.id,
+            id8: f.id.slice(0, 8),
+            syncState,
+            contentSha: f.content_sha256 ?? null,
+          });
+          skipped.serverThumbMiss++;
+        }
         continue;
       }
       if (thumbFetchingRef.current.has(f.id)) {
@@ -217,6 +234,12 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
               errPreview,
               url: item.url.slice(0, 160),
             });
+            if (
+              status === 404 &&
+              markThumbnailServerMiss(item.id, item.contentSha)
+            ) {
+              onThumbnailServerMiss?.(item.id, item.contentSha);
+            }
             return;
           }
           logPipe.debug("setFetchedThumbs apply", {
@@ -252,6 +275,7 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
     fetchedThumbSvgByIdRef,
     fetchedThumbHashByIdRef,
     fileThumbHashByIdRef,
+    onThumbnailServerMiss,
     setFetchedThumbs,
   ]);
 

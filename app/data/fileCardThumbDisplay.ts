@@ -3,6 +3,7 @@ import {
   buildFileCardThumbnailSlot,
   chooseFileCardThumbnailForFile,
 } from "./resolveFileCardThumbnail";
+import { isThumbnailServerMiss } from "./thumbnailServerFetchMiss";
 import { extractThumbBg, patchThumbnailSvgForCard } from "./thumbnailSvg";
 import { editorRegistry } from "../editors/registry";
 import type { ServerFile } from "./ServerSync";
@@ -32,7 +33,11 @@ export function resolveFileCardThumbDisplay(
   );
   const thumbSvg = thumbnailChoice.thumbSvg;
   const cardThumbSvg = thumbSvg ? patchThumbnailSvgForCard(thumbSvg) : null;
-  const thumbLoading = !thumbSvg && !!file.has_thumbnail && !isBrowserDraft;
+  const thumbLoading =
+    !thumbSvg &&
+    !!file.has_thumbnail &&
+    !isBrowserDraft &&
+    !isThumbnailServerMiss(fileId, file.content_sha256);
   const badge: FileCardThumbBadge = isBrowserDraft
     ? "temp"
     : slot.syncState === "draft"

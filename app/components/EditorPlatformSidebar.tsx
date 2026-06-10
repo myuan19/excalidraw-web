@@ -21,6 +21,7 @@ import {
   type FileCardThumbDisplay,
 } from "../data/fileCardThumbDisplay";
 import { resolveFileCardThumbnailSvg } from "../data/resolveFileCardThumbnail";
+import { shouldFetchServerThumbnail } from "../data/thumbnailServerFetchMiss";
 import { extractThumbBg } from "../data/thumbnailSvg";
 import { FileCardThumb } from "./FileCardThumb";
 import { getFileIdFromHash } from "../data/fileIdFromHash";
@@ -567,9 +568,7 @@ function SidebarRecentList({
       setPreviewDisplay(display);
 
       const needsFetch =
-        !display.cardThumbSvg &&
-        item.hasThumbnail &&
-        !isLocalDraftFileId(item.id);
+        !display.cardThumbSvg && shouldFetchServerThumbnail(item.id, file);
       if (!needsFetch) {
         return;
       }

@@ -73,6 +73,7 @@ import { computeThumbFetchAllowIds } from "../data/thumbCoverage";
 import { EmbedTokenManager } from "../components/EmbedTokenManager";
 import { SettingsPanel } from "../components/SettingsPanel";
 
+import { pruneThumbnailServerMisses } from "../data/thumbnailServerFetchMiss";
 import { useThumbnailPipeline } from "./useThumbnailPipeline";
 
 import "../components/FileList.scss";
@@ -521,6 +522,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const [importNotice, setImportNotice] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [fetchedThumbs, setFetchedThumbs] = useState<Record<string, string>>({});
+  const [, setThumbnailMissRevision] = useState(0);
   const fetchedThumbsRef = useRef(fetchedThumbs);
   fetchedThumbsRef.current = fetchedThumbs;
   const fetchedThumbHashByIdRef = useRef<Record<string, string | null>>({});
@@ -633,6 +635,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       nextHashes[file.id] = file.content_sha256 ?? null;
     }
     fileThumbHashByIdRef.current = nextHashes;
+    pruneThumbnailServerMisses(nextHashes);
 
     setFetchedThumbs((prev) => {
       let changed = false;
@@ -1103,6 +1106,10 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     [visibleThumbIds, thumbLoadScopeFiles],
   );
 
+  const onThumbnailServerMiss = useCallback(() => {
+    setThumbnailMissRevision((revision) => revision + 1);
+  }, []);
+
   const { thumbFetchingRef } = useThumbnailPipeline({
     thumbLoadScopeFiles,
     thumbFetchAllowIds,
@@ -1111,6 +1118,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     fetchedThumbHashByIdRef,
     fileThumbHashByIdRef,
     setFetchedThumbs: setFetchedThumbsWithLayoutDebug,
+    onThumbnailServerMiss,
   });
 
   const openNewFileDialog = useCallback(() => {

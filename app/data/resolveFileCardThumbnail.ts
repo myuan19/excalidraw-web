@@ -4,6 +4,10 @@ import { FileSyncState } from "./FileSyncState";
 import { isLocalDraftFileId } from "./localDraftFileId";
 import { LocalThumbnailCache } from "./localThumbnailCache";
 import { ensureLocalDraftThumbnailFromCache } from "./localDraftThumbnailRecovery";
+import {
+  markThumbnailServerMiss,
+  shouldFetchServerThumbnail,
+} from "./thumbnailServerFetchMiss";
 import { patchThumbnailSvgForCard } from "./thumbnailSvg";
 import type { ServerFile } from "./ServerSync";
 
@@ -47,7 +51,7 @@ export function fileCardThumbnailCanPreview(
   if (isLocalDraftFileId(fileId)) {
     return false;
   }
-  return !!file.has_thumbnail;
+  return shouldFetchServerThumbnail(fileId, file);
 }
 
 /**
@@ -66,7 +70,7 @@ export async function resolveFileCardThumbnailSvg(
     const recovered = await ensureLocalDraftThumbnailFromCache(fileId, file.kind);
     return recovered ? patchThumbnailSvgForCard(recovered) : null;
   }
-  if (!file.has_thumbnail) {
+  if (!shouldFetchServerThumbnail(fileId, file)) {
     return null;
   }
   const url = `/api/files/${fileId}/thumbnail${
@@ -74,10 +78,13 @@ export async function resolveFileCardThumbnailSvg(
       ? `?h=${encodeURIComponent(file.content_sha256)}`
       : ""
   }`;
-  const { svg } = await fetchThumbnailSvgForCard(url, {
+  const { svg, status } = await fetchThumbnailSvgForCard(url, {
     id8: fileId.slice(0, 8),
   });
   if (!svg) {
+    if (status === 404) {
+      markThumbnailServerMiss(fileId, file.content_sha256);
+    }
     return null;
   }
   return patchThumbnailSvgForCard(svg);
