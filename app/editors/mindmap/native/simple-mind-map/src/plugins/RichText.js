@@ -68,8 +68,6 @@ class RichText {
     this.range = null
     this.lastRange = null
     this.pasteUseRange = null
-    this.suppressTextChange = false
-    this.suppressTextChangeToken = null
     this.node = null
     this.isInserting = false
     this.styleEl = null
@@ -380,9 +378,6 @@ class RichText {
       // 已经是富文本
       this.textEditNode.innerHTML = this.cacheEditingText || nodeText
     }
-    const suppressToken = {}
-    this.suppressTextChange = true
-    this.suppressTextChangeToken = suppressToken
     this.initQuillEditor()
     this.setQuillContainerMinHeight(originHeight)
     this.setIsShowTextEdit(true)
@@ -395,12 +390,6 @@ class RichText {
         isInserting || (selectTextOnEnterEditText && !isFromKeyDown) ? 0 : null
       )
     }
-    setTimeout(() => {
-      if (this.suppressTextChangeToken === suppressToken) {
-        this.suppressTextChange = false
-        this.suppressTextChangeToken = null
-      }
-    }, 0)
     this.cacheEditingText = ''
   }
 
@@ -486,8 +475,6 @@ class RichText {
       this.lastRange = null
       this.pasteUseRange = null
       this.isInserting = false
-      this.suppressTextChange = false
-      this.suppressTextChangeToken = null
       return
     }
     const { beforeHideRichTextEdit } = this.mindMap.opt
@@ -506,8 +493,6 @@ class RichText {
     this.pasteUseRange = null
     this.node = null
     this.isInserting = false
-    this.suppressTextChange = false
-    this.suppressTextChangeToken = null
     list.forEach(node => {
       if (!node) return
       this.mindMap.execCommand('SET_NODE_TEXT', node, html, true)
@@ -619,9 +604,6 @@ class RichText {
       this.emitSelectionChange(range)
     })
     this.quill.on('text-change', () => {
-      if (this.suppressTextChange) {
-        return
-      }
       this.mindMap.emit('node_text_edit_change', {
         node: this.node,
         text: this.getEditText(),

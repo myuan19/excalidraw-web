@@ -439,7 +439,9 @@ describe("MindMap native source contract", () => {
       ),
       "utf8",
     );
-    expect(dragCloneSource).toContain("stripForeignObjectsFromClone");
+    // 预览克隆保留完整内容（含富文本foreignObject），靠惰性层+类名清扫保证无残留
+    expect(dragCloneSource).toContain("root.css('pointer-events', 'none')");
+    expect(dragCloneSource).not.toContain("stripForeignObjectsFromClone");
     expect(dragCloneSource).toContain("DRAG_CLONE_ROOT_CLASS");
     expect(dragCloneSource).toContain("disposeDragCloneLayer");
     expect(dragPluginSource).toContain("drag/dragSubtreeClone");
@@ -490,7 +492,7 @@ describe("MindMap native source contract", () => {
     expect(renderSource).toContain("const node = this.findNodeByUid(uid)");
   });
 
-  it("does not treat rich text editor initialization as user text input", () => {
+  it("keeps realtime text edit rebuilds driven by quill text-change events", () => {
     const richTextSource = fs.readFileSync(
       path.join(
         appRoot,
@@ -499,9 +501,12 @@ describe("MindMap native source contract", () => {
       "utf8",
     );
 
-    expect(richTextSource).toContain("suppressTextChange");
-    expect(richTextSource).toContain("suppressTextChangeToken");
-    expect(richTextSource).toContain("if (this.suppressTextChange)");
+    // 实时渲染模式依赖初始化text-change重建被TextEdit.show隐藏的SVG文本，
+    // 不得拦截程序化text-change（冗余渲染由渲染请求队列收敛）
+    expect(richTextSource).not.toContain("suppressTextChange");
+    expect(richTextSource).toContain(
+      "this.mindMap.emit('node_text_edit_change'",
+    );
   });
 
   it("commits AI fallback writes through the native history save chain", () => {

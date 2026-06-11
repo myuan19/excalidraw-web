@@ -20,26 +20,9 @@ export function removeDragCloneControls(clone) {
   clone.removeClass('smm-node-highlight')
 }
 
-/** foreignObject 深拷贝会复制/劫持 HTML，松手后易残留为第二个可交互节点 */
-export function stripForeignObjectsFromClone(clone) {
-  if (!clone?.find) {
-    return
-  }
-  clone.find('foreignObject').forEach(foreignObject => {
-    const host = foreignObject.node
-    if (host) {
-      while (host.firstChild) {
-        host.removeChild(host.firstChild)
-      }
-    }
-    foreignObject.remove()
-  })
-}
-
 export function cloneNodeGroupForDrag(nodeGroup) {
   const nodeClone = nodeGroup.clone()
   removeDragCloneControls(nodeClone)
-  stripForeignObjectsFromClone(nodeClone)
   return nodeClone
 }
 
@@ -65,6 +48,8 @@ export function collectVisibleDragCloneItems(node) {
 
 export function createDragSubtreeClone(otherDraw, rootNode) {
   const root = otherDraw.group().addClass(DRAG_CLONE_ROOT_CLASS)
+  // 预览层整体惰性化：克隆完整保留内容（含富文本foreignObject），但不可交互
+  root.css('pointer-events', 'none')
   const content = root.group()
   content.translate(-rootNode.left, -rootNode.top)
   collectVisibleDragCloneItems(rootNode).forEach(item => {
@@ -78,14 +63,12 @@ export function purgeDragCloneRoots(otherDraw) {
     return
   }
   otherDraw.find(`.${DRAG_CLONE_ROOT_CLASS}`).forEach(root => {
-    stripForeignObjectsFromClone(root)
     root.remove()
   })
 }
 
 export function disposeDragCloneLayer(otherDraw, cloneRef) {
   if (cloneRef) {
-    stripForeignObjectsFromClone(cloneRef)
     cloneRef.remove()
   }
   purgeDragCloneRoots(otherDraw)
