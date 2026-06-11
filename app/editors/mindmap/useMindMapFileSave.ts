@@ -133,10 +133,17 @@ export function useMindMapFileSave(opts: {
   const updateDraftHashDebouncedRef = useRef(
     debounce((fileId: string, getDocument: () => MindMapSaveDocument | null) => {
       if (getFileIdFromHash() !== fileId) {
+        debugMindMapPersist("draftHashDebounced skip: fileId mismatch", {
+          fileId8: fileId.slice(0, 8),
+          currentFileId8: getFileIdFromHash()?.slice(0, 8) ?? null,
+        });
         return;
       }
       const document = getDocument();
       if (!document) {
+        debugMindMapPersist("draftHashDebounced skip: no document", {
+          fileId8: fileId.slice(0, 8),
+        });
         return;
       }
       const state = evaluateCurrentFileModificationState({
@@ -149,6 +156,14 @@ export function useMindMapFileSave(opts: {
           ? (state.contentHash ?? hashDocumentSnapshot(document))
           : (state.baselineHash ?? state.contentHash ?? hashDocumentSnapshot(document));
 
+      debugMindMapPersist("draftHashDebounced write", {
+        fileId8: fileId.slice(0, 8),
+        modified: state.modified,
+        hash8: hash.slice(0, 8),
+        baselineHash8: state.baselineHash?.slice(0, 8) ?? null,
+        wroteLocalCache: state.modified,
+        sampleNode: findFirstRichMindMapNodeSummary(document.data),
+      });
       if (state.modified) {
         FileSyncState.setLocalCache(fileId, toMindMapLocalCacheRecord(document));
       }
@@ -196,6 +211,10 @@ export function useMindMapFileSave(opts: {
         return;
       }
       if (matchesMindMapPersistedSnapshot(fileId, document)) {
+        debugMindMapPersist("markDocumentChanged branch: matches-persisted-snapshot", {
+          fileId8: fileId.slice(0, 8),
+          contentHash8: hashDocumentSnapshot(document).slice(0, 8),
+        });
         updateDraftHashDebouncedRef.current.cancel();
         FileSyncState.alignHashes(fileId, hashDocumentSnapshot(document));
         FileSyncState.clearLocalEditTime(fileId);
@@ -203,9 +222,19 @@ export function useMindMapFileSave(opts: {
         return;
       }
       if (clearMindMapDraftIfUnchanged(fileId, document)) {
+        debugMindMapPersist("markDocumentChanged branch: unchanged-vs-baseline", {
+          fileId8: fileId.slice(0, 8),
+          contentHash8: hashDocumentSnapshot(document).slice(0, 8),
+        });
         setStatus("");
         return;
       }
+      debugMindMapPersist("markDocumentChanged branch: mark-draft (debounce 450ms)", {
+        fileId8: fileId.slice(0, 8),
+        contentHash8: hashDocumentSnapshot(document).slice(0, 8),
+        baselineHash8: FileSyncState.getBaselineHash(fileId)?.slice(0, 8) ?? null,
+        sampleNode: findFirstRichMindMapNodeSummary(document.data),
+      });
       updateDraftHashDebouncedRef.current(fileId, () => document);
       notifyEdit();
       setStatus("有未保存更改");
@@ -220,7 +249,13 @@ export function useMindMapFileSave(opts: {
       notifyEdit();
       return;
     }
-    markMindMapNativeDirtyPending(fileId);
+    const marked = markMindMapNativeDirtyPending(fileId);
+    debugMindMapPersist("markNativeDocumentDirty", {
+      fileId8: fileId.slice(0, 8),
+      markedPending: marked,
+      draftHash8: FileSyncState.getDraftHash(fileId)?.slice(0, 16) ?? null,
+      baselineHash8: FileSyncState.getBaselineHash(fileId)?.slice(0, 8) ?? null,
+    });
     notifyEdit();
     setStatus("有未保存更改");
     if (isLocalDraftFileId(fileId)) {
@@ -235,15 +270,31 @@ export function useMindMapFileSave(opts: {
       if (!fileId) {
         return false;
       }
-      const nativeSave = FileSyncState.hasUnsavedChanges(fileId)
-        ? await requestNativeMindMapData()
-        : null;
+      const hadUnsaved = FileSyncState.hasUnsavedChanges(fileId);
+      debugMindMapPersist("persistLocalDraftToCache start", {
+        fileId8: fileId.slice(0, 8),
+        hadUnsaved,
+        draftHash16: FileSyncState.getDraftHash(fileId)?.slice(0, 16) ?? null,
+      });
+      const nativeSave = hadUnsaved ? await requestNativeMindMapData() : null;
       const document = nativeSave?.document ?? getCurrentDocument();
+      debugMindMapPersist("persistLocalDraftToCache native result", {
+        fileId8: fileId.slice(0, 8),
+        nativeSaveOk: !!nativeSave,
+        usedFallbackDocument: !nativeSave && !!document,
+        hasDocument: !!document,
+        stillUnsaved: FileSyncState.hasUnsavedChanges(fileId),
+      });
       if (!document || !FileSyncState.hasUnsavedChanges(fileId)) {
         return false;
       }
       FileSyncState.setLocalCache(fileId, toMindMapLocalCacheRecord(document));
       FileSyncState.setDraftHash(fileId, hashDocumentSnapshot(document));
+      debugMindMapPersist("persistLocalDraftToCache wrote cache", {
+        fileId8: fileId.slice(0, 8),
+        hash8: hashDocumentSnapshot(document).slice(0, 8),
+        sampleNode: findFirstRichMindMapNodeSummary(document.data),
+      });
       return true;
     },
     [getCurrentDocument, requestNativeMindMapData],
@@ -407,6 +458,10 @@ export function useMindMapFileSave(opts: {
     async (fileId: string) => {
       const nativeSave = await requestNativeMindMapData();
       if (!nativeSave) {
+        debugMindMapPersist("syncDraftForLeave: native save failed/timeout", {
+          fileId8: fileId.slice(0, 8),
+          draftHash16: FileSyncState.getDraftHash(fileId)?.slice(0, 16) ?? null,
+        });
         updateDraftHashDebouncedRef.current.flush();
         return;
       }
@@ -421,6 +476,13 @@ export function useMindMapFileSave(opts: {
         state.modified
           ? (state.contentHash ?? hashDocumentSnapshot(document))
           : (state.baselineHash ?? state.contentHash ?? hashDocumentSnapshot(document));
+      debugMindMapPersist("syncDraftForLeave result", {
+        fileId8: fileId.slice(0, 8),
+        modified: state.modified,
+        hash8: hash.slice(0, 8),
+        baselineHash8: state.baselineHash?.slice(0, 8) ?? null,
+        sampleNode: findFirstRichMindMapNodeSummary(document.data),
+      });
       FileSyncState.setDraftHash(fileId, hash);
       if (!state.modified) {
         FileSyncState.clearLocalEditTime(fileId);
@@ -456,11 +518,20 @@ export function useMindMapFileSave(opts: {
       return;
     }
     await syncCurrentMindMapDraftForLeave(fileId);
-    if (!shouldPromptEditorHomeNavDialog(fileId)) {
+    const promptNeeded = shouldPromptEditorHomeNavDialog(fileId);
+    const autoSaveExit = isAutoSaveOnExitActive() && isAutoSaveEligibleFile(fileId);
+    debugMindMapPersist("goHome decision", {
+      fileId8: fileId.slice(0, 8),
+      promptNeeded,
+      autoSaveExit,
+      draftHash16: FileSyncState.getDraftHash(fileId)?.slice(0, 16) ?? null,
+      baselineHash8: FileSyncState.getBaselineHash(fileId)?.slice(0, 8) ?? null,
+    });
+    if (!promptNeeded) {
       navigateToFileListHome();
       return;
     }
-    if (isAutoSaveOnExitActive() && isAutoSaveEligibleFile(fileId)) {
+    if (autoSaveExit) {
       await requestSaveAndWait({ source: "home", navigateAfter: true });
       return;
     }

@@ -438,7 +438,16 @@
         }
         if (!dirtyNotifyEnabled) {
           debugMindMapOpen('postMindMapDataToHost draft push suppressed', {
-            phase: 'hydrating'
+            phase: 'hydrating',
+            revision,
+            rootChildren:
+              data && data.root && data.root.children
+                ? data.root.children.length
+                : 0,
+            rootText:
+              data && data.root && data.root.data
+                ? String(data.root.data.text || '').slice(0, 40)
+                : null
           })
           return
         }
@@ -617,6 +626,10 @@
 
       const scheduleDirtyNotifyEnable = (reason, delayMs = DIRTY_NOTIFY_SETTLE_MS) => {
         dirtyNotifyEnabled = false
+        debugMindMapOpen('dirty notify disabled (window start)', {
+          reason,
+          delayMs
+        })
         if (dirtyNotifyEnableTimer) {
           clearTimeout(dirtyNotifyEnableTimer)
           dirtyNotifyEnableTimer = null

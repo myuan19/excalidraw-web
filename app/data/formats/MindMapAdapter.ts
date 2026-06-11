@@ -10,7 +10,7 @@ import type { DocumentFormatAdapter } from "./types";
 
 const MINDMAP_FORMAT_VERSION = 1;
 const CONTAINER_VERSION = 1;
-const SIMPLE_MIND_MAP_VERSION = "0.14.0-fix.2";
+export const SIMPLE_MIND_MAP_VERSION = "0.14.0-fix.2";
 
 export type MindMapNodeData = {
   text: string;

@@ -44,6 +44,25 @@ export type NativeMindMapBridgePayload = {
   localConfig: Record<string, unknown> | null;
 };
 
+/**
+ * 恢复 simple-mind-map 数据信封：宿主持久化管线会从树根剥离 `smmVersion`
+ * （见 native/web `treeSnapshot.js` 的 HISTORY_META_KEYS，服务于历史快照指纹去重）。
+ * 发回 native 前必须补回——RichText 插件把缺失版本号的数据按 <0.13.0 旧格式处理，
+ * 会给所有节点打 `resetRichText` 标记，渲染时剥除全部内联样式（加粗等）。
+ */
+export function stampMindMapDataSourceVersion(
+  data: MindMapDocumentData,
+  sourceVersion: string,
+): MindMapDocumentData {
+  if (!data.root || (data.root as Record<string, unknown>).smmVersion) {
+    return data;
+  }
+  return {
+    ...data,
+    root: { ...data.root, smmVersion: sourceVersion } as typeof data.root,
+  };
+}
+
 export type NativeMindMapMessage =
   | {
       source: typeof MINDMAP_NATIVE_SOURCE;

@@ -39,6 +39,7 @@ import {
   createEmptyMindMapData,
   isEffectivelyEmptyMindMapData,
   isMindMapSingleRootOnly,
+  SIMPLE_MIND_MAP_VERSION,
 } from "../../data/formats/MindMapAdapter";
 import { MindMapAdapter } from "../../data/formats/registry";
 import {
@@ -64,6 +65,7 @@ import {
 } from "./mindMapBridgeDebug";
 import {
   isNativeMindMapMessage,
+  stampMindMapDataSourceVersion,
   type NativeMindMapBridgePayload,
   type NativeMindMapMessage,
 } from "./mindMapBridgeProtocol";
@@ -126,7 +128,10 @@ function toBridgePayload(
   data: MindMapDocumentData,
   fileId: string | null,
 ): NativeMindMapBridgePayload {
-  const mindMapData = applyMindMapBrowserView(data, fileId);
+  const mindMapData = stampMindMapDataSourceVersion(
+    applyMindMapBrowserView(data, fileId),
+    SIMPLE_MIND_MAP_VERSION,
+  );
   const mindMapConfig = applyMindMapMediaLimitsToConfig({
     ...(mindMapData.config ?? {}),
   });
@@ -1206,6 +1211,17 @@ const MindMapEditorShell = () => {
       if (!current) {
         return;
       }
+      // hydrate 期间 iframe 初始化会程序化推送 config/lang，与 mindMapDirtyState
+      // 同样不应标脏（否则误亮红点并武装空闲自动保存）；settle 时由 anchor 决议对齐。
+      const markChangedUnlessHydrating = (type: string) => {
+        if (nativeHydratingRef.current) {
+          debugMindMapPersist("config change suppressed during hydrate", {
+            type,
+          });
+          return;
+        }
+        markDocumentChanged(latestDocumentRef.current!);
+      };
       if (event.data.type === "saveMindMapConfig") {
         updateLatestDocument({
           ...current.data,
@@ -1216,7 +1232,7 @@ const MindMapEditorShell = () => {
               ? (event.data.payload as Record<string, unknown>)
               : {},
         });
-        markDocumentChanged(latestDocumentRef.current!);
+        markChangedUnlessHydrating(event.data.type);
         return;
       }
       if (event.data.type === "saveLocalConfig") {
@@ -1229,7 +1245,7 @@ const MindMapEditorShell = () => {
               ? (event.data.payload as Record<string, unknown>)
               : null,
         });
-        markDocumentChanged(latestDocumentRef.current!);
+        markChangedUnlessHydrating(event.data.type);
         return;
       }
       if (event.data.type === "saveLanguage") {
@@ -1241,7 +1257,7 @@ const MindMapEditorShell = () => {
                 ? event.data.payload
                 : "zh",
           });
-          markDocumentChanged(latestDocumentRef.current!);
+          markChangedUnlessHydrating(event.data.type);
         } catch (err: any) {
           setError(err?.message || "mindmap 数据保存失败");
         }
@@ -1466,6 +1482,15 @@ const MindMapEditorShell = () => {
 
   useEffect(() => {
     let visibilitySaveTimer: number | null = null;
+    // hydrate settle 前画布数据尚未达到权威状态（iframe 初始化可能产出
+    // 与基线不符的程序化快照），自动上行会把它写到服务器覆盖正确版本。
+    const requestAutoSave = (source: "auto" | "visibility") => {
+      if (nativeHydratingRef.current) {
+        debugMindMapPersist("auto save suppressed during hydrate", { source });
+        return;
+      }
+      requestSave({ source });
+    };
     const onVisibilityChange = () => {
       if (visibilitySaveTimer !== null) {
         window.clearTimeout(visibilitySaveTimer);
@@ -1483,7 +1508,7 @@ const MindMapEditorShell = () => {
       visibilitySaveTimer = window.setTimeout(() => {
         visibilitySaveTimer = null;
         if (document.hidden) {
-          requestSave({ source: "visibility" });
+          requestAutoSave("visibility");
         }
       }, 600);
     };
@@ -1492,7 +1517,7 @@ const MindMapEditorShell = () => {
       if (!isAutoSaveEligibleForCurrentFile()) {
         return;
       }
-      requestSave({ source: "auto" });
+      requestAutoSave("auto");
     });
 
     document.addEventListener("visibilitychange", onVisibilityChange);

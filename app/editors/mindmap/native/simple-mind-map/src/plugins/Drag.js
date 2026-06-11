@@ -239,6 +239,16 @@ class Drag extends Base {
     this.unbindDocumentDragEvents()
     const draggedNodes = [...this.beingDragNodeList]
     this.cancelDragMoveFrame()
+    // 微距取消：松手时指针仍在按下点附近（含拖出后又拖回），视为未发生
+    // 拖拽，清空所有落点状态，只走清理路径，不提交任何移动命令
+    const isMicroMove =
+      this.isDragging && this.checkIsMicroMove(e.clientX, e.clientY)
+    if (isMicroMove) {
+      this.possibleDrop = null
+      this.overlapNode = null
+      this.prevNode = null
+      this.nextNode = null
+    }
     const dropUids = this.getDropTargetUids(this.possibleDrop)
     let overlapNodeUid = this.overlapNode
       ? this.overlapNode.getData('uid')
@@ -290,6 +300,7 @@ class Drag extends Base {
         this.nextNode
       )
     } else if (
+      !isMicroMove &&
       this.clone &&
       enableFreeDrag &&
       this.beingDragNodeList.length === 1
@@ -345,6 +356,24 @@ class Drag extends Base {
     if (node.getData('isActive')) {
       this.mindMap.execCommand('SET_NODE_ACTIVE', node, false)
     }
+  }
+
+  // 微距判定：指针（视口坐标）距按下点的位移是否在取消阈值内
+  checkIsMicroMove(clientX, clientY) {
+    const { x, y } = this.mindMap.toPos(clientX, clientY)
+    return this.checkIsMicroMovePos(x, y)
+  }
+
+  // 微距判定：容器坐标版本
+  checkIsMicroMovePos(x, y) {
+    const dx = x - this.mouseDownX
+    const dy = y - this.mouseDownY
+    return Math.sqrt(dx * dx + dy * dy) <= this.getMicroMoveThreshold()
+  }
+
+  getMicroMoveThreshold() {
+    const value = Number(this.mindMap.opt.dragMicroMoveThreshold)
+    return Number.isFinite(value) && value >= 0 ? value : 12
   }
 
   //  拖动中
@@ -1072,7 +1101,10 @@ class Drag extends Base {
       x: this.mouseMoveX,
       y: this.mouseMoveY
     }
-    const nextDrop = this.findDropTarget(point)
+    // 微距范围内不显示落点指示，与松手时的微距取消保持视觉一致
+    const nextDrop = this.checkIsMicroMovePos(this.mouseMoveX, this.mouseMoveY)
+      ? null
+      : this.findDropTarget(point)
     const nextDropKey = this.getDropTargetKey(nextDrop)
     if (nextDropKey !== this.lastDropTargetKey) {
       this.clearDropIndicator()

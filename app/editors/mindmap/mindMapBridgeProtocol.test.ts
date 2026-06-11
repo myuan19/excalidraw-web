@@ -4,7 +4,9 @@ import {
   classifyMindMapIframeFailure,
   isBridgeReadyPhase,
   parseIframeFailureKind,
+  stampMindMapDataSourceVersion,
 } from "./mindMapBridgeProtocol";
+import { mindMapDataWithStrongChild } from "./mindMapHydrateDraftPolicy";
 
 describe("mindMapBridgeProtocol", () => {
   it("classifies static deploy failures by kind, not message regex", () => {
@@ -31,5 +33,38 @@ describe("mindMapBridgeProtocol", () => {
     expect(parseIframeFailureKind({ kind: "runtime-blocked" })).toBe(
       "runtime-blocked",
     );
+  });
+
+  describe("stampMindMapDataSourceVersion", () => {
+    it("restores smmVersion on roots stripped by the persistence pipeline", () => {
+      const data = mindMapDataWithStrongChild(
+        "<p><strong><span>bold</span></strong></p>",
+      );
+      expect(
+        (data.root as Record<string, unknown>).smmVersion,
+      ).toBeUndefined();
+
+      const stamped = stampMindMapDataSourceVersion(data, "0.14.0-fix.2");
+      expect((stamped.root as Record<string, unknown>).smmVersion).toBe(
+        "0.14.0-fix.2",
+      );
+      // 不可变更新：原文档不被修改
+      expect(
+        (data.root as Record<string, unknown>).smmVersion,
+      ).toBeUndefined();
+      // 树内容保持原样
+      expect(stamped.root.children).toBe(data.root.children);
+    });
+
+    it("keeps an existing smmVersion untouched", () => {
+      const data = mindMapDataWithStrongChild("<p><span>plain</span></p>");
+      (data.root as Record<string, unknown>).smmVersion = "0.13.1";
+
+      const stamped = stampMindMapDataSourceVersion(data, "0.14.0-fix.2");
+      expect(stamped).toBe(data);
+      expect((stamped.root as Record<string, unknown>).smmVersion).toBe(
+        "0.13.1",
+      );
+    });
   });
 });
