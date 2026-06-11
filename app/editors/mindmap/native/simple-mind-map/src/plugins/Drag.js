@@ -39,13 +39,6 @@ class Drag extends Base {
     this.dragSession = null
     this.dropTargets = []
     this.possibleDrop = null
-    this.snapOffset = null
-    this.snapTargets = []
-    this.snapTargetAnchors = []
-    this.snapGuideLines = []
-    this.lastDragClientX = 0
-    this.lastDragClientY = 0
-    this.lastDragCtrlKey = false
     this.lastDropTargetKey = ''
     this.dragMoveFrame = null
     this.pendingDragMove = null
@@ -199,8 +192,7 @@ class Drag extends Base {
       x,
       y,
       clientX: e.clientX,
-      clientY: e.clientY,
-      ctrlKey: e.ctrlKey
+      clientY: e.clientY
     }
     if (this.dragMoveFrame) {
       return
@@ -373,7 +365,7 @@ class Drag extends Base {
 
   getMicroMoveThreshold() {
     const value = Number(this.mindMap.opt.dragMicroMoveThreshold)
-    return Number.isFinite(value) && value >= 0 ? value : 12
+    return Number.isFinite(value) && value >= 0 ? value : 16
   }
 
   //  拖动中
@@ -381,31 +373,13 @@ class Drag extends Base {
     if (!this.isMousedown || !this.isDragging) {
       return
     }
-    this.lastDragClientX = e.clientX
-    this.lastDragClientY = e.clientY
-    this.lastDragCtrlKey = !!e.ctrlKey
     // 更新克隆节点的位置
     this.drawTransform = this.mindMap.draw.transform()
     let { scaleX, scaleY, translateX, translateY } = this.drawTransform
     let cloneNodeLeft = x - this.offsetX
     let cloneNodeTop = y - this.offsetY
     if (this.isDropTargetLayout()) {
-      if (this.isSnapEnabled(e)) {
-        this.snapTargets = this.computeSnapTargets(x, y)
-        this.snapOffset = this.resolveSnapOffset(this.snapTargets)
-      } else {
-        this.snapTargets = []
-        this.snapOffset = {
-          x: 0,
-          y: 0
-        }
-      }
-      this.dragSession.currentPoint = {
-        x: x + this.snapOffset.x,
-        y: y + this.snapOffset.y
-      }
-      this.dragSession.snapTargets = this.snapTargets
-      this.dragSession.snapOffset = this.snapOffset
+      this.dragSession.currentPoint = { x, y }
     }
     x = (cloneNodeLeft - translateX) / scaleX
     y = (cloneNodeTop - translateY) / scaleY
@@ -434,7 +408,6 @@ class Drag extends Base {
           }
           this.drawTransform = this.mindMap.draw.transform()
           this.refreshDragGeometry()
-          this.updateDragSessionPoint()
           this.updateDropTarget()
         }, 0)
       }
@@ -592,7 +565,6 @@ class Drag extends Base {
       this.placeHolderLine = null
     }
     this.removeExtraLines()
-    this.removeSnapGuides()
   }
 
   // 移除额外创建的连线
@@ -601,13 +573,6 @@ class Drag extends Base {
       item.remove()
     })
     this.placeHolderExtraLines = []
-  }
-
-  removeSnapGuides() {
-    this.snapGuideLines.forEach(item => {
-      item.remove()
-    })
-    this.snapGuideLines = []
   }
 
   // 当前布局是否使用新的 DropTarget 算法
@@ -627,24 +592,14 @@ class Drag extends Base {
     this.dragSession = {
       sourceNodes: [...this.beingDragNodeList],
       primaryNode: this.mousedownNode,
-      startPoint: {
-        x: this.mouseDownX,
-        y: this.mouseDownY
-      },
       currentPoint: {
         x: this.mouseDownX,
         y: this.mouseDownY
       },
-      sourceBounds: this.getSourceNodesScreenRect(),
-      possibleDrop: null,
-      snapTargets: [],
-      snapOffset: null
+      possibleDrop: null
     }
     this.dropTargets = this.computeDropTargets()
-    this.snapTargetAnchors = this.computeSnapTargetAnchors()
-    this.snapTargets = []
     this.possibleDrop = null
-    this.snapOffset = null
   }
 
   // 自动滚动画布会改变 transform，拖拽中的屏幕命中区域需要同步刷新
@@ -653,8 +608,6 @@ class Drag extends Base {
       return
     }
     this.dropTargets = this.computeDropTargets()
-    this.snapTargetAnchors = this.computeSnapTargetAnchors()
-    this.dragSession.sourceBounds = this.getSourceNodesScreenRect()
     this.lastDropTargetKey = ''
   }
 
@@ -1115,7 +1068,6 @@ class Drag extends Base {
     }
     this.possibleDrop = nextDrop
     this.dragSession.possibleDrop = this.possibleDrop
-    this.renderSnapGuides()
   }
 
   getDropTargetKey(dropTarget) {
@@ -1185,219 +1137,6 @@ class Drag extends Base {
         })
         .fill({ color: 'none' })
     })
-  }
-
-  renderSnapGuides() {
-    this.removeSnapGuides()
-    if (!this.snapTargets.length) {
-      return
-    }
-    const xSnap = this.snapTargets.find(item => {
-      return item.snapOffset.y === 0 && item.snapOffset.x !== 0
-    })
-    const ySnap = this.snapTargets.find(item => {
-      return item.snapOffset.x === 0 && item.snapOffset.y !== 0
-    })
-    if (xSnap) {
-      this.drawSnapGuide(
-        `M${xSnap.targetPoint.x},${Math.min(
-          xSnap.sourcePoint.y,
-          xSnap.targetPoint.y
-        ) - 20} L${xSnap.targetPoint.x},${Math.max(
-          xSnap.sourcePoint.y,
-          xSnap.targetPoint.y
-        ) + 20}`
-      )
-    }
-    if (ySnap) {
-      this.drawSnapGuide(
-        `M${Math.min(ySnap.sourcePoint.x, ySnap.targetPoint.x) - 20},${
-          ySnap.targetPoint.y
-        } L${Math.max(ySnap.sourcePoint.x, ySnap.targetPoint.x) + 20},${
-          ySnap.targetPoint.y
-        }`
-      )
-    }
-  }
-
-  drawSnapGuide(path) {
-    const line = this.mindMap.otherDraw
-      .path(path)
-      .stroke({
-        color: '#2EBDFF',
-        width: 1,
-        dasharray: '4,4'
-      })
-      .fill({ color: 'none' })
-    this.snapGuideLines.push(line)
-  }
-
-  updateDragSessionPoint() {
-    if (!this.dragSession) {
-      return
-    }
-    const { x, y } = this.mindMap.toPos(
-      this.lastDragClientX,
-      this.lastDragClientY
-    )
-    if (this.isSnapEnabled({ ctrlKey: this.lastDragCtrlKey })) {
-      this.snapTargets = this.computeSnapTargets(x, y)
-      this.snapOffset = this.resolveSnapOffset(this.snapTargets)
-    } else {
-      this.snapTargets = []
-      this.snapOffset = {
-        x: 0,
-        y: 0
-      }
-    }
-    this.dragSession.currentPoint = {
-      x: x + this.snapOffset.x,
-      y: y + this.snapOffset.y
-    }
-    this.dragSession.snapTargets = this.snapTargets
-    this.dragSession.snapOffset = this.snapOffset
-  }
-
-  isSnapEnabled(e = {}) {
-    const { scaleX, scaleY } = this.drawTransform || this.mindMap.draw.transform()
-    return !e.ctrlKey && Math.max(scaleX, scaleY) >= 0.2
-  }
-
-  computeSnapTargets(rawX, rawY) {
-    if (!this.dragSession) {
-      return []
-    }
-    const threshold = this.mindMap.opt.dragSnapThreshold || 10
-    const draggedBounds = this.getDraggedBounds(rawX, rawY)
-    const sourceAnchors = this.getSnapAnchors(
-      draggedBounds,
-      this.beingDragNodeList.length === 1
-    )
-    const targetAnchors = this.snapTargetAnchors
-    const matches = []
-    sourceAnchors.forEach(sourcePoint => {
-      targetAnchors.forEach(targetPoint => {
-        const dx = Math.abs(targetPoint.x - sourcePoint.x)
-        const dy = Math.abs(targetPoint.y - sourcePoint.y)
-        if (dx < threshold) {
-          matches.push({
-            sourceBounds: draggedBounds,
-            sourcePoint,
-            targetPoint,
-            targetNode: targetPoint.node,
-            snapOffset: {
-              x: targetPoint.x - sourcePoint.x,
-              y: 0
-            }
-          })
-        }
-        if (dy < threshold) {
-          matches.push({
-            sourceBounds: draggedBounds,
-            sourcePoint,
-            targetPoint,
-            targetNode: targetPoint.node,
-            snapOffset: {
-              x: 0,
-              y: targetPoint.y - sourcePoint.y
-            }
-          })
-        }
-      })
-    })
-    return matches.sort((a, b) => {
-      return (
-        this.getSnapMagnitude(a.snapOffset) -
-        this.getSnapMagnitude(b.snapOffset)
-      )
-    })
-  }
-
-  computeSnapTargetAnchors() {
-    const targetAnchors = []
-    this.nodeList.forEach(node => {
-      if (this.checkIsInBeingDragNodeList(node)) {
-        return
-      }
-      const rect = this.getNodeRect(node)
-      this.getSnapAnchors(rect, true).forEach(anchor => {
-        targetAnchors.push({
-          ...anchor,
-          node
-        })
-      })
-    })
-    return targetAnchors
-  }
-
-  resolveSnapOffset(snapTargets) {
-    if (!snapTargets.length) {
-      return {
-        x: 0,
-        y: 0
-      }
-    }
-    const bestX = snapTargets.find(item => {
-      return item.snapOffset.y === 0 && item.snapOffset.x !== 0
-    })
-    const bestY = snapTargets.find(item => {
-      return item.snapOffset.x === 0 && item.snapOffset.y !== 0
-    })
-    return {
-      x: bestX ? bestX.snapOffset.x : 0,
-      y: bestY ? bestY.snapOffset.y : 0
-    }
-  }
-
-  getDraggedBounds(rawX, rawY) {
-    const { sourceBounds, startPoint } = this.dragSession
-    const dx = rawX - startPoint.x
-    const dy = rawY - startPoint.y
-    return {
-      left: sourceBounds.left + dx,
-      top: sourceBounds.top + dy,
-      right: sourceBounds.right + dx,
-      bottom: sourceBounds.bottom + dy
-    }
-  }
-
-  getSourceNodesScreenRect() {
-    return this.beingDragNodeList.reduce((rect, node) => {
-      const nodeRect = this.getNodeRect(node)
-      return rect ? this.mergeRects(rect, nodeRect) : nodeRect
-    }, null)
-  }
-
-  getSnapAnchors(rect, includeCenter) {
-    const anchors = [
-      {
-        x: rect.left,
-        y: rect.top
-      },
-      {
-        x: rect.right,
-        y: rect.top
-      },
-      {
-        x: rect.left,
-        y: rect.bottom
-      },
-      {
-        x: rect.right,
-        y: rect.bottom
-      }
-    ]
-    if (includeCenter) {
-      anchors.push({
-        x: rect.left + (rect.right - rect.left) / 2,
-        y: rect.top + (rect.bottom - rect.top) / 2
-      })
-    }
-    return anchors
-  }
-
-  getSnapMagnitude(offset) {
-    return Math.sqrt(offset.x * offset.x + offset.y * offset.y)
   }
 
   getDropTargetUids(dropTarget) {

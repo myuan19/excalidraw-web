@@ -364,10 +364,8 @@ export const defaultOpt = {
   },
   // 节点拖拽放置目标命中区域灵敏度，越大越容易识别为交换/移动
   dragDropTargetSensitivity: 1.04,
-  // 节点拖拽吸附阈值，单位为屏幕像素
-  dragSnapThreshold: 10,
   // 节点拖拽微距取消阈值，单位为容器像素：松手时指针距按下点小于该值视为未拖拽（保持原落点）
-  dragMicroMoveThreshold: 12,
+  dragMicroMoveThreshold: 16,
   // 节点拖拽时的透明度配置
   dragOpacityConfig: {
     cloneNodeOpacity: 0.5, // 跟随鼠标移动的克隆节点或矩形的透明度
