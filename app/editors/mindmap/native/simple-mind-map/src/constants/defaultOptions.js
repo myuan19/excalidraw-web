@@ -364,6 +364,9 @@ export const defaultOpt = {
   },
   // 节点拖拽放置目标命中区域灵敏度，越大越容易识别为交换/移动
   dragDropTargetSensitivity: 1.04,
+  // 节点拖拽落点的最近插槽搜索半径，单位为容器像素：指针未直接命中任何
+  // 插槽矩形时，在该距离内就近吸附；超出则视为放空（不产生落点）
+  dragDropTargetSearchRadius: 80,
   // 节点拖拽微距取消阈值，单位为容器像素：松手时指针距按下点小于该值视为未拖拽（保持原落点）
   dragMicroMoveThreshold: 16,
   // 节点拖拽时的透明度配置

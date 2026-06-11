@@ -60,6 +60,9 @@ class Drag extends Base {
     this.dropIndicatorHeight = 18
     this.placeHolderLine = null
     this.placeHolderExtraLines = []
+    // Ctrl 按住期间的插槽区域可视化叠加层
+    this.dropRegionOverlayEls = []
+    this.isDropRegionOverlayVisible = false
     // 鼠标按下位置和节点左上角的偏移量
     this.offsetX = 0
     this.offsetY = 0
@@ -81,6 +84,7 @@ class Drag extends Base {
     this.onMousemove = this.onMousemove.bind(this)
     this.onMouseup = this.onMouseup.bind(this)
     this.onDocumentKeydown = this.onDocumentKeydown.bind(this)
+    this.onDocumentKeyup = this.onDocumentKeyup.bind(this)
     this.checkOverlapNode = throttle(this.checkOverlapNode, 300, this)
 
     this.mindMap.on('node_mousedown', this.onNodeMousedown)
@@ -122,18 +126,33 @@ class Drag extends Base {
   bindDocumentDragEvents() {
     document.addEventListener('mouseup', this.onMouseup, true)
     document.addEventListener('keydown', this.onDocumentKeydown, true)
+    document.addEventListener('keyup', this.onDocumentKeyup, true)
   }
 
   unbindDocumentDragEvents() {
     document.removeEventListener('mouseup', this.onMouseup, true)
     document.removeEventListener('keydown', this.onDocumentKeydown, true)
+    document.removeEventListener('keyup', this.onDocumentKeyup, true)
   }
 
   onDocumentKeydown(e) {
-    if (e.key !== 'Escape' || !this.isMousedown) {
+    if (!this.isMousedown) {
       return
     }
-    this.cancelDrag()
+    if (e.key === 'Escape') {
+      this.cancelDrag()
+      return
+    }
+    // 按住 Ctrl 可视化全部插槽命中区域，便于诊断拖拽落点
+    if (e.key === 'Control') {
+      this.showDropRegionOverlay()
+    }
+  }
+
+  onDocumentKeyup(e) {
+    if (e.key === 'Control') {
+      this.hideDropRegionOverlay()
+    }
   }
 
   cancelDrag() {
@@ -565,6 +584,7 @@ class Drag extends Base {
       this.placeHolderLine = null
     }
     this.removeExtraLines()
+    this.hideDropRegionOverlay()
   }
 
   // 移除额外创建的连线
@@ -609,15 +629,152 @@ class Drag extends Base {
     }
     this.dropTargets = this.computeDropTargets()
     this.lastDropTargetKey = ''
+    if (this.isDropRegionOverlayVisible) {
+      this.renderDropRegionOverlay()
+    }
   }
 
-  // 构建当前布局下所有可命中的放置目标
+  // 拖拽中按住 Ctrl：可视化落点决策图。对视口逐点采样真实解析函数
+  // （含优先级仲裁、最近邻兜底、微距区），每种颜色即松手时的真实归属；
+  // 灰色 = 保持原位（原位插槽或微距区），无色 = 放空
+  showDropRegionOverlay() {
+    if (
+      this.isDropRegionOverlayVisible ||
+      !this.isDragging ||
+      !this.isDropTargetLayout()
+    ) {
+      return
+    }
+    this.isDropRegionOverlayVisible = true
+    this.renderDropRegionOverlay()
+  }
+
+  hideDropRegionOverlay() {
+    this.isDropRegionOverlayVisible = false
+    this.removeDropRegionOverlayEls()
+  }
+
+  renderDropRegionOverlay() {
+    this.removeDropRegionOverlayEls()
+    if (!this.isDropRegionOverlayVisible || !this.drawTransform) {
+      return
+    }
+    const palette = [
+      '#FF6B6B',
+      '#4ECDC4',
+      '#FFD93D',
+      '#6BCB77',
+      '#B197FC',
+      '#FF9F45',
+      '#45AAF2',
+      '#F368E0'
+    ]
+    const KEEP_COLOR = '#888888'
+    const KEEP = 'keep'
+    // 第一遍：容器坐标网格采样。采样点经过与命中完全相同的解析管线
+    // （含优先级仲裁、最近邻兜底、微距区），保证所见即所得
+    const { width, height } = this.mindMap.elRect
+    const step = 12
+    const cols = Math.ceil(width / step)
+    const rows = Math.ceil(height / step)
+    const grid = []
+    for (let row = 0; row < rows; row++) {
+      const line = []
+      for (let col = 0; col < cols; col++) {
+        const x = col * step + step / 2
+        const y = row * step + step / 2
+        if (this.checkIsMicroMovePos(x, y)) {
+          line.push(KEEP)
+          continue
+        }
+        const resolved = this.resolveDropTarget({ x, y })
+        line.push(resolved ? (resolved.isNoop ? KEEP : resolved) : null)
+      }
+      grid.push(line)
+    }
+    // 第二遍：贪心图着色。调色板按序号循环会让相邻的不同目标撞色，
+    // 边界隐形、看起来像一整片区域；改为依据采样图中的相邻关系取
+    // 首个未被邻居占用的颜色，保证相邻区域必不同色
+    const neighborSets = new Map()
+    const link = (a, b) => {
+      if (!a || !b || a === b || a === KEEP || b === KEEP) {
+        return
+      }
+      if (!neighborSets.has(a)) neighborSets.set(a, new Set())
+      if (!neighborSets.has(b)) neighborSets.set(b, new Set())
+      neighborSets.get(a).add(b)
+      neighborSets.get(b).add(a)
+    }
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const cell = grid[row][col]
+        if (col + 1 < cols) link(cell, grid[row][col + 1])
+        if (row + 1 < rows) link(cell, grid[row + 1][col])
+      }
+    }
+    const colorMap = new Map()
+    this.dropTargets.forEach(target => {
+      const used = new Set()
+      const neighbors = neighborSets.get(target)
+      if (neighbors) {
+        neighbors.forEach(neighbor => {
+          const color = colorMap.get(neighbor)
+          if (color) {
+            used.add(color)
+          }
+        })
+      }
+      colorMap.set(target, palette.find(color => !used.has(color)) || palette[0])
+    })
+    // 第三遍：行内合并同色连续段减少元素量；
+    // otherDraw 位于画布变换组内，落笔前逆变换
+    const { scaleX, scaleY, translateX, translateY } = this.drawTransform
+    const drawRun = (startX, endX, rowY, color) => {
+      const rect = this.mindMap.otherDraw
+        .rect()
+        .size((endX - startX) / scaleX, step / scaleY)
+        .move((startX - translateX) / scaleX, (rowY - translateY) / scaleY)
+        .fill({ color, opacity: 0.25 })
+      this.dropRegionOverlayEls.push(rect)
+    }
+    for (let row = 0; row < rows; row++) {
+      let runColor = null
+      let runStart = 0
+      for (let col = 0; col <= cols; col++) {
+        const cell = col < cols ? grid[row][col] : null
+        const color =
+          cell === KEEP ? KEEP_COLOR : cell ? colorMap.get(cell) : null
+        if (color !== runColor) {
+          if (runColor) {
+            drawRun(runStart, col * step, row * step, runColor)
+          }
+          runColor = color
+          runStart = col * step
+        }
+      }
+    }
+  }
+
+  removeDropRegionOverlayEls() {
+    this.dropRegionOverlayEls.forEach(item => {
+      item.remove()
+    })
+    this.dropRegionOverlayEls = []
+  }
+
+  // 构建当前布局下所有可命中的放置目标。被拖拽节点及其子树保持"在场"：
+  // 它们的本体与插槽照常参与几何竞争（避免原位附近被邻居吞掉），
+  // 只是命中后统一解析为"保持原位"
   computeDropTargets() {
     const targets = []
     const { MIND_MAP } = CONSTANTS.LAYOUT
     const { LEFT, RIGHT } = CONSTANTS.LAYOUT_GROW_DIR
-    this.nodeList.forEach(parentNode => {
-      if (!this.canUseAsDropParent(parentNode)) {
+    const parentNodes = []
+    bfsWalk(this.mindMap.renderer.root, node => {
+      parentNodes.push(node)
+    })
+    parentNodes.forEach(parentNode => {
+      if (parentNode.isGeneralization) {
         return
       }
       if (this.mindMap.opt.layout === MIND_MAP && parentNode.isRoot) {
@@ -637,11 +794,18 @@ class Drag extends Base {
         targets.push(
           ...this.createVerticalGroupDropTargets(
             parentNode,
-            this.getAvailableChildren(parentNode),
+            parentNode.children,
             this.getNewChildNodeDir(parentNode) || RIGHT
           )
         )
       }
+    })
+    // 树在拖拽期间不变，"保持原位"判定一次性预计算：原位插槽、以及落在
+    // 被拖拽子树内的插槽，均保留参与命中竞争，由 findDropTarget 解析时
+    // 映射为 null（不发生任何移动）
+    targets.forEach(target => {
+      target.isNoop =
+        !this.canUseAsDropParent(target.parentNode) || this.isNoopDrop(target)
     })
     return targets
   }
@@ -656,7 +820,6 @@ class Drag extends Base {
     const endExpansion = 20 * scaleY * sensitivity
     const emptyExpansion = 20 * scaleY * sensitivity
     const primaryExpansion = 100 * scaleX * sensitivity
-    const secondaryExpansion = 20 * scaleY * sensitivity
     if (children.length === 0) {
       const region = this.createEmptyDropRegion(
         parentRect,
@@ -674,15 +837,18 @@ class Drag extends Base {
       })
       return targets
     }
+    // 命中几何只基于子节点本体：组认领紧凑列、列内按本体中线切分，
+    // 子树撑出的空间由对应深层组认领或落回祖先层（深层优先仲裁重叠）
     const childRects = children.map(child => {
       const rect = this.getNodeRect(child)
       return {
         child,
         rect,
-        branchRect: this.getBranchRect(child),
         centerY: rect.top + (rect.bottom - rect.top) / 2
       }
     })
+    const groupLeft = Math.min(...childRects.map(item => item.rect.left))
+    const groupRight = Math.max(...childRects.map(item => item.rect.right))
     for (let index = 0; index <= childRects.length; index++) {
       const prev = index > 0 ? childRects[index - 1] : null
       const next = index < childRects.length ? childRects[index] : null
@@ -692,10 +858,11 @@ class Drag extends Base {
           prev,
           next,
           dir,
+          groupLeft,
+          groupRight,
           startExpansion,
           endExpansion,
-          primaryExpansion,
-          secondaryExpansion
+          primaryExpansion
         })
       )
       const insertionIndex = this.getInsertionIndexForDir(parentNode, dir, index)
@@ -750,47 +917,36 @@ class Drag extends Base {
     }
   }
 
+  // 插槽纵向按兄弟本体中线划分：行上半 = 插到该节点前，行下半 = 插到其后，
+  // 行间空隙整段归属"二者之间"；首尾槽以本体上下缘加少量扩张收尾。
+  // 横向认领孩子本体构成的紧凑列，子树包围盒不参与命中
   createInsertionRegion({
     parentRect,
     prev,
     next,
     dir,
+    groupLeft,
+    groupRight,
     startExpansion,
     endExpansion,
-    primaryExpansion,
-    secondaryExpansion
+    primaryExpansion
   }) {
     const { LEFT } = CONSTANTS.LAYOUT_GROW_DIR
-    const rects = [prev, next].filter(Boolean)
-    const branchRects = rects.map(item => item.branchRect)
     let top
     let bottom
     if (prev && next) {
-      top = prev.branchRect.bottom
-      bottom = next.branchRect.top
-      if (bottom < top) {
-        const middle = (prev.centerY + next.centerY) / 2
-        top = middle - secondaryExpansion / 2
-        bottom = middle + secondaryExpansion / 2
-      }
-    } else if (next) {
-      top = next.branchRect.top - startExpansion
-      bottom = next.centerY
-    } else if (prev) {
       top = prev.centerY
-      bottom = prev.branchRect.bottom + endExpansion
+      bottom = next.centerY
+    } else if (next) {
+      top = next.rect.top - startExpansion
+      bottom = next.centerY
     } else {
-      top = parentRect.top - endExpansion
-      bottom = parentRect.bottom + endExpansion
+      top = prev.centerY
+      bottom = prev.rect.bottom + endExpansion
     }
-    const minLeft = Math.min(parentRect.left, ...branchRects.map(item => item.left))
-    const maxRight = Math.max(
-      parentRect.right,
-      ...branchRects.map(item => item.right)
-    )
     if (dir === LEFT) {
       return {
-        left: minLeft - primaryExpansion,
+        left: groupLeft - primaryExpansion,
         top,
         right: parentRect.left,
         bottom
@@ -799,7 +955,7 @@ class Drag extends Base {
     return {
       left: parentRect.right,
       top,
-      right: maxRight + primaryExpansion,
+      right: groupRight + primaryExpansion,
       bottom
     }
   }
@@ -807,9 +963,6 @@ class Drag extends Base {
   getInsertionIndexForDir(parentNode, dir, visibleIndex) {
     const available = []
     parentNode.children.forEach((child, index) => {
-      if (this.checkIsInBeingDragNodeList(child)) {
-        return
-      }
       if (
         this.mindMap.opt.layout === CONSTANTS.LAYOUT.MIND_MAP &&
         parentNode.isRoot &&
@@ -833,36 +986,6 @@ class Drag extends Base {
       return parentNode.children.length
     }
     return 0
-  }
-
-  getBranchRect(node) {
-    let rect = this.getNodeRect(node)
-    node.children.forEach(child => {
-      if (this.checkIsInBeingDragNodeList(child)) {
-        return
-      }
-      rect = this.mergeRects(rect, this.getBranchRect(child))
-    })
-    return rect
-  }
-
-  mergeRects(rect1, rect2) {
-    const originLeft = Math.min(rect1.originLeft, rect2.originLeft)
-    const originTop = Math.min(rect1.originTop, rect2.originTop)
-    const originRight = Math.max(rect1.originRight, rect2.originRight)
-    const originBottom = Math.max(rect1.originBottom, rect2.originBottom)
-    return {
-      left: Math.min(rect1.left, rect2.left),
-      top: Math.min(rect1.top, rect2.top),
-      right: Math.max(rect1.right, rect2.right),
-      bottom: Math.max(rect1.bottom, rect2.bottom),
-      originLeft,
-      originTop,
-      originRight,
-      originBottom,
-      originWidth: originRight - originLeft,
-      originHeight: originBottom - originTop
-    }
   }
 
   createChildDropIndicator(parentNode) {
@@ -953,13 +1076,7 @@ class Drag extends Base {
   }
 
   getChildrenByDir(parentNode, dir) {
-    return this.getAvailableChildren(parentNode).filter(child => child.dir === dir)
-  }
-
-  getAvailableChildren(parentNode) {
-    return parentNode.children.filter(child => {
-      return !this.checkIsInBeingDragNodeList(child)
-    })
+    return parentNode.children.filter(child => child.dir === dir)
   }
 
   canUseAsDropParent(parentNode) {
@@ -971,22 +1088,63 @@ class Drag extends Base {
     })
   }
 
-  // 命中测试先收集候选，再按更深层节点和节点本体优先级排序
+  // 两级解析：直接命中（深层优先）→ 最近插槽兜底（消除矩形间死区）。
+  // 原位插槽全程参与竞争，赢了则解析为 null，语义即"保持原位不移动"
   findDropTarget(point) {
+    const resolved = this.resolveDropTarget(point)
+    return resolved && resolved.isNoop ? null : resolved
+  }
+
+  // 返回原始解析结果（可能是原位插槽），供命中与可视化共用同一决策函数
+  resolveDropTarget(point) {
     const matched = []
     for (let i = this.dropTargets.length - 1; i >= 0; i--) {
       const target = this.dropTargets[i]
-      if (this.hitTest(point, target.region) && this.isValidDrop(target)) {
+      if (this.hitTest(point, target.region)) {
         matched.push(target)
       }
-    }
-    if (!matched.length) {
-      return null
     }
     matched.sort((a, b) => {
       return this.getDropTargetPriority(b) - this.getDropTargetPriority(a)
     })
-    return matched[0]
+    return matched[0] || this.findNearestDropTarget(point)
+  }
+
+  // 指针未直接命中任何插槽矩形时，在搜索半径内就近吸附；
+  // 超出半径返回 null，保留"拖到空白处放空"的取消语义
+  findNearestDropTarget(point) {
+    const radius = this.getDropTargetSearchRadius()
+    let nearest = null
+    let nearestDistance = Infinity
+    this.dropTargets.forEach(target => {
+      const distance = this.distanceToRegion(point, target.region)
+      if (distance > radius) {
+        return
+      }
+      const closer =
+        distance < nearestDistance ||
+        (distance === nearestDistance &&
+          nearest &&
+          this.getDropTargetPriority(target) >
+            this.getDropTargetPriority(nearest))
+      if (closer) {
+        nearest = target
+        nearestDistance = distance
+      }
+    })
+    return nearest
+  }
+
+  // 点到轴对齐矩形的最短欧氏距离，点在矩形内时为 0
+  distanceToRegion(point, region) {
+    const dx = Math.max(region.left - point.x, 0, point.x - region.right)
+    const dy = Math.max(region.top - point.y, 0, point.y - region.bottom)
+    return Math.sqrt(dx * dx + dy * dy)
+  }
+
+  getDropTargetSearchRadius() {
+    const value = Number(this.mindMap.opt.dragDropTargetSearchRadius)
+    return Number.isFinite(value) && value >= 0 ? value : 80
   }
 
   getDropTargetPriority(target) {
@@ -1002,16 +1160,6 @@ class Drag extends Base {
       point.y >= region.top &&
       point.y <= region.bottom
     )
-  }
-
-  isValidDrop(target) {
-    if (!target || !target.parentNode) {
-      return false
-    }
-    if (!this.canUseAsDropParent(target.parentNode)) {
-      return false
-    }
-    return !this.isNoopDrop(target)
   }
 
   isNoopDrop(target) {
@@ -1159,8 +1307,9 @@ class Drag extends Base {
   }
 
   // 统一提交 DropTarget，避免继续把决策拆成三套启发式命令。
+  // 结构合法性与原位过滤均已在构建/解析阶段完成，这里只需非空校验
   commitDrop(sourceNodes, dropTarget) {
-    if (!sourceNodes.length || !dropTarget || !this.isValidDrop(dropTarget)) {
+    if (!sourceNodes.length || !dropTarget) {
       return
     }
     this.mindMap.execCommand(

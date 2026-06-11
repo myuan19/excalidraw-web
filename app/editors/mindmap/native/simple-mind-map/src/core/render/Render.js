@@ -33,7 +33,6 @@ import {
   formatGetNodeGeneralization,
   sortNodeList,
   throttle,
-  debounce,
   checkClipboardReadEnable,
   isNodeNotNeedRenderData,
   getRenderTreeFromHistorySnapshot,
@@ -196,8 +195,13 @@ class Render {
     if (openPerformance) {
       this.mindMap.on('view_data_change', onViewDataChange)
     }
-    // 文本编辑时实时更新节点大小
-    this.onNodeTextEditChange = debounce(this.onNodeTextEditChange, 100, this)
+    // 文本编辑时实时更新节点大小：按固定间隔节流并总是消费最新文本。
+    // 纯 trailing 防抖在连续输入时会被不断重置，中途不更新、停顿时集中
+    // 爆发，造成不跟手；工具库的 throttle 又只会带首次事件的旧文本
+    this.onNodeTextEditChange = this.createLatestArgsThrottle(
+      this.onNodeTextEditChange.bind(this),
+      100
+    )
     if (openRealtimeRenderOnNodeTextEdit) {
       this.mindMap.on('node_text_edit_change', this.onNodeTextEditChange)
     }
@@ -233,13 +237,37 @@ class Render {
     // }
   }
 
-  // 监听文本编辑事件，实时更新节点大小
+  // 节流执行，且触发时总是消费最新一次的参数
+  createLatestArgsThrottle(fn, wait) {
+    let timer = null
+    let latestArgs = null
+    return (...args) => {
+      latestArgs = args
+      if (timer) {
+        return
+      }
+      timer = setTimeout(() => {
+        timer = null
+        fn(...latestArgs)
+      }, wait)
+    }
+  }
+
+  // 监听文本编辑事件，实时更新节点大小。
+  // 注意这里不能把节点标记为文本失效：下面触发的整树渲染会消费失效标记、
+  // 改按 data 里尚未提交的旧文本重新测量，节点尺寸被打回去，造成编辑时
+  // 高频闪烁、停止输入后文字溢出节点。编辑提交时 setNodeDataRender 会
+  // 标记失效并按最终文本重测，无需在此处理
   onNodeTextEditChange({ node, text }) {
     if (!node) {
       return
     }
-    this.invalidateTextContent(node.uid)
-    const sizeChange = node.reRender(['text'], { specifyText: text })
+    // reRender 的返回值含"内容指纹变化"，打字时每个字都为真；
+    // 整树重排只关心宽高是否真的变了（长文本到达换行宽度后大多数
+    // 键入不再改变尺寸），尺寸不变时只需让编辑框跟随本节点重绘
+    const { width, height } = node
+    node.reRender(['text'], { specifyText: text })
+    const sizeChange = node.width !== width || node.height !== height
     if (sizeChange) {
       this.mindMap.render(() => {
         this.textEdit.updateTextEditNode()
