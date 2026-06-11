@@ -1,4 +1,8 @@
 import MindMapNode from '../core/render/node/MindMapNode'
+import {
+  consumeNodeInvalidation,
+  resolveNodeRefreshPlan
+} from '../core/render/nodeInvalidate'
 import { CONSTANTS, initRootNodePositionMap } from '../constants/constant'
 import Lru from '../utils/Lru'
 import { createUid } from '../utils/index'
@@ -147,6 +151,9 @@ class Base {
     // 数据上保存了节点引用，那么直接复用节点
     if (data && data._node && !this.renderer.reRender) {
       newNode = data._node
+      const treeChildCount = (data.children || []).length
+      const instanceChildCount = newNode.getChildrenLength()
+      const childStructureChanged = treeChildCount !== instanceChildCount
       // 节点层级改变了
       const isLayerTypeChange = this.checkIsLayerTypeChange(
         newNode.layerIndex,
@@ -174,16 +181,22 @@ class Base {
         data._node.nodeDataSnapshot,
         data.data
       )
-      // 重新计算节点大小和布局
-      if (
-        isResizeSource ||
-        isNodeDataChange ||
-        isLayerTypeChange ||
-        (newNode.getData('resetRichText') && // 自定义节点内容可以直接忽略resetRichText
-          !newNode.isUseCustomNodeContent()) ||
-        newNode.getData('needUpdate') ||
-        isNodeInnerFixChange
-      ) {
+      const plan = resolveNodeRefreshPlan({
+        invalidationReasons: consumeNodeInvalidation(
+          this.renderer.nodeInvalidation,
+          data._node.uid
+        ),
+        isResizeSource,
+        isNodeDataChange,
+        isLayerTypeChange,
+        resetRichText:
+          newNode.getData('resetRichText') &&
+          !newNode.isUseCustomNodeContent(),
+        needUpdate: newNode.getData('needUpdate'),
+        isNodeInnerFixChange,
+        childStructureChanged
+      })
+      if (plan.refreshContent) {
         newNode.getSize()
         newNode.needLayout = true
       }
@@ -197,6 +210,9 @@ class Base {
       // 或者在上一次渲染缓存对象中找到了节点
       // 也可以直接复用
       newNode = this.lru.get(uid) || this.renderer.lastNodeCache[uid]
+      const treeChildCount = (data.children || []).length
+      const instanceChildCount = newNode.getChildrenLength()
+      const childStructureChanged = treeChildCount !== instanceChildCount
       // 保存该节点上一次的数据
       const lastData = JSON.stringify(newNode.getData())
       // 节点层级改变了
@@ -225,16 +241,22 @@ class Base {
         nodeInnerPrefixData,
         nodeInnerPostfixData
       )
-      // 重新计算节点大小和布局
-      if (
-        isResizeSource ||
-        isNodeDataChange ||
-        isLayerTypeChange ||
-        (newNode.getData('resetRichText') &&
-          !newNode.isUseCustomNodeContent()) ||
-        newNode.getData('needUpdate') ||
-        isNodeInnerFixChange
-      ) {
+      const plan = resolveNodeRefreshPlan({
+        invalidationReasons: consumeNodeInvalidation(
+          this.renderer.nodeInvalidation,
+          uid
+        ),
+        isResizeSource,
+        isNodeDataChange,
+        isLayerTypeChange,
+        resetRichText:
+          newNode.getData('resetRichText') &&
+          !newNode.isUseCustomNodeContent(),
+        needUpdate: newNode.getData('needUpdate'),
+        isNodeInnerFixChange,
+        childStructureChanged
+      })
+      if (plan.refreshContent) {
         newNode.getSize()
         newNode.needLayout = true
       }
@@ -253,6 +275,7 @@ class Base {
         parent: !isRoot ? parent._node : null,
         ...nodeInnerPrefixData
       })
+      newNode.needLayout = true
       // uid保存到数据上，为了节点复用
       data.data.uid = newUid
       this.cacheNode(newUid, newNode)

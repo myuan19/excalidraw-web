@@ -60,7 +60,7 @@ describe("parseAiOperationStreamChunk", () => {
     expect(operation.data.text).toBe("<p><span>Plain title</span></p>");
   });
 
-  it("normalizes AI layout spaces and text entities in streaming operations", () => {
+  it("preserves span leading spaces and text entities in streaming operations", () => {
     const result = parseAiOperationStreamChunk(
       '{"op":"update_current","text":{"paragraphs":[{"indent":1,"spans":[{"text":"    Star &amp; Fork"}]}]}}\n',
       {
@@ -70,16 +70,15 @@ describe("parseAiOperationStreamChunk", () => {
     const operation = result.operations[0] as any;
 
     expect(operation.data.text).toBe(
-      '<p class="ql-indent-1"><span>Star &amp; Fork</span></p>',
+      '<p class="ql-indent-1"><span>&nbsp;&nbsp;&nbsp;&nbsp;Star &amp; Fork</span></p>',
     );
   });
 
-  it("preserves leading spaces in streaming operations when explicitly enabled", () => {
+  it("preserves AI span leading spaces in streaming operations", () => {
     const result = parseAiOperationStreamChunk(
       '{"op":"update_current","text":{"paragraphs":[{"spans":[{"text":"标题","bold":true}]},{"spans":[{"text":"  正文"}]}]}}\n',
       {
         allowInlineStyles: true,
-        preserveLeadingSpaces: true,
       },
     );
     const operation = result.operations[0] as any;

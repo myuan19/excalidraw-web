@@ -50,7 +50,6 @@ import {
 import {
   logEditorOpenPhase,
   resetEditorOpenPhaseLog,
-  shouldFetchServerAfterCachedOpen,
   shouldOpenCachedDocumentFirst,
   type EditorOpenPhase,
 } from "../../lib/editorOpenPhases";
@@ -74,8 +73,22 @@ import {
   NATIVE_MINDMAP_URL,
 } from "./mindMapBridgeOrigins";
 import { useMindMapHostBridge } from "./useMindMapHostBridge";
+import { recordMindMapPersisted } from "./mindMapPersistCoordinator";
+import { explainRefreshCacheOnOpen } from "./mindMapOpenSyncPolicy";
+import { createMindMapHydrateCoordinator } from "./mindMapHydrateCoordinator";
+import {
+  debugMindMapPersist,
+  findFirstRichMindMapNodeSummary,
+  summarizeMindMapRichTextTree,
+} from "./mindMapPersistDebug";
+import {
+  clearMindMapHostDebugForward,
+  forwardMindMapHostDebug,
+  installMindMapHostDebugForward,
+} from "./mindMapHostDebugForward";
 import {
   getCachedMindMapDocument,
+  getCachedMindMapServerSha,
   MINDMAP_SAVE_TIMEOUT_MS,
   toMindMapLocalCacheRecord,
   type MindMapNativeSaveResult,
@@ -106,6 +119,7 @@ import "./MindMapEditorShell.scss";
 
 function debugMindMapOpen(label: string, data?: Record<string, unknown>) {
   devDebug("mindmap-open", label, data);
+  forwardMindMapHostDebug("mindmap-open", label, data);
 }
 
 function toBridgePayload(
@@ -288,10 +302,12 @@ const MindMapEditorShell = () => {
 
   const logMindMapOpenPhase = useCallback(
     (phase: EditorOpenPhase) => {
-      logEditorOpenPhase(phase, {
+      const payload = {
         editor: "mindmap",
         fileId8: fileId?.slice(0, 8) ?? null,
-      });
+      };
+      logEditorOpenPhase(phase, payload);
+      forwardMindMapHostDebug("editor-open", phase, payload);
     },
     [fileId],
   );
@@ -315,6 +331,7 @@ const MindMapEditorShell = () => {
   const latestDocumentRef = useRef<ManagedDocument<MindMapDocumentData> | null>(
     null,
   );
+  const hydrateCoordinatorRef = useRef(createMindMapHydrateCoordinator());
   const shellStartRef = useRef(performance.now());
   const initStartRef = useRef<number | null>(null);
 
@@ -609,22 +626,39 @@ const MindMapEditorShell = () => {
     postToNative,
   });
 
-  const onNativeHydrateSettleEnd = useCallback(() => {
-    const document = latestDocumentRef.current;
-    if (document && fileId) {
-      adoptMindMapNativeBaseline(fileId, document);
-      setStatus("");
-      debugMindMapOpen("native hydrate settle aligned", {
-        fileId8: fileId.slice(0, 8),
+  const noteOpenHydrateSession = useCallback(
+    (document: ManagedDocument<MindMapDocumentData>) => {
+      const session = hydrateCoordinatorRef.current.beginSession(document);
+      debugMindMapPersist("open hydrate session anchored", {
+        fileId8: fileId?.slice(0, 8) ?? null,
+        contentHash8: session.anchor.contentHash.slice(0, 8),
+        richText: session.anchor.richText,
       });
+    },
+    [fileId],
+  );
+
+  const onNativeHydrateSettleEnd = useCallback(() => {
+    const latest = latestDocumentRef.current;
+    if (!latest || !fileId) {
+      return;
     }
-    if (document) {
-      const synced = syncFileNameToRootIfNeeded(fileName, document.data);
-      if (synced) {
-        debugMindMapOpen("reconciled root title and file display name on settle", {
-          fileName,
-        });
-      }
+    const baselineDocument = hydrateCoordinatorRef.current.settle(latest);
+    latestDocumentRef.current = baselineDocument;
+    adoptMindMapNativeBaseline(fileId, baselineDocument);
+    setStatus("");
+    debugMindMapPersist("native hydrate settle aligned", {
+      fileId8: fileId.slice(0, 8),
+      usedAnchorDocument:
+        hashDocumentSnapshot(baselineDocument) !==
+        hashDocumentSnapshot(latest),
+      richText: summarizeMindMapRichTextTree(baselineDocument.data),
+    });
+    const synced = syncFileNameToRootIfNeeded(fileName, baselineDocument.data);
+    if (synced) {
+      debugMindMapOpen("reconciled root title and file display name on settle", {
+        fileName,
+      });
     }
   }, [fileId, fileName, setStatus, syncFileNameToRootIfNeeded]);
 
@@ -643,10 +677,27 @@ const MindMapEditorShell = () => {
   const publishMindMapDataToNative = useCallback(
     (data: MindMapDocumentData, reason: string) => {
       extendNativeHydrateSettle(`publish:${reason}`);
+      const authoritativeDocument =
+        latestDocumentRef.current ?? MindMapAdapter.toDocument(data);
+      noteOpenHydrateSession(authoritativeDocument);
+      debugMindMapPersist("publishMindMapDataToNative", {
+        reason,
+        fileId8: fileId?.slice(0, 8) ?? null,
+        rootChildren: data.root?.children?.length ?? 0,
+        richText: summarizeMindMapRichTextTree(data),
+        sampleNode: findFirstRichMindMapNodeSummary(data),
+      });
       publishDocument(toBridgePayload(data, fileId), reason);
     },
-    [extendNativeHydrateSettle, fileId, publishDocument],
+    [extendNativeHydrateSettle, fileId, noteOpenHydrateSession, publishDocument],
   );
+
+  useEffect(() => {
+    installMindMapHostDebugForward(postToNative);
+    return () => {
+      clearMindMapHostDebugForward();
+    };
+  }, [postToNative]);
 
   useEffect(() => {
     if (!isBridgeReady) {
@@ -663,6 +714,7 @@ const MindMapEditorShell = () => {
 
     async function init() {
       resetEditorOpenPhaseLog();
+      hydrateCoordinatorRef.current.reset();
       logMindMapOpenPhase("resolving");
       if (!fileId) {
         setError("缺少 mindmap 文件");
@@ -745,14 +797,15 @@ const MindMapEditorShell = () => {
           }
           latestDocumentRef.current = document;
           initSyncedText(data);
-          FileSyncState.setLocalCache(
-            resolvedId,
-            toMindMapLocalCacheRecord(document),
-          );
-          if (serverFile.content_sha256) {
-            FileSyncState.setServerHash(resolvedId, serverFile.content_sha256);
-          }
-          FileSyncState.alignHashes(resolvedId, hashDocumentSnapshot(document));
+          recordMindMapPersisted(resolvedId, document, {
+            serverContentSha256: serverFile.content_sha256 ?? undefined,
+          });
+          debugMindMapPersist("loadFromServer prepared", {
+            fileId8: resolvedId.slice(0, 8),
+            reason,
+            serverSha8: serverFile.content_sha256?.slice(0, 8) ?? null,
+            sampleNode: findFirstRichMindMapNodeSummary(data),
+          });
           debugMindMapOpen("server payload prepared", {
             fileId8: resolvedId.slice(0, 8),
             totalElapsed: Math.round(
@@ -783,6 +836,7 @@ const MindMapEditorShell = () => {
             ),
             hasUnsavedChanges,
             rootChildren: cached.data.root?.children?.length ?? 0,
+            sampleNode: findFirstRichMindMapNodeSummary(cached.data),
           });
           logMindMapOpenPhase(
             hasUnsavedChanges ? "restoring_draft" : "checking_remote",
@@ -806,13 +860,24 @@ const MindMapEditorShell = () => {
             if (disposed) {
               return;
             }
-            if (
-              shouldFetchServerAfterCachedOpen({
-                hasUnsavedChanges,
-                localServerHash: FileSyncState.getServerHash(resolvedId),
-                remoteServerHash: remoteHash,
-              })
-            ) {
+            const refreshDecision = explainRefreshCacheOnOpen({
+              hasUnsavedChanges,
+              localServerHash: FileSyncState.getServerHash(resolvedId),
+              remoteServerHash: remoteHash,
+              cachedServerSha: getCachedMindMapServerSha(resolvedId),
+            });
+            debugMindMapPersist("open cache sync decision", {
+              fileId8: resolvedId.slice(0, 8),
+              reason: refreshDecision.reason,
+              refresh: refreshDecision.refresh,
+              remoteHash8: remoteHash?.slice(0, 8) ?? null,
+              localServerHash8:
+                FileSyncState.getServerHash(resolvedId)?.slice(0, 8) ?? null,
+              cachedServerSha8:
+                getCachedMindMapServerSha(resolvedId)?.slice(0, 8) ?? null,
+              cacheSample: findFirstRichMindMapNodeSummary(cached.data),
+            });
+            if (refreshDecision.refresh) {
               logMindMapOpenPhase("background_sync");
               await loadFromServer("remote-hash-changed-after-cache");
               logMindMapOpenPhase("ready");
@@ -978,6 +1043,13 @@ const MindMapEditorShell = () => {
           revision: savePayload.revision ?? null,
           hasThumbnail: !!savePayload.thumbnail,
         });
+        debugMindMapPersist("received saveMindMapData from iframe", {
+          isCurrentSaveResponse,
+          requestId: savePayload.requestId ?? null,
+          revision: savePayload.revision ?? null,
+          hydrating: nativeHydratingRef.current,
+          fileId8: fileId?.slice(0, 8) ?? null,
+        });
         if (
           savePayload.requestId &&
           savePayload.requestId !== saveRequestIdRef.current
@@ -1014,7 +1086,27 @@ const MindMapEditorShell = () => {
             if (savePayload.revision !== undefined) {
               latestNativeRevisionRef.current = savePayload.revision;
             }
-            const document = updateLatestDocument(parsedData);
+            const parsedDocument = MindMapAdapter.toDocument(parsedData);
+            const draftResult = hydrateCoordinatorRef.current.handleDraftPush(
+              parsedDocument,
+              latestDocumentRef.current,
+              {
+                isSaveResponse: isCurrentSaveResponse,
+                hydrating: nativeHydratingRef.current,
+              },
+            );
+            const { document, decision: hydrateDecision } = draftResult;
+            latestDocumentRef.current = document;
+            debugMindMapPersist("saveMindMapData parsed", {
+              isCurrentSaveResponse,
+              revision: savePayload.revision ?? null,
+              fileId8: fileId?.slice(0, 8) ?? null,
+              hydrateDecision: hydrateDecision.reason,
+              adoptBaseline: hydrateDecision.adoptBaseline,
+              updateHostDocument: hydrateDecision.updateHostDocument,
+              richText: summarizeMindMapRichTextTree(parsedData),
+              sampleNode: findFirstRichMindMapNodeSummary(parsedData),
+            });
             if (savePayload.thumbnail) {
               LocalThumbnailCache.set(fileId, savePayload.thumbnail);
             }
@@ -1031,20 +1123,27 @@ const MindMapEditorShell = () => {
                 document,
                 thumbnail: savePayload.thumbnail,
               });
-            } else if (nativeHydratingRef.current) {
+            } else if (draftResult.shouldExtendSettle) {
               extendNativeHydrateSettle("draft-push");
-              if (fileId) {
+              if (fileId && draftResult.shouldAdoptBaseline) {
                 adoptMindMapNativeBaseline(fileId, document);
                 setStatus("");
+                debugMindMapPersist("hydrate draft adopted", {
+                  revision: savePayload.revision ?? null,
+                  fileId8: fileId.slice(0, 8),
+                  reason: hydrateDecision.reason,
+                });
+              } else if (fileId) {
+                debugMindMapPersist("hydrate draft rejected", {
+                  revision: savePayload.revision ?? null,
+                  fileId8: fileId.slice(0, 8),
+                  reason: hydrateDecision.reason,
+                });
               }
-              debugMindMapOpen("hydrate draft saveMindMapData aligned", {
-                revision: savePayload.revision ?? null,
-                fileId8: fileId?.slice(0, 8) ?? null,
-              });
-            } else {
+            } else if (draftResult.shouldMarkChanged) {
               markDocumentChanged(document);
             }
-            syncRootTextToFileName(parsedData);
+            syncRootTextToFileName(document.data);
             setError(null);
           })
           .catch((err: any) => {
@@ -1189,15 +1288,12 @@ const MindMapEditorShell = () => {
     const document = MindMapAdapter.toDocument(data);
     latestDocumentRef.current = document;
     publishMindMapDataToNative(data, opts?.reason ?? "history-restore");
-    FileSyncState.alignHashes(fileId, hashDocumentSnapshot(document));
-    if (serverFile.content_sha256) {
-      FileSyncState.setServerHash(fileId, serverFile.content_sha256);
-    }
-    FileSyncState.clearLocalEditTime(fileId);
     if (opts?.clearLocalCache ?? true) {
       FileSyncState.clearLocalCache(fileId);
     } else {
-      FileSyncState.setLocalCache(fileId, toMindMapLocalCacheRecord(document));
+      recordMindMapPersisted(fileId, document, {
+        serverContentSha256: serverFile.content_sha256 ?? undefined,
+      });
     }
     setFileName(serverFile.name || DEFAULT_DOCUMENT_DISPLAY_NAME);
     needsInitialThumbnailRef.current = !serverFile.has_thumbnail;

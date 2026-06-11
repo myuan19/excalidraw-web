@@ -51,6 +51,41 @@
             })
         )
       }
+      const summarizeMindMapPayloadRichText = payload => {
+        let sample = ''
+        const root =
+          payload && payload.mindMapData && payload.mindMapData.root
+            ? payload.mindMapData.root
+            : null
+        const walk = node => {
+          if (sample || !node || !node.data) return
+          const text = String(node.data.text || '')
+          if (text.includes('<strong') || text.includes('ql-indent-')) {
+            sample = text
+            return
+          }
+          ;(node.children || []).forEach(walk)
+        }
+        if (root) walk(root)
+        return {
+          sampleStrongCount: sample
+            ? (sample.match(/<strong\b/gi) || []).length
+            : 0,
+          sampleTextLen: sample.length,
+          samplePreview: sample.slice(0, 120)
+        }
+      }
+      const debugMindMapHostForward = (scope, label, data) => {
+        if (!isMindMapDebugEnabled()) return
+        console.log(
+          `[DEBUG] ${scope} | host ${label} ` +
+            JSON.stringify({
+              t: Math.round(performance.now()),
+              sinceBridgeStart: Math.round(performance.now() - bridgeStartedAt),
+              ...(data || {})
+            })
+        )
+      }
       const getSlowMindMapResources = () => {
         if (!isMindMapDebugEnabled() || !performance.getEntriesByType) return []
         return performance
@@ -401,12 +436,36 @@
           })
           return
         }
+        if (!dirtyNotifyEnabled) {
+          debugMindMapOpen('postMindMapDataToHost draft push suppressed', {
+            phase: 'hydrating'
+          })
+          return
+        }
+        const sampleText = (() => {
+          let sample = ''
+          const walk = node => {
+            if (sample || !node || !node.data) return
+            const text = String(node.data.text || '')
+            if (text.includes('<strong') || text.includes('ql-indent-')) {
+              sample = text
+              return
+            }
+            ;(node.children || []).forEach(walk)
+          }
+          if (data && data.root) walk(data.root)
+          return sample
+        })()
         debugMindMapOpen('postMindMapDataToHost draft data push', {
           revision,
           rootChildren:
             data && data.root && data.root.children
               ? data.root.children.length
-              : 0
+              : 0,
+          sampleStrongCount: sampleText
+            ? (sampleText.match(/<strong\b/gi) || []).length
+            : 0,
+          sampleTextLen: sampleText.length
         })
         postToHost('saveMindMapData', {
           revision,
@@ -429,6 +488,43 @@
           pending.resolve(payload)
         }
         return true
+      }
+      // 宿主推送数据的消费入口：与画布当前数据做指纹比对，内容未变则跳过
+      // 避免 cache-first/server 刷新/pendingPayload flush 等重复推送触发无谓的全量重建
+      const getMindMapFullDataFingerprint = data => {
+        if (!data || !data.root) return ''
+        try {
+          return JSON.stringify({
+            root: data.root,
+            layout: data.layout || null,
+            theme: data.theme || null
+          })
+        } catch (error) {
+          return ''
+        }
+      }
+      const applyHostMindMapData = reason => {
+        if (!nativeMindMap || typeof nativeMindMap.setFullData !== 'function') {
+          return
+        }
+        const data = bridgeState.mindMapData
+        if (!data) {
+          return
+        }
+        const incomingFp = getMindMapFullDataFingerprint(data)
+        let currentFp = ''
+        if (incomingFp && typeof nativeMindMap.getData === 'function') {
+          try {
+            currentFp = getMindMapFullDataFingerprint(nativeMindMap.getData(true))
+          } catch (error) {
+            currentFp = ''
+          }
+        }
+        if (incomingFp && incomingFp === currentFp) {
+          debugMindMapOpen('skip host mindMapData apply (unchanged)', { reason })
+          return
+        }
+        nativeMindMap.setFullData(data)
       }
       const setTakeOverAppMethods = data => {
         bridgeState = {
@@ -707,8 +803,18 @@
           resolveHostRequest(message)
           return
         }
+        if (message.type === 'mindMapHostDebug') {
+          const payload = message.payload || {}
+          debugMindMapHostForward(
+            payload.scope || 'mindmap-host',
+            payload.label || 'debug',
+            payload.data
+          )
+          return
+        }
         if (message.type === 'initMindMap') {
           scheduleDirtyNotifyEnable('init-mind-map')
+          const richSummary = summarizeMindMapPayloadRichText(message.payload)
           mindmapLoadMark('received initMindMap message', {
             appStarted,
             hostAppInitedSent,
@@ -719,32 +825,34 @@
               message.payload.mindMapData.root &&
               message.payload.mindMapData.root.children
                 ? message.payload.mindMapData.root.children.length
-                : 0
+                : 0,
+            ...richSummary
           })
           debugMindMapOpen('received initMindMap message', {
             appStarted,
             hostAppInitedSent,
-            hasNativeMindMap: !!nativeMindMap
+            hasNativeMindMap: !!nativeMindMap,
+            ...richSummary
           })
           if (appStarted && nativeMindMap && hostAppInitedSent) {
             setTakeOverAppMethods(message.payload)
-            if (typeof nativeMindMap.setFullData === 'function') {
-              nativeMindMap.setFullData(bridgeState.mindMapData)
-            }
+            applyHostMindMapData('init-mind-map-repeat')
             return
           }
           startTakeOverApp(message.payload)
         }
         if (message.type === 'setMindMapData') {
-          debugMindMapOpen('received setMindMapData message')
+          const richSummary = summarizeMindMapPayloadRichText(message.payload)
+          mindmapLoadMark('received setMindMapData message', {
+            appStarted,
+            hostAppInitedSent,
+            hasNativeMindMap: !!nativeMindMap,
+            ...richSummary
+          })
+          debugMindMapOpen('received setMindMapData message', richSummary)
           scheduleDirtyNotifyEnable('set-mind-map-data')
           setTakeOverAppMethods(message.payload)
-          if (
-            nativeMindMap &&
-            typeof nativeMindMap.setFullData === 'function'
-          ) {
-            nativeMindMap.setFullData(bridgeState.mindMapData)
-          }
+          applyHostMindMapData('set-mind-map-data')
         }
         if (message.type === 'mindMapAiConfig') {
           debugMindMapOpen('postMessage mindMapAiConfig', {

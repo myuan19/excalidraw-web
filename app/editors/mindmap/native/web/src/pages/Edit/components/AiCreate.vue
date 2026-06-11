@@ -12,9 +12,20 @@ import {
   summarizeRichTextJson
 } from '@/utils/aiTreeJson'
 import {
-  getAiOperationKey,
-  parseAiOperationStreamChunk
-} from '@/utils/aiOperationStream'
+  applyAiOperationStreamContent,
+  commitAiOperationTransactionState,
+  createAiOperationTransactionState,
+  endAiOperationTransactionState,
+  rollbackAiOperationTransactionState
+} from '@/utils/aiOperationTransaction'
+import { applyAiOrganizeResultToMindMap } from '@/utils/mindMapAiNodeMutation'
+import {
+  buildLeadingSpaceRule,
+  buildStyledOutputExamples,
+  buildStyleSchemaText,
+  buildTextSchemaSuffix,
+  buildVisualReferenceText
+} from '@/utils/aiRichTextCapability'
 import { createUid, getStrWithBrFromHtml } from 'simple-mind-map/src/utils'
 import {
   AI_CONTEXT_CHAR_LIMIT,
@@ -28,7 +39,6 @@ import { isHostMode, openAISettings } from '@/utils/hostBridge'
 import { mindmapDevDebug } from '@/utils/mindmapDevDebug'
 import {
   AI_EDIT_SCOPE,
-  assertAiOperationAllowed,
   buildAiOperationProtocolPrompt,
   createAiOperationPolicy,
   normalizeAiEditScope
@@ -295,6 +305,18 @@ export default {
       return fn()
     },
 
+    getAiTransactionDeps(extra = {}) {
+      return {
+        cloneJson: this.cloneJson.bind(this),
+        ensureAiNodeDataUid: this.ensureAiNodeDataUid.bind(this),
+        getAiOperationPermission: this.getAiOperationPermission.bind(this),
+        buildOriginalNodeRefMap: this.buildOriginalNodeRefMap.bind(this),
+        runAiOperationMutation: this.runAiOperationMutation.bind(this),
+        debug: mindmapDevDebug,
+        ...extra
+      }
+    },
+
     startAiInteractionGuard() {
       if (!this.mindMap || this._aiInteractionGuard) {
         return
@@ -470,341 +492,48 @@ export default {
     },
 
     createAiOperationTransaction(node) {
-      const baseFullData = this.mindMap.getData(true)
       const permission = this.getAiOperationPermission()
-      const refState = this.buildOriginalNodeRefMap(node.nodeData, permission)
-      if (this.mindMap.command && this.mindMap.command.pause) {
-        this.mindMap.command.pause()
-      }
-      this._aiOpTransaction = {
-        baseFullData,
+      this._aiOpTransaction = createAiOperationTransactionState({
+        mindMap: this.mindMap,
+        node,
         permission,
-        preserveLeadingSpaces: this.shouldPreserveAiLeadingSpaces(),
-        targetUid: node.getData('uid'),
-        originalRefToUid: refState.refToUid,
-        allowedUidSet: refState.allowedUidSet,
-        createdNodeIds: {},
-        createdUidSet: new Set(),
-        appliedOpIds: new Set(),
-        offset: 0,
-        appliedCount: 0,
-        done: false
-      }
-      mindmapDevDebug('mindmap-ai-opstream', 'transaction start', {
-        targetUid: this._aiOpTransaction.targetUid,
-        editScope: permission.editScope,
-        preserveLeadingSpaces: this._aiOpTransaction.preserveLeadingSpaces,
-        canCreateChildren: permission.canCreateChildren,
-        canDeleteChildren: permission.canDeleteChildren,
-        allowedOps: permission.allowedOps,
-        allowedOriginalCount: this._aiOpTransaction.allowedUidSet.size
+        buildOriginalNodeRefMap: this.buildOriginalNodeRefMap,
+        debug: mindmapDevDebug
       })
       return this._aiOpTransaction
     },
 
     endAiOperationTransaction() {
-      if (this.mindMap.command && this.mindMap.command.recovery) {
-        this.mindMap.command.recovery()
-      }
+      endAiOperationTransactionState(this.mindMap)
       this._aiOpTransaction = null
     },
 
     rollbackAiOperationTransaction(reason = 'rollback') {
-      const tx = this._aiOpTransaction
-      if (!tx) {
-        return
-      }
-      this.runAiOperationMutation(() => {
-        this.mindMap.renderer.setData(this.cloneJson(tx.baseFullData.root))
-        this.mindMap.reRender()
-      })
-      mindmapDevDebug('mindmap-ai-opstream', 'transaction rollback', {
-        reason,
-        appliedCount: tx.appliedCount
-      })
-      this.endAiOperationTransaction()
+      rollbackAiOperationTransactionState(
+        this.mindMap,
+        this._aiOpTransaction,
+        this.getAiTransactionDeps({ reason })
+      )
+      this._aiOpTransaction = null
     },
 
     commitAiOperationTransaction() {
-      const tx = this._aiOpTransaction
-      if (!tx) {
-        return
-      }
-      const appliedCount = tx.appliedCount
-      this.endAiOperationTransaction()
-      this.commitAiRenderedMutation('transaction commit', {
-        appliedCount
-      })
-    },
-
-    commitAiRenderedMutation(reason, extra = {}) {
-      if (this.mindMap.command && this.mindMap.command.addHistory) {
-        this.mindMap.command.addHistory()
-      }
-      mindmapDevDebug('mindmap-ai-opstream', reason, extra)
-    },
-
-    resolveAiOperationRef(ref) {
-      const tx = this._aiOpTransaction
-      if (!tx) {
-        return ''
-      }
-      if (ref === 'current') {
-        return tx.targetUid
-      }
-      if (tx.createdNodeIds[ref]) {
-        return tx.createdNodeIds[ref]
-      }
-      if (tx.originalRefToUid[ref]) {
-        return tx.originalRefToUid[ref]
-      }
-      if (tx.allowedUidSet.has(ref) || tx.createdUidSet.has(ref)) {
-        return ref
-      }
-      return ''
-    },
-
-    skipAiOperation(operation, reason, extra = {}) {
-      const tx = this._aiOpTransaction
-      if (!tx) {
-        return false
-      }
-      const operationKey = getAiOperationKey(operation)
-      if (operationKey) {
-        tx.appliedOpIds.add(operationKey)
-      }
-      mindmapDevDebug('mindmap-ai-opstream', 'skip operation', {
-        reason,
-        op: operation && operation.op,
-        id: operation && operation.id,
-        parent: operation && operation.parent,
-        ...extra
-      })
-      return false
-    },
-
-    findAiDataNodeByUid(uid) {
-      const root =
-        this.mindMap && this.mindMap.renderer
-          ? this.mindMap.renderer.renderTree
-          : null
-      let result = null
-      const walk = (dataNode, parent = null, index = -1) => {
-        if (!dataNode || result) {
-          return
-        }
-        if (dataNode.data && dataNode.data.uid === uid) {
-          result = {
-            dataNode,
-            parent,
-            index
-          }
-          return
-        }
-        const children = Array.isArray(dataNode.children)
-          ? dataNode.children
-          : []
-        children.forEach((child, childIndex) => {
-          walk(child, dataNode, childIndex)
-        })
-      }
-      walk(root)
-      return result
-    },
-
-    markAiDataNodeNeedUpdate(uid) {
-      const targetRef = this.findAiDataNodeByUid(uid)
-      if (targetRef && targetRef.dataNode && targetRef.dataNode.data) {
-        targetRef.dataNode.data.needUpdate = true
-      }
-    },
-
-    assertAiOperationNodeInScope(uid) {
-      const tx = this._aiOpTransaction
-      if (!tx || !uid) {
-        throw new Error('ai operation target missing')
-      }
-      if (
-        uid !== tx.targetUid &&
-        !tx.allowedUidSet.has(uid) &&
-        !tx.createdUidSet.has(uid)
-      ) {
-        throw new Error('ai operation target out of scope')
-      }
-    },
-
-    assertAiOperationPermission(operation) {
-      const tx = this._aiOpTransaction
-      const permission = tx ? tx.permission : this.getAiOperationPermission()
-      assertAiOperationAllowed(permission, operation)
-    },
-
-    applyAiOperation(operation) {
-      const tx = this._aiOpTransaction
-      if (!tx) {
-        throw new Error('ai operation transaction missing')
-      }
-      const operationKey = getAiOperationKey(operation)
-      if (operationKey && tx.appliedOpIds.has(operationKey)) {
-        return
-      }
-      if (operation.op === 'done') {
-        tx.done = true
-        if (operationKey) {
-          tx.appliedOpIds.add(operationKey)
-        }
-        return
-      }
-      this.assertAiOperationPermission(operation)
-      if (operation.op === 'add_child') {
-        if (tx.createdNodeIds[operation.id]) {
-          if (operationKey) {
-            tx.appliedOpIds.add(operationKey)
-          }
-          return
-        }
-        const parentUid = this.resolveAiOperationRef(operation.parent)
-        if (!parentUid) {
-          return this.skipAiOperation(operation, 'missing-parent-ref')
-        }
-        this.assertAiOperationNodeInScope(parentUid)
-        const parentRef = this.findAiDataNodeByUid(parentUid)
-        if (!parentRef) {
-          return this.skipAiOperation(operation, 'parent-not-found', {
-            parentUid
-          })
-        }
-        const uid = createUid()
-        const child = this.cloneJson(operation.node)
-        child.data.uid = uid
-        child.children = Array.isArray(child.children) ? child.children : []
-        this.ensureAiNodeDataUid(child)
-        if (!Array.isArray(parentRef.dataNode.children)) {
-          parentRef.dataNode.children = []
-        }
-        parentRef.dataNode.children.push(child)
-        this.markAiDataNodeNeedUpdate(parentUid)
-        tx.createdNodeIds[operation.id] = uid
-        tx.createdUidSet.add(uid)
-        if (operationKey) {
-          tx.appliedOpIds.add(operationKey)
-        }
-        tx.appliedCount += 1
-        return true
-      }
-      if (operation.op === 'delete_node') {
-        const uid = this.resolveAiOperationRef(operation.id)
-        if (!uid) {
-          return this.skipAiOperation(operation, 'missing-delete-ref')
-        }
-        if (uid === tx.targetUid) {
-          throw new Error('ai operation cannot delete current node')
-        }
-        this.assertAiOperationNodeInScope(uid)
-        const targetRef = this.findAiDataNodeByUid(uid)
-        if (!targetRef || !targetRef.parent || targetRef.index < 0) {
-          return this.skipAiOperation(operation, 'delete-target-not-found', {
-            uid
-          })
-        }
-        targetRef.parent.children.splice(targetRef.index, 1)
-        if (targetRef.parent.data && targetRef.parent.data.uid) {
-          this.markAiDataNodeNeedUpdate(targetRef.parent.data.uid)
-        }
-        if (operationKey) {
-          tx.appliedOpIds.add(operationKey)
-        }
-        tx.appliedCount += 1
-        return true
-      }
-      const uid = this.resolveAiOperationRef(operation.id)
-      if (!uid) {
-        return this.skipAiOperation(operation, 'missing-update-ref')
-      }
-      this.assertAiOperationNodeInScope(uid)
-      const targetRef = this.findAiDataNodeByUid(uid)
-      if (!targetRef) {
-        return this.skipAiOperation(operation, 'update-target-not-found', {
-          uid
-        })
-      }
-      Object.keys(operation.data).forEach(key => {
-        targetRef.dataNode.data[key] = operation.data[key]
-      })
-      this.markAiDataNodeNeedUpdate(uid)
-      if (operationKey) {
-        tx.appliedOpIds.add(operationKey)
-      }
-      tx.appliedCount += 1
-      return true
-    },
-
-    summarizeAiOperation(operation) {
-      const text =
-        operation && operation.data && operation.data.text
-          ? operation.data.text
-          : operation && operation.node && operation.node.data
-            ? operation.node.data.text
-            : ''
-      const richTextSummary = text
-        ? summarizeRichTextJson(quillHtmlToRichTextJson(text))
-        : null
-      return {
-        op: operation && operation.op,
-        id: operation && operation.id,
-        parent: operation && operation.parent,
-        hasText: !!text,
-        textLen: text ? String(text).length : 0,
-        richTextSummary
-      }
+      commitAiOperationTransactionState(
+        this.mindMap,
+        this._aiOpTransaction,
+        this.getAiTransactionDeps()
+      )
+      this._aiOpTransaction = null
     },
 
     applyAiOperationStreamContent(content, final = false) {
-      const tx = this._aiOpTransaction
-      if (!tx) {
-        return {
-          appliedCount: 0,
-          done: false
-        }
-      }
-      const result = parseAiOperationStreamChunk(content, {
-        offset: tx.offset,
+      return applyAiOperationStreamContent(
+        this.mindMap,
+        this._aiOpTransaction,
+        content,
         final,
-        allowInlineStyles: tx.permission.allowInlineStyles,
-        preserveLeadingSpaces: tx.preserveLeadingSpaces,
-        allowedOps: tx.permission.allowedOps
-      })
-      if (result.operations.length > 0) {
-        mindmapDevDebug('mindmap-ai-opstream', 'parsed operation batch', {
-          final,
-          fromOffset: tx.offset,
-          toOffset: result.offset,
-          operationCount: result.operations.length,
-          allowInlineStyles: tx.permission.allowInlineStyles,
-          preserveLeadingSpaces: tx.preserveLeadingSpaces,
-          allowedOps: tx.permission.allowedOps,
-          operations: result.operations.map(operation =>
-            this.summarizeAiOperation(operation)
-          )
-        })
-      }
-      this.runAiOperationMutation(() => {
-        let hasChanged = false
-        result.operations.forEach(operation => {
-          if (this.applyAiOperation(operation)) {
-            hasChanged = true
-          }
-        })
-        if (hasChanged) {
-          this.mindMap.render()
-        }
-        return hasChanged
-      })
-      tx.offset = result.offset
-      return {
-        appliedCount: result.operations.length,
-        done: tx.done
-      }
+        this.getAiTransactionDeps()
+      )
     },
 
     getBeingOrganizeNode() {
@@ -819,20 +548,6 @@ export default {
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
-    },
-
-    shouldPreserveAiLeadingSpaces() {
-      const requirement = String(this.organizeRequirement || '')
-      if (!requirement.trim()) {
-        return false
-      }
-      const placement =
-        '(?:行首|开头|前导|前面|前缀|前置|每行|每段|没加粗|没有加粗|非加粗|未加粗|正文|普通行|普通文本)'
-      const spaces = '(?:空格|space|spaces)'
-      return (
-        new RegExp(`${placement}.{0,24}${spaces}`, 'i').test(requirement) ||
-        new RegExp(`${spaces}.{0,24}${placement}`, 'i').test(requirement)
-      )
     },
 
     handleAiOrganizeNode(arg) {
@@ -929,15 +644,8 @@ export default {
   如果某行 deep=-1，表示该节点或后续内容已因上下文上限被截断，不要据此编造未看到的后代内容。
 </context_reference>`
         : ''
-      const preserveLeadingSpaces = this.shouldPreserveAiLeadingSpaces()
-      const leadingSpaceRule = preserveLeadingSpaces
-        ? '<leading_spaces>user_requirement 明确要求行首/前导空格：允许在 span.text 开头输出对应数量普通空格，并且只给满足条件的行加空格，例如“没加粗/非加粗的行”才加；不要给已加粗标题行统一添加空格，也不要用这些空格模拟思维导图层级。</leading_spaces>'
-        : '<leading_spaces>默认不要输出 span.text 前导空格；若需要层级，优先使用真实子节点或 paragraph.indent。</leading_spaces>'
-      const styledExample = [
-        '{"op":"update_current","text":{"paragraphs":[{"spans":[{"text":"需要高亮的文字","background":"#fff2cc"}]}]}}',
-        '{"op":"update_current","text":{"paragraphs":[{"spans":[{"text":"下划线","underline":true},{"text":" 删除线","strike":true},{"text":" 红色文字","color":"#d93025"}]}]}}',
-        '{"op":"update_current","text":{"paragraphs":[{"align":"center","spans":[{"text":"居中标题"}]}]}}'
-      ].join('\n')
+      const leadingSpaceRule = buildLeadingSpaceRule()
+      const styledExample = buildStyledOutputExamples()
       mindmapDevDebug('mindmap-ai-richtext', 'build prompt rich text policy', {
         nodeUid: node && node.getData ? node.getData('uid') : '',
         plainTextLen: this.getNodePlainText(node).length,
@@ -954,7 +662,6 @@ export default {
         childrenContextNodeCount: childrenContext.nodeCount,
         childrenContextIncludedNodeCount: childrenContext.includedNodeCount,
         childrenContextTruncated: childrenContext.truncated,
-        preserveLeadingSpaces,
         styledExampleIncluded: !!styledExample,
         currentRichTextSummary
       })
@@ -991,12 +698,12 @@ ${contextReferenceXml}
   <scope>新增、删除、更新子节点只以 operations 和 permission_rules 为准。</scope>
   <content>按 user_requirement 修改；若只要求样式、格式、颜色、高亮、下划线、缩进或空格，必须保留原文，不改写、不删除、不新增文本。</content>
   <style_scope>需要给“全部/所有/整体”加样式时，按 edit_scope 覆盖每个目标节点；输出完整 text.paragraphs/spans，只在对应 span 增减样式字段。</style_scope>
-  <visual_reference>视觉参考只使用 current_node_style 和 current；不要根据整图或子节点推断。若要求保持/参考当前样式，尽量保留现有富文本样式，只改用户明确要求的文字或样式。</visual_reference>
-  <hierarchy>层级、列表、大纲内容：允许 add_child 时优先创建真实子节点；否则用普通段落。不要用 paragraph.indent 或 span.text 前导空格模拟思维导图层级。</hierarchy>
+  <visual_reference>${buildVisualReferenceText()}</visual_reference>
+  <hierarchy>层级、列表、大纲内容：允许 add_child 时优先创建真实子节点；否则用普通段落。不要用 paragraph.indent 或 span.text 前导空格模拟思维导图树形层级。</hierarchy>
   ${leadingSpaceRule}
-  <text_schema>text 必须是 {"paragraphs":[{"spans":[{"text":"文本"}]}]}。paragraph 可带 align/indent；span 是连续文本及样式。note 是普通文本；hyperlink 是 URL。${protocol.childrenField}</text_schema>
-  <style_schema>align 仅 left/center/right。indent 仅在用户明确要求段落缩进时使用。bold/italic/underline/strike 用 true；color/background 用 #RRGGBB；font 为字体；size 如 "16px"。样式只作用于带字段的 span，多个片段需分别写字段；动词高亮用 background，形容词下划线用 underline:true。</style_schema>
-  <text_limits>span.text 只能是普通可见文本；不要输出 HTML、Markdown、class、style、HTML 实体或制表符。例：输出 "Star & Fork"，不要输出 "Star &amp; Fork"。只有 user_requirement 明确要求行首/前导空格或保留原始空白时，才保留对应普通空格。</text_limits>
+  <text_schema>${buildTextSchemaSuffix(protocol.childrenField)}</text_schema>
+  <style_schema>${buildStyleSchemaText()}</style_schema>
+  <text_limits>span.text 只能是普通可见文本；不要输出 HTML、Markdown、class、style、HTML 实体或制表符。例：输出 "Star & Fork"，不要输出 "Star &amp; Fork"。按 user_requirement 决定是否输出 span.text 行首空格；需要视觉缩进时在 span.text 开头写普通空格，不需要时不要添加。</text_limits>
   <default_style>默认不要输出 align、bold、italic、underline、strike、color、background、font、size。仅用户要求样式变化时新增/改变样式；只改写文字时尽量保留 rich_text_json 中已有样式。</default_style>
   <unsupported>禁止输出 HTML、Markdown、表格、代码块、引用块、任务列表、simpleMindMap 剪贴板 JSON 或整图 JSON；不要把 rich_text_json 原样当字符串输出。</unsupported>
 </rules>
@@ -1131,19 +838,14 @@ ${protocol.addChildExample}
                   this.$message.success(this.$t('ai.aiGenerationSuccess'))
                   return
                 }
-                this.endAiOperationTransaction()
               } catch (streamError) {
                 if (tx && tx.appliedCount > 0) {
                   throw streamError
                 }
-                this.endAiOperationTransaction()
               }
               const result = parseAiFinalOrganizeResult(content, {
                 allowChildren: permission.canCreateChildren,
-                allowInlineStyles: permission.allowInlineStyles,
-                preserveLeadingSpaces: tx
-                  ? tx.preserveLeadingSpaces
-                  : this.shouldPreserveAiLeadingSpaces()
+                allowInlineStyles: permission.allowInlineStyles
               })
               mindmapDevDebug('mindmap-ai', 'AiCreate.confirmAiOrganize parsed', {
                 hasCurrent: !!(result && result.current),
@@ -1197,33 +899,26 @@ ${protocol.addChildExample}
     },
 
     applyAiOrganizeResult(result) {
-      const targetRef = this.findAiDataNodeByUid(this.beingOrganizeNodeUid)
-      if (!targetRef) {
-        throw new Error('target node missing')
-      }
       const committed = this.runAiOperationMutation(() => {
-        const currentData = result.current.data
-        const children = result.children || []
-        Object.keys(currentData).forEach(key => {
-          targetRef.dataNode.data[key] = currentData[key]
-        })
-        this.markAiDataNodeNeedUpdate(this.beingOrganizeNodeUid)
-        if (children.length > 0) {
-          if (!Array.isArray(targetRef.dataNode.children)) {
-            targetRef.dataNode.children = []
+        applyAiOrganizeResultToMindMap(
+          this.mindMap,
+          this.beingOrganizeNodeUid,
+          result,
+          {
+            cloneJson: this.cloneJson.bind(this),
+            ensureAiNodeDataUid: this.ensureAiNodeDataUid.bind(this)
           }
-          targetRef.dataNode.children.push(
-            ...children.map(child => this.ensureAiNodeDataUid(this.cloneJson(child)))
-          )
-          this.markAiDataNodeNeedUpdate(this.beingOrganizeNodeUid)
-        }
-        this.mindMap.render()
+        )
+        this.mindMap.render(null, 'ai-organize-fallback')
         return true
       })
       if (committed) {
-        this.commitAiRenderedMutation('fallback commit', {
+        this.commitAiOperationTransaction()
+        mindmapDevDebug('mindmap-ai-opstream', 'fallback commit', {
           childrenCount: result.children ? result.children.length : 0
         })
+      } else {
+        this.endAiOperationTransaction()
       }
     }
   }

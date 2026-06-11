@@ -307,9 +307,9 @@ class MindMap {
 
   //  重新渲染
   reRender(callback, source = '') {
-    this.renderer.reRender = true // 标记为重新渲染
-    this.renderer.clearCache() // 清空节点缓存池
-    this.clearDraw() // 清空画布
+    // 全量重建作为渲染请求登记，清缓存/清画布延迟到渲染pass开始时执行
+    // 避免与进行中的渲染竞态导致整树重复挂载
+    this.renderer.requestRender({ full: true })
     this.render(callback, source)
   }
 

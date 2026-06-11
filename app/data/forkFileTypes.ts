@@ -24,9 +24,15 @@ export interface ForkSceneSnapshot {
  * 本地缓存一条记录（localStorage `excalidraw-file-local-cache-${fileId}`）。
  * `deltas` 与 DeltaStorage 对齐，用于恢复增量历史；紧急落盘可为空数组。
  */
+export type ForkLocalCacheMeta = {
+  /** 与服务器 files.content_sha256 对齐，用于重开时校验 cache 正文是否过期 */
+  serverContentSha256?: string;
+};
+
 export interface ForkLocalCacheRecord extends ForkSceneSnapshot {
   document?: ManagedDocument;
   deltas: unknown[];
+  meta?: ForkLocalCacheMeta;
 }
 
 const LOCAL_CACHE_SCHEMA = 1 as const;
@@ -63,12 +69,21 @@ export function parseForkLocalCache(raw: unknown): ForkLocalCacheRecord | null {
   const deltasRaw = body.deltas;
   const deltas = Array.isArray(deltasRaw) ? deltasRaw : [];
 
+  const metaRaw = body.meta;
+  const meta =
+    isRecord(metaRaw) &&
+    typeof metaRaw.serverContentSha256 === "string" &&
+    metaRaw.serverContentSha256
+      ? { serverContentSha256: metaRaw.serverContentSha256 }
+      : undefined;
+
   return {
     elements: scene.elements,
     appState: scene.appState,
     files: scene.files,
     document,
     deltas,
+    ...(meta ? { meta } : {}),
   };
 }
 

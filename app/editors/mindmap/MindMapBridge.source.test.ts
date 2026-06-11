@@ -62,6 +62,36 @@ describe("MindMap bridge source contract", () => {
     );
   });
 
+  it("suppresses draft pushes to host while hydrate dirty notify is disabled", () => {
+    const source = readBridgeShell(
+      "editors/mindmap/native/web/src/bridge/takeoverShell.js",
+    );
+    expect(source).toContain("postMindMapDataToHost draft push suppressed");
+    expect(source).toContain("if (!dirtyNotifyEnabled)");
+  });
+
+  it("skips host data pushes whose content matches the canvas", () => {
+    const source = readBridgeShell(
+      "editors/mindmap/native/web/src/bridge/takeoverShell.js",
+    );
+    expect(source).toContain("getMindMapFullDataFingerprint");
+    expect(source).toContain("applyHostMindMapData('set-mind-map-data')");
+    expect(source).toContain("applyHostMindMapData('init-mind-map-repeat')");
+    // 推送应用收敛到单一入口，禁止绕过指纹比对直接 setFullData
+    expect(source).not.toContain(
+      "nativeMindMap.setFullData(bridgeState.mindMapData)",
+    );
+  });
+
+  it("forwards host debug logs into iframe console", () => {
+    const source = readBridgeShell(
+      "editors/mindmap/native/web/src/bridge/takeoverShell.js",
+    );
+    expect(source).toContain("message.type === 'mindMapHostDebug'");
+    expect(source).toContain("debugMindMapHostForward");
+    expect(source).toContain("summarizeMindMapPayloadRichText");
+  });
+
   it("index.html loads external takeover bridge before vue bundles", () => {
     const html = readBridgeShell("editors/mindmap/native/web/public/index.html");
     expect(html).toContain('src="dist/bridge/takeover-shell.js"');

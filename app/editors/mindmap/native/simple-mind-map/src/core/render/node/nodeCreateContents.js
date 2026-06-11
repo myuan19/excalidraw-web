@@ -13,6 +13,12 @@ import { linkifyRichTextHtml } from '../../../utils/urlAutoLink'
 import { Image as SVGImage, SVG, A, G, Rect, Text } from '@svgdotjs/svg.js'
 import iconsSvg from '../../../svg/icons'
 import { noneRichTextNodeLineHeight } from '../../../constants/constant'
+import { applyRichTextThemeWeightMarker } from '../../../constants/richTextFontWeightStyle'
+import {
+  buildRichTextNodeGroup,
+  computeRichTextFingerprint,
+  measureRichTextContent
+} from '../richText/richTextContentFactory'
 
 // 测量svg文本宽高
 const measureText = (text, style) => {
@@ -147,7 +153,8 @@ function createIconNode() {
 
 // 创建富文本节点
 function createRichTextNode(specifyText) {
-  if (this.getData('needUpdate')) {
+  const hadNeedUpdate = !!this.getData('needUpdate')
+  if (hadNeedUpdate) {
     delete this.nodeData.data.needUpdate
   }
   const hasCustomWidth = this.hasCustomWidth()
@@ -155,7 +162,6 @@ function createRichTextNode(specifyText) {
     typeof specifyText === 'string' ? specifyText : this.getData('text')
   let { textAutoWrapWidth, emptyTextMeasureHeightText } = this.mindMap.opt
   textAutoWrapWidth = hasCustomWidth ? this.customTextWidth : textAutoWrapWidth
-  const g = new G()
   // 创建富文本结构，或复位富文本样式
   let recoverText = false
   if (this.getData('resetRichText')) {
@@ -181,78 +187,34 @@ function createRichTextNode(specifyText) {
     nodeTextStyleList.push([prop, nodeRichTextStyles[prop]])
   })
   text = linkifyRichTextHtml(text)
-  // 测量文本大小
-  if (!this.mindMap.commonCaches.measureRichtextNodeTextSizeEl) {
-    this.mindMap.commonCaches.measureRichtextNodeTextSizeEl =
-      document.createElement('div')
-    this.mindMap.commonCaches.measureRichtextNodeTextSizeEl.style.position =
-      'fixed'
-    this.mindMap.commonCaches.measureRichtextNodeTextSizeEl.style.left =
-      '-999999px'
-    this.mindMap.el.appendChild(
-      this.mindMap.commonCaches.measureRichtextNodeTextSizeEl
-    )
-  }
-  const div = this.mindMap.commonCaches.measureRichtextNodeTextSizeEl
-  // 应用节点的文本样式
-  nodeTextStyleList.forEach(([prop, value]) => {
-    div.style[prop] = value
-  })
-  div.style.lineHeight = 1.2
   const html = `<div>${text}</div>`
-  div.innerHTML = html
-  const el = div.children[0]
-  el.classList.add('smm-richtext-node-wrap')
-  addXmlns(el)
-  el.style.maxWidth = textAutoWrapWidth + 'px'
-  if (hasCustomWidth) {
-    el.style.width = this.customTextWidth + 'px'
-  } else {
-    el.style.width = ''
-  }
-  let { width, height } = el.getBoundingClientRect()
-  // 首帧测量偶发为 0 时，用字号估算单行高度，避免占位长文本导致节点先高后矮
-  if (height <= 0) {
-    const fontSize = Number(this.getStyle('fontSize', false)) || 16
-    height = Math.ceil(fontSize * 1.2)
-    if (height <= 0) {
-      div.innerHTML = `<p>${emptyTextMeasureHeightText}</p>`
-      let elTmp = div.children[0]
-      elTmp.classList.add('smm-richtext-node-wrap')
-      height = elTmp.getBoundingClientRect().height
-      div.innerHTML = html
-    }
-  }
-  width = Math.min(Math.ceil(width) + 1, textAutoWrapWidth) // 修复getBoundingClientRect方法对实际宽度是小数的元素获取到的值是整数，导致宽度不够文本发生换行的问题
-  height = Math.ceil(height)
-  g.attr('data-width', width)
-  g.attr('data-height', height)
-  const foreignObject = createForeignObjectNode({
-    el: div.children[0],
-    width,
-    height
+  const fontSize = Number(this.getStyle('fontSize', false)) || 16
+  const measured = measureRichTextContent({
+    mindMap: this.mindMap,
+    html,
+    styleList: nodeTextStyleList,
+    maxWidth: textAutoWrapWidth,
+    customWidth: hasCustomWidth ? this.customTextWidth : undefined,
+    emptyTextMeasureHeightText,
+    fallbackFontSize: fontSize
   })
-  // 应用节点文本样式
-  // 进入文本编辑时，这个样式也会同样添加到文本编辑框的元素上
-  const foreignObjectStyle = {
-    'line-height': 1.2
+  const { width, height, contentEl } = measured
+  this._richTextFingerprint = computeRichTextFingerprint(text)
+  if (contentEl) {
+    applyRichTextThemeWeightMarker(contentEl, nodeRichTextStyles.fontWeight)
   }
-  nodeTextStyleList.forEach(([prop, value]) => {
-    foreignObjectStyle[camelCaseToHyphen(prop)] = value
-  })
-  foreignObject.css(foreignObjectStyle)
-  g.add(foreignObject)
-  return {
-    node: g,
-    nodeContent: foreignObject,
+  return buildRichTextNodeGroup({
+    contentEl,
     width,
-    height
-  }
+    height,
+    styleList: nodeTextStyleList
+  })
 }
 
 //  创建文本节点
 function createTextNode(specifyText) {
-  if (this.getData('needUpdate')) {
+  const hadNeedUpdate = !!this.getData('needUpdate')
+  if (hadNeedUpdate) {
     delete this.nodeData.data.needUpdate
   }
   // 如果是富文本内容，那么转给富文本函数

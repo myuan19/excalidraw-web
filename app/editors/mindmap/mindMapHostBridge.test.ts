@@ -70,6 +70,7 @@ describe("MindMapHostBridge", () => {
     });
 
     bridge.beginSession();
+    bridge.publishDocument(emptyPayload(), "test");
     bridge.handleNativeMessage(
       { source: "simple-mind-map-native", type: "ready" },
       window.location.origin,
@@ -81,5 +82,53 @@ describe("MindMapHostBridge", () => {
 
     expect(bridge.getSnapshot().phase).toBe("app_ready");
     expect(ready).toBe(true);
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "setMindMapData" }),
+      expect.any(String),
+    );
+  });
+
+  it("posts mindMapHostDebug without recursive bridge logging", () => {
+    const postMessage = vi.fn();
+    const iframe = {
+      contentWindow: { postMessage },
+      src: "http://localhost/mind-map/index.html",
+      getAttribute: (name: string) =>
+        name === "src" ? "http://localhost/mind-map/index.html" : null,
+      dataset: {},
+    } as unknown as HTMLIFrameElement;
+
+    const bridge = new MindMapHostBridge({
+      getIframe: () => iframe,
+      callbacks: {
+        onSnapshot: () => {},
+      },
+    });
+
+    bridge.beginSession();
+    bridge.handleNativeMessage(
+      { source: "simple-mind-map-native", type: "ready" },
+      window.location.origin,
+    );
+
+    const posted = bridge.postToNative("mindMapHostDebug", {
+      scope: "mindmap-persist",
+      label: "test",
+      data: { ok: true },
+    });
+
+    expect(posted).toBe(true);
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "mindMapHostDebug",
+        payload: {
+          scope: "mindmap-persist",
+          label: "test",
+          data: { ok: true },
+        },
+      }),
+      expect.any(String),
+    );
+    expect(postMessage).toHaveBeenCalledTimes(1);
   });
 });

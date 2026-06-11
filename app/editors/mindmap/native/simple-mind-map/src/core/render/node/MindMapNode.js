@@ -12,7 +12,6 @@ import quickCreateChildBtnMethods from './quickCreateChildBtn'
 import nodeLayoutMethods from './nodeLayout'
 import { CONSTANTS } from '../../../constants/constant'
 import { copyNodeTree, createUid, addXmlns } from '../../../utils/index'
-
 //  节点类
 class MindMapNode {
   //  构造函数
@@ -211,7 +210,7 @@ class MindMapNode {
 
   //  创建节点的各个内容对象数据
   // recreateTypes：[] custom、image、icon、text、hyperlink、tag、note、attachment、numbers、prefix、postfix、checkbox
-  createNodeData(recreateTypes) {
+  createNodeData(recreateTypes, opt = {}) {
     // 自定义节点内容
     const {
       isUseCustomNodeContent,
@@ -267,7 +266,9 @@ class MindMapNode {
     }
     if (createTypes.image) this._imgData = this.createImgNode()
     if (createTypes.icon) this._iconData = this.createIconNode()
-    if (createTypes.text) this._textData = this.createTextNode()
+    if (createTypes.text) {
+      this._textData = this.createTextNode(opt.specifyText)
+    }
     if (createTypes.hyperlink) this._hyperlinkData = this.createHyperlinkNode()
     if (createTypes.tag) this._tagData = this.createTagNode()
     if (createTypes.note) this._noteData = this.createNoteNode()
@@ -323,7 +324,7 @@ class MindMapNode {
     this.customTop = this.getData('customTop') || undefined
     // 这里不要更新概要，不然即使概要没修改，每次也会重新渲染
     // this.updateGeneralization()
-    this.createNodeData(recreateTypes)
+    this.createNodeData(recreateTypes, opt)
     const { width, height } = this.getNodeRect()
     // 判断节点尺寸是否有变化
     const changed = this.width !== width || this.height !== height
@@ -565,11 +566,14 @@ class MindMapNode {
   }
 
   // 重新渲染节点，即重新创建节点内容、计算节点大小、计算节点内容布局、更新展开收起按钮，概要及位置
-  reRender(recreateTypes, opt) {
+  reRender(recreateTypes, opt = {}) {
+    const fingerprintBefore = this._richTextFingerprint
     const sizeChange = this.getSize(recreateTypes, opt)
+    const contentChanged = fingerprintBefore !== this._richTextFingerprint
+    const changed = sizeChange || contentChanged
     this.layout()
     this.update()
-    return sizeChange
+    return changed
   }
 
   // 更新节点激活状态
@@ -670,11 +674,11 @@ class MindMapNode {
     } else {
       callback()
     }
-    // 手动插入的节点：走文本编辑入口，不伪造 dblclick 事件
+    // 手动插入的节点：渲染结束后再进入编辑，避免与全树 render 交错
     if (this.nodeData.inserting) {
       delete this.nodeData.inserting
       this.active()
-      this.mindMap.renderer.textEdit.openAfterInsert(this)
+      this.mindMap.renderer.queueOpenAfterInsert(this)
     }
   }
 

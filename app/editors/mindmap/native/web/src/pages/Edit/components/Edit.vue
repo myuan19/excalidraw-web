@@ -602,6 +602,27 @@ export default {
       })
     },
 
+    findMindMapPersistSampleText(root) {
+      let sample = ''
+      const walk = node => {
+        if (sample || !node || !node.data) {
+          return
+        }
+        const text = String(node.data.text || '')
+        if (text.includes('<strong') || text.includes('ql-indent-')) {
+          sample = text
+          return
+        }
+        const children = Array.isArray(node.children) ? node.children : []
+        children.forEach(walk)
+      }
+      walk(root)
+      if (!sample && root && root.data) {
+        sample = String(root.data.text || '')
+      }
+      return sample
+    },
+
     // 存储数据当数据有变时
     bindSaveEvent() {
       this.$bus.$on('data_change', data => {
@@ -633,6 +654,13 @@ export default {
           ...(this.mindMapData || {}),
           ...payload
         }
+        const sampleText = this.findMindMapPersistSampleText(root)
+        mindmapDevDebug('mindmap-persist', 'bindSaveEvent storeData', {
+          rootChildren: root.children ? root.children.length : 0,
+          sampleTextLen: sampleText.length,
+          sampleStrongCount: (sampleText.match(/<strong\b/gi) || []).length,
+          samplePreview: sampleText.slice(0, 120)
+        })
         storeData(payload)
         const configPatch = {}
         ;['outerFramePaddingX', 'outerFramePaddingY'].forEach(key => {

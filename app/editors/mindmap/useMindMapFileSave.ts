@@ -27,10 +27,18 @@ import {
 } from "../../data/autoSaveSession";
 import { isAutoSaveOnExitActive } from "../../data/appSettings";
 import { installExecutor, requestSaveAndWait } from "../../data/saveQueue";
+import { matchesMindMapPersistedSnapshot } from "./mindMapPersistedSnapshot";
+import { recordMindMapPersisted } from "./mindMapPersistCoordinator";
 import {
-  matchesMindMapPersistedSnapshot,
-  noteMindMapPersistedSnapshot,
-} from "./mindMapPersistedSnapshot";
+  debugMindMapPersist,
+  findFirstRichMindMapNodeSummary,
+} from "./mindMapPersistDebug";
+import {
+  getCachedMindMapServerSha,
+  toMindMapLocalCacheRecord,
+} from "./mindMapLocalCacheRecord";
+
+export { getCachedMindMapServerSha, toMindMapLocalCacheRecord };
 
 import type { ManagedDocument } from "../../data/documentTypes";
 import type { MindMapDocumentData } from "../../data/formats/MindMapAdapter";
@@ -57,16 +65,6 @@ function normalizeMindMapSaveDocument(
   return MindMapAdapter.toDocument(MindMapAdapter.migrate(document, 1));
 }
 
-export function toMindMapLocalCacheRecord(document: MindMapSaveDocument) {
-  return {
-    document: normalizeMindMapSaveDocument(document),
-    elements: undefined,
-    appState: undefined,
-    files: {},
-    deltas: [],
-  };
-}
-
 export function getCachedMindMapDocument(
   fileId: string,
 ): MindMapSaveDocument | null {
@@ -76,7 +74,11 @@ export function getCachedMindMapDocument(
     const document = normalizeMindMapSaveDocument(
       localCache.document as MindMapSaveDocument,
     );
-    FileSyncState.setLocalCache(fileId, toMindMapLocalCacheRecord(document));
+    const cachedServerSha = localCache.meta?.serverContentSha256;
+    FileSyncState.setLocalCache(
+      fileId,
+      toMindMapLocalCacheRecord(document, cachedServerSha),
+    );
     return document;
   }
   try {
@@ -280,7 +282,18 @@ export function useMindMapFileSave(opts: {
 
       const hash = hashDocumentSnapshot(document);
       const baseline = FileSyncState.getBaselineHash(fileId);
+      debugMindMapPersist("saveCurrentFileToServer start", {
+        fileId8: fileId.slice(0, 8),
+        source,
+        contentHash8: hash.slice(0, 8),
+        baselineHash8: baseline?.slice(0, 8) ?? null,
+        sampleNode: findFirstRichMindMapNodeSummary(document.data),
+      });
       if (baseline && hash === baseline && !forceThumbnail) {
+        debugMindMapPersist("saveCurrentFileToServer skipped: baseline match", {
+          fileId8: fileId.slice(0, 8),
+          source,
+        });
         if (source === "toolbar" || source === "hotkey") {
           setMindMapSaveHint("内容与最新提交一致，无需保存");
           setStatus("已保存");
@@ -310,14 +323,16 @@ export function useMindMapFileSave(opts: {
             archiveLabel: resolveAutoSaveArchiveLabel(source),
           },
         );
-        if (result?.content_sha256) {
-          FileSyncState.setServerHash(fileId, result.content_sha256);
-        }
-        noteMindMapPersistedSnapshot(fileId, document);
         updateDraftHashDebouncedRef.current.cancel();
-        FileSyncState.setLocalCache(fileId, toMindMapLocalCacheRecord(document));
-        FileSyncState.alignHashes(fileId, hashDocumentSnapshot(document));
-        FileSyncState.clearLocalEditTime(fileId);
+        recordMindMapPersisted(fileId, document, {
+          serverContentSha256: result?.content_sha256,
+        });
+        debugMindMapPersist("saveCurrentFileToServer success", {
+          fileId8: fileId.slice(0, 8),
+          source,
+          skipped: !!result?.skipped,
+          serverSha8: result?.content_sha256?.slice(0, 8) ?? null,
+        });
         localStorage.removeItem(legacyMindMapCacheKey(fileId));
         window.dispatchEvent(
           new CustomEvent("excalidraw-server-saved", {
@@ -339,6 +354,11 @@ export function useMindMapFileSave(opts: {
         }
         return true;
       } catch (err: any) {
+        debugMindMapPersist("saveCurrentFileToServer failed", {
+          fileId8: fileId.slice(0, 8),
+          source,
+          message: err?.message || String(err),
+        });
         if (source !== "visibility") {
           setErrorMessage(err?.message || "保存失败");
         }

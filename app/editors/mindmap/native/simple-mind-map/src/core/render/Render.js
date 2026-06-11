@@ -39,6 +39,14 @@ import {
   getRenderTreeFromHistorySnapshot,
   fitPastedImageSizeToNodeText
 } from '../../utils'
+import {
+  createNodeInvalidationState,
+  invalidateNodes,
+  INVALIDATE,
+  markNodeMoveInvalidation,
+  markTreeStructureInvalidation
+} from './nodeInvalidate'
+import { createRenderOrchestrator } from './renderOrchestrator'
 import { shapeList } from './node/Shape'
 import { lineStyleProps } from '../../theme/default'
 import { CONSTANTS, ERROR_TYPES } from '../../constants/constant'
@@ -83,12 +91,13 @@ class Render {
     this.renderTree = this.mindMap.opt.data
       ? merge({}, this.mindMap.opt.data)
       : null
-    // 是否重新渲染
+    // 待处理的渲染请求（登记合并层），渲染pass开始时原子取走
+    // full为true表示需要清场全量重建（清缓存、清画布、重建节点实例）
+    this.pendingRenderRequest = null
+    // 当前渲染pass是否为全量重建，由pass生命周期维护，外部只读
     this.reRender = false
     // 是否正在渲染中
     this.isRendering = false
-    // 是否存在等待渲染
-    this.hasWaitRendering = false
     // 用于缓存节点
     this.nodeCache = {}
     this.lastNodeCache = {}
@@ -101,10 +110,15 @@ class Render {
     // 防抖定时器
     this.emitNodeActiveEventTimer = null
     this.renderTimer = null
-    // 非布局类重渲染结束后恢复视口（渲染管线唯一出口 onRenderEnd，含 hasWaitRendering 链式渲染）
+    // 非布局类重渲染结束后恢复视口（渲染请求队列静止时统一恢复）
     this.pendingViewRestore = null
     // 根节点
     this.root = null
+    // 节点内容失效登记（突变层显式标脏，布局层消费）
+    this.nodeInvalidation = createNodeInvalidationState()
+    // 渲染代际登记（renderGeneration字段由orchestrator初始化并独占维护）
+    this.renderOrchestrator = createRenderOrchestrator(this)
+    this.pendingInsertEditNodes = []
     // 文本编辑框，需要再bindEvent之前实例化，否则单击事件只能触发隐藏文本编辑框，而无法保存文本修改
     this.textEdit = new TextEdit(this)
     // 当前复制的数据
@@ -221,13 +235,59 @@ class Render {
 
   // 监听文本编辑事件，实时更新节点大小
   onNodeTextEditChange({ node, text }) {
-    node._textData = node.createTextNode(text)
-    const { width, height } = node.getNodeRect()
-    node.width = width
-    node.height = height
-    node.layout()
-    this.mindMap.render(() => {
+    if (!node) {
+      return
+    }
+    this.invalidateTextContent(node.uid)
+    const sizeChange = node.reRender(['text'], { specifyText: text })
+    if (sizeChange) {
+      this.mindMap.render(() => {
+        this.textEdit.updateTextEditNode()
+      }, 'text-edit-resize')
+    } else {
       this.textEdit.updateTextEditNode()
+    }
+  }
+
+  invalidateTextContent(uid) {
+    if (!uid) {
+      return
+    }
+    invalidateNodes(this.nodeInvalidation, uid, INVALIDATE.TEXT_CONTENT)
+  }
+
+  markTreeStructureDirty(parentUid, newChildUid) {
+    markTreeStructureInvalidation(this.nodeInvalidation, {
+      parentUid,
+      newChildUid,
+      resolveParentNode: uid => this.findNodeByUid(uid)
+    })
+  }
+
+  markNodeMoveDirty(movedNodes, targetParent = null) {
+    markNodeMoveInvalidation(this.nodeInvalidation, {
+      movedNodes: formatDataToArray(movedNodes),
+      targetParent
+    })
+  }
+
+  // 只记录uid：全量重建会替换节点实例，兑现时再解析最新实例
+  queueOpenAfterInsert(node) {
+    if (!node || !node.uid) {
+      return
+    }
+    if (!this.pendingInsertEditNodes.includes(node.uid)) {
+      this.pendingInsertEditNodes.push(node.uid)
+    }
+  }
+
+  flushPendingInsertEdits() {
+    const pending = this.pendingInsertEditNodes.splice(0)
+    pending.forEach(uid => {
+      const node = this.findNodeByUid(uid)
+      if (node) {
+        this.textEdit.openAfterInsert(node)
+      }
     })
   }
 
@@ -515,23 +575,21 @@ class Render {
     this.lastNodeCache = {}
   }
 
-  // 保存触发渲染的参数
-  addRenderParams(callback, source) {
-    if (callback) {
-      const index = this.renderCallbackList.findIndex(fn => {
-        return fn === callback
-      })
-      if (index === -1) {
-        this.renderCallbackList.push(callback)
-      }
+  // 登记一次渲染请求，渲染pass开始时原子取走
+  // 渲染期间到达的请求合并进下一个pass，full一旦为true不降级
+  requestRender({ callback, source, full = false } = {}) {
+    if (!this.pendingRenderRequest) {
+      this.pendingRenderRequest = { full: false, sources: [], callbacks: [] }
     }
-    if (source) {
-      const index = this.renderSourceList.findIndex(s => {
-        return s === source
-      })
-      if (index === -1) {
-        this.renderSourceList.push(source)
-      }
+    const request = this.pendingRenderRequest
+    if (full) {
+      request.full = true
+    }
+    if (callback && !request.callbacks.includes(callback)) {
+      request.callbacks.push(callback)
+    }
+    if (source && !request.sources.includes(source)) {
+      request.sources.push(source)
     }
   }
 
@@ -553,26 +611,51 @@ class Render {
     }
   }
 
-  // 渲染完毕的操作
+  // 渲染pass完毕：复位pass状态并兑现本pass的回调
+  // 渲染期间到达了新请求则链式启动下一个pass
+  // 对外的渲染结束事件只在请求队列静止时发出
   onRenderEnd() {
-    this.renderCallbackList.forEach(fn => {
-      fn()
-    })
-    this.isRendering = false
-    this.reRender = false
+    const callbacks = this.renderCallbackList
     this.renderCallbackList = []
     this.renderSourceList = []
+    this.isRendering = false
+    this.reRender = false
+    callbacks.forEach(fn => {
+      fn()
+    })
+    if (this.pendingRenderRequest) {
+      this._render()
+      return
+    }
     if (this.pendingViewRestore) {
       const preservedView = this.pendingViewRestore
       this.pendingViewRestore = null
       this.mindMap.view.setTransformData(preservedView, { silent: true })
     }
+    this.flushPendingInsertEdits()
     this.mindMap.emit('node_tree_render_end')
+  }
+
+  // 放弃当前渲染pass：回调与来源并回待处理请求，由取代它的渲染统一兑现
+  abortRenderPass() {
+    const callbacks = this.renderCallbackList
+    const sources = this.renderSourceList
+    this.renderCallbackList = []
+    this.renderSourceList = []
+    this.isRendering = false
+    this.reRender = false
+    callbacks.forEach(callback => {
+      this.requestRender({ callback })
+    })
+    sources.forEach(source => {
+      this.requestRender({ source })
+    })
+    this._render()
   }
 
   // 渲染
   render(callback, source) {
-    this.addRenderParams(callback, source)
+    this.requestRender({ callback, source })
     const commandContext =
       this.mindMap.command && this.mindMap.command.getContext
         ? this.mindMap.command.getContext()
@@ -593,26 +676,36 @@ class Render {
     }, 0)
   }
 
-  // 真正的渲染
+  // 真正的渲染：原子取走待处理请求作为本次渲染pass的上下文
   _render() {
+    // 渲染中到达的请求保留在pendingRenderRequest，当前pass结束后链式调度
+    if (this.isRendering) {
+      return
+    }
+    const request = this.pendingRenderRequest
+    this.pendingRenderRequest = null
+    // 请求已被更早的pass链式消费
+    if (!request) {
+      return
+    }
+    this.isRendering = true
+    this.reRender = request.full
+    this.renderCallbackList = request.callbacks
+    this.renderSourceList = request.sources
     // 切换主题时，被收起的节点需要添加样式复位的标注
     if (this.checkHasRenderSource(CONSTANTS.CHANGE_THEME)) {
       this.resetUnExpandNodeStyle()
     }
-    // 如果当前还没有渲染完毕，不再触发渲染
-    if (this.isRendering) {
-      // 等待当前渲染完毕后再进行一次渲染
-      this.hasWaitRendering = true
-      return
+    // 全量重建的清场在pass开始时执行
+    // 避免画布清空后又被一个进行中的渲染重新挂载（整树重复渲染的根因）
+    if (this.reRender) {
+      this.clearCache()
+      this.mindMap.clearDraw()
+      this.clearActiveNodeList()
     }
-    this.isRendering = true
     // 节点缓存
     this.lastNodeCache = this.nodeCache
     this.nodeCache = {}
-    // 重新渲染需要清除激活状态
-    if (this.reRender) {
-      this.clearActiveNodeList()
-    }
     // 如果没有节点数据
     if (!this.renderTree) {
       this.onRenderEnd()
@@ -622,26 +715,27 @@ class Render {
     // 计算布局
     this.root = null
     this.layout.doLayout(root => {
+      // 布局期间到达了全量重建请求：本pass的产物注定被清场覆盖，放弃挂载
+      if (this.pendingRenderRequest && this.pendingRenderRequest.full) {
+        this.abortRenderPass()
+        return
+      }
       // 删除本次渲染时不再需要的节点
       Object.keys(this.lastNodeCache).forEach(uid => {
         if (!this.nodeCache[uid]) {
+          const staleNode = this.lastNodeCache[uid]
           // 从激活节点列表里删除
-          this.removeNodeFromActiveList(this.lastNodeCache[uid])
+          this.removeNodeFromActiveList(staleNode)
           this.emitNodeActiveEvent()
           // 调用节点的销毁方法
-          this.lastNodeCache[uid].destroy()
+          staleNode.destroy()
         }
       })
       // 更新根节点
       this.root = root
       // 渲染节点
       this.root.render(() => {
-        this.isRendering = false
-        if (this.hasWaitRendering) {
-          this.hasWaitRendering = false
-          this.render()
-          return
-        }
+        this.renderOrchestrator.recordFullRender()
         this.onRenderEnd()
       })
     })
@@ -1039,6 +1133,7 @@ class Render {
       }
       createNewId = true
       node.nodeData.children.push(newNode)
+      this.markTreeStructureDirty(node.uid, newNode.data.uid)
       // 插入子节点时自动展开子节点
       node.setData({
         expand: true
@@ -1048,7 +1143,7 @@ class Render {
     if (focusNewNode) {
       this.clearActiveNodeList()
     }
-    this.mindMap.render()
+    this.mindMap.render(null, 'insert-child')
   }
 
   // 插入多个子节点
@@ -1508,7 +1603,8 @@ class Render {
       existBorthers.splice(existIndex, 0, item)
       existParent.nodeData.children.splice(existIndex, 0, item.nodeData)
     })
-    this.mindMap.render()
+    this.markNodeMoveDirty(nodeList, exist.parent)
+    this.mindMap.render(null, 'node-insert-sibling')
   }
 
   //  移除节点
@@ -1701,8 +1797,9 @@ class Render {
       })
       toNode.nodeData.children.push(item.nodeData)
     })
+    this.markNodeMoveDirty(nodeList, toNode)
     this.emitNodeActiveEvent()
-    this.mindMap.render()
+    this.mindMap.render(null, 'node-move-to')
   }
 
   // 按 DropTarget 统一移动节点，拖拽决策层只传 parent + insertionIndex
@@ -1752,8 +1849,9 @@ class Render {
     targetParent.setData({
       expand: true
     })
+    this.markNodeMoveDirty(nodeList, targetParent)
     this.emitNodeActiveEvent()
-    this.mindMap.render()
+    this.mindMap.render(null, 'node-move-drop')
   }
 
   //   粘贴节点到节点
@@ -2138,6 +2236,9 @@ class Render {
 
   //  设置节点数据，并判断是否渲染
   setNodeDataRender(node, data, notRender = false) {
+    if (data && (data.text !== undefined || data.richText !== undefined)) {
+      this.invalidateTextContent(node.uid)
+    }
     this.mindMap.execCommand('SET_NODE_DATA', node, data)
     if (isNodeNotNeedRenderData(data)) {
       this.mindMap.emit('node_tree_render_end')
@@ -2150,7 +2251,7 @@ class Render {
   reRenderNodeCheckChange(node, notRender) {
     let changed = node.reRender()
     if (changed) {
-      if (!notRender) this.mindMap.render()
+      if (!notRender) this.mindMap.render(null, 'set-node-data-render')
     } else {
       this.mindMap.emit('node_tree_render_end')
     }

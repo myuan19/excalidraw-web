@@ -19,6 +19,7 @@ import {
   resolveNativePostMessageTargetOrigin,
 } from "./mindMapBridgeOrigins";
 import { debugMindMapBridge, warnMindMapBridge } from "./mindMapBridgeDebug";
+import { findFirstRichMindMapNodeSummary } from "./mindMapPersistDebug";
 
 export type MindMapHostBridgeSnapshot = {
   phase: MindMapHostBridgePhase;
@@ -97,6 +98,7 @@ export class MindMapHostBridge {
       reason,
       phase: this.phase,
       rootChildren: payload.mindMapData.root?.children?.length ?? 0,
+      sampleNode: findFirstRichMindMapNodeSummary(payload.mindMapData),
     });
 
     if (this.phase === "app_ready") {
@@ -178,11 +180,31 @@ export class MindMapHostBridge {
       learnedOrigin: this.learnedOrigin,
     });
 
+    // 诊断转发消息不能再走 bridge debug，否则会与 forwardMindMapHostDebug 递归。
+    if (type === "mindMapHostDebug") {
+      if (!iframe?.contentWindow || !targetOrigin) {
+        return false;
+      }
+      iframe.contentWindow.postMessage(
+        { source: MINDMAP_HOST_SOURCE, type, payload },
+        targetOrigin,
+      );
+      return true;
+    }
+
     if (type === "initMindMap") {
       this.debugOpen(`postToNative ${type}`, {
         hasPayload: payload != null,
         targetOrigin,
         phase: this.phase,
+      });
+    } else if (type === "setMindMapData" && payload && typeof payload === "object") {
+      const bridgePayload = payload as NativeMindMapBridgePayload;
+      debugMindMapBridge(`postToNative ${type}`, {
+        targetOrigin,
+        phase: this.phase,
+        rootChildren: bridgePayload.mindMapData?.root?.children?.length ?? 0,
+        sampleNode: findFirstRichMindMapNodeSummary(bridgePayload.mindMapData),
       });
     } else {
       debugMindMapBridge(`postToNative ${type}`, { targetOrigin, phase: this.phase });
@@ -251,6 +273,9 @@ export class MindMapHostBridge {
       reason,
       rootChildren: this.pendingPayload.mindMapData.root?.children?.length ?? 0,
       bootKey: this.bootKey,
+      sampleNode: findFirstRichMindMapNodeSummary(
+        this.pendingPayload.mindMapData,
+      ),
     });
 
     const sent = this.postToNative("initMindMap", this.pendingPayload);
@@ -270,6 +295,15 @@ export class MindMapHostBridge {
     this.options.callbacks.onStatus?.("已打开 mindmap 原生界面");
     this.emitSnapshot();
     this.debugOpen("received appInited", { phase: this.phase });
+    if (this.pendingPayload) {
+      this.debugOpen("flush pendingPayload after appInited", {
+        rootChildren: this.pendingPayload.mindMapData.root?.children?.length ?? 0,
+        sampleNode: findFirstRichMindMapNodeSummary(
+          this.pendingPayload.mindMapData,
+        ),
+      });
+      this.postToNative("setMindMapData", this.pendingPayload);
+    }
   }
 
   private handleIframeFailure(payload?: MindMapIframeFailurePayload): void {

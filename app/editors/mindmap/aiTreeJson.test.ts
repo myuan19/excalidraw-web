@@ -67,7 +67,7 @@ describe("parseAiOrganizeJson", () => {
     expect(result.current.data.text).not.toContain("&amp;amp;");
   });
 
-  it("removes leading layout spaces while preserving structural indent", () => {
+  it("preserves span leading spaces while keeping structural indent", () => {
     const result = parseAiOrganizeJson(
       JSON.stringify({
         current: {
@@ -89,11 +89,11 @@ describe("parseAiOrganizeJson", () => {
     );
 
     expect(result.current.data.text).toBe(
-      '<p class="ql-indent-2"><span>Star &nbsp;&amp; Fork</span></p>',
+      '<p class="ql-indent-2"><span>&nbsp;&nbsp;&nbsp;&nbsp;Star &nbsp;&amp; Fork</span></p>',
     );
   });
 
-  it("preserves requested leading spaces without adding them to bold headings", () => {
+  it("preserves AI span leading spaces in rich text output", () => {
     const result = parseAiOrganizeJson(
       JSON.stringify({
         current: {
@@ -118,7 +118,6 @@ describe("parseAiOrganizeJson", () => {
       }),
       {
         allowInlineStyles: true,
-        preserveLeadingSpaces: true,
       },
     );
 

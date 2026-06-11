@@ -67,8 +67,7 @@ function normalizeOperation(raw, line, options = {}) {
       throw new Error('add_child requires id')
     }
     const node = normalizeAiOrganizeNode(normalizeTextPayload(raw), false, {
-      allowInlineStyles: !!options.allowInlineStyles,
-      preserveLeadingSpaces: !!options.preserveLeadingSpaces
+      allowInlineStyles: !!options.allowInlineStyles
     })
     return {
       ...base,
@@ -81,8 +80,7 @@ function normalizeOperation(raw, line, options = {}) {
     }
   }
   const data = normalizeAiOrganizeNode(normalizeTextPayload(raw), false, {
-    allowInlineStyles: !!options.allowInlineStyles,
-    preserveLeadingSpaces: !!options.preserveLeadingSpaces
+    allowInlineStyles: !!options.allowInlineStyles
   }).data
   return {
     ...base,
@@ -116,7 +114,6 @@ export function parseAiOperationStreamChunk(
     offset = 0,
     final = false,
     allowInlineStyles = false,
-    preserveLeadingSpaces = false,
     allowedOps = null
   } = {}
 ) {
@@ -133,7 +130,6 @@ export function parseAiOperationStreamChunk(
     if (line) {
       const operation = parseLine(line, {
         allowInlineStyles,
-        preserveLeadingSpaces,
         allowedOps
       })
       if (operation) {
