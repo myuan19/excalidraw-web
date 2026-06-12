@@ -238,7 +238,8 @@ export default function MindMapEmbedViewer({
   }, [applyMindMapPreviewRange, isAtDefaultView, pinState.isPinned]);
 
   // 数据变化时更新待发送 payload；首帧之后（轮询刷新）直接推送给 iframe 热更新。
-  // setFullData 指纹比对在 iframe 侧兜底去重；payload 不含 view，当前视口不受影响。
+  // setFullData 指纹比对在 iframe 侧兜底去重；payload 不含 view，且 setFullData
+  // 对 layout/theme 差异应用（未变不触发 setLayout 的 view.reset），视口保持不变。
   const isFirstDataRef = useRef(true);
   useEffect(() => {
     const payload = buildMindMapEmbedBridgePayload(mindMapData);

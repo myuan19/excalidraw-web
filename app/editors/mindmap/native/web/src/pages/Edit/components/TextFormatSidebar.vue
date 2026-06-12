@@ -1,5 +1,11 @@
 <template>
-  <Sidebar ref="sidebar" :title="$t('richTextToolbar.title') || '文本格式'" panelKey="textFormat">
+  <!-- v-keep-text-selection：点击面板任意位置不夺走编辑器焦点，保留文本选区 -->
+  <Sidebar
+    ref="sidebar"
+    v-keep-text-selection
+    :title="$t('richTextToolbar.title') || '文本格式'"
+    panelKey="textFormat"
+  >
     <div class="sidebarContent customScrollbar" :class="{ isDark: isDark }">
       <div class="toolbarSwitchRow">
         <el-checkbox v-model="showFloatingToolbarOnSelection">
@@ -11,7 +17,6 @@
         <div
           class="formatRow"
           :class="{ active: formatInfo.bold }"
-          @mousedown.prevent.stop
           @click.stop="toggleBold"
         >
           <span class="icon iconfont iconzitijiacu"></span>
@@ -21,7 +26,6 @@
         <div
           class="formatRow"
           :class="{ active: formatInfo.italic }"
-          @mousedown.prevent.stop
           @click.stop="toggleItalic"
         >
           <span class="icon iconfont iconzitixieti"></span>
@@ -31,7 +35,6 @@
         <div
           class="formatRow"
           :class="{ active: formatInfo.underline }"
-          @mousedown.prevent.stop
           @click.stop="toggleUnderline"
         >
           <span class="icon iconfont iconzitixiahuaxian"></span>
@@ -41,7 +44,6 @@
         <div
           class="formatRow"
           :class="{ active: formatInfo.strike }"
-          @mousedown.prevent.stop
           @click.stop="toggleStrike"
         >
           <span class="icon iconfont iconshanchuxian"></span>
@@ -58,13 +60,13 @@
               :key="item.value"
               :style="{ fontFamily: item.value }"
               :class="{ active: formatInfo.font === item.value }"
-              @mousedown.prevent.stop
+             
               @click.stop="changeFontFamily(item.value)"
             >
               {{ item.name }}
             </div>
           </div>
-          <div class="formatRow" slot="reference" @mousedown.prevent.stop>
+          <div class="formatRow" slot="reference">
             <span class="icon iconfont iconxingzhuang-wenzi"></span>
             <span class="label">{{ $t('richTextToolbar.fontFamily') || '字体' }}</span>
             <span class="valueText" :style="{ fontFamily: formatInfo.font }">
@@ -84,13 +86,13 @@
                 height: (item < 30 ? 30 : item + 10) + 'px'
               }"
               :class="{ active: formatInfo.size === item + 'px' }"
-              @mousedown.prevent.stop
+             
               @click.stop="changeFontSize(item)"
             >
               {{ item }}px
             </div>
           </div>
-          <div class="formatRow" slot="reference" @mousedown.prevent.stop>
+          <div class="formatRow" slot="reference">
             <span class="icon iconfont iconcase fontColor"></span>
             <span class="label">{{ $t('richTextToolbar.fontSize') || '字号' }}</span>
             <span class="valueText">{{ formatInfo.size || '' }}</span>
@@ -101,7 +103,7 @@
 
         <DelayedPopover placement="left">
           <Color :color="fontColor" @change="changeFontColor"></Color>
-          <div class="formatRow" slot="reference" @mousedown.prevent.stop>
+          <div class="formatRow" slot="reference">
             <span class="icon iconfont iconzitiyanse" :style="{ color: formatInfo.color }"></span>
             <span class="label">{{ $t('richTextToolbar.color') || '字色' }}</span>
             <span class="colorPreview" :style="{ backgroundColor: formatInfo.color || 'transparent' }"></span>
@@ -113,7 +115,7 @@
             :color="fontBackgroundColor"
             @change="changeFontBackgroundColor"
           ></Color>
-          <div class="formatRow" slot="reference" @mousedown.prevent.stop>
+          <div class="formatRow" slot="reference">
             <span class="icon iconfont iconbeijingyanse"></span>
             <span class="label">{{ $t('richTextToolbar.backgroundColor') || '背景色' }}</span>
             <span class="colorPreview" :style="{ backgroundColor: formatInfo.background || 'transparent' }"></span>
@@ -129,13 +131,13 @@
               v-for="item in alignList"
               :key="item.value"
               :class="{ active: formatInfo.align === item.value }"
-              @mousedown.prevent.stop
+             
               @click.stop="changeTextAlign(item.value)"
             >
               {{ item.name }}
             </div>
           </div>
-          <div class="formatRow" slot="reference" @mousedown.prevent.stop>
+          <div class="formatRow" slot="reference">
             <span class="icon iconfont iconjuzhongduiqi"></span>
             <span class="label">{{ $t('richTextToolbar.textAlign') || '对齐' }}</span>
             <span class="valueText">{{ getAlignLabel(formatInfo.align) }}</span>
@@ -144,7 +146,7 @@
 
         <div class="divider"></div>
 
-        <div class="formatRow" @mousedown.prevent.stop @click.stop="removeFormat">
+        <div class="formatRow" @click.stop="removeFormat">
           <span class="icon iconfont iconqingchu"></span>
           <span class="label">{{ $t('richTextToolbar.removeFormat') || '清除样式' }}</span>
         </div>
@@ -164,9 +166,13 @@ import Color from './Color.vue'
 import { fontFamilyList, fontSizeList, alignList } from '@/config'
 import { mapMutations, mapState } from 'vuex'
 import sidebarPanelDebug from '@/mixins/sidebarPanelDebug'
+import keepTextSelection from '@/directives/keepTextSelection'
 
 export default {
   mixins: [sidebarPanelDebug],
+  directives: {
+    keepTextSelection
+  },
   components: {
     Sidebar,
     Color,

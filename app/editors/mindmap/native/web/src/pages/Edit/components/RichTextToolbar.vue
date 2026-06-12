@@ -2,6 +2,7 @@
   <div
     class="richTextToolbar"
     ref="richTextToolbar"
+    v-keep-text-selection
     :style="style"
     :class="{ isDark: isDark }"
     @click.stop.passive
@@ -45,7 +46,7 @@
 
     <el-tooltip :content="$t('richTextToolbar.fontFamily')" placement="top">
       <el-popover placement="bottom" trigger="hover">
-        <div class="fontOptionsList" :class="{ isDark: isDark }">
+        <div class="fontOptionsList" v-keep-text-selection :class="{ isDark: isDark }">
           <div
             class="fontOptionItem"
             v-for="item in fontFamilyList"
@@ -65,7 +66,7 @@
 
     <el-tooltip :content="$t('richTextToolbar.fontSize')" placement="top">
       <el-popover placement="bottom" trigger="hover">
-        <div class="fontOptionsList" :class="{ isDark: isDark }">
+        <div class="fontOptionsList" v-keep-text-selection :class="{ isDark: isDark }">
           <div
             class="fontOptionItem"
             v-for="item in fontSizeList"
@@ -88,7 +89,7 @@
 
     <el-tooltip :content="$t('richTextToolbar.color')" placement="top">
       <el-popover placement="bottom" trigger="hover">
-        <Color :color="fontColor" @change="changeFontColor"></Color>
+        <Color v-keep-text-selection :color="fontColor" @change="changeFontColor"></Color>
         <div class="btn" slot="reference" :style="{ color: formatInfo.color }">
           <span class="icon iconfont iconzitiyanse"></span>
         </div>
@@ -101,6 +102,7 @@
     >
       <el-popover placement="bottom" trigger="hover">
         <Color
+          v-keep-text-selection
           :color="fontBackgroundColor"
           @change="changeFontBackgroundColor"
         ></Color>
@@ -112,7 +114,7 @@
 
     <el-tooltip :content="$t('richTextToolbar.textAlign')" placement="top">
       <el-popover placement="bottom" trigger="hover">
-        <div class="fontOptionsList" :class="{ isDark: isDark }">
+        <div class="fontOptionsList" v-keep-text-selection :class="{ isDark: isDark }">
           <div
             class="fontOptionItem"
             v-for="item in alignList"
@@ -141,10 +143,14 @@
 import { fontFamilyList, fontSizeList, alignList } from '@/config'
 import Color from './Color.vue'
 import { mapState } from 'vuex'
+import keepTextSelection from '@/directives/keepTextSelection'
 
 export default {
   components: {
     Color
+  },
+  directives: {
+    keepTextSelection
   },
   props: {
     mindMap: {

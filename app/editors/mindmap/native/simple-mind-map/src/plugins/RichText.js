@@ -81,7 +81,9 @@ class RichText {
     this.extendQuill()
     this.appendCss()
     this.bindEvent()
-    bindRichTextLinkClicks(this.mindMap.el)
+    // 链接统一为 Ctrl/Cmd+单击打开（含只读嵌入页与文本编辑态），
+    // 普通点击与普通文本无差异
+    bindRichTextLinkClicks()
 
     this.handleDataToRichTextOnInit()
   }
@@ -122,11 +124,21 @@ class RichText {
         margin: 0;
       }
 
-      .smm-richtext-node-wrap a {
+      /* 链接仅保留视觉样式（蓝色下划线），光标与普通文本一致；
+         按住 Ctrl/Cmd（html 上有状态类）时才显示可点击的 pointer */
+      .smm-richtext-node-wrap a,
+      .smm-richtext-node-edit-wrap a,
+      .smm-richtext-node-edit-wrap .ql-editor a {
         color: #0984e3;
         text-decoration: underline;
-        cursor: pointer;
+        cursor: inherit;
         pointer-events: all;
+      }
+
+      html.smm-link-ctrl-down .smm-richtext-node-wrap a,
+      html.smm-link-ctrl-down .smm-richtext-node-edit-wrap a,
+      html.smm-link-ctrl-down .smm-richtext-node-edit-wrap .ql-editor a {
+        cursor: pointer;
       }
 
       .ql-editor .ql-align-left, 

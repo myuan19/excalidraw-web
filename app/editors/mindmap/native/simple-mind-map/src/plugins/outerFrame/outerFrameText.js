@@ -21,6 +21,8 @@ function createText(el, cur, range) {
   })
   g.on('dblclick', e => {
     e.stopPropagation()
+    // 对齐 TextEdit 的只读守卫：只读模式下外框文字不可编辑
+    if (this.mindMap.opt.readonly) return
     setActive()
     this.showEditTextBox(g)
   })

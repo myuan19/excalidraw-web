@@ -5,6 +5,10 @@ import {
 import { migrateManagedDocument } from "../documentMigrations";
 import { DEFAULT_DOCUMENT_DISPLAY_NAME } from "../defaultDocumentName";
 import { mindMapRichTextToPlainText } from "../thumbnailSvg";
+import {
+  compactMindMapPersistedConfig,
+  repairLegacyMindMapConfig,
+} from "./mindMapPersistedConfig";
 
 import type { DocumentFormatAdapter } from "./types";
 
@@ -106,6 +110,28 @@ export function stripMindMapViewportState(
   return persistedData;
 }
 
+/** 读边界：修复被旧版桥接污染的 config（详见 mindMapPersistedConfig.ts） */
+function repairMindMapDocumentConfig(
+  data: MindMapDocumentData,
+): MindMapDocumentData {
+  return withMindMapConfig(data, repairLegacyMindMapConfig(data.config));
+}
+
+/** 用 transform 后的 config 重建文档数据；config 为 undefined 时整个键移除 */
+function withMindMapConfig(
+  data: MindMapDocumentData,
+  config: Record<string, unknown> | undefined,
+): MindMapDocumentData {
+  if (config === data.config) {
+    return data;
+  }
+  if (config === undefined) {
+    const { config: _config, ...rest } = data;
+    return rest;
+  }
+  return { ...data, config };
+}
+
 function parseJsonString(input: string): unknown {
   try {
     return JSON.parse(input);
@@ -172,11 +198,13 @@ export const MindMapAdapter: DocumentFormatAdapter<MindMapDocumentData> = {
     if (document?.kind === "mindmap" && this.validate(document.data)) {
       const migrated = migrateManagedDocument(document);
       if (migrated.kind === "mindmap" && this.validate(migrated.data)) {
-        return stripMindMapViewportState(migrated.data);
+        return repairMindMapDocumentConfig(
+          stripMindMapViewportState(migrated.data),
+        );
       }
     }
     if (this.validate(data)) {
-      return stripMindMapViewportState(data);
+      return repairMindMapDocumentConfig(stripMindMapViewportState(data));
     }
     throw new Error("Invalid MindMap document");
   },
@@ -186,12 +214,16 @@ export const MindMapAdapter: DocumentFormatAdapter<MindMapDocumentData> = {
   },
 
   toDocument(data: MindMapDocumentData): ManagedDocument<MindMapDocumentData> {
+    const persisted = stripMindMapViewportState(data);
     return {
       kind: "mindmap",
       containerVersion: CONTAINER_VERSION,
       formatVersion: MINDMAP_FORMAT_VERSION,
       sourceVersion: SIMPLE_MIND_MAP_VERSION,
-      data: stripMindMapViewportState(data),
+      data: withMindMapConfig(
+        persisted,
+        compactMindMapPersistedConfig(persisted.config),
+      ),
     };
   },
 };

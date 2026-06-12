@@ -1,6 +1,10 @@
-import { MindMapAdapter } from "../../data/formats/MindMapAdapter";
+import {
+  MindMapAdapter,
+  SIMPLE_MIND_MAP_VERSION,
+} from "../../data/formats/MindMapAdapter";
 import previewViewportConfig from "./native/previewViewportConfig.json";
 import { applyMindMapMediaLimitsToConfig } from "./mindMapMediaLimits";
+import { stampMindMapDataSourceVersion } from "./mindMapBridgeProtocol";
 
 import type { MindMapDocumentData } from "../../data/formats/MindMapAdapter";
 
@@ -66,10 +70,15 @@ function buildMindMapPreviewData(data: MindMapDocumentData): MindMapDocumentData
       previewViewportConfig.embedFocusedRootScreenRatioMultiplier,
   });
   const { view: _view, ...withoutView } = data;
-  return {
-    ...withoutView,
-    config,
-  };
+  // 与编辑器壳 toBridgePayload 同步：树根补回 smmVersion，
+  // 否则 RichText 插件按旧格式处理并剥除全部内联样式（高亮/加粗等）
+  return stampMindMapDataSourceVersion(
+    {
+      ...withoutView,
+      config,
+    },
+    SIMPLE_MIND_MAP_VERSION,
+  );
 }
 
 export function prepareMindMapEmbedData(raw: unknown): MindMapDocumentData {

@@ -178,6 +178,7 @@ class OuterFrame {
 
   // 删除当前激活的外框
   removeActiveOuterFrame() {
+    if (this.mindMap.opt.readonly) return
     if (!this.activeOuterFrame) return
     const { node, range } = this.activeOuterFrame
     this.getRangeNodeList(node, range).forEach(child => {
@@ -274,19 +275,15 @@ class OuterFrame {
               !Number.isFinite(height)
             )
               return
+            // padding 用画布单位（不除缩放）：外框几何与渲染时刻的缩放无关，
+            // 嵌入页（渲染后才放大视口）与编辑页表现一致
             const el = this.createOuterFrameEl(
-              (left -
-                outerFramePaddingX -
-                this.mindMap.elRect.left -
-                t.translateX) /
-                t.scaleX,
-              (top -
-                outerFramePaddingY -
-                this.mindMap.elRect.top -
-                t.translateY) /
-                t.scaleY,
-              (width + outerFramePaddingX * 2) / t.scaleX,
-              (height + outerFramePaddingY * 2) / t.scaleY,
+              (left - this.mindMap.elRect.left - t.translateX) / t.scaleX -
+                outerFramePaddingX,
+              (top - this.mindMap.elRect.top - t.translateY) / t.scaleY -
+                outerFramePaddingY,
+              width / t.scaleX + outerFramePaddingX * 2,
+              height / t.scaleY + outerFramePaddingY * 2,
               this.getStyle(nodeList[0]) // 使用第一个节点的外框样式
             )
             // 渲染文字，如果有的话
@@ -308,6 +305,8 @@ class OuterFrame {
 
   // 激活外框
   setActiveOuterFrame(el, node, range, textNode) {
+    // 只读模式（如嵌入页）下不可激活：激活会显示默认文字并暴露编辑/删除入口
+    if (this.mindMap.opt.readonly) return
     this.mindMap.execCommand('CLEAR_ACTIVE_NODE')
     this.clearActiveOuterFrame()
     this.activeOuterFrame = {

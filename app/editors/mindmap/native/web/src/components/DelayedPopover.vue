@@ -19,7 +19,12 @@
       <template slot="reference">
         <slot name="reference"></slot>
       </template>
-      <div class="delayedPopoverContent" @click="onContentClick">
+      <!-- 弹层挂在 body 下，单独阻止 mousedown 夺焦，保留编辑器文本选区 -->
+      <div
+        class="delayedPopoverContent"
+        v-keep-text-selection
+        @click="onContentClick"
+      >
         <slot></slot>
       </div>
     </el-popover>
@@ -27,10 +32,15 @@
 </template>
 
 <script>
+import keepTextSelection from '@/directives/keepTextSelection'
+
 const OPEN_DELAY_MS = 600
 
 export default {
   name: 'DelayedPopover',
+  directives: {
+    keepTextSelection
+  },
   props: {
     placement: {
       type: String,

@@ -2,7 +2,8 @@ import { G } from '@svgdotjs/svg.js'
 import {
   addXmlns,
   camelCaseToHyphen,
-  createForeignObjectNode
+  createForeignObjectNode,
+  mindMapDebugLog
 } from '../../../utils'
 import { applyRichTextThemeWeightMarker } from '../../../constants/richTextFontWeightStyle'
 
@@ -57,6 +58,18 @@ export function measureRichTextContent({
     measuredEl.style.width = ''
   }
   let { width, height } = measuredEl.getBoundingClientRect()
+  const plainTextLength = (measuredEl.textContent || '').trim().length
+  if (width <= 0 && plainTextLength > 0) {
+    // 测量容器瞬时不可见（如祖先 display:none / 布局未刷新）时返回 0 宽，
+    // 若直接使用会让 foreignObject 以 1px 宽渲染、节点文本不可见，
+    // 直到下一次重渲染才恢复。以字号估算宽度兜底，并留日志定位根因。
+    mindMapDebugLog('mindmap-richtext-measure', 'zero width fallback', {
+      plainTextLength,
+      rawHeight: height,
+      connected: !!measuredEl.isConnected
+    })
+    width = Math.min(plainTextLength * fallbackFontSize, maxWidth)
+  }
   if (height <= 0) {
     height = Math.ceil(fallbackFontSize * 1.2)
     if (height <= 0 && emptyTextMeasureHeightText) {

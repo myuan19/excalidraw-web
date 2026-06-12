@@ -42,6 +42,7 @@ import {
   isMindMapSingleRootOnly,
   SIMPLE_MIND_MAP_VERSION,
 } from "../../data/formats/MindMapAdapter";
+import { compactMindMapPersistedConfig } from "../../data/formats/mindMapPersistedConfig";
 import { MindMapAdapter } from "../../data/formats/registry";
 import {
   applyMindMapBrowserView,
@@ -1224,14 +1225,18 @@ const MindMapEditorShell = () => {
         markDocumentChanged(latestDocumentRef.current!);
       };
       if (event.data.type === "saveMindMapConfig") {
+        // iframe 回传的是运行时 config（含宿主注入的媒体限制等键），入口处即
+        // compact：内存文档只保留用户显式且非默认的值。若不在此清理，运行时键
+        // 会先被 toDocument 剥掉、破坏 migrate 修复遗留 0 所依赖的污染指纹。
         updateLatestDocument({
           ...current.data,
-          config:
+          config: compactMindMapPersistedConfig(
             event.data.payload &&
-            typeof event.data.payload === "object" &&
-            !Array.isArray(event.data.payload)
+              typeof event.data.payload === "object" &&
+              !Array.isArray(event.data.payload)
               ? (event.data.payload as Record<string, unknown>)
-              : {},
+              : undefined,
+          ),
         });
         markChangedUnlessHydrating(event.data.type);
         return;
@@ -1434,13 +1439,12 @@ const MindMapEditorShell = () => {
             hashDocumentSnapshot(latestDocumentRef.current));
       FileSyncState.setDraftHash(fileId, hash);
       if (state.modified) {
-        FileSyncState.setLocalCache(fileId, {
-          document: latestDocumentRef.current,
-          elements: undefined,
-          appState: undefined,
-          files: {},
-          deltas: [],
-        });
+        // 经 toMindMapLocalCacheRecord 规范化（migrate 修复 + toDocument compact），
+        // 避免把内存里的原始 config 裸写进缓存、绕过持久化边界
+        FileSyncState.setLocalCache(
+          fileId,
+          toMindMapLocalCacheRecord(latestDocumentRef.current),
+        );
         if (state.shouldMarkLocalDraftEdited) {
           notifyLocalDraftEdited(fileId, fileName);
         }

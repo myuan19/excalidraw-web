@@ -18,6 +18,7 @@ import { SVG, G, Rect } from '@svgdotjs/svg.js'
 import {
   simpleDeepClone,
   getObjectChangedProps,
+  isSameObject,
   isUndef,
   handleGetSvgDataExtraContent,
   getNodeTreeBoundingRect,
@@ -501,14 +502,20 @@ class MindMap {
     if (data.root) {
       this.setData(data.root)
     }
-    if (data.layout) {
+    // 差异应用：未变化的部分跳过，避免热更新时 setLayout 的 view.reset()
+    // 重置视口及 setTheme/setThemeConfig 的冗余全量渲染（对齐 Render.js
+    // 历史恢复路径的 layoutChanged 守卫）
+    if (data.layout && data.layout !== this.opt.layout) {
       this.setLayout(data.layout)
     }
     if (data.theme) {
-      if (data.theme.template) {
+      if (data.theme.template && data.theme.template !== this.opt.theme) {
         this.setTheme(data.theme.template)
       }
-      if (data.theme.config) {
+      if (
+        data.theme.config &&
+        !isSameObject(data.theme.config, this.opt.themeConfig)
+      ) {
         this.setThemeConfig(data.theme.config)
       }
     }

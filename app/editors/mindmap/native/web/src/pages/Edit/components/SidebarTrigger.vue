@@ -1,6 +1,8 @@
 <template>
+  <!-- v-keep-text-selection：点击触发器打开/切换侧栏时不夺走编辑器焦点 -->
   <div
     class="sidebarTriggerContainer"
+    v-keep-text-selection
     @click.stop
     :class="{
       panelOpen: triggerPanelOpen,
@@ -45,9 +47,13 @@ import {
   sidebarDebug,
   sidebarDebugClick
 } from '@/utils/sidebarDebug'
+import keepTextSelection from '@/directives/keepTextSelection'
 
 // 侧边栏触发器
 export default {
+  directives: {
+    keepTextSelection
+  },
   data() {
     return {
       triggerPanelOpen: true,
