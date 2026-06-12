@@ -27,6 +27,7 @@
 
 <script>
 import { NODE_DIALOG_PROPS } from '@/utils/nodeDialogOptions'
+import { normalizeRichTextHtml } from '@/utils/richTextEmpty'
 import { isMobile } from 'simple-mind-map/src/utils/index'
 
 let toastEditorPromise = null
@@ -140,7 +141,8 @@ export default {
       if (!this.editor) {
         return
       }
-      this.note = this.editor.getHTML()
+      // 清空内容视为无备注：归一为空串后节点不再渲染备注图标
+      this.note = normalizeRichTextHtml(this.editor.getHTML())
       if (this.appointNode) {
         this.appointNode.setNote(this.note)
       } else {

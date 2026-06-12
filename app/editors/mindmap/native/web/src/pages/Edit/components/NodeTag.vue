@@ -1,6 +1,7 @@
 <template>
   <el-dialog
     class="nodeTagDialog"
+    v-bind="nodeDialogProps"
     :title="$t('nodeTag.title')"
     :visible.sync="dialogVisible"
     :width="isMobile ? '90%' : '50%'"
@@ -44,11 +45,13 @@ import {
   generateColorByContent,
   isMobile
 } from 'simple-mind-map/src/utils/index'
+import { NODE_DIALOG_PROPS } from '@/utils/nodeDialogOptions'
 
 // 节点标签内容设置
 export default {
   data() {
     return {
+      nodeDialogProps: NODE_DIALOG_PROPS,
       dialogVisible: false,
       tagArr: [],
       tag: '',

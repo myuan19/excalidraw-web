@@ -1,6 +1,7 @@
 import { FileSyncState } from "../../data/FileSyncState";
 import { isLocalDraftFileId } from "../../data/localDraftFileId";
 import { hashDocumentSnapshot } from "../../data/sceneHash";
+import { clearTabFileDirty } from "../../data/tabFileDirtyState";
 import { noteMindMapPersistedSnapshot } from "./mindMapPersistedSnapshot";
 import { toMindMapLocalCacheRecord } from "./mindMapLocalCacheRecord";
 import {
@@ -36,6 +37,7 @@ export function recordMindMapPersisted(
     FileSyncState.setServerHash(fileId, opts.serverContentSha256);
   }
   FileSyncState.clearLocalEditTime(fileId);
+  clearTabFileDirty(fileId);
   debugMindMapPersist("recordMindMapPersisted", {
     fileId8: fileId.slice(0, 8),
     serverSha8: opts?.serverContentSha256?.slice(0, 8) ?? null,

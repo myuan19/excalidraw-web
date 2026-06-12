@@ -15,6 +15,7 @@ import {
   fitPastedImageSizeToNodeText,
   handleTextEditSaveShortcut,
   getSvgNodeVisibleRect,
+  isZeroViewportRect,
   normalizePastedText
 } from '../utils'
 import {
@@ -303,9 +304,16 @@ class RichText {
     let g = node._textData.node
     let originWidth = g.attr('data-width')
     let originHeight = g.attr('data-height')
-    // 缩放值
-    const scaleX = Math.ceil(rect.width) / originWidth
-    const scaleY = Math.ceil(rect.height) / originHeight
+    // 缩放值：屏幕矩形与原始宽高的比值即视图缩放。注意不能对矩形尺寸取整，
+    // 否则在极小宽度（如空文本节点 data-width=1）下相对误差巨大，编辑框文字会被拉长
+    const viewScale = this.mindMap.view.scale
+    const rectInvalid = isZeroViewportRect(rect)
+    const scaleX =
+      rectInvalid || !(originWidth > 0) ? viewScale : rect.width / originWidth
+    const scaleY =
+      rectInvalid || !(originHeight > 0)
+        ? viewScale
+        : rect.height / originHeight
     // 内边距
     let paddingX = this.textNodePaddingX
     let paddingY = this.textNodePaddingY
@@ -428,6 +436,9 @@ class RichText {
     if (!this.node) return
     const g = this.node._textData.node
     const rect = getSvgNodeVisibleRect(g, 'RichText.updateTextEditNode')
+    // 整树渲染中间态下文本元素可能短暂脱离 DOM，测出全 0 矩形；
+    // 此时跳过本次更新，避免编辑框瞬移到页面左上角，下一次更新会自然校正
+    if (isZeroViewportRect(rect)) return
     const originWidth = g.attr('data-width')
     const originHeight = g.attr('data-height')
     this.textEditNode.style.minWidth =

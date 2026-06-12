@@ -214,6 +214,17 @@
       let draftThumbExportRevision = 0
       let dirtyNotifyEnabled = false
       let dirtyNotifyEnableTimer = null
+      // [DEBUG] 记录最近一次静默窗口的来源，便于诊断被吞掉的脏通知/草稿推送
+      let dirtyNotifyDisabledMeta = null
+      const describeDirtyNotifyWindow = () => {
+        if (!dirtyNotifyDisabledMeta) return { disableReason: null }
+        return {
+          disableReason: dirtyNotifyDisabledMeta.reason,
+          msSinceDisabled: Math.round(
+            performance.now() - dirtyNotifyDisabledMeta.at
+          )
+        }
+      }
       const bridgeRequests = new Map()
       const postToHost = (type, payload) => {
         if (window.parent && window.parent !== window) {
@@ -438,7 +449,7 @@
         }
         if (!dirtyNotifyEnabled) {
           debugMindMapOpen('postMindMapDataToHost draft push suppressed', {
-            phase: 'hydrating',
+            ...describeDirtyNotifyWindow(),
             revision,
             rootChildren:
               data && data.root && data.root.children
@@ -626,6 +637,7 @@
 
       const scheduleDirtyNotifyEnable = (reason, delayMs = DIRTY_NOTIFY_SETTLE_MS) => {
         dirtyNotifyEnabled = false
+        dirtyNotifyDisabledMeta = { reason, at: performance.now() }
         debugMindMapOpen('dirty notify disabled (window start)', {
           reason,
           delayMs
@@ -688,7 +700,10 @@
         scheduleDirtyNotifyEnable('bootstrap-start')
         const notifyDirty = () => {
           if (!dirtyNotifyEnabled) {
-            debugMindMapOpen('dirty notify suppressed', { phase: 'hydrating' })
+            debugMindMapOpen(
+              'dirty notify suppressed',
+              describeDirtyNotifyWindow()
+            )
             return
           }
           debugMindMapOpen('dirty notify emit', { phase: 'user-edit' })

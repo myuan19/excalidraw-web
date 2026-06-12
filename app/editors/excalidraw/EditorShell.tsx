@@ -92,8 +92,10 @@ import { mountLibraryAIActions } from "../../data/libraryAIMount";
 import { DeltaStorage } from "../../data/DeltaStorage";
 import { FileSyncState } from "../../data/FileSyncState";
 import { notifyEdit } from "../../data/autoSaveSession";
-import { onCrossTabFileSaved } from "../../data/crossTabFileSync";
-import { decideRemoteFileRefresh } from "../../data/remoteFileRefreshPolicy";
+import { DEFAULT_DOCUMENT_DISPLAY_NAME } from "../../data/defaultDocumentName";
+import { useRemoteFileRefresh } from "../../hooks/useRemoteFileRefresh";
+import { clearTabFileDirty } from "../../data/tabFileDirtyState";
+import { RemoteUpdateConfirmDialog } from "../../components/RemoteUpdateConfirmDialog";
 import { requestSave } from "../../data/saveQueue";
 import { hashSceneSnapshot } from "../../data/sceneHash";
 import {
@@ -521,6 +523,7 @@ const ExcalidrawWrapper = () => {
     };
     const h = hashSceneSnapshot(serverData);
     FileSyncState.alignHashes(fid, h);
+    clearTabFileDirty(fid);
     if (serverFile.content_sha256) {
       FileSyncState.setServerHash(fid, serverFile.content_sha256);
     }
@@ -548,46 +551,14 @@ const ExcalidrawWrapper = () => {
     window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
   }, [excalidrawAPI, localPersistGenRef]);
 
-  useEffect(() => {
-    if (!forkFileId || !excalidrawAPI || isLocalDraftFileId(forkFileId)) {
-      return;
-    }
-    let reloadInFlight = false;
-    return onCrossTabFileSaved((savedFileId) => {
-      const decision = decideRemoteFileRefresh({
-        currentFileId: getFileIdFromHash(),
-        savedFileId,
-        hasUnsavedChanges: FileSyncState.hasUnsavedChanges(forkFileId),
-        localServerHash: FileSyncState.getServerHash(forkFileId),
-      });
-      if (decision === "ignore") {
-        return;
-      }
-      if (decision === "conflict") {
-        excalidrawAPI.setToast({
-          message: "远端已有新版本；当前有未保存修改，未自动覆盖",
-        });
-        return;
-      }
-      if (reloadInFlight) {
-        return;
-      }
-      reloadInFlight = true;
-      void reloadSceneFromServer()
-        .then(() => {
-          excalidrawAPI.setToast({ message: "已同步远端更新" });
-        })
-        .catch((error) => {
-          logShell.warn("cross-tab reload failed", {
-            fileId8: forkFileId.slice(0, 8),
-            message: error?.message || String(error),
-          });
-        })
-        .finally(() => {
-          reloadInFlight = false;
-        });
-    });
-  }, [excalidrawAPI, forkFileId, reloadSceneFromServer]);
+  const notifyRemoteReloaded = useCallback(() => {
+    excalidrawAPI?.setToast({ message: "已同步远端更新" });
+  }, [excalidrawAPI]);
+  const remoteRefresh = useRemoteFileRefresh({
+    fileId: excalidrawAPI ? forkFileId : null,
+    reload: reloadSceneFromServer,
+    onReloaded: notifyRemoteReloaded,
+  });
 
   // ---------------------------------------------------------------------------
   // onChange / onIncrement handlers
@@ -943,6 +914,12 @@ const ExcalidrawWrapper = () => {
         busy={forkSaving}
         onConfirm={() => void localDraftLoss.confirmLoss()}
         onCancel={localDraftLoss.dismiss}
+      />
+      <RemoteUpdateConfirmDialog
+        open={remoteRefresh.promptOpen}
+        documentName={tabFileName || DEFAULT_DOCUMENT_DISPLAY_NAME}
+        onReload={remoteRefresh.confirmReload}
+        onKeep={remoteRefresh.dismissPrompt}
       />
       <SaveNewDocumentDialog
         open={saveNewDoc.saveOpen}

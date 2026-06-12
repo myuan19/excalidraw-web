@@ -5,6 +5,8 @@ const CHANNEL_NAME = "editorhub-sync";
 type SyncMessage = {
   type: "file-saved";
   fileId: string;
+  /** 服务器返回的 content_sha256，接收端用于「同一版本不重复提示」 */
+  contentSha256?: string | null;
   timestamp: number;
 };
 
@@ -20,11 +22,15 @@ function getChannel(): BroadcastChannel | null {
   return channel;
 }
 
-export function broadcastFileSaved(fileId: string): void {
+export function broadcastFileSaved(
+  fileId: string,
+  contentSha256?: string | null,
+): void {
   try {
     getChannel()?.postMessage({
       type: "file-saved",
       fileId,
+      contentSha256: contentSha256 ?? null,
       timestamp: Date.now(),
     } satisfies SyncMessage);
   } catch {
@@ -33,7 +39,7 @@ export function broadcastFileSaved(fileId: string): void {
 }
 
 export function onCrossTabFileSaved(
-  callback: (fileId: string) => void,
+  callback: (fileId: string, contentSha256: string | null) => void,
 ): () => void {
   const ch = getChannel();
   if (!ch) {
@@ -41,7 +47,7 @@ export function onCrossTabFileSaved(
   }
   const handler = (event: MessageEvent<SyncMessage>) => {
     if (event.data?.type === "file-saved" && event.data.fileId) {
-      callback(event.data.fileId);
+      callback(event.data.fileId, event.data.contentSha256 ?? null);
     }
   };
   ch.addEventListener("message", handler);

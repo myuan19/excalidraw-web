@@ -354,7 +354,6 @@ export default {
       embedPreviewInitialApplied: false,
       editorPreviewInitialApplied: false,
       awaitingPostViewportRender: false,
-      embedBaselineViewport: null,
       hadInitialView: false,
       isEmbedMode: window.takeOverAppEmbedMode === true,
       mountedSidebars: {}
@@ -493,6 +492,8 @@ export default {
     },
 
     handleResize() {
+      // 容器尺寸变化只同步画布大小、不重算视口（与 Excalidraw 嵌入一致），
+      // 重新定位仅由定位按钮触发（applyEmbedFocusedViewport 按当前尺寸现算）
       this.mindMap.resize()
     },
 
@@ -1108,41 +1109,27 @@ export default {
         rootPosition: this.mindMap.opt.initRootNodePosition || null
       })
       const resizeTriggeredRender = this.syncMindMapContainerSize()
-      const shouldRecomputeFocused =
-        reason === 'initial-render-end' ||
-        reason === 'preview-resize' ||
-        !this.embedBaselineViewport
-      if (shouldRecomputeFocused) {
-        const viewBox = this.computeEmbedFocusedViewBox()
-        if (!viewBox) {
-          this.notifyEmbedPreviewViewportApplied({
-            reason,
-            requestId,
-            ok: false,
-            error: 'embed-focused-viewport-no-viewbox'
-          })
-          return { ok: false, applied: false, reason }
-        }
-        const applied = this.applyFocusedViewBox(viewBox)
-        if (!applied) {
-          this.notifyEmbedPreviewViewportApplied({
-            reason,
-            requestId,
-            ok: false,
-            error: 'embed-focused-viewport-not-applied'
-          })
-          return { ok: false, applied: false, reason }
-        }
-        this.embedBaselineViewport = this.readEmbedLayoutViewport()
-      } else if (this.embedBaselineViewport) {
-        const { scale, x, y } = this.embedBaselineViewport
-        this.mindMap.view.scale = scale
-        this.mindMap.view.x = x
-        this.mindMap.view.y = y
-        this.mindMap.view.transform()
-        if (typeof this.mindMap.view.emitEvent === 'function') {
-          this.mindMap.view.emitEvent('scale')
-        }
+      // 始终按当前容器尺寸现算视口（计算是"容器尺寸 + 节点 bounds"的确定性函数），
+      // 容器变化后任何来源的定位（按钮/resize/初始化）都能得到正确的长宽比适配
+      const viewBox = this.computeEmbedFocusedViewBox()
+      if (!viewBox) {
+        this.notifyEmbedPreviewViewportApplied({
+          reason,
+          requestId,
+          ok: false,
+          error: 'embed-focused-viewport-no-viewbox'
+        })
+        return { ok: false, applied: false, reason }
+      }
+      const applied = this.applyFocusedViewBox(viewBox)
+      if (!applied) {
+        this.notifyEmbedPreviewViewportApplied({
+          reason,
+          requestId,
+          ok: false,
+          error: 'embed-focused-viewport-not-applied'
+        })
+        return { ok: false, applied: false, reason }
       }
       const viewport = this.readEmbedLayoutViewport()
       if (!viewport) {
@@ -1156,7 +1143,6 @@ export default {
       }
       debugMindMapOpen('applyEmbedFocusedViewport done', {
         reason,
-        recomputedFocused: shouldRecomputeFocused,
         viewport
       })
       this.notifyEmbedPreviewViewportApplied({

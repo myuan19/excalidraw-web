@@ -95,10 +95,10 @@ describe("MindMap SVG thumbnails", () => {
     expect(previewViewportConfig.thumbnailRootCenterLimitRatio).toBe(0.8);
     expect(previewViewportConfig.editorEmbedCenterTowardOthersRatio).toBe(0.55);
     expect(previewViewportConfig.editorEmbedRootCenterLimitRatio).toBe(0.8);
-    expect(previewViewportConfig.thumbnailRootScreenRatioMultiplier).toBe(0.7);
+    expect(previewViewportConfig.thumbnailRootScreenRatioMultiplier).toBe(0.85);
     expect(previewViewportConfig.editorRootScreenRatioMultiplier).toBe(0.1125);
     expect(previewViewportConfig.embedFocusedRootScreenRatioMultiplier).toBe(
-      0.12,
+      0.504,
     );
     expect(previewViewportConfig.editorEmbedSingleRootOnlyVisualScaleFactor).toBe(
       1,

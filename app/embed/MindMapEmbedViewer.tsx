@@ -296,6 +296,8 @@ export default function MindMapEmbedViewer({
           return;
         }
         awaitingPreviewViewportRef.current = false;
+        // 定位完成后置位 suppress，让紧随其后的 mindMapViewState 重校准 defaultViewport
+        suppressViewTracking.current = true;
         setIsAtDefaultView(true);
         return;
       }
@@ -364,6 +366,7 @@ export default function MindMapEmbedViewer({
     if (!container) {
       return;
     }
+    // 容器 resize 时 iframe 内仅同步画布尺寸；视口重算由定位按钮触发
     let lastSize: { w: number; h: number } | null = null;
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];

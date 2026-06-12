@@ -8,52 +8,74 @@ describe("decideRemoteFileRefresh", () => {
       decideRemoteFileRefresh({
         currentFileId: "file-1",
         savedFileId: "file-2",
-        hasUnsavedChanges: false,
+        tabHasUnsavedChanges: false,
       }),
     ).toBe("ignore");
   });
 
-  it("reports conflict before reloading over local edits", () => {
+  it("ignores when current file id is missing", () => {
     expect(
       decideRemoteFileRefresh({
-        currentFileId: "file-1",
+        currentFileId: null,
         savedFileId: "file-1",
-        hasUnsavedChanges: true,
-      }),
-    ).toBe("conflict");
-  });
-
-  it("reloads current clean file when hashes are unavailable", () => {
-    expect(
-      decideRemoteFileRefresh({
-        currentFileId: "file-1",
-        savedFileId: "file-1",
-        hasUnsavedChanges: false,
-      }),
-    ).toBe("reload");
-  });
-
-  it("reloads current clean file when remote hash differs", () => {
-    expect(
-      decideRemoteFileRefresh({
-        currentFileId: "file-1",
-        savedFileId: "file-1",
-        hasUnsavedChanges: false,
-        localServerHash: "old",
-        remoteHash: "new",
-      }),
-    ).toBe("reload");
-  });
-
-  it("ignores current clean file when remote hash matches", () => {
-    expect(
-      decideRemoteFileRefresh({
-        currentFileId: "file-1",
-        savedFileId: "file-1",
-        hasUnsavedChanges: false,
-        localServerHash: "same",
-        remoteHash: "same",
+        tabHasUnsavedChanges: false,
       }),
     ).toBe("ignore");
+  });
+
+  it("reloads when this tab has no unsaved changes", () => {
+    expect(
+      decideRemoteFileRefresh({
+        currentFileId: "file-1",
+        savedFileId: "file-1",
+        tabHasUnsavedChanges: false,
+      }),
+    ).toBe("reload");
+  });
+
+  it("prompts when this tab has unsaved changes", () => {
+    expect(
+      decideRemoteFileRefresh({
+        currentFileId: "file-1",
+        savedFileId: "file-1",
+        tabHasUnsavedChanges: true,
+      }),
+    ).toBe("prompt");
+  });
+
+  it("does not re-prompt for a version the user already dismissed", () => {
+    expect(
+      decideRemoteFileRefresh({
+        currentFileId: "file-1",
+        savedFileId: "file-1",
+        tabHasUnsavedChanges: true,
+        savedSha: "sha-a",
+        dismissedSha: "sha-a",
+      }),
+    ).toBe("ignore");
+  });
+
+  it("prompts again when a newer version arrives after dismissal", () => {
+    expect(
+      decideRemoteFileRefresh({
+        currentFileId: "file-1",
+        savedFileId: "file-1",
+        tabHasUnsavedChanges: true,
+        savedSha: "sha-b",
+        dismissedSha: "sha-a",
+      }),
+    ).toBe("prompt");
+  });
+
+  it("prompts when broadcast carries no sha even after dismissal", () => {
+    expect(
+      decideRemoteFileRefresh({
+        currentFileId: "file-1",
+        savedFileId: "file-1",
+        tabHasUnsavedChanges: true,
+        savedSha: null,
+        dismissedSha: "sha-a",
+      }),
+    ).toBe("prompt");
   });
 });

@@ -9,7 +9,7 @@ import { ForeignObject } from '@svgdotjs/svg.js'
 import merge from 'deepmerge'
 import { lineStyleProps } from '../theme/default'
 
-const isZeroViewportRect = rect => {
+export const isZeroViewportRect = rect => {
   return (
     rect &&
     rect.left === 0 &&
@@ -33,20 +33,38 @@ export const isMindMapDebugEnabled = () => {
   }
 }
 
+// [DEBUG] 统一的库层调试输出（与 web 层 mindmapDevDebug 同一开关）
+export const mindMapDebugLog = (scope, label, data = {}) => {
+  if (!isMindMapDebugEnabled()) return
+  let payload = ''
+  try {
+    payload = JSON.stringify(data)
+  } catch (error) {
+    payload = '[Unserializable]'
+  }
+  console.log(`[DEBUG] ${scope} | ${label} ${payload}`)
+}
+
 export const getSvgNodeVisibleRect = (svgNode, label = '') => {
   const rect = svgNode.node.getBoundingClientRect()
   if (!isZeroViewportRect(rect)) {
     return rect
   }
   const isHidden = svgNode.attr('display') === 'none'
+  mindMapDebugLog('mindmap-text-edit', 'getSvgNodeVisibleRect zero rect', {
+    label,
+    hiddenBeforeMeasure: isHidden,
+    connected: !!(svgNode.node && svgNode.node.isConnected),
+    canShow: typeof svgNode.show === 'function'
+  })
   if (!isHidden || typeof svgNode.show !== 'function') {
     return rect
   }
   svgNode.show()
   const visibleRect = svgNode.node.getBoundingClientRect()
   svgNode.hide()
-  if (isZeroViewportRect(visibleRect) && isMindMapDebugEnabled()) {
-    console.log('[DEBUG] mindmap-text-edit | invalid text rect', {
+  if (isZeroViewportRect(visibleRect)) {
+    mindMapDebugLog('mindmap-text-edit', 'invalid text rect after fallback', {
       label,
       hiddenBeforeMeasure: isHidden
     })

@@ -29,9 +29,19 @@ import {
   resolveAutoSaveArchiveLabel,
 } from "../../data/autoSaveSession";
 import { installExecutor, requestSaveAndWait } from "../../data/saveQueue";
+import {
+  clearTabFileDirty,
+  markTabFileDirty,
+} from "../../data/tabFileDirtyState";
 
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { SaveToServerOptions, SaveToServerSource, SceneData } from "../../hooks/types";
+
+/** 最近一次服务器保存的结果元信息，供 saveQueue executor 透传给跨页广播 */
+type ServerSaveMeta = {
+  skipped: boolean;
+  contentSha256: string | null;
+};
 
 const logHook = createLogger({ module: "hook.fileSave" });
 const logStash = createLogger({ module: "stash" });
@@ -64,6 +74,7 @@ export function useForkFileSave(opts: {
   >(() => Promise.resolve(false));
   const visibilitySaveInFlightRef = useRef(false);
   const localPersistGenRef = useRef(0);
+  const lastServerSaveMetaRef = useRef<ServerSaveMeta | null>(null);
 
   const updateDraftHashDebouncedRef = useRef(
     debounce(
@@ -81,10 +92,12 @@ export function useForkFileSave(opts: {
 
         const baseline = FileSyncState.getBaselineHash(fileId);
         if (!baseline || h === baseline) {
+          clearTabFileDirty(fileId);
           localPersistGenRef.current += 1;
           return;
         }
 
+        markTabFileDirty(fileId);
         FileSyncState.setLocalEditTime(fileId);
         if (isLocalDraftFileId(fileId)) {
           const displayName = sceneData.appState?.name?.trim();
@@ -222,6 +235,7 @@ export function useForkFileSave(opts: {
       const h = hashSceneSnapshot(sceneData);
       const baseline = FileSyncState.getBaselineHash(fid);
       if (baseline && h === baseline) {
+        clearTabFileDirty(fid);
         if (source === "toolbar" || source === "hotkey") {
           setForkSaveHint("内容与最新提交一致，无需保存");
         }
@@ -269,9 +283,14 @@ export function useForkFileSave(opts: {
         }
         updateDraftHashDebouncedRef.current.cancel();
         localPersistGenRef.current += 1;
+        lastServerSaveMetaRef.current = {
+          skipped: !!result?.skipped,
+          contentSha256: result?.content_sha256 ?? null,
+        };
         const hAfter = hashSceneSnapshot(getSceneData() ?? sceneData);
         FileSyncState.alignHashes(fid, hAfter);
         FileSyncState.clearLocalEditTime(fid);
+        clearTabFileDirty(fid);
         logHash.debug(
           `saveToServer done file=${fid.slice(0, 8)}, baseline=draft=${hAfter.slice(0, 8)}, serverSha=${result?.content_sha256?.slice(0, 8) ?? "none"}`,
         );
@@ -343,9 +362,17 @@ export function useForkFileSave(opts: {
 
   useEffect(() => {
     return installExecutor(async (req) => {
+      lastServerSaveMetaRef.current = null;
       const result = await saveCurrentFileToServer(req);
       const fid = getFileIdFromHash();
-      return { saved: result, fileId: fid ?? undefined };
+      // 断言绕过 TS 对 await 之后 ref.current 的过度窄化（保存函数内部会写入）
+      const meta = lastServerSaveMetaRef.current as ServerSaveMeta | null;
+      return {
+        saved: result,
+        fileId: fid ?? undefined,
+        skipped: meta?.skipped,
+        contentSha256: meta?.contentSha256,
+      };
     });
   }, [saveCurrentFileToServer]);
 

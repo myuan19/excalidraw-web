@@ -319,21 +319,20 @@ const EmbedCanvas = ({
       lastKnownSize.current = rounded;
       if (!prev) return;
 
+      // 仅挂载初期（初始布局抖动窗口）自动 refit；之后容器 resize 不重新定位，
+      // 重新计算只由定位按钮触发
       const elapsed = Date.now() - mountTime;
+      const willRefit =
+        elapsed < 5000 && defaultViewportSource.current === "preview-range";
       embedDebug("container resized", {
         from: prev,
         to: rounded,
         elapsed,
         defaultViewportSource: defaultViewportSource.current,
-        willRefit:
-          elapsed < 5000 &&
-          defaultViewportSource.current === "preview-range",
+        willRefit,
       });
 
-      if (
-        elapsed < 5000 &&
-        defaultViewportSource.current === "preview-range"
-      ) {
+      if (willRefit) {
         if (refitTimer) clearTimeout(refitTimer);
         refitTimer = setTimeout(() => {
           refitTimer = null;

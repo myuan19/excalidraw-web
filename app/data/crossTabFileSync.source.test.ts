@@ -26,16 +26,20 @@ describe("cross-tab file sync source contract", () => {
     expect(fileListSource).toContain('from "../data/crossTabFileSync"');
   });
 
-  it("active editors subscribe to cross-tab saves through the shared policy", () => {
+  it("active editors subscribe to cross-tab saves through the shared hook", () => {
     const excalidrawShell = read("editors/excalidraw/EditorShell.tsx");
     const mindMapShell = read("editors/mindmap/MindMapEditorShell.tsx");
+    const remoteRefreshHook = read("hooks/useRemoteFileRefresh.ts");
     const serverSyncSource = read("data/ServerSync.ts");
 
-    expect(excalidrawShell).toContain("onCrossTabFileSaved");
-    expect(excalidrawShell).toContain("decideRemoteFileRefresh");
+    expect(remoteRefreshHook).toContain("onCrossTabFileSaved");
+    expect(remoteRefreshHook).toContain("decideRemoteFileRefresh");
+    expect(remoteRefreshHook).toContain("isTabFileDirty");
+    expect(excalidrawShell).toContain("useRemoteFileRefresh");
+    expect(excalidrawShell).toContain("RemoteUpdateConfirmDialog");
     expect(excalidrawShell).toContain("ServerSync.getFile(fid, { force: true })");
-    expect(mindMapShell).toContain("onCrossTabFileSaved");
-    expect(mindMapShell).toContain("decideRemoteFileRefresh");
+    expect(mindMapShell).toContain("useRemoteFileRefresh");
+    expect(mindMapShell).toContain("RemoteUpdateConfirmDialog");
     expect(mindMapShell).toContain(
       "ServerSync.getFile(fileId, { force: true })",
     );

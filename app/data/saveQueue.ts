@@ -45,8 +45,11 @@ export interface SaveRequest {
 
 export interface SaveResult {
   saved: boolean;
+  /** 服务器内容去重命中（内容没变），不广播跨页刷新 */
   skipped?: boolean;
   fileId?: string;
+  /** 服务器返回的 content_sha256，随广播下发 */
+  contentSha256?: string | null;
 }
 
 type SaveExecutor = (req: SaveRequest) => Promise<SaveResult>;
@@ -95,8 +98,13 @@ async function drain(): Promise<SaveResult> {
       result = await executor!(req);
       log.info("save done", { source: req.source, saved: result.saved });
 
-      if (result.saved && result.fileId) {
-        broadcastFileSaved(result.fileId);
+      if (result.saved && result.fileId && !result.skipped) {
+        log.info("broadcast file-saved", {
+          source: req.source,
+          fileId8: result.fileId.slice(0, 8),
+          sha8: result.contentSha256?.slice(0, 8) ?? null,
+        });
+        broadcastFileSaved(result.fileId, result.contentSha256);
       }
     } catch (e) {
       log.debug("save failed", e);

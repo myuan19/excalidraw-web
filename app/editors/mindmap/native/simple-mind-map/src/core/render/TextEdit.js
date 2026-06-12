@@ -12,7 +12,8 @@ import {
   loadImage,
   fitPastedImageSizeToNodeText,
   handleTextEditSaveShortcut,
-  getSvgNodeVisibleRect
+  getSvgNodeVisibleRect,
+  isZeroViewportRect
 } from '../../utils'
 import {
   ERROR_TYPES,
@@ -554,6 +555,9 @@ export default class TextEdit {
       this.currentNode._textData.node,
       'TextEdit.updateTextEditNode'
     )
+    // 整树渲染中间态下文本元素可能短暂脱离 DOM，测出全 0 矩形；
+    // 此时跳过本次更新，避免编辑框瞬移到页面左上角，下一次更新会自然校正
+    if (isZeroViewportRect(rect)) return
     this.textEditNode.style.minWidth =
       rect.width + this.textNodePaddingX * 2 + 'px'
     this.textEditNode.style.minHeight =

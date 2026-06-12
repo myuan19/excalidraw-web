@@ -1,5 +1,5 @@
 <template>
-  <Sidebar ref="sidebar" :title="$t('note.title')">
+  <Sidebar :title="$t('note.title')" panelKey="noteSidebar">
     <div class="noteContentWrap" ref="noteContentWrap"></div>
   </Sidebar>
 </template>
@@ -55,15 +55,6 @@ export default {
       isDark: state => state.localConfig.isDark,
       activeSidebar: state => state.activeSidebar
     })
-  },
-  watch: {
-    activeSidebar(val) {
-      if (val === 'noteSidebar') {
-        this.$refs.sidebar.show = true
-      } else {
-        this.$refs.sidebar.show = false
-      }
-    }
   },
   created() {
     this.$bus.$on('node_active', this.onNodeActive)

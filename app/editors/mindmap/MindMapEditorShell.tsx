@@ -5,8 +5,8 @@ import {
   isAutoSaveEligibleForCurrentFile,
   registerAutoSaveTrigger,
 } from "../../data/autoSaveSession";
-import { onCrossTabFileSaved } from "../../data/crossTabFileSync";
-import { decideRemoteFileRefresh } from "../../data/remoteFileRefreshPolicy";
+import { useRemoteFileRefresh } from "../../hooks/useRemoteFileRefresh";
+import { clearTabFileDirty } from "../../data/tabFileDirtyState";
 import { requestSave } from "../../data/saveQueue";
 import { SettingsPanel } from "../../components/SettingsPanel";
 import { ArchivePanel } from "../../components/ArchivePanel";
@@ -18,6 +18,7 @@ import { APP_SHELL_GO_HOME } from "../../shell/Sidebar";
 import { buildViewHash } from "../../shell/useAppView";
 import { EmbedTokenManager } from "../../components/EmbedTokenManager";
 import { LocalDraftLossConfirmDialog } from "../../components/LocalDraftLossConfirmDialog";
+import { RemoteUpdateConfirmDialog } from "../../components/RemoteUpdateConfirmDialog";
 import { SaveNewDocumentDialog } from "../../components/PromoteTempFileDialog";
 import { DEFAULT_DOCUMENT_DISPLAY_NAME } from "../../data/defaultDocumentName";
 import { useLocalDraftLossConfirm } from "../../hooks/useLocalDraftLossConfirm";
@@ -1306,6 +1307,7 @@ const MindMapEditorShell = () => {
     publishMindMapDataToNative(data, opts?.reason ?? "history-restore");
     if (opts?.clearLocalCache ?? true) {
       FileSyncState.clearLocalCache(fileId);
+      clearTabFileDirty(fileId);
     } else {
       recordMindMapPersisted(fileId, document, {
         serverContentSha256: serverFile.content_sha256 ?? undefined,
@@ -1319,46 +1321,19 @@ const MindMapEditorShell = () => {
     window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
   }, [fileId, publishMindMapDataToNative]);
 
-  useEffect(() => {
-    if (!fileId || isLocalDraftFileId(fileId)) {
-      return;
-    }
-    let reloadInFlight = false;
-    return onCrossTabFileSaved((savedFileId) => {
-      const currentFileId = getFileIdFromHash();
-      const decision = decideRemoteFileRefresh({
-        currentFileId,
-        savedFileId,
-        hasUnsavedChanges: FileSyncState.hasUnsavedChanges(fileId),
-        localServerHash: FileSyncState.getServerHash(fileId),
-      });
-      if (decision === "ignore") {
-        return;
-      }
-      if (decision === "conflict") {
-        setStatus("远端已有新版本；当前有未保存修改，未自动覆盖");
-        return;
-      }
-      if (reloadInFlight) {
-        return;
-      }
-      reloadInFlight = true;
-      void reloadMindMapFromServer({
+  const reloadFromCrossTabSave = useCallback(
+    () =>
+      reloadMindMapFromServer({
         clearLocalCache: false,
         reason: "cross-tab-file-saved",
         status: "已同步远端更新",
-      })
-        .catch((error) => {
-          warnMindMapBridge("cross-tab reload failed", {
-            fileId8: fileId.slice(0, 8),
-            message: error?.message || String(error),
-          });
-        })
-        .finally(() => {
-          reloadInFlight = false;
-        });
-    });
-  }, [fileId, reloadMindMapFromServer]);
+      }),
+    [reloadMindMapFromServer],
+  );
+  const remoteRefresh = useRemoteFileRefresh({
+    fileId,
+    reload: reloadFromCrossTabSave,
+  });
 
   useEffect(() => {
     const onSave = () => requestSave({ source: "sidebar" });
@@ -1662,6 +1637,12 @@ const MindMapEditorShell = () => {
         busy={mindMapSaving}
         onConfirm={() => void localDraftLoss.confirmLoss()}
         onCancel={localDraftLoss.dismiss}
+      />
+      <RemoteUpdateConfirmDialog
+        open={remoteRefresh.promptOpen}
+        documentName={fileName}
+        onReload={remoteRefresh.confirmReload}
+        onKeep={remoteRefresh.dismissPrompt}
       />
       <SaveNewDocumentDialog
         open={saveNewDoc.saveOpen}

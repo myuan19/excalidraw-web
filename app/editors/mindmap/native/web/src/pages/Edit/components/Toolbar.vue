@@ -19,7 +19,18 @@
             @click.native="popoverShow = false"
           ></ToolbarNodeBtnList>
           <div slot="reference" class="toolbarBtn">
-            <span class="icon iconfont icongongshi"></span>
+            <span class="icon" aria-hidden="true">
+              <svg
+                viewBox="0 0 24 24"
+                width="16"
+                height="16"
+                fill="currentColor"
+              >
+                <circle cx="5" cy="12" r="2.2" />
+                <circle cx="12" cy="12" r="2.2" />
+                <circle cx="19" cy="12" r="2.2" />
+              </svg>
+            </span>
             <span class="text">{{ $t('toolbar.more') }}</span>
           </div>
         </el-popover>

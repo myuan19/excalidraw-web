@@ -27,6 +27,10 @@ import {
 } from "../../data/autoSaveSession";
 import { isAutoSaveOnExitActive } from "../../data/appSettings";
 import { installExecutor, requestSaveAndWait } from "../../data/saveQueue";
+import {
+  clearTabFileDirty,
+  markTabFileDirty,
+} from "../../data/tabFileDirtyState";
 import { matchesMindMapPersistedSnapshot } from "./mindMapPersistedSnapshot";
 import { recordMindMapPersisted } from "./mindMapPersistCoordinator";
 import {
@@ -52,6 +56,12 @@ export type MindMapNativeSaveResult = {
 };
 
 type RequestNativeMindMapData = () => Promise<MindMapNativeSaveResult | null>;
+
+/** 最近一次服务器保存的结果元信息，供 saveQueue executor 透传给跨页广播 */
+type ServerSaveMeta = {
+  skipped: boolean;
+  contentSha256: string | null;
+};
 
 const MINDMAP_SAVE_TIMEOUT_MS = 8000;
 
@@ -129,6 +139,7 @@ export function useMindMapFileSave(opts: {
   const saveToServerRef = useRef<
     (saveOpts?: SaveToServerOptions) => Promise<boolean>
   >(() => Promise.resolve(false));
+  const lastServerSaveMetaRef = useRef<ServerSaveMeta | null>(null);
 
   const updateDraftHashDebouncedRef = useRef(
     debounce((fileId: string, getDocument: () => MindMapSaveDocument | null) => {
@@ -165,10 +176,12 @@ export function useMindMapFileSave(opts: {
         sampleNode: findFirstRichMindMapNodeSummary(document.data),
       });
       if (state.modified) {
+        markTabFileDirty(fileId);
         FileSyncState.setLocalCache(fileId, toMindMapLocalCacheRecord(document));
       }
       FileSyncState.setDraftHash(fileId, hash);
       if (!state.modified) {
+        clearTabFileDirty(fileId);
         FileSyncState.clearLocalEditTime(fileId);
         if (isLocalDraftFileId(fileId)) {
           FileSyncState.clearLocalCache(fileId);
@@ -216,6 +229,7 @@ export function useMindMapFileSave(opts: {
           contentHash8: hashDocumentSnapshot(document).slice(0, 8),
         });
         updateDraftHashDebouncedRef.current.cancel();
+        clearTabFileDirty(fileId);
         FileSyncState.alignHashes(fileId, hashDocumentSnapshot(document));
         FileSyncState.clearLocalEditTime(fileId);
         setStatus("");
@@ -226,9 +240,11 @@ export function useMindMapFileSave(opts: {
           fileId8: fileId.slice(0, 8),
           contentHash8: hashDocumentSnapshot(document).slice(0, 8),
         });
+        clearTabFileDirty(fileId);
         setStatus("");
         return;
       }
+      markTabFileDirty(fileId);
       debugMindMapPersist("markDocumentChanged branch: mark-draft (debounce 450ms)", {
         fileId8: fileId.slice(0, 8),
         contentHash8: hashDocumentSnapshot(document).slice(0, 8),
@@ -249,6 +265,7 @@ export function useMindMapFileSave(opts: {
       notifyEdit();
       return;
     }
+    markTabFileDirty(fileId);
     const marked = markMindMapNativeDirtyPending(fileId);
     debugMindMapPersist("markNativeDocumentDirty", {
       fileId8: fileId.slice(0, 8),
@@ -345,6 +362,7 @@ export function useMindMapFileSave(opts: {
           fileId8: fileId.slice(0, 8),
           source,
         });
+        clearTabFileDirty(fileId);
         if (source === "toolbar" || source === "hotkey") {
           setMindMapSaveHint("内容与最新提交一致，无需保存");
           setStatus("已保存");
@@ -375,6 +393,10 @@ export function useMindMapFileSave(opts: {
           },
         );
         updateDraftHashDebouncedRef.current.cancel();
+        lastServerSaveMetaRef.current = {
+          skipped: !!result?.skipped,
+          contentSha256: result?.content_sha256 ?? null,
+        };
         recordMindMapPersisted(fileId, document, {
           serverContentSha256: result?.content_sha256,
         });
@@ -448,9 +470,17 @@ export function useMindMapFileSave(opts: {
 
   useEffect(() => {
     return installExecutor(async (req) => {
+      lastServerSaveMetaRef.current = null;
       const result = await saveCurrentFileToServer(req);
       const fid = getFileIdFromHash();
-      return { saved: result, fileId: fid ?? undefined };
+      // 断言绕过 TS 对 await 之后 ref.current 的过度窄化（保存函数内部会写入）
+      const meta = lastServerSaveMetaRef.current as ServerSaveMeta | null;
+      return {
+        saved: result,
+        fileId: fid ?? undefined,
+        skipped: meta?.skipped,
+        contentSha256: meta?.contentSha256,
+      };
     });
   }, [saveCurrentFileToServer]);
 
