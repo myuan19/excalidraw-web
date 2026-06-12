@@ -79,9 +79,27 @@ function bindLinkModifierStateClass() {
   html.__smmLinkModifierBound = true
 }
 
+/** 命中富文本容器内的链接元素，否则返回 null */
+function findRichTextAnchor(target) {
+  const anchor =
+    target && target.closest ? target.closest('a[href]') : null
+  if (!anchor || !anchor.closest(RICH_TEXT_CONTAINER_SELECTOR)) {
+    return null
+  }
+  return anchor
+}
+
+/** mousedown 与 mouseup 间允许的指针位移（px），超过视为拖拽不打开 */
+const LINK_CLICK_MOVE_TOLERANCE = 4
+
 /**
  * 富文本链接统一交互：任何状态（展示/文本编辑/只读嵌入）都仅 Ctrl/Cmd+单击打开，
  * 普通点击与普通文本无差异（事件照常冒泡：节点选中、双击进编辑不受影响）。
+ *
+ * 用 mousedown 记录 + mouseup 完成，而非 click：展示态下 mousedown 激活节点
+ * 触发重渲染，富文本 DOM 被整体替换，click 的 target 不再是 <a>，单击会失效
+ * （双击时第二次按下节点已激活才侥幸命中）。mousedown 时 DOM 尚未替换，可靠。
+ *
  * 绑定在 document 捕获阶段：文本编辑框挂在 body 下且自身 stopPropagation，
  * 绑容器元素会漏掉编辑态的链接。
  */
@@ -90,21 +108,54 @@ export function bindRichTextLinkClicks() {
     return
   }
   bindLinkModifierStateClass()
-  const openFromEvent = event => {
-    const anchor = event.target && event.target.closest
-      ? event.target.closest('a[href]')
-      : null
-    if (!anchor || !anchor.closest(RICH_TEXT_CONTAINER_SELECTOR)) {
-      return
-    }
-    // 始终拦截原生 <a> 的导航，打开行为统一受控
-    event.preventDefault()
-    if (!(event.ctrlKey || event.metaKey)) {
-      return
-    }
-    event.stopPropagation()
-    openUrlInNewTab(anchor.getAttribute('href') || anchor.href)
-  }
-  document.addEventListener('click', openFromEvent, true)
+  let pendingLink = null
+  document.addEventListener(
+    'mousedown',
+    event => {
+      pendingLink = null
+      if (event.button !== 0 || !(event.ctrlKey || event.metaKey)) {
+        return
+      }
+      const anchor = findRichTextAnchor(event.target)
+      if (!anchor) {
+        return
+      }
+      pendingLink = {
+        href: anchor.getAttribute('href') || anchor.href,
+        x: event.clientX,
+        y: event.clientY
+      }
+    },
+    true
+  )
+  document.addEventListener(
+    'mouseup',
+    event => {
+      if (!pendingLink) {
+        return
+      }
+      const { href, x, y } = pendingLink
+      pendingLink = null
+      if (
+        !(event.ctrlKey || event.metaKey) ||
+        Math.abs(event.clientX - x) > LINK_CLICK_MOVE_TOLERANCE ||
+        Math.abs(event.clientY - y) > LINK_CLICK_MOVE_TOLERANCE
+      ) {
+        return
+      }
+      openUrlInNewTab(href)
+    },
+    true
+  )
+  // 拦截原生 <a> 导航（编辑态 DOM 稳定时 click 仍可能命中锚点），打开行为统一受控
+  document.addEventListener(
+    'click',
+    event => {
+      if (findRichTextAnchor(event.target)) {
+        event.preventDefault()
+      }
+    },
+    true
+  )
   document.__smmRichTextLinkBound = true
 }
