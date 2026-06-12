@@ -61,9 +61,18 @@ describe("MindMap native source contract", () => {
     );
 
     expect(utilsSource).toContain("fitPastedImageSizeToNodeText");
-    expect(utilsSource).toContain("Math.min(textWidth, sixCharWidth)");
+    // 宽度跟随节点文本，且有不小于固定底线的下限与上限
+    expect(utilsSource).toContain("PASTED_IMAGE_MIN_WIDTH");
+    expect(utilsSource).toContain("PASTED_IMAGE_MAX_WIDTH");
+    expect(utilsSource).toContain(
+      "Math.max(sixCharWidth, PASTED_IMAGE_MIN_WIDTH)",
+    );
     expect(
       pasteSources.match(/const imageSize = fitPastedImageSizeToNodeText/g),
+    ).toHaveLength(3);
+    // 粘贴尺寸为自适应结果，展示时跳过主题 imgMax 钳制
+    expect(
+      pasteSources.match(/custom: imageSize\.custom === true/g),
     ).toHaveLength(3);
   });
 

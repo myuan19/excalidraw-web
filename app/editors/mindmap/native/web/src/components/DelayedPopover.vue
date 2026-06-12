@@ -5,7 +5,6 @@
     @mouseleave="onMouseLeave"
     @click.stop="onReferenceClick"
   >
-    <slot name="reference"></slot>
     <el-popover
       ref="popover"
       :placement="placement"
@@ -16,6 +15,10 @@
       @show="onPopoverShow"
       @hide="onPopoverHide"
     >
+      <!-- reference 必须放进 el-popover 的 reference 插槽，popper 才有定位锚点 -->
+      <template slot="reference">
+        <slot name="reference"></slot>
+      </template>
       <div class="delayedPopoverContent" @click="onContentClick">
         <slot></slot>
       </div>

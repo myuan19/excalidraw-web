@@ -1,16 +1,12 @@
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo } from "react";
 
 import { buildEmbedEditUrl } from "../data/embedDocument";
 import { editorRegistry } from "../editors";
 import { getLazyEmbedViewer } from "../editors/lazyViews";
-import {
-  formatIfNoneMatchHeader,
-  getEmbedDocumentCache,
-  setEmbedDocumentCache,
-} from "./embedDocumentCache";
 import { logEditorOpenPhase } from "../lib/editorOpenPhases";
-import { embedDebug, embedMark, embedMeasure } from "./embedDebug";
+import { embedDebug, embedMark } from "./embedDebug";
 import { getEmbedBootstrap } from "./embedMode";
+import { useEmbedDocument } from "./useEmbedDocument";
 
 function EmbedChunkFallback() {
   useEffect(() => {
@@ -59,10 +55,7 @@ export default function EmbedApp() {
   const kind = editorRegistry.resolveKind(bootstrap.kind);
   const plugin = editorRegistry.getByKind(kind);
   const LazyViewer = useMemo(() => getLazyEmbedViewer(plugin), [plugin]);
-  const [data, setData] = useState<unknown>(() =>
-    bootstrap.dataUrl ? null : window.__EXCALIDRAW_EMBED_DATA__ ?? null,
-  );
-  const [error, setError] = useState<string | null>(null);
+  const { data, error } = useEmbedDocument(bootstrap);
   const editUrl = buildEmbedEditUrl(bootstrap.fileId, kind);
 
   useEffect(() => {
@@ -80,87 +73,15 @@ export default function EmbedApp() {
     });
   }, [bootstrap, kind]);
 
-  useEffect(() => {
-    if (!bootstrap.dataUrl) {
-      return;
-    }
-    let disposed = false;
-    async function loadData() {
-      try {
-        embedMark("payload-fetch-start");
-        embedDebug("payload fetch start", {
-          kind,
-          dataUrl: bootstrap.dataUrl,
-        });
-        const fileId = bootstrap.fileId ?? "";
-        const cached = fileId ? getEmbedDocumentCache(fileId) : null;
-        const headers: Record<string, string> = { Accept: "application/json" };
-        if (cached?.etag) {
-          headers["If-None-Match"] = formatIfNoneMatchHeader(cached.etag);
-        }
-        const response = await fetch(bootstrap.dataUrl!, {
-          headers,
-          cache: "no-store",
-        });
-        embedDebug("payload fetch response", {
-          kind,
-          dataUrl: bootstrap.dataUrl,
-          ok: response.ok,
-          status: response.status,
-          contentType: response.headers.get("content-type"),
-        });
-        if (response.status === 304) {
-          if (!cached?.payload) {
-            throw new Error("Embed data unchanged but no session cache");
-          }
-          if (disposed) {
-            return;
-          }
-          embedMark("payload-fetched");
-          embedMeasure("payload-fetch", "payload-fetch-start", "payload-fetched");
-          embedDebug("payload 304 reused cache", { kind, fileId: fileId.slice(0, 8) });
-          setData(cached.payload.data ?? null);
-          return;
-        }
-        if (!response.ok) {
-          throw new Error(`Embed data request failed: ${response.status}`);
-        }
-        const payload = await response.json();
-        if (disposed) {
-          return;
-        }
-        const etag =
-          response.headers.get("etag")?.replace(/^"|"$/g, "") ?? null;
-        if (fileId && etag) {
-          setEmbedDocumentCache(fileId, etag, {
-            data: payload?.data ?? null,
-          });
-        }
-        embedMark("payload-fetched");
-        embedMeasure("payload-fetch", "payload-fetch-start", "payload-fetched");
-        embedDebug("payload fetched", {
-          kind,
-          hasData: payload?.data != null,
-          payloadSummary: summarizePayload(payload),
-        });
-        setData(payload?.data ?? null);
-      } catch (err) {
-        if (disposed) {
-          return;
-        }
-        const message = err instanceof Error ? err.message : String(err);
-        embedDebug("payload fetch failed", {
-          message,
-          stack: err instanceof Error ? err.stack : null,
-        });
-        setError(message);
-      }
-    }
-    void loadData();
-    return () => {
-      disposed = true;
-    };
-  }, [bootstrap.dataUrl, kind]);
+  // 稳定引用：仅 data 变化时才换新对象，viewer 以 prop 引用变化感知内容更新。
+  // data 未加载时跳过（prepareEmbedData 对 null 会抛错）
+  const preparedData = useMemo(
+    () =>
+      data == null || !plugin?.prepareEmbedData
+        ? data
+        : plugin.prepareEmbedData(data),
+    [plugin, data],
+  );
 
   if (error) {
     embedDebug("render error", { message: error });
@@ -179,10 +100,6 @@ export default function EmbedApp() {
   if (!LazyViewer) {
     return <EmbedError message={`暂不支持嵌入预览：${kind}`} />;
   }
-
-  const preparedData = plugin?.prepareEmbedData
-    ? plugin.prepareEmbedData(data)
-    : data;
 
   embedDebug("render viewer", {
     kind,

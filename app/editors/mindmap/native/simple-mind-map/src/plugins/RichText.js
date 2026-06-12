@@ -686,7 +686,8 @@ class RichText {
                   url: imgData.url,
                   title: '',
                   width: imageSize.width,
-                  height: imageSize.height
+                  height: imageSize.height,
+                  custom: imageSize.custom === true
                 })
                 this.restoreSelection(range)
               })
@@ -721,11 +722,15 @@ class RichText {
 
   updateSelectionRange(range) {
     this.range = null
+    // range 为 null 是失焦（如点击工具栏/弹层），保留 lastRange 供格式化回退
     if (!range) return
     this.pasteUseRange = range
     if (range.length > 0) {
       this.range = range
       this.lastRange = range
+    } else {
+      // 用户主动把选区折叠成光标，旧选区作废，避免后续格式化命中过期范围
+      this.lastRange = null
     }
   }
 

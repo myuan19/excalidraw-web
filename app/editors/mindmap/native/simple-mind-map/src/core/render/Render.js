@@ -1568,7 +1568,8 @@ class Render {
                   url: imgData.url,
                   title: '',
                   width: imageSize.width,
-                  height: imageSize.height
+                  height: imageSize.height,
+                  custom: imageSize.custom === true
                 })
               })
             }

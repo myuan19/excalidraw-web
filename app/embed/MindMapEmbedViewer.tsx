@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   buildMindMapEmbedBridgePayload,
@@ -125,7 +125,8 @@ export default function MindMapEmbedViewer({
       ? `/embed/mind-map/index.html?${qs}`
       : "/embed/mind-map/index.html";
   })();
-  const mindMapData = getMindMapEmbedData(data);
+  // 引用随 data 变化：下方 effect 据此识别轮询带来的内容更新
+  const mindMapData = useMemo(() => getMindMapEmbedData(data), [data]);
   embedDebug("mindmap viewer data ready", {
     rootText: mindMapData.root?.data?.text ?? null,
     rootChildren: mindMapData.root?.children?.length ?? 0,
@@ -236,8 +237,29 @@ export default function MindMapEmbedViewer({
     applyMindMapPreviewRange();
   }, [applyMindMapPreviewRange, isAtDefaultView, pinState.isPinned]);
 
+  // 数据变化时更新待发送 payload；首帧之后（轮询刷新）直接推送给 iframe 热更新。
+  // setFullData 指纹比对在 iframe 侧兜底去重；payload 不含 view，当前视口不受影响。
+  const isFirstDataRef = useRef(true);
   useEffect(() => {
-    pendingInitRef.current = buildMindMapEmbedBridgePayload(mindMapData);
+    const payload = buildMindMapEmbedBridgePayload(mindMapData);
+    pendingInitRef.current = payload;
+    if (isFirstDataRef.current) {
+      isFirstDataRef.current = false;
+      return;
+    }
+    embedDebug("mindmap push refreshed data", {
+      rootChildren: mindMapData.root?.children?.length ?? 0,
+      appInited: isAppInitedRef.current,
+    });
+    // 未初始化完成时消息也安全：bridgeState 会先更新，初始化路径取到的就是最新数据
+    iframeRef.current?.contentWindow?.postMessage(
+      {
+        source: "excalidraw-web",
+        type: "setMindMapData",
+        payload,
+      },
+      window.location.origin,
+    );
   }, [mindMapData]);
 
   useEffect(() => {

@@ -210,6 +210,11 @@ function getNodeSixCharWidth(node) {
   return (Number.isFinite(fontSize) && fontSize > 0 ? fontSize : 16) * 6
 }
 
+// 粘贴图片的展示尺寸边界：宽度跟随节点文本动态调整，但不小于下限、不超过上限
+const PASTED_IMAGE_MIN_WIDTH = 160
+const PASTED_IMAGE_MAX_WIDTH = 480
+const PASTED_IMAGE_MAX_HEIGHT = 320
+
 export const fitPastedImageSizeToNodeText = (node, size = {}) => {
   const width = Number(size.width)
   const height = Number(size.height)
@@ -223,20 +228,21 @@ export const fitPastedImageSizeToNodeText = (node, size = {}) => {
   }
   const textWidth = getNodeRenderedTextWidth(node)
   const sixCharWidth = getNodeSixCharWidth(node)
-  const targetWidth =
-    textWidth > 0 ? Math.min(textWidth, sixCharWidth) : sixCharWidth
-  if (
-    !Number.isFinite(targetWidth) ||
-    targetWidth <= 0 ||
-    width >= targetWidth
-  ) {
-    return { width, height }
-  }
-  const ratio = targetWidth / width
-  return {
-    width: Math.round(targetWidth),
-    height: Math.round(height * ratio)
-  }
+  // 目标宽度跟随节点文本宽度，下限随节点字号且不小于固定底线
+  const minWidth = Math.max(sixCharWidth, PASTED_IMAGE_MIN_WIDTH)
+  const targetWidth = Math.min(
+    Math.max(textWidth, minWidth),
+    PASTED_IMAGE_MAX_WIDTH
+  )
+  // 只缩小不放大（避免小图被拉伸模糊），同时限制高度防止竖图撑爆节点
+  const [w, h] = resizeImgSize(
+    width,
+    height,
+    targetWidth,
+    PASTED_IMAGE_MAX_HEIGHT
+  )
+  // custom: 展示时跳过主题 imgMaxWidth/imgMaxHeight 钳制，按计算结果显示
+  return { width: Math.round(w), height: Math.round(h), custom: true }
 }
 
 export const isSaveShortcut = e => {

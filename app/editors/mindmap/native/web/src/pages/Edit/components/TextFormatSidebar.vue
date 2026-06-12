@@ -264,11 +264,15 @@ export default {
     },
 
     formatRichText(config = {}, clear = false) {
-      if (!this.mindMap || !this.mindMap.richText) return
-      if (this.hasRange) {
-        this.mindMap.richText.formatText(config, clear)
+      const richText = this.mindMap && this.mindMap.richText
+      if (!richText) return
+      // 不依赖本地 hasRange：点击弹层（如颜色选择器）会让编辑器失焦、选区事件已置 false，
+      // 但插件仍保留 lastRange；只要编辑中且有可用选区，就只格式化选中部分
+      const range = richText.range || richText.lastRange
+      if (richText.showTextEdit && range && range.length > 0) {
+        richText.formatText(config, clear)
       } else {
-        this.mindMap.richText.formatActiveNodeText(config, clear)
+        richText.formatActiveNodeText(config, clear)
       }
     },
 

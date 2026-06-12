@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  CaptureUpdateAction,
   Excalidraw,
   ExcalidrawAPIProvider,
   useExcalidrawAPI,
@@ -382,6 +383,26 @@ const EmbedCanvas = ({
     isAtDefaultViewRef.current = isAtDefaultView;
   }, [isAtDefaultView]);
 
+  // 内容热更新：数据轮询拿到新版本时静默替换元素与文件，不动当前视口
+  const appliedDataRef = useRef(initialData);
+  useEffect(() => {
+    if (!api || appliedDataRef.current === initialData) {
+      return;
+    }
+    appliedDataRef.current = initialData;
+    embedDebug("apply refreshed scene", {
+      elements: initialData?.elements?.length ?? 0,
+      files: initialData?.files ? Object.keys(initialData.files).length : 0,
+    });
+    api.updateScene({
+      elements: initialData?.elements ?? [],
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+    if (initialData?.files && Object.keys(initialData.files).length) {
+      api.addFiles(Object.values(initialData.files));
+    }
+  }, [api, initialData]);
+
   const handleResetView = useCallback(() => {
     embedDebug("reset view clicked", {
       isAtDefaultView,
@@ -549,7 +570,8 @@ export default function ExcalidrawEmbedViewer({
     data: summarizeRaw(data),
     editUrl,
   });
-  const initialData = getEmbedInitialData(data);
+  // 引用随 data 变化：EmbedCanvas 据此识别轮询带来的内容更新
+  const initialData = useMemo(() => getEmbedInitialData(data), [data]);
   const theme =
     (initialData?.appState as any)?.theme === "dark" ? THEME.DARK : THEME.LIGHT;
   embedDebug("excalidraw viewer initial data ready", {
