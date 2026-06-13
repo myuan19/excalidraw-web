@@ -368,10 +368,7 @@ class NodeImgSelect {
       if (dw > 1 || dh > 1) {
         const { image, imageTitle } = this.selectedNode.getData()
         try {
-          DBG('_onResizeUp | exec SET_NODE_IMAGE | image length:',
-              image ? String(image).length : 0,
-              '| title:', imageTitle || '',
-              '| custom:', true)
+          DBG('_onResizeUp | exec SET_NODE_IMAGE | size:', newW, 'x', newH)
           this.mindMap.execCommand('SET_NODE_IMAGE', this.selectedNode, {
             url: image,
             title: imageTitle,
@@ -379,10 +376,8 @@ class NodeImgSelect {
             height: newH,
             custom: true
           })
-          this.mindMap.render(() => {
-            DBG('_onResizeUp | forced render callback | nodeUid:',
-                this.selectedNode && this.selectedNode.uid,
-                '| hasSelectedImgNode:', !!this.selectedImgNode)
+          // SET_NODE_IMAGE 内部已触发 reRender + render；render 回调里刷新选中状态
+          this.mindMap.once('node_tree_render_end', () => {
             if (
               this.selectedNode &&
               this.selectedNode._imgData &&
@@ -393,7 +388,6 @@ class NodeImgSelect {
             this.updateHighlightPos()
             this.showHighlight()
           })
-          DBG('_onResizeUp | applied new size:', newW, 'x', newH)
         } catch (err) {
           DBG('_onResizeUp | execCommand failed:', err)
         }
@@ -429,28 +423,13 @@ class NodeImgSelect {
       custom: true
     }
     try {
-      const changed = this.selectedNode.reRender(['image'])
+      // 就地更新 SVG <image> 尺寸，跳过 group.clear() 重建以消除闪烁
+      const changed = this.selectedNode.resizeImageInPlace(width, height)
       if (changed) {
         this._scheduleResizeRender()
-      } else if (
-        this.selectedNode._imgData &&
-        this.selectedNode._imgData.node
-      ) {
-        this.selectedImgNode = this.selectedNode._imgData.node
-        if (!this._isResizing) {
-          this.updateHighlightPos()
-        }
       }
     } catch (err) {
-      DBG('applyLiveResize | reRender failed:', err)
-    }
-    const now = Date.now()
-    if (now - this._lastResizeMoveDebugAt > 120) {
-      DBG('applyLiveResize | sample | nodeUid:',
-          this.selectedNode && this.selectedNode.uid,
-          '| logicalSize:', width, 'x', height,
-          '| nodeSize:', this.selectedNode.width, 'x', this.selectedNode.height,
-          '| hasSelectedImgNode:', !!this.selectedImgNode)
+      DBG('applyLiveResize | resizeImageInPlace failed:', err)
     }
   }
 

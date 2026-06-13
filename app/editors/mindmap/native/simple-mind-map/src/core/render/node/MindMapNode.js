@@ -565,6 +565,27 @@ class MindMapNode {
     )
   }
 
+  // 拖拽缩放图片时就地更新 SVG 尺寸，避免 group.clear() 导致的闪烁。
+  // 仅改图片元素 size + _imgData 缓存 + 重算节点宽高 + 必要时 layout 重排。
+  // 返回节点整体尺寸是否变化（调用方据此决定是否触发整树 render）。
+  resizeImageInPlace(width, height) {
+    if (!this._imgData || !this._imgData.node) return false
+    this._imgData.node.size(width, height)
+    this._imgData.width = width
+    this._imgData.height = height
+    const { width: newW, height: newH } = this.getNodeRect()
+    const changed = this.width !== newW || this.height !== newH
+    if (changed) {
+      this.width = newW
+      this.height = newH
+      this.layout()
+      this.update()
+    } else {
+      this._repositionImage()
+    }
+    return changed
+  }
+
   // 重新渲染节点，即重新创建节点内容、计算节点大小、计算节点内容布局、更新展开收起按钮，概要及位置
   reRender(recreateTypes, opt = {}) {
     const fingerprintBefore = this._richTextFingerprint

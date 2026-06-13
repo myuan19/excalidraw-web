@@ -506,11 +506,43 @@ function layout() {
   this.mindMap.emit('node_layout_end', this)
 }
 
+// 仅重新定位已有的图片 SVG 元素（不 clear/重建 group），用于拖拽缩放时节点
+// 整体尺寸未变的快路径——只需把图片移到正确的 placement 坐标。
+function _repositionImage() {
+  if (!this._imgData || !this._imgData.node) return
+  const { IMG_PLACEMENT } = CONSTANTS
+  const imgPlacement = this.getStyle('imgPlacement') || IMG_PLACEMENT.TOP
+  const { width, height } = this
+  let { paddingX, paddingY } = this.getPaddingVale()
+  const halfBorderWidth = this.getBorderWidth() / 2
+  paddingX += this.shapePadding.paddingX + halfBorderWidth
+  paddingY += this.shapePadding.paddingY + halfBorderWidth
+  const imgWidth = this._imgData.width
+  const imgHeight = this._imgData.height
+  switch (imgPlacement) {
+    case IMG_PLACEMENT.TOP:
+      this._imgData.node.cx(width / 2).y(paddingY)
+      break
+    case IMG_PLACEMENT.BOTTOM:
+      this._imgData.node.cx(width / 2).y(height - paddingY - imgHeight)
+      break
+    case IMG_PLACEMENT.LEFT:
+      this._imgData.node.x(paddingX).cy(height / 2)
+      break
+    case IMG_PLACEMENT.RIGHT:
+      this._imgData.node.x(width - paddingX - imgWidth).cy(height / 2)
+      break
+    default:
+      break
+  }
+}
+
 export default {
   getImgTextMarin,
   getTagContentSize,
   getNodeRect,
   addHoverNode,
   layout,
-  customNodeContentRealtimeLayout
+  customNodeContentRealtimeLayout,
+  _repositionImage
 }
