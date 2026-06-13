@@ -73,6 +73,8 @@ class Drag extends Base {
     this.mouseDownY = 0
     this.mouseMoveX = 0
     this.mouseMoveY = 0
+    this.lastDragClientX = 0
+    this.lastDragClientY = 0
     // 鼠标移动的距离距鼠标按下的位置距离多少以上才认为是拖动事件
     this.checkDragOffset = 8
     this.minOffset = 10
@@ -85,12 +87,15 @@ class Drag extends Base {
     this.onMouseup = this.onMouseup.bind(this)
     this.onDocumentKeydown = this.onDocumentKeydown.bind(this)
     this.onDocumentKeyup = this.onDocumentKeyup.bind(this)
+    this.onViewDataChange = this.onViewDataChange.bind(this)
+    this.onWindowScroll = this.onWindowScroll.bind(this)
     this.checkOverlapNode = throttle(this.checkOverlapNode, 300, this)
 
     this.mindMap.on('node_mousedown', this.onNodeMousedown)
     this.mindMap.on('mousemove', this.onMousemove)
     this.mindMap.on('node_mouseup', this.onMouseup)
     this.mindMap.on('mouseup', this.onMouseup)
+    this.mindMap.on('view_data_change', this.onViewDataChange)
   }
 
   // 解绑事件
@@ -99,6 +104,7 @@ class Drag extends Base {
     this.mindMap.off('mousemove', this.onMousemove)
     this.mindMap.off('node_mouseup', this.onMouseup)
     this.mindMap.off('mouseup', this.onMouseup)
+    this.mindMap.off('view_data_change', this.onViewDataChange)
     this.unbindDocumentDragEvents()
   }
 
@@ -117,7 +123,7 @@ class Drag extends Base {
     // 记录鼠标按下时的节点
     this.mousedownNode = node
     // 记录鼠标按下的坐标
-    const { x, y } = this.mindMap.toPos(e.clientX, e.clientY)
+    const { x, y } = this.updateDragPointer(e.clientX, e.clientY)
     this.mouseDownX = x
     this.mouseDownY = y
     this.bindDocumentDragEvents()
@@ -127,12 +133,44 @@ class Drag extends Base {
     document.addEventListener('mouseup', this.onMouseup, true)
     document.addEventListener('keydown', this.onDocumentKeydown, true)
     document.addEventListener('keyup', this.onDocumentKeyup, true)
+    window.addEventListener('scroll', this.onWindowScroll, true)
   }
 
   unbindDocumentDragEvents() {
     document.removeEventListener('mouseup', this.onMouseup, true)
     document.removeEventListener('keydown', this.onDocumentKeydown, true)
     document.removeEventListener('keyup', this.onDocumentKeyup, true)
+    window.removeEventListener('scroll', this.onWindowScroll, true)
+  }
+
+  refreshMindMapRect() {
+    if (typeof this.mindMap.getElRectInfo !== 'function') {
+      return
+    }
+    try {
+      this.mindMap.getElRectInfo()
+    } catch (err) {}
+  }
+
+  updateDragPointer(clientX, clientY) {
+    this.refreshMindMapRect()
+    const { x, y } = this.mindMap.toPos(clientX, clientY)
+    this.mouseMoveX = x
+    this.mouseMoveY = y
+    this.lastDragClientX = clientX
+    this.lastDragClientY = clientY
+    return { x, y }
+  }
+
+  onViewDataChange() {
+    this.syncDraggingWithCurrentView('view_data_change')
+  }
+
+  onWindowScroll() {
+    this.syncDraggingWithCurrentView('window_scroll', {
+      refreshPointer: true,
+      refreshGeometry: true
+    })
   }
 
   onDocumentKeydown(e) {
@@ -190,9 +228,7 @@ class Drag extends Base {
       return
     }
     e.preventDefault()
-    const { x, y } = this.mindMap.toPos(e.clientX, e.clientY)
-    this.mouseMoveX = x
-    this.mouseMoveY = y
+    const { x, y } = this.updateDragPointer(e.clientX, e.clientY)
     // 还没开始移动时鼠标位移过小不认为是拖拽
     if (
       !this.isDragging &&
@@ -371,7 +407,7 @@ class Drag extends Base {
 
   // 微距判定：指针（视口坐标）距按下点的位移是否在取消阈值内
   checkIsMicroMove(clientX, clientY) {
-    const { x, y } = this.mindMap.toPos(clientX, clientY)
+    const { x, y } = this.updateDragPointer(clientX, clientY)
     return this.checkIsMicroMovePos(x, y)
   }
 
@@ -392,45 +428,70 @@ class Drag extends Base {
     if (!this.isMousedown || !this.isDragging) {
       return
     }
-    // 更新克隆节点的位置
-    this.drawTransform = this.mindMap.draw.transform()
-    let { scaleX, scaleY, translateX, translateY } = this.drawTransform
-    let cloneNodeLeft = x - this.offsetX
-    let cloneNodeTop = y - this.offsetY
-    if (this.isDropTargetLayout()) {
-      this.dragSession.currentPoint = { x, y }
-    }
-    x = (cloneNodeLeft - translateX) / scaleX
-    y = (cloneNodeTop - translateY) / scaleY
-    let t = this.clone.transform()
-    this.clone.translate(x - t.translateX, y - t.translateY)
-    // 检测新位置
-    if (this.isDropTargetLayout()) {
-      this.updateDropTarget()
-    } else {
-      this.checkOverlapNode()
-    }
+    this.mouseMoveX = x
+    this.mouseMoveY = y
+    this.lastDragClientX = e.clientX
+    this.lastDragClientY = e.clientY
+    this.syncDraggingWithCurrentView('mousemove')
     // 边缘自动移动画布
-    this.drawTransform = this.mindMap.draw.transform()
     this.autoMove.clearAutoMoveTimer()
     this.autoMove.onMove(
       e.clientX,
       e.clientY,
       () => {},
-      () => {
-        if (!this.isDropTargetLayout()) {
-          return
-        }
-        setTimeout(() => {
-          if (!this.isDragging) {
-            return
-          }
-          this.drawTransform = this.mindMap.draw.transform()
-          this.refreshDragGeometry()
-          this.updateDropTarget()
-        }, 0)
-      }
+      () => {}
     )
+  }
+
+  // 拖拽中的唯一同步入口：mousemove、滚轮/滚动条/自动平移导致的 view
+  // transform 变化、外层页面滚动，都通过这里重算 clone 与落点状态。
+  syncDraggingWithCurrentView(
+    reason,
+    { refreshPointer = false, refreshGeometry = reason !== 'mousemove' } = {}
+  ) {
+    if (!this.isMousedown || !this.isDragging || !this.clone) {
+      return
+    }
+    if (
+      refreshPointer &&
+      Number.isFinite(this.lastDragClientX) &&
+      Number.isFinite(this.lastDragClientY)
+    ) {
+      this.updateDragPointer(this.lastDragClientX, this.lastDragClientY)
+    }
+    this.drawTransform = this.mindMap.draw.transform()
+    this.updateClonePositionFromPointer()
+    this.updateDragDropState(refreshGeometry)
+  }
+
+  updateClonePositionFromPointer() {
+    if (!this.drawTransform || !this.clone) {
+      return
+    }
+    const { scaleX, scaleY, translateX, translateY } = this.drawTransform
+    let cloneNodeLeft = this.mouseMoveX - this.offsetX
+    let cloneNodeTop = this.mouseMoveY - this.offsetY
+    const x = (cloneNodeLeft - translateX) / scaleX
+    const y = (cloneNodeTop - translateY) / scaleY
+    const t = this.clone.transform()
+    this.clone.translate(x - t.translateX, y - t.translateY)
+  }
+
+  updateDragDropState(refreshGeometry = false) {
+    if (this.isDropTargetLayout()) {
+      if (this.dragSession) {
+        this.dragSession.currentPoint = {
+          x: this.mouseMoveX,
+          y: this.mouseMoveY
+        }
+      }
+      if (refreshGeometry) {
+        this.refreshDragGeometry()
+      }
+      this.updateDropTarget()
+    } else {
+      this.checkOverlapNode()
+    }
   }
 
   // 开始拖拽时初始化一些数据
