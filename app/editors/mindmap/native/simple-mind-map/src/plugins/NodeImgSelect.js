@@ -44,8 +44,6 @@ class NodeImgSelect {
     this._resizeH = 0
     this._resizeOriginalImageSize = null
     this._lastResizeMoveDebugAt = 0
-    this._resizeRenderFrame = null
-    this._resizeRenderPending = false
 
     this.bindEvent()
   }
@@ -178,43 +176,6 @@ class NodeImgSelect {
     document.removeEventListener('mouseup', this._boundResizeUp, RESIZE_EVENT_CAPTURE)
     window.removeEventListener('blur', this._boundResizeCancel, RESIZE_EVENT_CAPTURE)
     document.removeEventListener('visibilitychange', this._boundVisibilityChange)
-  }
-
-  _cancelResizeRenderFrame() {
-    if (this._resizeRenderFrame == null) return
-    const cancel =
-      typeof window !== 'undefined' && window.cancelAnimationFrame
-        ? window.cancelAnimationFrame.bind(window)
-        : clearTimeout
-    cancel(this._resizeRenderFrame)
-    this._resizeRenderFrame = null
-    this._resizeRenderPending = false
-  }
-
-  _scheduleResizeRender() {
-    if (this._resizeRenderPending) return
-    this._resizeRenderPending = true
-    const schedule =
-      typeof window !== 'undefined' && window.requestAnimationFrame
-        ? window.requestAnimationFrame.bind(window)
-        : fn => setTimeout(fn, 16)
-    this._resizeRenderFrame = schedule(() => {
-      this._resizeRenderFrame = null
-      this._resizeRenderPending = false
-      if (!this.selectedNode) return
-      this.mindMap.render(() => {
-        if (
-          this.selectedNode &&
-          this.selectedNode._imgData &&
-          this.selectedNode._imgData.node
-        ) {
-          this.selectedImgNode = this.selectedNode._imgData.node
-        }
-        if (this.isImgSelected && !this._isResizing) {
-          this.updateHighlightPos()
-        }
-      })
-    })
   }
 
   getSelectedImageUrl() {
@@ -397,7 +358,6 @@ class NodeImgSelect {
     }
 
     this._isResizing = false
-    this._cancelResizeRenderFrame()
     this.suppressDeselect('resize-up', 300)
     this._resizeTransform = null
     this._resizeRect = null
@@ -423,11 +383,8 @@ class NodeImgSelect {
       custom: true
     }
     try {
-      // 就地更新 SVG <image> 尺寸，跳过 group.clear() 重建以消除闪烁
-      const changed = this.selectedNode.resizeImageInPlace(width, height)
-      if (changed) {
-        this._scheduleResizeRender()
-      }
+      // 实时阶段只更新当前节点局部几何；最终全局布局在 mouseup 提交时完成
+      this.selectedNode.resizeImageInPlace(width, height)
     } catch (err) {
       DBG('applyLiveResize | resizeImageInPlace failed:', err)
     }
@@ -1124,7 +1081,6 @@ class NodeImgSelect {
   beforePluginRemove() {
     this.deselectImg()
     this.unBindEvent()
-    this._cancelResizeRenderFrame()
     if (this.highlightEl && this.highlightEl.parentNode) {
       this.highlightEl.parentNode.removeChild(this.highlightEl)
     }

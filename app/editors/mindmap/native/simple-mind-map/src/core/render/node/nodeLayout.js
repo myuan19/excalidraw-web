@@ -222,6 +222,165 @@ function customNodeContentRealtimeLayout() {
   this.group.findOne('foreignObject').size(width, height)
 }
 
+function updateShapeNodeInPlace() {
+  if (!this.group || !this.shapeNode) return false
+  const oldShapeNode = this.shapeNode
+  const halfBorderWidth = this.getBorderWidth() / 2
+  this.shapeNode = this.shapeInstance.createShape()
+  this.shapeNode.addClass('smm-node-shape')
+  this.shapeNode.translate(halfBorderWidth, halfBorderWidth)
+  this.style.shape(this.shapeNode)
+  this.group.add(this.shapeNode)
+  this.shapeNode.back()
+  oldShapeNode.remove()
+  return true
+}
+
+function updateHoverNodeInPlace() {
+  if (!this.hoverNode) return
+  const { hoverRectPadding } = this.mindMap.opt
+  this.hoverNode
+    .size(
+      this.width + hoverRectPadding * 2,
+      this.height + hoverRectPadding * 2
+    )
+    .x(-hoverRectPadding)
+    .y(-hoverRectPadding)
+  this.style.hoverNode(this.hoverNode, this.width, this.height)
+}
+
+function getImageContentLayoutInfo() {
+  const { IMG_PLACEMENT, TAG_PLACEMENT } = CONSTANTS
+  const { textContentMargin } = this.mindMap.opt
+  const imgPlacement = this.getStyle('imgPlacement') || IMG_PLACEMENT.TOP
+  const tagPlacement = this.getStyle('tagPlacement') || TAG_PLACEMENT.RIGHT
+  const tagIsBottom = tagPlacement === TAG_PLACEMENT.BOTTOM
+  let { textContentWidth, textContentHeight } = this._rectInfo
+  const textContentHeightWithTag = textContentHeight
+  if (this._tagData && this._tagData.length > 0 && tagIsBottom) {
+    const { height: maxTagHeight } = this.getTagContentSize(textContentMargin)
+    textContentHeight -= maxTagHeight + textContentMargin
+  }
+  let { paddingX, paddingY } = this.getPaddingVale()
+  const halfBorderWidth = this.getBorderWidth() / 2
+  paddingX += this.shapePadding.paddingX + halfBorderWidth
+  paddingY += this.shapePadding.paddingY + halfBorderWidth
+  return {
+    IMG_PLACEMENT,
+    imgPlacement,
+    paddingX,
+    paddingY,
+    textContentWidth,
+    textContentHeight,
+    textContentHeightWithTag
+  }
+}
+
+function positionImageNode() {
+  if (!this._imgData || !this._imgData.node) return
+  const {
+    IMG_PLACEMENT,
+    imgPlacement,
+    paddingX,
+    paddingY
+  } = this.getImageContentLayoutInfo()
+  const { width, height } = this
+  const imgWidth = this._imgData.width
+  const imgHeight = this._imgData.height
+  switch (imgPlacement) {
+    case IMG_PLACEMENT.TOP:
+      this._imgData.node.cx(width / 2).y(paddingY)
+      break
+    case IMG_PLACEMENT.BOTTOM:
+      this._imgData.node.cx(width / 2).y(height - paddingY - imgHeight)
+      break
+    case IMG_PLACEMENT.LEFT:
+      this._imgData.node.x(paddingX).cy(height / 2)
+      break
+    case IMG_PLACEMENT.RIGHT:
+      this._imgData.node.x(width - paddingX - imgWidth).cy(height / 2)
+      break
+    default:
+      break
+  }
+}
+
+function positionTextContentNode() {
+  if (!this._textContentNested) return false
+  const {
+    IMG_PLACEMENT,
+    imgPlacement,
+    paddingX,
+    paddingY,
+    textContentWidth,
+    textContentHeight,
+    textContentHeightWithTag
+  } = this.getImageContentLayoutInfo()
+  const { width, height } = this
+  const imgWidth = this._imgData ? this._imgData.width : 0
+  const imgHeight = this._imgData ? this._imgData.height : 0
+  const { width: bboxWidth, height: bboxHeight } =
+    this._textContentNested.bbox()
+  let translateX = 0
+  let translateY = 0
+  switch (imgPlacement) {
+    case IMG_PLACEMENT.TOP:
+      translateX = width / 2 - bboxWidth / 2
+      translateY =
+        paddingY +
+        imgHeight +
+        this.getImgTextMarin('v', 0, 0, imgHeight, textContentHeightWithTag)
+      break
+    case IMG_PLACEMENT.BOTTOM:
+      translateX = width / 2 - bboxWidth / 2
+      translateY = paddingY
+      break
+    case IMG_PLACEMENT.LEFT:
+      translateX =
+        imgWidth +
+        paddingX +
+        this.getImgTextMarin('h', imgWidth, textContentWidth)
+      translateY = height / 2 - bboxHeight / 2
+      break
+    case IMG_PLACEMENT.RIGHT:
+      translateX = paddingX
+      translateY = height / 2 - bboxHeight / 2
+      break
+  }
+  const t = this._textContentNested.transform()
+  this._textContentNested.translate(
+    translateX - t.translateX,
+    translateY - t.translateY
+  )
+  return true
+}
+
+function imageResizeRealtimeLayout() {
+  if (!this.group || !this._imgData || !this._imgData.node) return false
+  if (this.isUseCustomNodeContent()) return false
+  if (!this._textContentNested) return false
+  if (this._customContentAddToNodeAdd && this._customContentAddToNodeAdd.el) {
+    return false
+  }
+  if (!this.updateShapeNodeInPlace()) return false
+  if (this._unVisibleRectRegionNode) {
+    this.renderer.layout.renderExpandBtnRect(
+      this._unVisibleRectRegionNode,
+      this.mindMap.opt.expandBtnSize,
+      this.width,
+      this.height,
+      this
+    )
+  } else {
+    this.updateExpandBtnPlaceholderRect()
+  }
+  this.positionImageNode()
+  this.positionTextContentNode()
+  this.updateHoverNodeInPlace()
+  this.mindMap.emit('node_layout_end', this)
+  return true
+}
+
 //  定位节点内容
 function layout() {
   if (!this.group) return
@@ -457,6 +616,7 @@ function layout() {
     }
   })
   this.group.add(textContentNested)
+  this._textContentNested = textContentNested
   // 文字内容整体
   const { width: bboxWidth, height: bboxHeight } = textContentNested.bbox()
   let translateX = 0
@@ -509,32 +669,7 @@ function layout() {
 // 仅重新定位已有的图片 SVG 元素（不 clear/重建 group），用于拖拽缩放时节点
 // 整体尺寸未变的快路径——只需把图片移到正确的 placement 坐标。
 function _repositionImage() {
-  if (!this._imgData || !this._imgData.node) return
-  const { IMG_PLACEMENT } = CONSTANTS
-  const imgPlacement = this.getStyle('imgPlacement') || IMG_PLACEMENT.TOP
-  const { width, height } = this
-  let { paddingX, paddingY } = this.getPaddingVale()
-  const halfBorderWidth = this.getBorderWidth() / 2
-  paddingX += this.shapePadding.paddingX + halfBorderWidth
-  paddingY += this.shapePadding.paddingY + halfBorderWidth
-  const imgWidth = this._imgData.width
-  const imgHeight = this._imgData.height
-  switch (imgPlacement) {
-    case IMG_PLACEMENT.TOP:
-      this._imgData.node.cx(width / 2).y(paddingY)
-      break
-    case IMG_PLACEMENT.BOTTOM:
-      this._imgData.node.cx(width / 2).y(height - paddingY - imgHeight)
-      break
-    case IMG_PLACEMENT.LEFT:
-      this._imgData.node.x(paddingX).cy(height / 2)
-      break
-    case IMG_PLACEMENT.RIGHT:
-      this._imgData.node.x(width - paddingX - imgWidth).cy(height / 2)
-      break
-    default:
-      break
-  }
+  this.positionImageNode()
 }
 
 export default {
@@ -544,5 +679,11 @@ export default {
   addHoverNode,
   layout,
   customNodeContentRealtimeLayout,
+  updateShapeNodeInPlace,
+  updateHoverNodeInPlace,
+  getImageContentLayoutInfo,
+  positionImageNode,
+  positionTextContentNode,
+  imageResizeRealtimeLayout,
   _repositionImage
 }

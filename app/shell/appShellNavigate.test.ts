@@ -3,9 +3,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { editorRegistry } from "../editors/registry";
 
 import {
+  APP_SHELL_PENDING_NAVIGATION_CHANGE,
   applyAppShellPendingNavigation,
   clearAppShellPendingNavigation,
   dispatchAppShellNavigate,
+  type AppShellPendingNavigationChangeDetail,
   peekAppShellPendingNavigation,
   runAppShellPendingNavigation,
 } from "./appShellNavigate";
@@ -51,6 +53,55 @@ describe("appShellNavigate", () => {
       editorRegistry.buildFileHash("file-b", "mindmap"),
     );
     expect(peekAppShellPendingNavigation()).toBeNull();
+  });
+
+  it("emits pending navigation changes for set, run, and clear", () => {
+    const skip = { current: false };
+    const handler = vi.fn();
+    window.addEventListener(APP_SHELL_PENDING_NAVIGATION_CHANGE, handler);
+
+    applyAppShellPendingNavigation(
+      { openFile: { id: "file-b", kind: "mindmap" } },
+      skip,
+      () => {},
+    );
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(
+      (handler.mock.calls[0][0] as CustomEvent<AppShellPendingNavigationChangeDetail>)
+        .detail,
+    ).toEqual({
+      pending: { openFile: { id: "file-b", kind: "mindmap" } },
+      consumed: null,
+      reason: "set",
+    });
+
+    runAppShellPendingNavigation(skip);
+    expect(handler).toHaveBeenCalledTimes(2);
+    expect(
+      (handler.mock.calls[1][0] as CustomEvent<AppShellPendingNavigationChangeDetail>)
+        .detail,
+    ).toEqual({
+      pending: null,
+      consumed: { openFile: { id: "file-b", kind: "mindmap" } },
+      reason: "run",
+    });
+
+    applyAppShellPendingNavigation(
+      { openFile: { id: "file-c", kind: "excalidraw" } },
+      skip,
+      () => {},
+    );
+    clearAppShellPendingNavigation();
+    expect(
+      (handler.mock.calls[3][0] as CustomEvent<AppShellPendingNavigationChangeDetail>)
+        .detail,
+    ).toEqual({
+      pending: null,
+      consumed: null,
+      reason: "clear",
+    });
+
+    window.removeEventListener(APP_SHELL_PENDING_NAVIGATION_CHANGE, handler);
   });
 
   it("runAppShellPendingNavigation applies stored openFile after assignNavigate", () => {

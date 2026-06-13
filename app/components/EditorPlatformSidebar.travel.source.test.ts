@@ -35,4 +35,16 @@ describe("Editor platform sidebar travel bounds", () => {
     expect(source).toContain("closeSidebarPanel");
     expect(source).toMatch(/createPortal\([\s\S]*editor-bridge__dismiss-layer/);
   });
+
+  it("freezes the visible draft status while opening another recent document", () => {
+    expect(source).toContain("type PendingOpenFileNavigation");
+    expect(source).toContain("frozenStatus: FileDraftStatus");
+    expect(source).toContain("frozenLabel: string | null");
+    expect(source).toContain("APP_SHELL_PENDING_NAVIGATION_CHANGE");
+    expect(source).toContain("pendingOpenFileToDifferentDocument");
+    expect(source).toContain("const visibleDraftStatus = pendingOpenFileToDifferentDocument");
+    expect(source).toContain(
+      "visibleDraftStatus === \"draft\" ? \"editor-bridge--unsaved\" : \"\"",
+    );
+  });
 });

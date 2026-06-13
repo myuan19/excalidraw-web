@@ -41,12 +41,19 @@ import {
   type ServerFile,
   type ServerFolder,
 } from "../data/ServerSync";
-import { useFileDraftStatus } from "../hooks/useFileDraftStatus";
+import {
+  useFileDraftStatus,
+  type FileDraftStatus,
+} from "../hooks/useFileDraftStatus";
 import {
   editorIconForKind,
   getDocumentKindFromHash,
 } from "../lib/appBranding";
-import { dispatchAppShellNavigate } from "../shell/appShellNavigate";
+import {
+  APP_SHELL_PENDING_NAVIGATION_CHANGE,
+  dispatchAppShellNavigate,
+  type AppShellPendingNavigationChangeDetail,
+} from "../shell/appShellNavigate";
 import type { AppView } from "../shell/useAppView";
 
 import "./EditorPlatformSidebar.scss";
@@ -676,6 +683,12 @@ type FileInfo = {
   folders: ServerFolder[];
 };
 
+type PendingOpenFileNavigation = {
+  targetId: string;
+  frozenStatus: FileDraftStatus;
+  frozenLabel: string | null;
+};
+
 function getFileExtension(kind?: string): string {
   if (kind === "mindmap") {
     return "smm";
@@ -888,8 +901,12 @@ export function EditorPlatformSidebar() {
   const [dragging, setDragging] = useState(false);
   const { status: draftStatus, label: draftStatusLabel } =
     useFileDraftStatus(fileId);
+  const [pendingOpenFileNavigation, setPendingOpenFileNavigation] =
+    useState<PendingOpenFileNavigation | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
+  const pendingOpenFileNavigationRef =
+    useRef<PendingOpenFileNavigation | null>(null);
   const dragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -923,17 +940,56 @@ export function EditorPlatformSidebar() {
   }, [menuStyle]);
 
   useEffect(() => {
+    pendingOpenFileNavigationRef.current = pendingOpenFileNavigation;
+  }, [pendingOpenFileNavigation]);
+
+  useEffect(() => {
     ensureBridgePreviewLayer();
   }, []);
 
   useEffect(() => {
     const syncFromHash = () => {
-      setFileId(getFileIdFromHash());
+      const nextFileId = getFileIdFromHash();
+      setFileId(nextFileId);
       setDocumentKind(getDocumentKindFromHash());
+      if (
+        nextFileId &&
+        pendingOpenFileNavigationRef.current?.targetId === nextFileId
+      ) {
+        setPendingOpenFileNavigation(null);
+      }
     };
     window.addEventListener("hashchange", syncFromHash);
     return () => window.removeEventListener("hashchange", syncFromHash);
   }, []);
+
+  useEffect(() => {
+    const onPendingNavigationChange = (event: Event) => {
+      const detail = (
+        event as CustomEvent<AppShellPendingNavigationChangeDetail>
+      ).detail;
+      if (detail.pending?.openFile) {
+        setPendingOpenFileNavigation({
+          targetId: detail.pending.openFile.id,
+          frozenStatus: draftStatus,
+          frozenLabel: draftStatusLabel,
+        });
+        return;
+      }
+      if (detail.reason === "clear") {
+        setPendingOpenFileNavigation(null);
+      }
+    };
+    window.addEventListener(
+      APP_SHELL_PENDING_NAVIGATION_CHANGE,
+      onPendingNavigationChange,
+    );
+    return () =>
+      window.removeEventListener(
+        APP_SHELL_PENDING_NAVIGATION_CHANGE,
+        onPendingNavigationChange,
+      );
+  }, [draftStatus, draftStatusLabel]);
 
   const ballIconSrc = editorIconForKind(documentKind);
 
@@ -1025,13 +1081,18 @@ export function EditorPlatformSidebar() {
       if (activeId && item.id === activeId) {
         return;
       }
+      setPendingOpenFileNavigation({
+        targetId: item.id,
+        frozenStatus: draftStatus,
+        frozenLabel: draftStatusLabel,
+      });
       closeAndRun(() =>
         dispatchAppShellNavigate({
           openFile: { id: item.id, kind: item.kind },
         }),
       );
     },
-    [closeAndRun],
+    [closeAndRun, draftStatus, draftStatusLabel],
   );
 
   const finishDrag = useCallback(
@@ -1125,6 +1186,16 @@ export function EditorPlatformSidebar() {
   const fileActionsEnabled = !!fileId;
   const serverFileActionsEnabled =
     !!fileId && !isLocalDraftFileId(fileId);
+  const pendingOpenFileToDifferentDocument =
+    !!pendingOpenFileNavigation &&
+    !!fileId &&
+    pendingOpenFileNavigation.targetId !== fileId;
+  const visibleDraftStatus = pendingOpenFileToDifferentDocument
+    ? pendingOpenFileNavigation.frozenStatus
+    : draftStatus;
+  const visibleDraftStatusLabel = pendingOpenFileToDifferentDocument
+    ? pendingOpenFileNavigation.frozenLabel
+    : draftStatusLabel;
 
   const bridgeStyle: CSSProperties = {
     left: displayPoint.x,
@@ -1144,8 +1215,8 @@ export function EditorPlatformSidebar() {
         open ? "editor-bridge--open" : "",
         dragging ? "editor-bridge--dragging" : "",
         docked ? "editor-bridge--docked" : "",
-        draftStatus === "draft" ? "editor-bridge--unsaved" : "",
-        draftStatus === "synced" ? "editor-bridge--saved" : "",
+        visibleDraftStatus === "draft" ? "editor-bridge--unsaved" : "",
+        visibleDraftStatus === "synced" ? "editor-bridge--saved" : "",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -1304,14 +1375,14 @@ export function EditorPlatformSidebar() {
           aria-label={
             open
               ? "关闭操作面板"
-              : draftStatusLabel
-                ? `打开操作面板（${draftStatusLabel}，可拖拽）`
+              : visibleDraftStatusLabel
+                ? `打开操作面板（${visibleDraftStatusLabel}，可拖拽）`
                 : "打开操作面板（可拖拽）"
           }
           aria-expanded={open}
           title={
-            draftStatusLabel
-              ? `${draftStatusLabel} · Ctrl+S 保存`
+            visibleDraftStatusLabel
+              ? `${visibleDraftStatusLabel} · Ctrl+S 保存`
               : "Ctrl+S 保存"
           }
           onPointerDown={onBallPointerDown}
@@ -1325,11 +1396,11 @@ export function EditorPlatformSidebar() {
             </span>
           </span>
         </button>
-        {draftStatusLabel ? (
+        {visibleDraftStatusLabel ? (
           <span
             className="editor-bridge__status-dot"
             aria-hidden="true"
-            title={draftStatusLabel}
+            title={visibleDraftStatusLabel}
           />
         ) : null}
       </div>

@@ -4,6 +4,9 @@ import { editorRegistry } from "../editors/registry";
 import { APP_SHELL_GO_HOME } from "./Sidebar";
 import { buildViewHash, type AppView } from "./useAppView";
 
+export const APP_SHELL_PENDING_NAVIGATION_CHANGE =
+  "app-shell-pending-navigation-change";
+
 export type AppShellNavigateDetail = {
   /** 离开编辑器后进入的主页视图（默认 home） */
   target?: Exclude<AppView, "editor">;
@@ -11,7 +14,24 @@ export type AppShellNavigateDetail = {
   openFile?: { id: string; kind: string };
 };
 
+export type AppShellPendingNavigationChangeDetail = {
+  pending: AppShellNavigateDetail | null;
+  consumed: AppShellNavigateDetail | null;
+  reason: "set" | "clear" | "run";
+};
+
 let pendingShellNavigation: AppShellNavigateDetail | null = null;
+
+function emitPendingNavigationChange(
+  detail: AppShellPendingNavigationChangeDetail,
+): void {
+  window.dispatchEvent(
+    new CustomEvent<AppShellPendingNavigationChangeDetail>(
+      APP_SHELL_PENDING_NAVIGATION_CHANGE,
+      { detail },
+    ),
+  );
+}
 
 export function peekAppShellPendingNavigation(): AppShellNavigateDetail | null {
   return pendingShellNavigation;
@@ -19,6 +39,11 @@ export function peekAppShellPendingNavigation(): AppShellNavigateDetail | null {
 
 export function clearAppShellPendingNavigation(): void {
   pendingShellNavigation = null;
+  emitPendingNavigationChange({
+    pending: null,
+    consumed: null,
+    reason: "clear",
+  });
 }
 
 export function runAppShellPendingNavigation(
@@ -26,6 +51,11 @@ export function runAppShellPendingNavigation(
 ): void {
   const detail = pendingShellNavigation;
   pendingShellNavigation = null;
+  emitPendingNavigationChange({
+    pending: null,
+    consumed: detail,
+    reason: "run",
+  });
   if (detail?.openFile) {
     const { id, kind } = detail.openFile;
     if (skipLeaveStashOnceRef) {
@@ -59,5 +89,10 @@ export function applyAppShellPendingNavigation(
   assignNavigate: (fn: () => void) => void,
 ): void {
   pendingShellNavigation = detail ?? null;
+  emitPendingNavigationChange({
+    pending: pendingShellNavigation,
+    consumed: null,
+    reason: pendingShellNavigation ? "set" : "clear",
+  });
   assignNavigate(() => runAppShellPendingNavigation(skipLeaveStashOnceRef));
 }

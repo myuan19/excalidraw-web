@@ -565,9 +565,9 @@ class MindMapNode {
     )
   }
 
-  // 拖拽缩放图片时就地更新 SVG 尺寸，避免 group.clear() 导致的闪烁。
-  // 仅改图片元素 size + _imgData 缓存 + 重算节点宽高 + 必要时 layout 重排。
-  // 返回节点整体尺寸是否变化（调用方据此决定是否触发整树 render）。
+  // 拖拽缩放图片时就地更新 SVG 尺寸，并只做当前节点局部布局。
+  // 实时阶段不能调用完整 layout()，否则 group.clear() 会让节点内容闪烁。
+  // 返回节点整体尺寸是否变化；最终全局重排由 mouseup 的 SET_NODE_IMAGE 负责。
   resizeImageInPlace(width, height) {
     if (!this._imgData || !this._imgData.node) return false
     this._imgData.node.size(width, height)
@@ -578,7 +578,9 @@ class MindMapNode {
     if (changed) {
       this.width = newW
       this.height = newH
-      this.layout()
+      if (!this.imageResizeRealtimeLayout()) {
+        this.layout()
+      }
       this.update()
     } else {
       this._repositionImage()
