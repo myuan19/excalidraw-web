@@ -146,6 +146,34 @@ describe("MindMap native source contract", () => {
     );
   });
 
+  it("prevents native browser dragging for node links", () => {
+    const urlAutoLinkSource = fs.readFileSync(
+      path.join(
+        appRoot,
+        "editors/mindmap/native/simple-mind-map/src/utils/urlAutoLink.js",
+      ),
+      "utf8",
+    );
+    const nodeContentSource = fs.readFileSync(
+      path.join(
+        appRoot,
+        "editors/mindmap/native/simple-mind-map/src/core/render/node/nodeCreateContents.js",
+      ),
+      "utf8",
+    );
+
+    expect(urlAutoLinkSource).toContain('draggable="false"');
+    expect(urlAutoLinkSource).toContain("'dragstart'");
+    expect(urlAutoLinkSource).toContain("findRichTextAnchor(event.target)");
+    expect(urlAutoLinkSource).toContain("event.preventDefault()");
+    expect(nodeContentSource).toContain(
+      "a.node.setAttribute('draggable', 'false')",
+    );
+    expect(nodeContentSource).toContain(
+      "a.node.addEventListener('dragstart'",
+    );
+  });
+
   it("routes host MindMap AI requests through the same-origin server proxy", () => {
     const hostConfigSource = fs.readFileSync(
       path.join(appRoot, "editors/mindmap/useMindMapNativeAIConfig.ts"),

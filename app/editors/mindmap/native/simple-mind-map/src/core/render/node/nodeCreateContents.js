@@ -315,6 +315,10 @@ function createHyperlinkNode() {
   const node = new SVG().size(iconSize, iconSize)
   // 超链接节点
   const a = new A().to(hyperlink).target('_blank')
+  a.node.setAttribute('draggable', 'false')
+  a.node.addEventListener('dragstart', e => {
+    e.preventDefault()
+  })
   a.node.addEventListener('click', e => {
     if (typeof customHyperlinkJump === 'function') {
       e.preventDefault()

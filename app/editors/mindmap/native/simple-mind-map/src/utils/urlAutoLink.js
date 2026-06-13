@@ -34,7 +34,7 @@ export function extractFirstUrl(text) {
 export function linkifyPlainText(text) {
   return String(text || '').replace(URL_BODY_PATTERN, url => {
     const href = normalizeUrl(url)
-    return `<a href="${href}" target="_blank" rel="noopener noreferrer">${url}</a>`
+    return `<a href="${href}" target="_blank" rel="noopener noreferrer" draggable="false">${url}</a>`
   })
 }
 
@@ -150,6 +150,16 @@ export function bindRichTextLinkClicks() {
   // 拦截原生 <a> 导航（编辑态 DOM 稳定时 click 仍可能命中锚点），打开行为统一受控
   document.addEventListener(
     'click',
+    event => {
+      if (findRichTextAnchor(event.target)) {
+        event.preventDefault()
+      }
+    },
+    true
+  )
+  // 普通拖拽链接时应走节点拖拽，不进入浏览器原生 anchor drag。
+  document.addEventListener(
+    'dragstart',
     event => {
       if (findRichTextAnchor(event.target)) {
         event.preventDefault()
