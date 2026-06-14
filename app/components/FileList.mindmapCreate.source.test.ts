@@ -13,7 +13,7 @@ describe("MindMap editor plugin host actions", () => {
       "utf8",
     );
 
-    expect(source).toContain("const mindMapData = MindMapAdapter.createEmpty()");
+    expect(source).toContain("const mindMapData = createEmptyMindMapData(name)");
     expect(source).toContain("generateMindMapThumbnailAndCache");
     expect(source).toContain(
       "await ServerSync.saveFileImmediate(created.id, document, name, thumbnail)",
@@ -26,10 +26,13 @@ describe("MindMap editor plugin host actions", () => {
       "utf8",
     );
 
-    expect(source).toContain("saveMindMapBrowserViewFromData");
-    expect(source).toContain("generateMindMapThumbnailAndCache");
+    expect(source).toContain("parseImportFileJson(file)");
+    expect(source).not.toContain("saveMindMapBrowserViewFromData");
+    expect(source).not.toContain(
+      "generateMindMapThumbnailAndCache(\n      created.id,\n      data",
+    );
     expect(source).toContain(
-      "await ServerSync.saveFileImmediate(\n    created.id,\n    document,\n    fileName,\n    thumbnail,",
+      "await ServerSync.saveFileImmediate(\n    created.id,\n    document,\n    fileName,\n  )",
     );
   });
 });

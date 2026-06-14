@@ -2,6 +2,10 @@ import {
   isManagedDocument,
   isLegacyExcalidrawScene,
 } from "../documentTypes";
+import {
+  parseImportFileJsonMaybe,
+  readImportFileText,
+} from "../importFileReadCache";
 import { editorRegistry } from "../../editors/registry";
 import { MindMapAdapter } from "./MindMapAdapter";
 import { TextAdapter } from "./TextAdapter";
@@ -29,14 +33,6 @@ export type DetectedDocumentFormat =
       confidence: "medium";
       parsed?: unknown;
     };
-
-function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
-}
 
 export function detectFormatFromData(
   data: unknown,
@@ -98,7 +94,7 @@ export async function detectFormat(file: File): Promise<DetectedDocumentFormat> 
   }
 
   if (name.endsWith(".txt") || mime.startsWith("text/plain")) {
-    return { kind: "text", confidence: "medium", parsed: await file.text() };
+    return { kind: "text", confidence: "medium", parsed: await readImportFileText(file) };
   }
 
   if (name.endsWith(".svg") || name.endsWith(".png")) {
@@ -111,8 +107,7 @@ export async function detectFormat(file: File): Promise<DetectedDocumentFormat> 
     name.endsWith(".excalidraw") ||
     mime.includes("json")
   ) {
-    const text = await file.text();
-    const parsed = parseJson(text);
+    const parsed = await parseImportFileJsonMaybe(file);
     if (parsed !== undefined) {
       return detectFormatFromData(parsed, file.name, file.type);
     }

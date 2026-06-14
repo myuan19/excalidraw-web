@@ -1,15 +1,8 @@
 import { isLegacyExcalidrawScene, isManagedDocument } from "./documentTypes";
 import { detectFormat } from "./formats/detectFormat";
 import { MindMapAdapter } from "./formats/MindMapAdapter";
+import { parseImportFileJsonMaybe } from "./importFileReadCache";
 import { editorRegistry } from "../editors/registry";
-
-function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
-}
 
 function mindMapMatchesData(data: unknown): boolean {
   if (isManagedDocument(data) && data.kind === "mindmap") {
@@ -44,12 +37,6 @@ export async function detectImportCandidateKinds(file: File): Promise<string[]> 
     .filter((plugin) => typeof plugin.importFile === "function");
   const importableKinds = new Set(importable.map((p) => p.kind));
 
-  const addIfImportable = (kind: string, acc: Set<string>) => {
-    if (importableKinds.has(kind)) {
-      acc.add(kind);
-    }
-  };
-
   if (file.type.startsWith("image/") || name.endsWith(".svg") || name.endsWith(".png")) {
     return importableKinds.has("excalidraw") ? ["excalidraw"] : [];
   }
@@ -72,8 +59,7 @@ export async function detectImportCandidateKinds(file: File): Promise<string[]> 
     file.type.includes("json");
 
   if (isJsonLike) {
-    const text = await file.text();
-    const parsed = parseJson(text);
+    const parsed = await parseImportFileJsonMaybe(file);
     if (parsed !== undefined) {
       const fromContent = kindsFromParsedContent(parsed);
       if (fromContent.length > 0) {

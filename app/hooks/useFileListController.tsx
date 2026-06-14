@@ -211,6 +211,7 @@ type SidebarView = "recent" | "all";
 const SIDEBAR_VIEW_STORAGE_KEY = "editorhub-filelist-sidebar-view";
 
 const FILELIST_SCENE_IMPORT_INPUT_ID = "filelist-scene-import-input";
+const FILE_IMPORT_CONCURRENCY = 3;
 /** HTML5 DnD payload for internal folder reparenting / reorder (sidebar only). */
 const FOLDER_DND_MIME = "application/x-excalidraw-fork-folder";
 
@@ -1278,33 +1279,62 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   }, [refresh]);
 
   const processImportQueue = useCallback(async function processImportQueue() {
-    const queue = importQueueRef.current;
-    if (queue.length === 0) {
-      await finishImportBatch();
-      return;
-    }
-    const file = queue[0]!;
     try {
-      const kinds = await detectImportCandidateKinds(file);
-      if (kinds.length === 0) {
-        throw new Error(
-          `无法识别「${file.name}」的文档格式，请确认它是 ${editorRegistry.importableEditorNames()} 文件。`,
+      while (importQueueRef.current.length > 0) {
+        const queue = importQueueRef.current;
+        const batch = queue.slice(0, FILE_IMPORT_CONCURRENCY);
+        const detectedBatch = await Promise.all(
+          batch.map(async (file) => ({
+            file,
+            kinds: await detectImportCandidateKinds(file),
+          })),
         );
+        const firstPickerIndex = detectedBatch.findIndex(
+          ({ kinds }) => kinds.length > 1,
+        );
+        const autoImportEntries =
+          firstPickerIndex >= 0
+            ? detectedBatch.slice(0, firstPickerIndex)
+            : detectedBatch;
+
+        for (const { file, kinds } of autoImportEntries) {
+          if (kinds.length === 0) {
+            throw new Error(
+              `无法识别「${file.name}」的文档格式，请确认它是 ${editorRegistry.importableEditorNames()} 文件。`,
+            );
+          }
+        }
+
+        if (autoImportEntries.length > 0) {
+          const results = await Promise.allSettled(
+            autoImportEntries.map(({ file, kinds }) =>
+              importOneFileWithKind(file, kinds[0]!),
+            ),
+          );
+          const failed = results.find(
+            (result): result is PromiseRejectedResult =>
+              result.status === "rejected",
+          );
+          if (failed) {
+            throw failed.reason;
+          }
+          importQueueRef.current = queue.slice(autoImportEntries.length);
+        }
+
+        if (firstPickerIndex >= 0) {
+          const { file, kinds } = detectedBatch[firstPickerIndex]!;
+          const plugins = kinds
+            .map((k) => editorRegistry.getByKind(k))
+            .filter((p): p is EditorPlugin => !!p?.importFile);
+          pendingImportFileRef.current = file;
+          setImportPickerFileName(file.name);
+          setImportKindPlugins(plugins);
+          setImportKindDialogOpen(true);
+          setImporting(false);
+          return;
+        }
       }
-      if (kinds.length === 1) {
-        await importOneFileWithKind(file, kinds[0]!);
-        importQueueRef.current = queue.slice(1);
-        await processImportQueue();
-        return;
-      }
-      const plugins = kinds
-        .map((k) => editorRegistry.getByKind(k))
-        .filter((p): p is EditorPlugin => !!p?.importFile);
-      pendingImportFileRef.current = file;
-      setImportPickerFileName(file.name);
-      setImportKindPlugins(plugins);
-      setImportKindDialogOpen(true);
-      setImporting(false);
+      await finishImportBatch();
     } catch (e: unknown) {
       logList.debug("import error", e);
       const createdIds = [...importCreatedIdsRef.current];
