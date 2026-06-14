@@ -321,12 +321,14 @@ export const ServerSync = {
     id: string,
     data: unknown,
     name?: string,
-    thumbnail?: string,
+    thumbnail?: string | null,
     opts?: { suppressSavedEvent?: boolean; archiveLabel?: string },
   ): Promise<PutFileResult> {
+    const hasThumbnailField = thumbnail !== undefined;
     logSave.debug("saveFileImmediate", {
       id,
       hasThumb: typeof thumbnail === "string" && thumbnail.length > 0,
+      clearThumb: thumbnail === null,
       archiveLabel: opts?.archiveLabel ?? "",
     });
     const result = await api<PutFileResult>(`/files/${id}`, {
@@ -334,7 +336,7 @@ export const ServerSync = {
       body: JSON.stringify({
         data,
         ...(name ? { name } : {}),
-        ...(thumbnail ? { thumbnail } : {}),
+        ...(hasThumbnailField ? { thumbnail } : {}),
         ...(opts?.archiveLabel ? { archiveLabel: opts.archiveLabel } : {}),
       }),
     });

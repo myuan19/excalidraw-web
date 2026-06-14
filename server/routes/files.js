@@ -583,7 +583,10 @@ router.put("/:id", (req, res) => {
   if (!row) return res.status(404).json({ error: "not found" });
 
   const hasData = !!req.body.data;
+  const hasThumbnailField = Object.prototype.hasOwnProperty.call(req.body, "thumbnail");
   const hasThumb = typeof req.body.thumbnail === "string" && req.body.thumbnail.length > 0;
+  const clearThumb = req.body.thumbnail === null;
+  const mutatesThumbnail = hasThumb || clearThumb;
   const hasName = !!req.body.name;
   const archiveLabel = normalizeArchiveLabel(req.body.archiveLabel);
   const elementCount = hasData && Array.isArray(req.body.data?.elements) ? req.body.data.elements.length : 0;
@@ -597,7 +600,9 @@ router.put("/:id", (req, res) => {
     hasName,
     name: req.body.name != null ? truncStr(String(req.body.name), 80) : "(unchanged)",
     archiveLabel: archiveLabel || "",
+    hasThumbnailField,
     hasThumb,
+    clearThumb,
     thumbLen: hasThumb ? req.body.thumbnail.length : 0,
     elementCount,
     fileCount,
@@ -620,7 +625,7 @@ router.put("/:id", (req, res) => {
     }
   }
 
-  if (skipDataWrite && !req.body.name && !hasThumb) {
+  if (skipDataWrite && !req.body.name && !mutatesThumbnail) {
     const sha = hasData ? hashSceneDataJson(req.body.data) : undefined;
     log.info("PUT /:id → SKIPPED (unchanged)", {
       id: id.slice(0, 8),
@@ -645,6 +650,15 @@ router.put("/:id", (req, res) => {
   if (req.body.thumbnail) {
     ensureFileDir(id);
     writeFileSync(thumbnailPath(id), req.body.thumbnail, "utf-8");
+  } else if (clearThumb) {
+    const thumbFile = thumbnailPath(id);
+    const metaFile = thumbnailMetaPath(id);
+    if (existsSync(thumbFile)) {
+      rmSync(thumbFile, { force: true });
+    }
+    if (existsSync(metaFile)) {
+      rmSync(metaFile, { force: true });
+    }
   }
 
   let contentSha256Out;
@@ -680,7 +694,8 @@ router.put("/:id", (req, res) => {
   log.info("PUT /:id → SAVED", {
     id: id.slice(0, 8),
     skipDataWrite,
-    wroteThumb: !!req.body.thumbnail,
+    wroteThumb: hasThumb,
+    clearedThumb: clearThumb,
     sha: contentSha256Out?.slice(0, 8) ?? "none",
     wroteData: !!(req.body.data && !skipDataWrite),
     archiveLabel: archiveLabel || "",

@@ -350,6 +350,7 @@ export function useMindMapFileSave(opts: {
 
       const hash = hashDocumentSnapshot(document);
       const baseline = FileSyncState.getBaselineHash(fileId);
+      const contentChanged = !baseline || hash !== baseline;
       debugMindMapPersist("saveCurrentFileToServer start", {
         fileId8: fileId.slice(0, 8),
         source,
@@ -373,6 +374,8 @@ export function useMindMapFileSave(opts: {
         }
         return false;
       }
+      const thumbnailForSave =
+        thumbnail ?? (contentChanged ? null : undefined);
 
       if (source !== "visibility" && source !== "auto") {
         setMindMapSaving(true);
@@ -386,7 +389,7 @@ export function useMindMapFileSave(opts: {
           fileId,
           document,
           getFileName(),
-          thumbnail ?? undefined,
+          thumbnailForSave,
           {
             suppressSavedEvent: true,
             archiveLabel: resolveAutoSaveArchiveLabel(source),
