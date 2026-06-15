@@ -4,7 +4,14 @@
  */
 
 /** 空闲自动保存可选等待时间（秒） */
-export const AUTO_SAVE_IDLE_SEC_OPTIONS = [1, 2, 5, 10, 30, 60, 120, 300] as const;
+export const AUTO_SAVE_IDLE_SEC_OPTIONS = [
+  1, 2, 5, 10, 30, 60, 120, 300,
+] as const;
+
+/** checkpoint 自动存档间隔（分钟），0 表示关闭自动 checkpoint，仅保留手动存档。 */
+export const CHECKPOINT_INTERVAL_MIN_OPTIONS = [
+  0, 10, 20, 30, 60, 720,
+] as const;
 
 export interface AppSettings {
   /** 切换到后台（visibilitychange → hidden）时自动保存到服务器 */
@@ -15,6 +22,8 @@ export interface AppSettings {
   autoSaveIdleSec: number;
   /** 离开编辑器时自动保存（需同时开启空闲自动保存） */
   autoSaveOnExit: boolean;
+  /** 自动 checkpoint 间隔（分钟），0 表示关闭 */
+  checkpointIntervalMin: number;
 }
 
 const STORAGE_KEY = "editorhub-app-settings";
@@ -24,6 +33,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoSaveEnabled: false,
   autoSaveIdleSec: 10,
   autoSaveOnExit: false,
+  checkpointIntervalMin: 0,
 };
 
 let cache: AppSettings = { ...DEFAULT_SETTINGS };
@@ -69,6 +79,13 @@ function load(): AppSettings {
           typeof parsed.autoSaveOnExit === "boolean"
             ? parsed.autoSaveOnExit
             : DEFAULT_SETTINGS.autoSaveOnExit,
+        checkpointIntervalMin:
+          typeof parsed.checkpointIntervalMin === "number" &&
+          (CHECKPOINT_INTERVAL_MIN_OPTIONS as readonly number[]).includes(
+            parsed.checkpointIntervalMin,
+          )
+            ? parsed.checkpointIntervalMin
+            : DEFAULT_SETTINGS.checkpointIntervalMin,
       };
     }
   } catch {
@@ -82,9 +99,7 @@ export function getAppSettings(): AppSettings {
   return load();
 }
 
-export function updateAppSettings(
-  partial: Partial<AppSettings>,
-): AppSettings {
+export function updateAppSettings(partial: Partial<AppSettings>): AppSettings {
   const current = load();
   const next: AppSettings = { ...current, ...partial };
   cache = next;

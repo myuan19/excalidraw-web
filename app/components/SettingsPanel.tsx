@@ -13,6 +13,7 @@ import {
 } from "../data/aiConfig";
 import {
   AUTO_SAVE_IDLE_SEC_OPTIONS,
+  CHECKPOINT_INTERVAL_MIN_OPTIONS,
   type AppSettings,
   getAppSettings,
   updateAppSettings,
@@ -201,7 +202,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     空闲自动保存
                   </span>
                   <span className="settings-panel__option-desc">
-                    停止编辑一段时间后自动保存到服务器，同一次打开期间会覆盖上一次自动存档（仅对已入库文件生效）
+                    停止编辑一段时间后自动保存到服务器 latest；历史 checkpoint
+                    由下方存档策略控制
                   </span>
                 </div>
                 <label className="settings-panel__toggle">
@@ -280,6 +282,40 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   </div>
                 </>
               )}
+              <div className="settings-panel__option">
+                <div className="settings-panel__option-text">
+                  <span className="settings-panel__option-label">
+                    自动 checkpoint
+                  </span>
+                  <span className="settings-panel__option-desc">
+                    latest 始终正常保存；checkpoint
+                    可关闭或按间隔自动创建。手动保存始终创建 checkpoint
+                  </span>
+                </div>
+                <select
+                  className="settings-panel__select"
+                  value={appSettings.checkpointIntervalMin}
+                  onChange={(e) => {
+                    handleAppSettingChange(
+                      "checkpointIntervalMin",
+                      Number(e.target.value),
+                    );
+                    e.currentTarget.blur();
+                  }}
+                >
+                  {CHECKPOINT_INTERVAL_MIN_OPTIONS.map((min) => (
+                    <option key={min} value={min}>
+                      {min === 0
+                        ? "关闭自动 checkpoint"
+                        : min < 60
+                        ? `${min} 分钟`
+                        : min === 60
+                        ? "1 小时"
+                        : `${min / 60} 小时`}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           )}
 

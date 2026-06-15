@@ -26,10 +26,13 @@ import { notifyLocalDraftEdited } from "../../data/localDraftSessions";
 import { discardLocalDraftSession } from "../../data/discardLocalDraftSession";
 import { clearAppShellPendingNavigation } from "../../shell/appShellNavigate";
 import { isAutoSaveOnExitActive } from "../../data/appSettings";
+import { isAutoSaveEligibleFile } from "../../data/autoSaveSession";
 import {
-  isAutoSaveEligibleFile,
-  resolveAutoSaveArchiveLabel,
-} from "../../data/autoSaveSession";
+  CHECKPOINT_LABELS,
+  isManualCheckpointSource,
+  resolveCheckpointPolicy,
+} from "../../data/checkpointPolicy";
+import { maybeCreateCheckpointBeforeLeave } from "../../data/checkpointBeforeLeave";
 import { installExecutor, requestSaveAndWait } from "../../data/saveQueue";
 import {
   clearTabFileDirty,
@@ -159,8 +162,14 @@ export function useForkFileSave(opts: {
 
   const finishNavigateHome = useCallback(() => {
     window.setTimeout(() => {
-      skipLeaveStashOnceRef.current = true;
-      navigateToFileListHome();
+      void (async () => {
+        const fileId = getFileIdFromHash();
+        if (fileId && !isLocalDraftFileId(fileId)) {
+          await maybeCreateCheckpointBeforeLeave(fileId);
+        }
+        skipLeaveStashOnceRef.current = true;
+        navigateToFileListHome();
+      })();
     }, 80);
   }, [navigateToFileListHome]);
 
@@ -252,14 +261,37 @@ export function useForkFileSave(opts: {
       const baseline = FileSyncState.getBaselineHash(fid);
       if (baseline && h === baseline) {
         clearTabFileDirty(fid);
+        let checkpointCreated = false;
+        if (isManualCheckpointSource(source)) {
+          try {
+            await ServerSync.createCheckpoint(fid, CHECKPOINT_LABELS.manual);
+            checkpointCreated = true;
+            lastServerSaveMetaRef.current = {
+              skipped: false,
+              contentSha256: baseline,
+            };
+            window.dispatchEvent(
+              new CustomEvent("excalidraw-server-saved", {
+                detail: { id: fid, hash: h },
+              }),
+            );
+          } catch (e: any) {
+            setErrorMessage(e?.message ?? String(e));
+            return false;
+          }
+        }
         if (source === "toolbar" || source === "hotkey") {
-          setForkSaveHint("内容与最新提交一致，无需保存");
+          setForkSaveHint(
+            checkpointCreated
+              ? "已创建手动存档"
+              : "内容与最新状态一致，无需保存",
+          );
         }
         if (navigateAfter) {
           FileSyncState.clearLocalCache(fid);
           finishNavigateHome();
         }
-        return false;
+        return checkpointCreated;
       }
       if (source !== "visibility" && source !== "auto") {
         setForkSaving(true);
@@ -293,7 +325,7 @@ export function useForkFileSave(opts: {
           thumbnail,
           {
             suppressSavedEvent: true,
-            archiveLabel: resolveAutoSaveArchiveLabel(source),
+            checkpointPolicy: resolveCheckpointPolicy(source),
           },
         );
         logSave.debug(`saveToServer file=${fid.slice(0, 8)}, result`, result);
@@ -341,7 +373,7 @@ export function useForkFileSave(opts: {
         window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
         if (result?.skipped) {
           if (source === "toolbar" || source === "hotkey") {
-            setForkSaveHint("已是最新版本");
+            setForkSaveHint("已是最新状态");
           }
         } else if (source === "auto") {
           excalidrawAPI.setToast({ message: "自动保存完成" });
@@ -423,9 +455,9 @@ export function useForkFileSave(opts: {
       bumpPersistGeneration: () => {
         localPersistGenRef.current += 1;
       },
-      navigateToFileListHome,
+      navigateToFileListHome: finishNavigateHome,
     });
-  }, [navigateToFileListHome]);
+  }, [finishNavigateHome]);
 
   const forkGoHomeWithServerSave = useCallback(async () => {
     const fid = getFileIdFromHash();
@@ -461,7 +493,7 @@ export function useForkFileSave(opts: {
       return;
     }
     if (!state.shouldPromptOnLeave) {
-      navigateToFileListHome();
+      finishNavigateHome();
       return;
     }
     if (isAutoSaveOnExitActive() && isAutoSaveEligibleFile(fid)) {
@@ -469,7 +501,7 @@ export function useForkFileSave(opts: {
       return;
     }
     setForkHomeNavDialogOpen(true);
-  }, [excalidrawAPI, getSceneData, navigateToFileListHome]);
+  }, [excalidrawAPI, finishNavigateHome, getSceneData, navigateToFileListHome]);
 
   const forkHomeConfirmSave = useCallback(async () => {
     setForkHomeNavDialogOpen(false);

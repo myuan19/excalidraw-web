@@ -4,13 +4,17 @@
 
 import { createLogger } from "../lib/logger";
 import { devDebug, isFileListFolderDndDebugEnabled } from "../lib/devDebug";
+
+import { editorRegistry } from "../editors/registry";
+
 import { FileSyncState } from "./FileSyncState";
 import { getDocumentFormatAdapter } from "./formats/registry";
-import { editorRegistry } from "../editors/registry";
 
 import { hashDocumentSnapshot } from "./sceneHash";
 
 import { normalizeDocument } from "./documentTypes";
+
+import type { CheckpointPolicy } from "./checkpointPolicy";
 
 import type { ForkSceneSnapshot } from "./forkFileTypes";
 
@@ -161,7 +165,6 @@ async function parseGetFileResponse(
 ): Promise<ServerFile> {
   const ct = res.headers.get("content-type") || "";
   if (!ct.includes("application/json")) {
-    const text = await res.text();
     throw new Error(
       `API /files/${id} expected JSON but got ${ct || "unknown type"}.`,
     );
@@ -206,6 +209,13 @@ export interface ArchiveEntry {
   content_sha256?: string | null;
 }
 
+export interface CheckpointStatus {
+  fileId: string;
+  currentContentSha256: string | null;
+  hasCurrentCheckpoint: boolean;
+  latestArchive?: ArchiveEntry | null;
+}
+
 export interface ServerFolder {
   id: string;
   parent_id: string | null;
@@ -229,6 +239,13 @@ export interface PutFileResult {
   skipped?: boolean;
   updated_at?: string;
   content_sha256?: string;
+  checkpoint?: {
+    created: boolean;
+    id?: string;
+    label?: string;
+    created_at?: string;
+    content_sha256?: string | null;
+  };
 }
 
 export interface ServerFileHash {
@@ -287,10 +304,7 @@ export const ServerSync = {
     return api(`/files/folders/${id}`, { method: "DELETE" });
   },
 
-  async getFile(
-    id: string,
-    opts?: { force?: boolean },
-  ): Promise<ServerFile> {
+  async getFile(id: string, opts?: { force?: boolean }): Promise<ServerFile> {
     const priorHash = FileSyncState.getServerHash(id);
     const headers: Record<string, string> = { Accept: "application/json" };
     if (priorHash && !opts?.force) {
@@ -322,7 +336,11 @@ export const ServerSync = {
     data: unknown,
     name?: string,
     thumbnail?: string | null,
-    opts?: { suppressSavedEvent?: boolean; archiveLabel?: string },
+    opts?: {
+      suppressSavedEvent?: boolean;
+      archiveLabel?: string;
+      checkpointPolicy?: CheckpointPolicy;
+    },
   ): Promise<PutFileResult> {
     const hasThumbnailField = thumbnail !== undefined;
     logSave.debug("saveFileImmediate", {
@@ -330,6 +348,7 @@ export const ServerSync = {
       hasThumb: typeof thumbnail === "string" && thumbnail.length > 0,
       clearThumb: thumbnail === null,
       archiveLabel: opts?.archiveLabel ?? "",
+      checkpointPolicy: opts?.checkpointPolicy?.mode ?? "none",
     });
     const result = await api<PutFileResult>(`/files/${id}`, {
       method: "PUT",
@@ -338,6 +357,9 @@ export const ServerSync = {
         ...(name ? { name } : {}),
         ...(hasThumbnailField ? { thumbnail } : {}),
         ...(opts?.archiveLabel ? { archiveLabel: opts.archiveLabel } : {}),
+        ...(opts?.checkpointPolicy
+          ? { checkpointPolicy: opts.checkpointPolicy }
+          : {}),
       }),
     });
     if (result?.content_sha256) {
@@ -403,13 +425,9 @@ export const ServerSync = {
         : file.data;
     const extension = editorRegistry.getDownloadExtension(kind);
     const blob = new Blob(
-      [
-        typeof data === "string"
-          ? data
-          : `${JSON.stringify(data, null, 2)}\n`,
-      ],
+      [typeof data === "string" ? data : `${JSON.stringify(data, null, 2)}\n`],
       {
-      type: "application/json",
+        type: "application/json",
       },
     );
     const a = document.createElement("a");
@@ -436,6 +454,17 @@ export const ServerSync = {
     });
   },
 
+  createCheckpoint(fileId: string, label: string): Promise<ArchiveEntry> {
+    return api(`/files/${fileId}/archive`, {
+      method: "POST",
+      body: JSON.stringify({ label }),
+    });
+  },
+
+  getCheckpointStatus(fileId: string): Promise<CheckpointStatus> {
+    return api(`/files/${fileId}/archive-status`);
+  },
+
   listArchives(fileId: string): Promise<ArchiveEntry[]> {
     return api(`/files/${fileId}/archives`);
   },
@@ -444,9 +473,14 @@ export const ServerSync = {
     return api(`/files/${fileId}/archives/${archiveId}`);
   },
 
-  restoreArchive(fileId: string, archiveId: string): Promise<unknown> {
+  restoreArchive(
+    fileId: string,
+    archiveId: string,
+    opts?: { backupCurrent?: boolean },
+  ): Promise<unknown> {
     return api(`/files/${fileId}/restore/${archiveId}`, {
       method: "POST",
+      body: JSON.stringify({ backupCurrent: opts?.backupCurrent !== false }),
     });
   },
 

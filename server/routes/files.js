@@ -1,7 +1,9 @@
-import { Router } from "express";
 import { createHash, randomUUID } from "crypto";
 import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "fs";
 import { join } from "path";
+
+import { Router } from "express";
+
 import db, { DATA_DIR } from "../db.js";
 import { createLogger } from "../lib/logger.js";
 import {
@@ -9,7 +11,12 @@ import {
   ifNoneMatchSatisfied,
   sendNotModified,
 } from "../lib/documentEtag.js";
-import { isApiDebugEnabled, isThumbAuditLogEnabled, summarizeScenePayload, truncStr } from "../logger.js";
+import {
+  isApiDebugEnabled,
+  isThumbAuditLogEnabled,
+  summarizeScenePayload,
+  truncStr,
+} from "../logger.js";
 
 const router = Router();
 
@@ -26,7 +33,9 @@ function currentPath(fileId) {
 
 function archivePath(fileId, archiveId) {
   const dir = join(fileDir(fileId), "archives");
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
   return join(dir, `${archiveId}.excalidraw`);
 }
 
@@ -42,10 +51,15 @@ function hashSceneDataJson(data) {
   return createHash("sha256").update(JSON.stringify(data)).digest("hex");
 }
 
-/** 每次成功保存后追加一条版本快照（与 current.excalidraw 内容一致） */
 /** 每个文件最多保留的版本快照条数（更早的从 DB 与磁盘删除） */
 const MAX_ARCHIVES_PER_FILE = 8;
 const AUTO_ARCHIVE_LABEL_PREFIX = "auto:";
+const CHECKPOINT_LABELS = {
+  manual: "checkpoint:manual",
+  interval: "checkpoint:interval",
+  switch: "checkpoint:switch",
+  restoreBackup: "checkpoint:restore-backup",
+};
 
 function normalizeArchiveLabel(value) {
   return typeof value === "string" ? value.trim().slice(0, 128) : "";
@@ -55,6 +69,30 @@ function isAutoArchiveLabel(label) {
   return (
     typeof label === "string" && label.startsWith(AUTO_ARCHIVE_LABEL_PREFIX)
   );
+}
+
+function normalizeCheckpointPolicy(value) {
+  if (!value || typeof value !== "object") {
+    return { mode: "none" };
+  }
+  if (value.mode === "force") {
+    return {
+      mode: "force",
+      label: normalizeArchiveLabel(value.label) || CHECKPOINT_LABELS.manual,
+    };
+  }
+  if (value.mode === "interval") {
+    const intervalMinutes = Number(value.intervalMinutes);
+    if (!Number.isFinite(intervalMinutes) || intervalMinutes <= 0) {
+      return { mode: "none" };
+    }
+    return {
+      mode: "interval",
+      intervalMinutes,
+      label: normalizeArchiveLabel(value.label) || CHECKPOINT_LABELS.interval,
+    };
+  }
+  return { mode: "none" };
 }
 
 function deleteArchiveRow(row) {
@@ -82,16 +120,50 @@ function deleteArchivesByLabel(fileId, label) {
   rows.forEach(deleteArchiveRow);
 }
 
+function getLatestArchiveRow(fileId) {
+  return db
+    .prepare(
+      `SELECT id, label, created_at, content_sha256
+       FROM archives
+       WHERE file_id = ?
+       ORDER BY created_at DESC
+       LIMIT 1`,
+    )
+    .get(fileId);
+}
+
+function hasArchiveWithSha(fileId, contentSha256) {
+  if (!contentSha256) {
+    return false;
+  }
+  return !!db
+    .prepare(
+      `SELECT id FROM archives
+       WHERE file_id = ? AND content_sha256 = ?
+       LIMIT 1`,
+    )
+    .get(fileId, contentSha256);
+}
+
 function normalizeFolderId(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function nextSortIndex(table, parentColumn, parentId) {
-  const where = parentId == null ? `${parentColumn} IS NULL` : `${parentColumn} = ?`;
+  const where =
+    parentId == null ? `${parentColumn} IS NULL` : `${parentColumn} = ?`;
   const row =
     parentId == null
-      ? db.prepare(`SELECT COALESCE(MAX(sort_index), -1) + 1 AS next FROM ${table} WHERE ${where}`).get()
-      : db.prepare(`SELECT COALESCE(MAX(sort_index), -1) + 1 AS next FROM ${table} WHERE ${where}`).get(parentId);
+      ? db
+          .prepare(
+            `SELECT COALESCE(MAX(sort_index), -1) + 1 AS next FROM ${table} WHERE ${where}`,
+          )
+          .get()
+      : db
+          .prepare(
+            `SELECT COALESCE(MAX(sort_index), -1) + 1 AS next FROM ${table} WHERE ${where}`,
+          )
+          .get(parentId);
   return row?.next ?? 0;
 }
 
@@ -171,7 +243,7 @@ function wouldCreateFolderCycle(folderId, nextParentId) {
   return false;
 }
 
-/** 在插入新快照之前腾出位置：优先淘汰自动保存，其次才删最旧版本。 */
+/** 在插入新快照之前腾出位置：优先淘汰自动/定时 checkpoint，其次才删最旧版本。 */
 function trimArchivesBeforeAppend(fileId) {
   for (;;) {
     const countRow = db
@@ -187,6 +259,7 @@ function trimArchivesBeforeAppend(fileId) {
          WHERE file_id = ?
          ORDER BY
            CASE WHEN label LIKE 'auto:%' THEN 0 ELSE 1 END,
+           CASE WHEN label = 'checkpoint:interval' THEN 0 ELSE 1 END,
            created_at ASC
          LIMIT 1`,
       )
@@ -209,34 +282,97 @@ function appendVersionSnapshot(fileId, dataObj, options = {}) {
   const relPath = `files/${fileId}/archives/${archiveId}.excalidraw`;
   const absPath = archivePath(fileId, archiveId);
   const jsonStr = JSON.stringify(dataObj);
-  const sha = hashSceneDataJson(dataObj);
+  const parsedForHash = { ...dataObj };
+  delete parsedForHash._deltas;
+  const sha = hashSceneDataJson(parsedForHash);
   writeFileSync(absPath, jsonStr, "utf-8");
   db.prepare(
     `INSERT INTO archives (id, file_id, label, created_at, path, content_sha256) VALUES (?, ?, ?, ?, ?, ?)`,
   ).run(archiveId, fileId, label, now, relPath, sha);
-  return archiveId;
+  return { id: archiveId, label, created_at: now, content_sha256: sha };
+}
+
+function appendCurrentSnapshot(fileId, options = {}) {
+  const src = currentPath(fileId);
+  if (!existsSync(src)) {
+    throw new Error("no current data to archive");
+  }
+
+  const content = readFileSync(src, "utf-8");
+  const dataObj = JSON.parse(content);
+  if (Array.isArray(options.deltas) && options.deltas.length > 0) {
+    return appendVersionSnapshot(
+      fileId,
+      { ...dataObj, _deltas: options.deltas },
+      options,
+    );
+  }
+  return appendVersionSnapshot(fileId, dataObj, options);
+}
+
+function shouldCreateCheckpoint(fileId, contentSha256, policy) {
+  if (!policy || policy.mode === "none") {
+    return false;
+  }
+  if (policy.mode === "force") {
+    return true;
+  }
+  if (policy.mode !== "interval") {
+    return false;
+  }
+  if (hasArchiveWithSha(fileId, contentSha256)) {
+    return false;
+  }
+  const latest = getLatestArchiveRow(fileId);
+  if (!latest) {
+    return true;
+  }
+  const latestAt = Date.parse(latest.created_at);
+  if (!Number.isFinite(latestAt)) {
+    return true;
+  }
+  return Date.now() - latestAt >= policy.intervalMinutes * 60 * 1000;
+}
+
+function maybeAppendCheckpoint(fileId, dataObj, contentSha256, policy) {
+  if (!shouldCreateCheckpoint(fileId, contentSha256, policy)) {
+    return { created: false };
+  }
+  const entry = appendVersionSnapshot(fileId, dataObj, { label: policy.label });
+  return { created: true, ...entry };
 }
 
 function ensureFileDir(fileId) {
   const dir = fileDir(fileId);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
 }
 
 // ---------- backfill content_sha256 for existing files ----------
 {
-  const rows = db.prepare(`SELECT id FROM files WHERE content_sha256 IS NULL`).all();
+  const rows = db
+    .prepare(`SELECT id FROM files WHERE content_sha256 IS NULL`)
+    .all();
   for (const r of rows) {
     const fp = currentPath(r.id);
     if (existsSync(fp)) {
       try {
         const data = JSON.parse(readFileSync(fp, "utf-8"));
         const sha = hashSceneDataJson(data);
-        db.prepare("UPDATE files SET content_sha256 = ? WHERE id = ?").run(sha, r.id);
-      } catch { /* skip corrupt files */ }
+        db.prepare("UPDATE files SET content_sha256 = ? WHERE id = ?").run(
+          sha,
+          r.id,
+        );
+      } catch {
+        /* skip corrupt files */
+      }
     }
   }
   if (rows.length) {
-    console.log(`[excalidraw-web-server] backfilled content_sha256 for ${rows.length} file(s)`);
+    console.log(
+      `[excalidraw-web-server] backfilled content_sha256 for ${rows.length} file(s)`,
+    );
   }
 }
 
@@ -287,10 +423,9 @@ router.post("/folders", (req, res) => {
     return;
   }
   const now = new Date().toISOString();
-  const sortIndex =
-    Number.isFinite(Number(req.body.sort_index))
-      ? Number(req.body.sort_index)
-      : nextSortIndex("file_folders", "parent_id", parentId);
+  const sortIndex = Number.isFinite(Number(req.body.sort_index))
+    ? Number(req.body.sort_index)
+    : nextSortIndex("file_folders", "parent_id", parentId);
   db.prepare(
     `INSERT INTO file_folders (id, parent_id, name, sort_index, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?)`,
@@ -317,7 +452,9 @@ router.patch("/folders/:id", (req, res) => {
       ? String(req.body.name).trim() || row.name
       : row.name;
   const hasParent = Object.prototype.hasOwnProperty.call(req.body, "parent_id");
-  const nextParentId = hasParent ? normalizeFolderId(req.body.parent_id) : row.parent_id;
+  const nextParentId = hasParent
+    ? normalizeFolderId(req.body.parent_id)
+    : row.parent_id;
   if (!assertFolderExists(nextParentId, res)) {
     return;
   }
@@ -325,7 +462,8 @@ router.patch("/folders/:id", (req, res) => {
     return res.status(400).json({ error: "cannot move folder into itself" });
   }
   const nameChanged =
-    Object.prototype.hasOwnProperty.call(req.body, "name") && nextName !== row.name;
+    Object.prototype.hasOwnProperty.call(req.body, "name") &&
+    nextName !== row.name;
   if (nameChanged) {
     const now = new Date().toISOString();
     db.prepare(
@@ -440,9 +578,10 @@ router.get("/", (_req, res) => {
 router.post("/", (req, res) => {
   const id = randomUUID();
   const name = req.body.name || "Untitled";
-  const kind = typeof req.body.kind === "string" && req.body.kind.trim()
-    ? req.body.kind.trim()
-    : "excalidraw";
+  const kind =
+    typeof req.body.kind === "string" && req.body.kind.trim()
+      ? req.body.kind.trim()
+      : "excalidraw";
   const folderId = normalizeFolderId(req.body.folder_id);
   if (!assertFolderExists(folderId, res)) {
     return;
@@ -458,15 +597,7 @@ router.post("/", (req, res) => {
   const sortIndex = nextSortIndex("files", "folder_id", folderId);
   db.prepare(
     "INSERT INTO files (id, name, kind, created_at, updated_at, folder_id, sort_index) VALUES (?, ?, ?, ?, ?, ?, ?)",
-  ).run(
-    id,
-    name,
-    kind,
-    now,
-    now,
-    folderId,
-    sortIndex,
-  );
+  ).run(id, name, kind, now, now, folderId, sortIndex);
 
   ensureFileDir(id);
   const empty = JSON.stringify({
@@ -556,7 +687,9 @@ router.get("/:id", (req, res) => {
       id: fid.slice(0, 8),
       message: e.message,
     });
-    return res.status(500).json({ error: "corrupt scene file", message: e.message });
+    return res
+      .status(500)
+      .json({ error: "corrupt scene file", message: e.message });
   }
   if (isApiDebugEnabled()) {
     log.info("[DEBUG] files.getById | success", {
@@ -580,17 +713,30 @@ router.get("/:id", (req, res) => {
 router.put("/:id", (req, res) => {
   const id = req.params.id;
   const row = db.prepare("SELECT * FROM files WHERE id = ?").get(id);
-  if (!row) return res.status(404).json({ error: "not found" });
+  if (!row) {
+    return res.status(404).json({ error: "not found" });
+  }
 
   const hasData = !!req.body.data;
-  const hasThumbnailField = Object.prototype.hasOwnProperty.call(req.body, "thumbnail");
-  const hasThumb = typeof req.body.thumbnail === "string" && req.body.thumbnail.length > 0;
+  const hasThumbnailField = Object.prototype.hasOwnProperty.call(
+    req.body,
+    "thumbnail",
+  );
+  const hasThumb =
+    typeof req.body.thumbnail === "string" && req.body.thumbnail.length > 0;
   const clearThumb = req.body.thumbnail === null;
   const mutatesThumbnail = hasThumb || clearThumb;
   const hasName = !!req.body.name;
   const archiveLabel = normalizeArchiveLabel(req.body.archiveLabel);
-  const elementCount = hasData && Array.isArray(req.body.data?.elements) ? req.body.data.elements.length : 0;
-  const fileCount = hasData && req.body.data?.files ? Object.keys(req.body.data.files).length : 0;
+  const checkpointPolicy = normalizeCheckpointPolicy(req.body.checkpointPolicy);
+  const elementCount =
+    hasData && Array.isArray(req.body.data?.elements)
+      ? req.body.data.elements.length
+      : 0;
+  const fileCount =
+    hasData && req.body.data?.files
+      ? Object.keys(req.body.data.files).length
+      : 0;
   const sceneSummary = hasData ? summarizeScenePayload(req.body.data) : null;
   log.info("PUT /:id (导入会走：创建 → archives 检查 → 本请求)", {
     id: id.slice(0, 8),
@@ -598,8 +744,16 @@ router.put("/:id", (req, res) => {
     bodyKeys: Object.keys(req.body || {}),
     hasData,
     hasName,
-    name: req.body.name != null ? truncStr(String(req.body.name), 80) : "(unchanged)",
+    name:
+      req.body.name != null
+        ? truncStr(String(req.body.name), 80)
+        : "(unchanged)",
     archiveLabel: archiveLabel || "",
+    checkpointPolicy: checkpointPolicy.mode,
+    checkpointIntervalMinutes:
+      checkpointPolicy.mode === "interval"
+        ? checkpointPolicy.intervalMinutes
+        : null,
     hasThumbnailField,
     hasThumb,
     clearThumb,
@@ -616,7 +770,9 @@ router.put("/:id", (req, res) => {
     if (existsSync(fp)) {
       try {
         const existingData = JSON.parse(readFileSync(fp, "utf-8"));
-        if (hashSceneDataJson(existingData) === hashSceneDataJson(req.body.data)) {
+        if (
+          hashSceneDataJson(existingData) === hashSceneDataJson(req.body.data)
+        ) {
           skipDataWrite = true;
         }
       } catch {
@@ -627,24 +783,30 @@ router.put("/:id", (req, res) => {
 
   if (skipDataWrite && !req.body.name && !mutatesThumbnail) {
     const sha = hasData ? hashSceneDataJson(req.body.data) : undefined;
+    const checkpoint =
+      hasData && sha
+        ? maybeAppendCheckpoint(id, req.body.data, sha, checkpointPolicy)
+        : { created: false };
     log.info("PUT /:id → SKIPPED (unchanged)", {
       id: id.slice(0, 8),
       sha: sha?.slice(0, 8),
+      checkpointCreated: checkpoint.created,
     });
     return res.json({
       ok: true,
       skipped: true,
       ...(sha !== undefined && { content_sha256: sha }),
+      checkpoint,
       updated_at: row.updated_at,
     });
   }
 
   const now = new Date().toISOString();
 
+  let checkpoint = { created: false };
   if (req.body.data && !skipDataWrite) {
     ensureFileDir(id);
     writeFileSync(currentPath(id), JSON.stringify(req.body.data), "utf-8");
-    appendVersionSnapshot(id, req.body.data, { label: archiveLabel });
   }
 
   if (req.body.thumbnail) {
@@ -667,6 +829,16 @@ router.put("/:id", (req, res) => {
       ? JSON.parse(readFileSync(currentPath(id), "utf-8"))
       : req.body.data;
     contentSha256Out = hashSceneDataJson(src);
+    checkpoint = maybeAppendCheckpoint(
+      id,
+      src,
+      contentSha256Out,
+      checkpointPolicy,
+    );
+    if (!checkpoint.created && archiveLabel) {
+      const entry = appendVersionSnapshot(id, src, { label: archiveLabel });
+      checkpoint = { created: true, ...entry };
+    }
   }
 
   if (hasThumb && contentSha256Out) {
@@ -682,13 +854,13 @@ router.put("/:id", (req, res) => {
   }
 
   if (req.body.name) {
-    db.prepare("UPDATE files SET name = ?, updated_at = ?, content_sha256 = COALESCE(?, content_sha256) WHERE id = ?").run(
-      req.body.name, now, contentSha256Out ?? null, id,
-    );
+    db.prepare(
+      "UPDATE files SET name = ?, updated_at = ?, content_sha256 = COALESCE(?, content_sha256) WHERE id = ?",
+    ).run(req.body.name, now, contentSha256Out ?? null, id);
   } else {
-    db.prepare("UPDATE files SET updated_at = ?, content_sha256 = COALESCE(?, content_sha256) WHERE id = ?").run(
-      now, contentSha256Out ?? null, id,
-    );
+    db.prepare(
+      "UPDATE files SET updated_at = ?, content_sha256 = COALESCE(?, content_sha256) WHERE id = ?",
+    ).run(now, contentSha256Out ?? null, id);
   }
 
   log.info("PUT /:id → SAVED", {
@@ -699,11 +871,14 @@ router.put("/:id", (req, res) => {
     sha: contentSha256Out?.slice(0, 8) ?? "none",
     wroteData: !!(req.body.data && !skipDataWrite),
     archiveLabel: archiveLabel || "",
+    checkpointCreated: checkpoint.created,
+    checkpointLabel: checkpoint.label ?? "",
   });
   res.json({
     ok: true,
     updated_at: now,
     ...(contentSha256Out !== undefined && { content_sha256: contentSha256Out }),
+    checkpoint,
   });
 });
 
@@ -783,12 +958,16 @@ router.patch("/:id", (req, res) => {
 
 router.delete("/:id", (req, res) => {
   const row = db.prepare("SELECT * FROM files WHERE id = ?").get(req.params.id);
-  if (!row) return res.status(404).json({ error: "not found" });
+  if (!row) {
+    return res.status(404).json({ error: "not found" });
+  }
 
   db.prepare("DELETE FROM files WHERE id = ?").run(req.params.id);
 
   const dir = fileDir(req.params.id);
-  if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
+  if (existsSync(dir)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
 
   res.json({ ok: true });
 });
@@ -797,35 +976,48 @@ router.delete("/:id", (req, res) => {
 
 router.post("/:id/archive", (req, res) => {
   const row = db.prepare("SELECT * FROM files WHERE id = ?").get(req.params.id);
-  if (!row) return res.status(404).json({ error: "not found" });
+  if (!row) {
+    return res.status(404).json({ error: "not found" });
+  }
 
-  const archiveId = randomUUID();
-  const label = req.body.label || "";
-  const now = new Date().toISOString();
-  const relPath = `files/${req.params.id}/archives/${archiveId}.excalidraw`;
-  const absPath = archivePath(req.params.id, archiveId);
+  try {
+    const entry = appendCurrentSnapshot(req.params.id, {
+      label: req.body.label || "",
+      deltas: req.body.deltas,
+    });
+    res.status(201).json(entry);
+  } catch (e) {
+    res.status(400).json({ error: e.message || "archive failed" });
+  }
+});
 
-  const src = currentPath(req.params.id);
-  if (!existsSync(src)) return res.status(400).json({ error: "no current data to archive" });
+router.get("/:id/archive-status", (req, res) => {
+  const row = db.prepare("SELECT * FROM files WHERE id = ?").get(req.params.id);
+  if (!row) {
+    return res.status(404).json({ error: "not found" });
+  }
 
-  trimArchivesBeforeAppend(req.params.id);
+  let currentContentSha256 = row.content_sha256 ?? null;
+  if (!currentContentSha256 && existsSync(currentPath(req.params.id))) {
+    try {
+      const parsed = JSON.parse(
+        readFileSync(currentPath(req.params.id), "utf-8"),
+      );
+      currentContentSha256 = hashSceneDataJson(parsed);
+    } catch {
+      currentContentSha256 = null;
+    }
+  }
 
-  const content = readFileSync(src, "utf-8");
-  const payload = req.body.deltas
-    ? JSON.stringify({ ...JSON.parse(content), _deltas: req.body.deltas })
-    : content;
-
-  writeFileSync(absPath, payload, "utf-8");
-
-  const parsedForHash = JSON.parse(payload);
-  delete parsedForHash._deltas;
-  const sha = hashSceneDataJson(parsedForHash);
-
-  db.prepare(
-    "INSERT INTO archives (id, file_id, label, created_at, path, content_sha256) VALUES (?, ?, ?, ?, ?, ?)",
-  ).run(archiveId, req.params.id, label, now, relPath, sha);
-
-  res.status(201).json({ id: archiveId, label, created_at: now, content_sha256: sha });
+  res.json({
+    fileId: req.params.id,
+    currentContentSha256,
+    hasCurrentCheckpoint: hasArchiveWithSha(
+      req.params.id,
+      currentContentSha256,
+    ),
+    latestArchive: getLatestArchiveRow(req.params.id) ?? null,
+  });
 });
 
 router.get("/:id/archives", (req, res) => {
@@ -856,7 +1048,9 @@ router.patch("/:id/archives/:archiveId", (req, res) => {
     );
   }
   const updated = db
-    .prepare("SELECT id, label, created_at, content_sha256 FROM archives WHERE id = ?")
+    .prepare(
+      "SELECT id, label, created_at, content_sha256 FROM archives WHERE id = ?",
+    )
     .get(req.params.archiveId);
   res.json({ ok: true, ...updated });
 });
@@ -865,40 +1059,77 @@ router.get("/:id/archives/:archiveId", (req, res) => {
   const row = db
     .prepare("SELECT * FROM archives WHERE id = ? AND file_id = ?")
     .get(req.params.archiveId, req.params.id);
-  if (!row) return res.status(404).json({ error: "archive not found" });
+  if (!row) {
+    return res.status(404).json({ error: "archive not found" });
+  }
 
   const absPath = join(DATA_DIR, row.path);
-  if (!existsSync(absPath)) return res.status(404).json({ error: "archive file missing" });
+  if (!existsSync(absPath)) {
+    return res.status(404).json({ error: "archive file missing" });
+  }
 
   const data = JSON.parse(readFileSync(absPath, "utf-8"));
   res.json({ ...row, data });
 });
 
 router.post("/:id/restore/:archiveId", (req, res) => {
+  if (!db.prepare("SELECT id FROM files WHERE id = ?").get(req.params.id)) {
+    return res.status(404).json({ error: "not found" });
+  }
+
   const archive = db
     .prepare("SELECT * FROM archives WHERE id = ? AND file_id = ?")
     .get(req.params.archiveId, req.params.id);
-  if (!archive) return res.status(404).json({ error: "archive not found" });
+  if (!archive) {
+    return res.status(404).json({ error: "archive not found" });
+  }
 
   const absPath = join(DATA_DIR, archive.path);
-  if (!existsSync(absPath)) return res.status(404).json({ error: "archive file missing" });
+  if (!existsSync(absPath)) {
+    return res.status(404).json({ error: "archive file missing" });
+  }
 
   const content = readFileSync(absPath, "utf-8");
   const parsed = JSON.parse(content);
   delete parsed._deltas;
+  const restoredSha = hashSceneDataJson(parsed);
+
+  let backup = { created: false };
+  const shouldBackupCurrent = req.body?.backupCurrent !== false;
+  if (shouldBackupCurrent && existsSync(currentPath(req.params.id))) {
+    try {
+      const current = JSON.parse(
+        readFileSync(currentPath(req.params.id), "utf-8"),
+      );
+      const currentSha = hashSceneDataJson(current);
+      if (
+        currentSha !== restoredSha &&
+        !hasArchiveWithSha(req.params.id, currentSha)
+      ) {
+        const entry = appendVersionSnapshot(req.params.id, current, {
+          label: CHECKPOINT_LABELS.restoreBackup,
+        });
+        backup = { created: true, ...entry };
+      }
+    } catch {
+      // If current is corrupt, do not block restoring a valid archive.
+    }
+  }
 
   ensureFileDir(req.params.id);
   writeFileSync(currentPath(req.params.id), JSON.stringify(parsed), "utf-8");
 
   const now = new Date().toISOString();
-  const sha = hashSceneDataJson(parsed);
-  db.prepare("UPDATE files SET updated_at = ?, content_sha256 = ? WHERE id = ?").run(
-    now,
-    sha,
-    req.params.id,
-  );
+  db.prepare(
+    "UPDATE files SET updated_at = ?, content_sha256 = ? WHERE id = ?",
+  ).run(now, restoredSha, req.params.id);
 
-  res.json({ ok: true, restored_from: req.params.archiveId, content_sha256: sha });
+  res.json({
+    ok: true,
+    restored_from: req.params.archiveId,
+    content_sha256: restoredSha,
+    backup,
+  });
 });
 
 router.delete("/:id/archives/:archiveId", (req, res) => {

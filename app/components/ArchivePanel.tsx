@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { ServerSync, type ArchiveEntry } from "../data/ServerSync";
 import { useFileDraftStatus } from "../hooks/useFileDraftStatus";
 import { isAutoSaveLabel } from "../data/autoSaveSession";
+import { getCheckpointLabelText } from "../data/checkpointPolicy";
 
 import "./ExcalToolbar.scss";
 
@@ -16,10 +17,19 @@ function formatVersionTime(iso: string): string {
   try {
     const d = new Date(iso);
     const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
+      d.getDate(),
+    )} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   } catch {
     return iso;
   }
+}
+
+function getArchiveBadgeText(label: string): string {
+  if (isAutoSaveLabel(label)) {
+    return "旧自动保存";
+  }
+  return getCheckpointLabelText(label);
 }
 
 export const ArchivePanel: React.FC<ArchivePanelProps> = ({
@@ -60,19 +70,23 @@ export const ArchivePanel: React.FC<ArchivePanelProps> = ({
   useEffect(() => {
     const onSaved = () => void refresh({ silent: true });
     window.addEventListener("excalidraw-server-saved", onSaved);
-    return () =>
-      window.removeEventListener("excalidraw-server-saved", onSaved);
+    return () => window.removeEventListener("excalidraw-server-saved", onSaved);
   }, [refresh]);
 
   const handleRestore = async (archiveId: string) => {
     if (
-      !window.confirm("将画布替换为该历史版本？当前未保存的编辑将丢失。")
+      !window.confirm(
+        "将 latest 恢复为该 checkpoint？恢复前会自动备份当前 latest（如果尚未存档）。当前未保存到 latest 的本地编辑仍会丢失。",
+      )
     ) {
       return;
     }
     try {
-      await ServerSync.restoreArchive(fileId, archiveId);
+      await ServerSync.restoreArchive(fileId, archiveId, {
+        backupCurrent: true,
+      });
       await onAfterRestore();
+      await refresh({ silent: true });
     } catch (e: any) {
       alert(`恢复失败：${e.message}`);
     }
@@ -110,7 +124,7 @@ export const ArchivePanel: React.FC<ArchivePanelProps> = ({
           {/* 本地草稿 — 始终显示在最上方 */}
           <div className="nb-history-item nb-history-item--local">
             <span className="nb-history-time" style={{ fontWeight: 600 }}>
-              本地草稿
+              当前 / Latest
             </span>
             <span
               className={
@@ -131,40 +145,38 @@ export const ArchivePanel: React.FC<ArchivePanelProps> = ({
 
           {!loading && versions.length === 0 && (
             <div className="nb-history-item">
-              <span className="nb-history-time">暂无服务器版本</span>
+              <span className="nb-history-time">暂无 checkpoint</span>
             </div>
           )}
 
           {!loading &&
-            versions.map((a, i) => (
-              <div key={a.id} className="nb-history-item">
-                <div className="nb-history-info">
-                  <span
-                    className="nb-history-time"
-                    style={i === 0 ? { fontWeight: 600 } : undefined}
-                  >
-                    {i === 0 ? "最新提交" : formatVersionTime(a.created_at)}
-                    {isAutoSaveLabel(a.label) && (
-                      <span className="nb-history-badge nb-history-badge--auto">
-                        自动保存
-                      </span>
-                    )}
-                  </span>
-                  {i === 0 && (
-                    <span className="nb-history-sub">
+            versions.map((a, i) => {
+              const badgeText = getArchiveBadgeText(a.label);
+              return (
+                <div key={a.id} className="nb-history-item">
+                  <div className="nb-history-info">
+                    <span
+                      className="nb-history-time"
+                      style={i === 0 ? { fontWeight: 600 } : undefined}
+                    >
                       {formatVersionTime(a.created_at)}
+                      {badgeText && (
+                        <span className="nb-history-badge nb-history-badge--auto">
+                          {badgeText}
+                        </span>
+                      )}
                     </span>
-                  )}
+                  </div>
+                  <button
+                    type="button"
+                    className="nb-history-restore"
+                    onClick={() => void handleRestore(a.id)}
+                  >
+                    恢复
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  className="nb-history-restore"
-                  onClick={() => void handleRestore(a.id)}
-                >
-                  恢复
-                </button>
-              </div>
-            ))}
+              );
+            })}
         </div>
       </div>
     </div>

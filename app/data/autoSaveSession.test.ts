@@ -1,10 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
-import {
-  isAutoSaveEligibleFile,
-  isAutoSaveLabel,
-  resolveAutoSaveArchiveLabel,
-} from "./autoSaveSession";
+import { isAutoSaveEligibleFile, isAutoSaveLabel } from "./autoSaveSession";
+import { updateAppSettings } from "./appSettings";
+import { CHECKPOINT_LABELS, resolveCheckpointPolicy } from "./checkpointPolicy";
+
+beforeEach(() => {
+  updateAppSettings({ checkpointIntervalMin: 0 });
+});
 
 describe("isAutoSaveEligibleFile", () => {
   it("only allows persisted server file ids", () => {
@@ -18,21 +20,34 @@ describe("isAutoSaveEligibleFile", () => {
   });
 });
 
-describe("resolveAutoSaveArchiveLabel", () => {
-  it("labels idle and visibility saves as automatic archive entries", () => {
-    const idleLabel = resolveAutoSaveArchiveLabel("auto");
-    const visibilityLabel = resolveAutoSaveArchiveLabel("visibility");
-
-    expect(idleLabel).toBeTruthy();
-    expect(visibilityLabel).toBeTruthy();
-    expect(isAutoSaveLabel(idleLabel ?? "")).toBe(true);
-    expect(isAutoSaveLabel(visibilityLabel ?? "")).toBe(true);
+describe("checkpoint policy", () => {
+  it("keeps manual saves as forced checkpoints", () => {
+    expect(resolveCheckpointPolicy("toolbar")).toEqual({
+      mode: "force",
+      label: CHECKPOINT_LABELS.manual,
+    });
+    expect(resolveCheckpointPolicy("hotkey")).toEqual({
+      mode: "force",
+      label: CHECKPOINT_LABELS.manual,
+    });
   });
 
-  it("keeps user initiated saves as normal history entries", () => {
-    expect(resolveAutoSaveArchiveLabel("toolbar")).toBeUndefined();
-    expect(resolveAutoSaveArchiveLabel("hotkey")).toBeUndefined();
-    expect(resolveAutoSaveArchiveLabel("home")).toBeUndefined();
-    expect(resolveAutoSaveArchiveLabel("sidebar")).toBeUndefined();
+  it("keeps automatic saves as latest-only when interval checkpoint is disabled", () => {
+    updateAppSettings({ checkpointIntervalMin: 0 });
+
+    expect(resolveCheckpointPolicy("auto")).toEqual({ mode: "none" });
+    expect(resolveCheckpointPolicy("visibility")).toEqual({ mode: "none" });
+    expect(resolveCheckpointPolicy("home")).toEqual({ mode: "none" });
+  });
+
+  it("uses interval checkpoints for automatic/latest saves when configured", () => {
+    updateAppSettings({ checkpointIntervalMin: 30 });
+
+    expect(resolveCheckpointPolicy("auto")).toEqual({
+      mode: "interval",
+      intervalMinutes: 30,
+      label: CHECKPOINT_LABELS.interval,
+    });
+    expect(isAutoSaveLabel("auto:legacy")).toBe(true);
   });
 });

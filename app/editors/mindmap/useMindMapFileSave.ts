@@ -20,11 +20,13 @@ import { isLocalDraftFileId } from "../../data/localDraftFileId";
 import { notifyLocalDraftEdited } from "../../data/localDraftSessions";
 import { discardLocalDraftSession } from "../../data/discardLocalDraftSession";
 import { clearAppShellPendingNavigation } from "../../shell/appShellNavigate";
+import { isAutoSaveEligibleFile, notifyEdit } from "../../data/autoSaveSession";
 import {
-  isAutoSaveEligibleFile,
-  notifyEdit,
-  resolveAutoSaveArchiveLabel,
-} from "../../data/autoSaveSession";
+  CHECKPOINT_LABELS,
+  isManualCheckpointSource,
+  resolveCheckpointPolicy,
+} from "../../data/checkpointPolicy";
+import { maybeCreateCheckpointBeforeLeave } from "../../data/checkpointBeforeLeave";
 import { isAutoSaveOnExitActive } from "../../data/appSettings";
 import { installExecutor, requestSaveAndWait } from "../../data/saveQueue";
 import {
@@ -223,8 +225,14 @@ export function useMindMapFileSave(opts: {
 
   const finishNavigateHome = useCallback(() => {
     window.setTimeout(() => {
-      skipLeaveStashOnceRef.current = true;
-      navigateToFileListHome();
+      void (async () => {
+        const fileId = getFileIdFromHash();
+        if (fileId && !isLocalDraftFileId(fileId)) {
+          await maybeCreateCheckpointBeforeLeave(fileId);
+        }
+        skipLeaveStashOnceRef.current = true;
+        navigateToFileListHome();
+      })();
     }, 80);
   }, [navigateToFileListHome]);
 
@@ -385,15 +393,38 @@ export function useMindMapFileSave(opts: {
           source,
         });
         clearTabFileDirty(fileId);
+        let checkpointCreated = false;
+        if (isManualCheckpointSource(source)) {
+          try {
+            await ServerSync.createCheckpoint(fileId, CHECKPOINT_LABELS.manual);
+            checkpointCreated = true;
+            lastServerSaveMetaRef.current = {
+              skipped: false,
+              contentSha256: baseline,
+            };
+            window.dispatchEvent(
+              new CustomEvent("excalidraw-server-saved", {
+                detail: { id: fileId, hash },
+              }),
+            );
+          } catch (err: any) {
+            setErrorMessage(err?.message || "创建存档失败");
+            return false;
+          }
+        }
         if (source === "toolbar" || source === "hotkey") {
-          setMindMapSaveHint("内容与最新提交一致，无需保存");
+          setMindMapSaveHint(
+            checkpointCreated
+              ? "已创建手动存档"
+              : "内容与最新状态一致，无需保存",
+          );
           setStatus("已保存");
         }
         if (navigateAfter) {
           FileSyncState.clearLocalCache(fileId);
           finishNavigateHome();
         }
-        return false;
+        return checkpointCreated;
       }
       const thumbnailForSave = thumbnail ?? (contentChanged ? null : undefined);
 
@@ -412,7 +443,7 @@ export function useMindMapFileSave(opts: {
           thumbnailForSave,
           {
             suppressSavedEvent: true,
-            archiveLabel: resolveAutoSaveArchiveLabel(source),
+            checkpointPolicy: resolveCheckpointPolicy(source),
           },
         );
         updateDraftHashDebouncedRef.current.cancel();
@@ -440,7 +471,7 @@ export function useMindMapFileSave(opts: {
         if (source === "auto") {
           setMindMapSaveHint("自动保存完成");
         } else if (source === "toolbar" || source === "hotkey") {
-          setMindMapSaveHint(result?.skipped ? "已是最新版本" : "已保存");
+          setMindMapSaveHint(result?.skipped ? "已是最新状态" : "已保存");
         }
         setStatus("已保存");
         setErrorMessage(null);
@@ -579,7 +610,7 @@ export function useMindMapFileSave(opts: {
         baselineHash8:
           FileSyncState.getBaselineHash(fileId)?.slice(0, 8) ?? null,
       });
-      navigateToFileListHome();
+      finishNavigateHome();
       return;
     }
     await syncCurrentMindMapDraftForLeave(fileId);
@@ -594,7 +625,7 @@ export function useMindMapFileSave(opts: {
       baselineHash8: FileSyncState.getBaselineHash(fileId)?.slice(0, 8) ?? null,
     });
     if (!promptNeeded) {
-      navigateToFileListHome();
+      finishNavigateHome();
       return;
     }
     if (autoSaveExit) {
@@ -602,7 +633,11 @@ export function useMindMapFileSave(opts: {
       return;
     }
     setMindMapHomeNavDialogOpen(true);
-  }, [navigateToFileListHome, syncCurrentMindMapDraftForLeave]);
+  }, [
+    finishNavigateHome,
+    navigateToFileListHome,
+    syncCurrentMindMapDraftForLeave,
+  ]);
 
   const mindMapHomeConfirmSave = useCallback(async () => {
     setMindMapHomeNavDialogOpen(false);

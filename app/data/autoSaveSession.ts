@@ -4,20 +4,15 @@
  * 核心逻辑：
  * 1. 每次编辑变更时调用 `notifyEdit()`，重置空闲计时器
  * 2. 空闲 N 秒后自动触发一次保存到服务器
- * 3. 自动保存请求携带 `auto:${sessionId}` label，由服务端在写入版本时覆盖同 session 旧档
- * 4. `auto` 与 `visibility` 都按自动保存历史版本处理，避免后台保存污染普通历史
- * 5. session ID 只在内存中，页面关闭/导航离开即丢失
- *    → 下次打开同一文件时旧的自动存档永久保留
+ * 3. 自动保存只负责更新 latest；是否生成 checkpoint 由 checkpointPolicy 决定
  */
+
+import { createLogger } from "../lib/logger";
 
 import { getAppSettings } from "./appSettings";
 import { getFileIdFromHash } from "./fileIdFromHash";
 import { isLocalDraftFileId } from "./localDraftFileId";
-import { createLogger } from "../lib/logger";
-export {
-  broadcastFileSaved,
-  onCrossTabFileSaved,
-} from "./crossTabFileSync";
+export { broadcastFileSaved, onCrossTabFileSaved } from "./crossTabFileSync";
 
 const log = createLogger({ module: "autoSave" });
 
@@ -32,34 +27,11 @@ export function isAutoSaveEligibleForCurrentFile(): boolean {
   return isAutoSaveEligibleFile(getFileIdFromHash());
 }
 
-let globalSessionId: string | null = null;
-
-function ensureSessionId(): string {
-  if (!globalSessionId) {
-    globalSessionId = `s_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-  }
-  return globalSessionId;
-}
-
-function makeAutoLabel(): string {
-  return `auto:${ensureSessionId()}`;
-}
-
 const AUTO_LABEL_PREFIX = "auto:";
 
+/** 兼容旧数据：历史里可能已经存在 auto:* label。 */
 export function isAutoSaveLabel(label: string): boolean {
   return label.startsWith(AUTO_LABEL_PREFIX);
-}
-
-export function resolveAutoSaveArchiveLabel(source: string): string | undefined {
-  return source === "auto" || source === "visibility"
-    ? makeAutoLabel()
-    : undefined;
-}
-
-/** 重置 session（换文件 / 离开编辑器时调用） */
-export function resetAutoSaveSession(): void {
-  globalSessionId = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -114,11 +86,9 @@ export function notifyEdit(): void {
 
 /**
  * 注册自动保存回调（保存到服务器的函数）。
- * 每次注册会重置 session ID（新的文件打开 = 新 session）。
  * 返回取消注册函数。
  */
 export function registerAutoSaveTrigger(fn: AutoSaveTrigger): () => void {
-  resetAutoSaveSession();
   triggerFn = fn;
   return () => {
     if (triggerFn === fn) {
