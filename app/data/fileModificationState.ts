@@ -3,13 +3,15 @@ import { DEFAULT_DOCUMENT_DISPLAY_NAME } from "./defaultDocumentName";
 import { FileSyncState } from "./FileSyncState";
 import { isLocalDraftFileId } from "./localDraftFileId";
 import { hashDocumentSnapshot, hashSceneSnapshot } from "./sceneHash";
+import { clearTabFileDirty, markTabFileDirty } from "./tabFileDirtyState";
 
-import type { ManagedDocument } from "./documentTypes";
 import {
   getMindMapRootText,
   isMindMapSingleRootOnly,
   type MindMapDocumentData,
 } from "./formats/MindMapAdapter";
+
+import type { ManagedDocument } from "./documentTypes";
 import type { ForkSceneSnapshot } from "./forkFileTypes";
 
 export type FileModificationDraftStatus = "idle" | "draft" | "synced";
@@ -21,6 +23,11 @@ export type FileModificationState = {
   shouldMarkLocalDraftEdited: boolean;
   contentHash: string | null;
   baselineHash: string | null;
+};
+
+export type ApplyFileModificationStateOptions = {
+  /** Server files keep local cache for offline/thumb uses; leave paths may clear it. */
+  clearLocalCacheWhenSynced?: boolean;
 };
 
 function toState(
@@ -56,7 +63,8 @@ export function isLocalDraftSnapshotModified(
   snapshot: unknown,
 ): boolean {
   if (kind === "mindmap") {
-    const document = (snapshot as { document?: unknown } | null)?.document ?? snapshot;
+    const document =
+      (snapshot as { document?: unknown } | null)?.document ?? snapshot;
     return !isMindMapTemplateDocument(document);
   }
   return isExcalidrawDraftDirty(snapshot as ForkSceneSnapshot | null);
@@ -118,8 +126,8 @@ export function evaluateCurrentFileModificationState(opts: {
     const modified = isLocalDraftFileId(fileId)
       ? !isMindMapTemplateDocument(opts.mindMapDocument)
       : baselineHash
-        ? contentHash !== baselineHash
-        : FileSyncState.hasUnsavedChanges(fileId);
+      ? contentHash !== baselineHash
+      : FileSyncState.hasUnsavedChanges(fileId);
     return toState(fileId, modified, contentHash, baselineHash);
   }
 
@@ -128,10 +136,45 @@ export function evaluateCurrentFileModificationState(opts: {
     const modified = isLocalDraftFileId(fileId)
       ? isExcalidrawDraftDirty(opts.excalidrawScene)
       : baselineHash
-        ? contentHash !== baselineHash
-        : FileSyncState.hasUnsavedChanges(fileId);
+      ? contentHash !== baselineHash
+      : FileSyncState.hasUnsavedChanges(fileId);
     return toState(fileId, modified, contentHash, baselineHash);
   }
 
   return readStoredFileModificationState(fileId, kind);
+}
+
+/**
+ * Applies the canonical modification result to FileSyncState and tab-local dirty
+ * state. UI badges, leave guards, and background refresh then observe the same
+ * source of truth instead of each editor hand-writing hash state differently.
+ */
+export function applyFileModificationState(
+  fileId: string,
+  state: FileModificationState,
+  opts: ApplyFileModificationStateOptions = {},
+): void {
+  if (state.modified) {
+    if (state.contentHash) {
+      FileSyncState.setDraftHash(fileId, state.contentHash);
+    }
+    FileSyncState.setLocalEditTime(fileId);
+    markTabFileDirty(fileId);
+    return;
+  }
+
+  clearTabFileDirty(fileId);
+  FileSyncState.clearLocalEditTime(fileId);
+
+  if (state.contentHash && state.baselineHash) {
+    FileSyncState.alignHashes(fileId, state.contentHash);
+  } else if (state.baselineHash) {
+    FileSyncState.setDraftHash(fileId, state.baselineHash);
+  } else {
+    FileSyncState.clearDraftHash(fileId);
+  }
+
+  if (opts.clearLocalCacheWhenSynced || isLocalDraftFileId(fileId)) {
+    FileSyncState.clearLocalCache(fileId);
+  }
 }

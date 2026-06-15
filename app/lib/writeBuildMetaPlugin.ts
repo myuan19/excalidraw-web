@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import type { Plugin } from "vite";
@@ -28,6 +28,7 @@ export function writeBuildMetaPlugin(outDir: string): Plugin {
         gitSha: resolveGitSha(),
         buildTime: new Date().toISOString(),
       };
+      mkdirSync(outDir, { recursive: true });
       writeFileSync(
         path.join(outDir, "build-meta.json"),
         `${JSON.stringify(meta, null, 2)}\n`,

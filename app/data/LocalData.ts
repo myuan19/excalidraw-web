@@ -23,7 +23,7 @@ import {
   get,
 } from "idb-keyval";
 
-import { atom } from "app/app-jotai";
+import { atom } from "../app-jotai";
 
 import type { LibraryPersistedData } from "@excalidraw/excalidraw/data/library";
 import type { ExcalidrawElement, FileId } from "@excalidraw/element/types";

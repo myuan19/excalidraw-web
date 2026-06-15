@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { debounce } from "@excalidraw/common";
 
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+
 import { createLogger } from "../../lib/logger";
 import { DeltaStorage } from "../../data/DeltaStorage";
-import { FileEditDirty } from "../../data/fileEditDirty";
 import { discardLocalEditsNavigateHome } from "../../data/fileEditSession";
 import { FileSyncState } from "../../data/FileSyncState";
 import { hashSceneSnapshot } from "../../data/sceneHash";
 import { LocalData } from "../../data/LocalData";
+import {
+  applyFileModificationState,
+  evaluateCurrentFileModificationState,
+} from "../../data/fileModificationState";
 import {
   generateExcalidrawThumbnailAndCache,
   scheduleExcalidrawThumbnailAndCache,
@@ -15,10 +20,7 @@ import {
 import { resolveSaveDisplayName } from "../../data/forkFileNaming";
 import { ServerSync } from "../../data/ServerSync";
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
-import {
-  shouldDeferLeaveWhileNewDocumentHash,
-  shouldPromptEditorHomeNavDialog,
-} from "../../data/editorLeaveHome";
+import { shouldDeferLeaveWhileNewDocumentHash } from "../../data/editorLeaveHome";
 import { isLocalDraftFileId } from "../../data/localDraftFileId";
 import { notifyLocalDraftEdited } from "../../data/localDraftSessions";
 import { discardLocalDraftSession } from "../../data/discardLocalDraftSession";
@@ -34,8 +36,11 @@ import {
   markTabFileDirty,
 } from "../../data/tabFileDirtyState";
 
-import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import type { SaveToServerOptions, SaveToServerSource, SceneData } from "../../hooks/types";
+import type {
+  SaveToServerOptions,
+  SaveToServerSource,
+  SceneData,
+} from "../../hooks/types";
 
 /** 最近一次服务器保存的结果元信息，供 saveQueue executor 透传给跨页广播 */
 type ServerSaveMeta = {
@@ -62,7 +67,10 @@ export function useForkFileSave(opts: {
     setErrorMessage,
     onRequestSaveNew,
   } = opts;
-  const getSceneData = () => getSceneDataRef.current();
+  const getSceneData = useCallback(
+    () => getSceneDataRef.current(),
+    [getSceneDataRef],
+  );
 
   const [forkSaving, setForkSaving] = useState(false);
   const [forkSaveHint, setForkSaveHint] = useState<string | null>(null);
@@ -77,63 +85,60 @@ export function useForkFileSave(opts: {
   const lastServerSaveMetaRef = useRef<ServerSaveMeta | null>(null);
 
   const updateDraftHashDebouncedRef = useRef(
-    debounce(
-      (fileId: string, getScene: () => SceneData | null) => {
-        if (getFileIdFromHash() !== fileId) {
-          return;
-        }
-        const sceneData = getScene();
-        if (!sceneData || !fileId) {
-          return;
-        }
-        const h = hashSceneSnapshot(sceneData);
-        FileSyncState.setDraftHash(fileId, h);
-        window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
+    debounce((fileId: string, getScene: () => SceneData | null) => {
+      if (getFileIdFromHash() !== fileId) {
+        return;
+      }
+      const sceneData = getScene();
+      if (!sceneData || !fileId) {
+        return;
+      }
+      const h = hashSceneSnapshot(sceneData);
+      FileSyncState.setDraftHash(fileId, h);
+      window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
 
-        const baseline = FileSyncState.getBaselineHash(fileId);
-        if (!baseline || h === baseline) {
-          clearTabFileDirty(fileId);
-          localPersistGenRef.current += 1;
-          return;
-        }
+      const baseline = FileSyncState.getBaselineHash(fileId);
+      if (!baseline || h === baseline) {
+        clearTabFileDirty(fileId);
+        localPersistGenRef.current += 1;
+        return;
+      }
 
-        markTabFileDirty(fileId);
-        FileSyncState.setLocalEditTime(fileId);
-        if (isLocalDraftFileId(fileId)) {
-          const displayName = sceneData.appState?.name?.trim();
-          notifyLocalDraftEdited(fileId, displayName);
-        }
+      markTabFileDirty(fileId);
+      FileSyncState.setLocalEditTime(fileId);
+      if (isLocalDraftFileId(fileId)) {
+        const displayName = sceneData.appState?.name?.trim();
+        notifyLocalDraftEdited(fileId, displayName);
+      }
 
-        const myGen = ++localPersistGenRef.current;
-        void (async () => {
-          try {
-            const deltas = await DeltaStorage.getAllPersistedDtos();
-            if (myGen !== localPersistGenRef.current) {
-              return;
-            }
-            const latest = getScene();
-            if (!latest || !fileId) {
-              return;
-            }
-            const h2 = hashSceneSnapshot(latest);
-            const b2 = FileSyncState.getBaselineHash(fileId);
-            if (!b2 || h2 === b2) {
-              return;
-            }
-            FileSyncState.setLocalCache(fileId, {
-              elements: latest.elements,
-              appState: latest.appState,
-              files: latest.files,
-              deltas,
-            });
-            scheduleExcalidrawThumbnailAndCache(fileId, latest);
-          } catch {
-            // quota / idb
+      const myGen = ++localPersistGenRef.current;
+      void (async () => {
+        try {
+          const deltas = await DeltaStorage.getAllPersistedDtos();
+          if (myGen !== localPersistGenRef.current) {
+            return;
           }
-        })();
-      },
-      450,
-    ),
+          const latest = getScene();
+          if (!latest || !fileId) {
+            return;
+          }
+          const h2 = hashSceneSnapshot(latest);
+          const b2 = FileSyncState.getBaselineHash(fileId);
+          if (!b2 || h2 === b2) {
+            return;
+          }
+          FileSyncState.setLocalCache(fileId, {
+            elements: latest.elements,
+            appState: latest.appState,
+            files: latest.files,
+            deltas,
+          });
+          scheduleExcalidrawThumbnailAndCache(fileId, latest);
+        } catch {
+          // quota / idb
+        }
+      })();
+    }, 450),
   );
 
   useEffect(() => {
@@ -173,14 +178,20 @@ export function useForkFileSave(opts: {
         return false;
       }
       const hasUnsaved = FileSyncState.hasUnsavedChanges(fid);
-      logStash.debug(`persistLocalDraft enter ${fid.slice(0, 8)} unsaved=${hasUnsaved}`);
+      logStash.debug(
+        `persistLocalDraft enter ${fid.slice(0, 8)} unsaved=${hasUnsaved}`,
+      );
       if (!hasUnsaved) {
-        logStash.debug(`persistLocalDraft skip ${fid.slice(0, 8)}: no unsaved changes`);
+        logStash.debug(
+          `persistLocalDraft skip ${fid.slice(0, 8)}: no unsaved changes`,
+        );
         return false;
       }
       const sceneData = getSceneData();
       if (!sceneData) {
-        logStash.debug(`persistLocalDraft skip ${fid.slice(0, 8)}: no sceneData`);
+        logStash.debug(
+          `persistLocalDraft skip ${fid.slice(0, 8)}: no sceneData`,
+        );
         return false;
       }
       const deltas = await DeltaStorage.getAllPersistedDtos();
@@ -197,7 +208,12 @@ export function useForkFileSave(opts: {
       const dh = hashSceneSnapshot(sceneData);
       FileSyncState.setDraftHash(fid, dh);
       logSave.debug(
-        `persistLocalDraft file=${fid.slice(0, 8)}, draftHash=${dh.slice(0, 8)}, elements=${sceneData.elements.length}, localCacheElements=${localAfterWriteElements}`,
+        `persistLocalDraft file=${fid.slice(0, 8)}, draftHash=${dh.slice(
+          0,
+          8,
+        )}, elements=${
+          sceneData.elements.length
+        }, localCacheElements=${localAfterWriteElements}`,
       );
       await generateExcalidrawThumbnailAndCache(fid, sceneData);
       return true;
@@ -254,10 +270,21 @@ export function useForkFileSave(opts: {
         setForkSaveHint(null);
       }
       try {
-        const nameForPut = await resolveSaveDisplayName(fid, sceneData.appState);
-        const thumbnail = await generateExcalidrawThumbnailAndCache(fid, sceneData);
+        const nameForPut = await resolveSaveDisplayName(
+          fid,
+          sceneData.appState,
+        );
+        const thumbnail = await generateExcalidrawThumbnailAndCache(
+          fid,
+          sceneData,
+        );
         logSave.debug(
-          `saveToServer file=${fid.slice(0, 8)}, name=${nameForPut}, hasThumb=${!!thumbnail}, elements=${sceneData.elements.length}, source=${source}`,
+          `saveToServer file=${fid.slice(
+            0,
+            8,
+          )}, name=${nameForPut}, hasThumb=${!!thumbnail}, elements=${
+            sceneData.elements.length
+          }, source=${source}`,
         );
         const result = await ServerSync.saveFileImmediate(
           fid,
@@ -292,10 +319,19 @@ export function useForkFileSave(opts: {
         FileSyncState.clearLocalEditTime(fid);
         clearTabFileDirty(fid);
         logHash.debug(
-          `saveToServer done file=${fid.slice(0, 8)}, baseline=draft=${hAfter.slice(0, 8)}, serverSha=${result?.content_sha256?.slice(0, 8) ?? "none"}`,
+          `saveToServer done file=${fid.slice(
+            0,
+            8,
+          )}, baseline=draft=${hAfter.slice(0, 8)}, serverSha=${
+            result?.content_sha256?.slice(0, 8) ?? "none"
+          }`,
         );
 
-        logHook.info("save complete", { fileId: fid.slice(0, 8), source, hash: hAfter.slice(0, 8) });
+        logHook.info("save complete", {
+          fileId: fid.slice(0, 8),
+          source,
+          hash: hAfter.slice(0, 8),
+        });
         window.dispatchEvent(
           new CustomEvent("excalidraw-server-saved", {
             detail: { id: fid, hash: hAfter },
@@ -332,8 +368,12 @@ export function useForkFileSave(opts: {
           const okLocal = await persistLocalDraftToCache();
           if (okLocal) {
             window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
-            window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
-            excalidrawAPI.setToast({ message: "无法上传到服务器，已暂存到本机并返回" });
+            window.dispatchEvent(
+              new CustomEvent("excalidraw-file-list-refresh"),
+            );
+            excalidrawAPI.setToast({
+              message: "无法上传到服务器，已暂存到本机并返回",
+            });
           }
           finishNavigateHome();
         }
@@ -400,12 +440,19 @@ export function useForkFileSave(opts: {
       navigateToFileListHome();
       return;
     }
-    FileEditDirty.prepareForDirtyEvaluation({
-      flushEmbeddedLocalFiles: () => LocalData.flushSave(),
-      draftFlusher: updateDraftHashDebouncedRef.current,
+    LocalData.flushSave();
+    updateDraftHashDebouncedRef.current.flush();
+    const sceneData = getSceneData();
+    const state = evaluateCurrentFileModificationState({
+      fileId: fid,
+      kind: "excalidraw",
+      excalidrawScene: sceneData,
+    });
+    applyFileModificationState(fid, state, {
+      clearLocalCacheWhenSynced: true,
     });
     if (isLocalDraftFileId(fid)) {
-      if (!shouldPromptEditorHomeNavDialog(fid)) {
+      if (!state.shouldPromptOnLeave) {
         await discardLocalDraftSession(fid);
         navigateToFileListHome();
         return;
@@ -413,7 +460,7 @@ export function useForkFileSave(opts: {
       setForkHomeNavDialogOpen(true);
       return;
     }
-    if (!FileEditDirty.hasUnsavedChanges(fid)) {
+    if (!state.shouldPromptOnLeave) {
       navigateToFileListHome();
       return;
     }
@@ -422,7 +469,7 @@ export function useForkFileSave(opts: {
       return;
     }
     setForkHomeNavDialogOpen(true);
-  }, [excalidrawAPI, navigateToFileListHome]);
+  }, [excalidrawAPI, getSceneData, navigateToFileListHome]);
 
   const forkHomeConfirmSave = useCallback(async () => {
     setForkHomeNavDialogOpen(false);
