@@ -36,6 +36,7 @@ import {
   clearMindMapDraftIfUnchanged,
   markMindMapNativeDirtyPending,
 } from "./mindMapDraftState";
+import { canSkipMindMapNativeSyncOnLeave } from "./mindMapLeaveState";
 import { matchesMindMapPersistedSnapshot } from "./mindMapPersistedSnapshot";
 import { recordMindMapPersisted } from "./mindMapPersistCoordinator";
 import {
@@ -569,6 +570,16 @@ export function useMindMapFileSave(opts: {
         return;
       }
       setMindMapHomeNavDialogOpen(true);
+      return;
+    }
+    if (canSkipMindMapNativeSyncOnLeave(fileId)) {
+      debugMindMapPersist("goHome skip native sync: already clean", {
+        fileId8: fileId.slice(0, 8),
+        draftHash16: FileSyncState.getDraftHash(fileId)?.slice(0, 16) ?? null,
+        baselineHash8:
+          FileSyncState.getBaselineHash(fileId)?.slice(0, 8) ?? null,
+      });
+      navigateToFileListHome();
       return;
     }
     await syncCurrentMindMapDraftForLeave(fileId);
