@@ -38,6 +38,6 @@ describe("verify-mind-map-public contract", () => {
       path.join(root, "public/mind-map/dist/js"),
     );
     expect(lazyChunks.length).toBeGreaterThan(0);
-    expect(html).toContain('rel="preload" href="dist/js/chunk-');
+    expect(html).not.toContain('rel="preload"');
   });
 });

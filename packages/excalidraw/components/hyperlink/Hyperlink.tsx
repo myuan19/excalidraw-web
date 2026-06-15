@@ -1,5 +1,20 @@
-import { pointFrom, type GlobalPoint } from "@excalidraw/math";
-import clsx from "clsx";
+import type { AppState, ExcalidrawProps, UIAppState } from "../../types";
+import {
+  sceneCoordsToViewportCoords,
+  viewportCoordsToSceneCoords,
+  wrapEvent,
+} from "../../utils";
+import { getEmbedLink, embeddableURLValidator } from "../../element/embeddable";
+import { mutateElement } from "../../element/mutateElement";
+import type {
+  ElementsMap,
+  ExcalidrawEmbeddableElement,
+  NonDeletedExcalidrawElement,
+} from "../../element/types";
+
+import { ToolButton } from "../ToolButton";
+import { FreedrawIcon, TrashIcon, elementLinkIcon } from "../icons";
+import { t } from "../../i18n";
 import {
   useCallback,
   useEffect,
@@ -7,50 +22,22 @@ import {
   useRef,
   useState,
 } from "react";
-
-import { EVENT, HYPERLINK_TOOLTIP_DELAY, KEYS } from "@excalidraw/common";
-
-import { getElementAbsoluteCoords } from "@excalidraw/element";
-
-import { hitElementBoundingBox } from "@excalidraw/element";
-
-import { isElementLink } from "@excalidraw/element";
-
-import { getEmbedLink, embeddableURLValidator } from "@excalidraw/element";
-
-import {
-  sceneCoordsToViewportCoords,
-  viewportCoordsToSceneCoords,
-  wrapEvent,
-  isLocalLink,
-  normalizeLink,
-} from "@excalidraw/common";
-
-import { isEmbeddableElement } from "@excalidraw/element";
-
-import type { Scene } from "@excalidraw/element";
-
-import type {
-  ElementsMap,
-  ExcalidrawEmbeddableElement,
-  NonDeletedExcalidrawElement,
-} from "@excalidraw/element/types";
-
-import { trackEvent } from "../../analytics";
+import clsx from "clsx";
+import { KEYS } from "../../keys";
+import { EVENT, HYPERLINK_TOOLTIP_DELAY } from "../../constants";
+import { getElementAbsoluteCoords } from "../../element/bounds";
 import { getTooltipDiv, updateTooltipPosition } from "../../components/Tooltip";
-
-import { t } from "../../i18n";
-
-import { useAppProps, useEditorInterface, useExcalidrawAppState } from "../App";
-import { ToolButton } from "../ToolButton";
-import { FreedrawIcon, TrashIcon, elementLinkIcon } from "../icons";
 import { getSelectedElements } from "../../scene";
-
+import { hitElementBoundingBox } from "../../element/collision";
+import { isLocalLink, normalizeLink } from "../../data/url";
+import { trackEvent } from "../../analytics";
+import { useAppProps, useDevice, useExcalidrawAppState } from "../App";
+import { isEmbeddableElement } from "../../element/typeChecks";
 import { getLinkHandleFromCoords } from "./helpers";
+import { pointFrom, type GlobalPoint } from "@excalidraw/math";
+import { isElementLink } from "../../element/elementLink";
 
 import "./Hyperlink.scss";
-
-import type { AppState, ExcalidrawProps, UIAppState } from "../../types";
 
 const POPUP_WIDTH = 380;
 const POPUP_HEIGHT = 42;
@@ -67,14 +54,14 @@ const embeddableLinkCache = new Map<
 
 export const Hyperlink = ({
   element,
-  scene,
+  elementsMap,
   setAppState,
   onLinkOpen,
   setToast,
   updateEmbedValidationStatus,
 }: {
   element: NonDeletedExcalidrawElement;
-  scene: Scene;
+  elementsMap: ElementsMap;
   setAppState: React.Component<any, AppState>["setState"];
   onLinkOpen: ExcalidrawProps["onLinkOpen"];
   setToast: (
@@ -85,10 +72,9 @@ export const Hyperlink = ({
     status: boolean,
   ) => void;
 }) => {
-  const elementsMap = scene.getNonDeletedElementsMap();
   const appState = useExcalidrawAppState();
   const appProps = useAppProps();
-  const editorInterface = useEditorInterface();
+  const device = useDevice();
 
   const linkVal = element.link || "";
 
@@ -112,7 +98,7 @@ export const Hyperlink = ({
         setAppState({ activeEmbeddable: null });
       }
       if (!link) {
-        scene.mutateElement(element, {
+        mutateElement(element, {
           link: null,
         });
         updateEmbedValidationStatus(element, false);
@@ -124,7 +110,7 @@ export const Hyperlink = ({
           setToast({ message: t("toast.unableToEmbed"), closable: true });
         }
         element.link && embeddableLinkCache.set(element.id, element.link);
-        scene.mutateElement(element, {
+        mutateElement(element, {
           link,
         });
         updateEmbedValidationStatus(element, false);
@@ -142,7 +128,7 @@ export const Hyperlink = ({
           : 1;
         const hasLinkChanged =
           embeddableLinkCache.get(element.id) !== element.link;
-        scene.mutateElement(element, {
+        mutateElement(element, {
           ...(hasLinkChanged
             ? {
                 width:
@@ -167,11 +153,10 @@ export const Hyperlink = ({
         }
       }
     } else {
-      scene.mutateElement(element, { link });
+      mutateElement(element, { link });
     }
   }, [
     element,
-    scene,
     setToast,
     appProps.validateEmbeddable,
     appState.activeEmbeddable,
@@ -189,11 +174,11 @@ export const Hyperlink = ({
     if (
       isEditing &&
       inputRef?.current &&
-      !(editorInterface.formFactor === "phone" || editorInterface.isTouchScreen)
+      !(device.viewport.isMobile || device.isTouchScreen)
     ) {
       inputRef.current.select();
     }
-  }, [isEditing, editorInterface.formFactor, editorInterface.isTouchScreen]);
+  }, [isEditing, device.viewport.isMobile, device.isTouchScreen]);
 
   useEffect(() => {
     let timeoutId: number | null = null;
@@ -228,9 +213,9 @@ export const Hyperlink = ({
 
   const handleRemove = useCallback(() => {
     trackEvent("hyperlink", "delete");
-    scene.mutateElement(element, { link: null });
+    mutateElement(element, { link: null });
     setAppState({ showHyperlinkPopup: false });
-  }, [setAppState, element, scene]);
+  }, [setAppState, element]);
 
   const onEdit = () => {
     trackEvent("hyperlink", "edit", "popup-ui");
@@ -463,7 +448,7 @@ const shouldHideLinkPopup = (
 
   const threshold = 15 / appState.zoom.value;
   // hitbox to prevent hiding when hovered in element bounding box
-  if (hitElementBoundingBox(pointFrom(sceneX, sceneY), element, elementsMap)) {
+  if (hitElementBoundingBox(sceneX, sceneY, element, elementsMap)) {
     return false;
   }
   const [x1, y1, x2] = getElementAbsoluteCoords(element, elementsMap);

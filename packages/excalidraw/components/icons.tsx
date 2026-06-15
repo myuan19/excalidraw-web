@@ -2083,6 +2083,7 @@ export const historyCommandIcon = createIcon(
   </g>,
   tablerIconProps,
 );
+export const clockIcon = historyCommandIcon;
 
 // history
 export const historyIcon = createIcon(

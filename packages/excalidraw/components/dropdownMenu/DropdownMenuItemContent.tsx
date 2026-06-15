@@ -1,31 +1,25 @@
-import { useEditorInterface } from "../App";
-
-import { Ellipsify } from "../Ellipsify";
-
 import type { JSX } from "react";
+import { useDevice } from "../App";
 
 const MenuItemContent = ({
   textStyle,
   icon,
   shortcut,
   children,
-  badge,
 }: {
   icon?: JSX.Element;
   shortcut?: string;
   textStyle?: React.CSSProperties;
   children: React.ReactNode;
-  badge?: React.ReactNode;
 }) => {
-  const editorInterface = useEditorInterface();
+  const device = useDevice();
   return (
     <>
       {icon && <div className="dropdown-menu-item__icon">{icon}</div>}
       <div style={textStyle} className="dropdown-menu-item__text">
-        <Ellipsify>{children}</Ellipsify>
+        {children}
       </div>
-      {badge && <div className="dropdown-menu-item__badge">{badge}</div>}
-      {shortcut && editorInterface.formFactor !== "phone" && (
+      {shortcut && !device.editor.isMobile && (
         <div className="dropdown-menu-item__shortcut">{shortcut}</div>
       )}
     </>

@@ -41,6 +41,7 @@ server/data/
 
 # Local-only dev/deploy helpers (not part of source)
 _scripts/
+apps/desktop/.runtime/
 /docs/
 
 # Scratch notes at repo root

@@ -1,5 +1,6 @@
 import type { ActionManager } from "../../actions/manager";
 import type { Action } from "../../actions/types";
+import type { UIAppState } from "../../types";
 
 export type CommandPaletteItem = {
   label: string;
@@ -11,11 +12,11 @@ export type CommandPaletteItem = {
    * (deburred name + keywords)
    */
   haystack?: string;
-  icon?: Action["icon"];
+  icon?: React.ReactNode | ((appState: UIAppState) => React.ReactNode);
   category: string;
   order?: number;
   predicate?: boolean | Action["predicate"];
-  shortcut?: string | null;
+  shortcut?: string;
   /** if false, command will not show while in view mode */
   viewMode?: boolean;
   perform: (data: {

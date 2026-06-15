@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Ensures public/mind-map/ is a complete bridge build before app/vite packaging.
+ * Ensures public/mind-map/ is a complete bridge build before Web/Vite packaging.
  * Run automatically from scripts/build-production.sh after MindMap vue build.
  */
 import fs from "node:fs";
@@ -12,22 +12,21 @@ import {
   listWebpackLazyChunks,
 } from "./mind-map-webpack-chunks.mjs";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
 
 function resolveMindMapDir() {
   const args = process.argv.slice(2);
   const rootFlag = args.findIndex((a) => a === "--root" || a === "-r");
   if (rootFlag >= 0 && args[rootFlag + 1]) {
     const custom = args[rootFlag + 1];
-    return path.isAbsolute(custom)
-      ? custom
-      : path.join(repoRoot, custom);
+    return path.isAbsolute(custom) ? custom : path.join(repoRoot, custom);
   }
   if (process.env.MIND_MAP_VERIFY_ROOT) {
     const custom = process.env.MIND_MAP_VERIFY_ROOT;
-    return path.isAbsolute(custom)
-      ? custom
-      : path.join(repoRoot, custom);
+    return path.isAbsolute(custom) ? custom : path.join(repoRoot, custom);
   }
   return path.join(repoRoot, "public/mind-map");
 }
@@ -46,19 +45,24 @@ function fail(message) {
 
 if (!fs.existsSync(indexPath)) {
   fail(
-    `missing ${path.relative(root, indexPath)} — run: bash scripts/build-production.sh mindmap`,
+    `missing ${path.relative(
+      root,
+      indexPath,
+    )} — run: bash scripts/build-production.sh mindmap`,
   );
 }
 
-let html = fs.readFileSync(indexPath, "utf8");
+const html = fs.readFileSync(indexPath, "utf8");
 
 if (html.includes('rel="preload"') && /href="dist\/(?:js|css)\//.test(html)) {
   fail(
-    "index.html must not contain <link rel=\"preload\"> for dist/* (causes credentials mismatch / double fetch). Rebuild mind-map and run copy.js (normalizeMindMapIndexHtml).",
+    'index.html must not contain <link rel="preload"> for dist/* (causes credentials mismatch / double fetch). Rebuild mind-map and run copy.js (normalizeMindMapIndexHtml).',
   );
 }
 
-if (/dist\/(?:js|css)\/[^"']+\.[a-f0-9]+\.(?:js|css)\?[a-f0-9]{8,}/i.test(html)) {
+if (
+  /dist\/(?:js|css)\/[^"']+\.[a-f0-9]+\.(?:js|css)\?[a-f0-9]{8,}/i.test(html)
+) {
   fail(
     "index.html must not append html-webpack ?hash query on content-hashed dist assets (breaks immutable cache). Set html.hash=false in vue.config.js and rebuild.",
   );
@@ -68,13 +72,16 @@ const bridgeShellPath = path.join(mindMapDir, "dist/bridge/takeover-shell.js");
 
 if (!html.includes('src="dist/bridge/takeover-shell.js"')) {
   fail(
-    'index.html must load dist/bridge/takeover-shell.js before vue bundles (see native/web/public/index.html)',
+    "index.html must load dist/bridge/takeover-shell.js before vue bundles (see native/web/public/index.html)",
   );
 }
 
 if (!fs.existsSync(bridgeShellPath)) {
   fail(
-    `missing ${path.relative(root, bridgeShellPath)} — sync native/web/src/bridge/takeoverShell.js via copy.js`,
+    `missing ${path.relative(
+      root,
+      bridgeShellPath,
+    )} — sync native/web/src/bridge/takeoverShell.js via copy.js`,
   );
 }
 
@@ -139,7 +146,13 @@ for (const chunk of lazyChunks) {
   }
   if (chunk.bytes >= LARGE_CHUNK_WARN_BYTES) {
     console.warn(
-      `[verify-mind-map] warn: ${chunk.rel} is ${(chunk.bytes / 1024 / 1024).toFixed(1)}MB — ensure reverse proxy allows large static JS (no auth redirect, HTTP/2 stable)`,
+      `[verify-mind-map] warn: ${chunk.rel} is ${(
+        chunk.bytes /
+        1024 /
+        1024
+      ).toFixed(
+        1,
+      )}MB — ensure reverse proxy allows large static JS (no auth redirect, HTTP/2 stable)`,
     );
   }
 }

@@ -1,7 +1,7 @@
 ---
 description: MindMap source vs generated embed assets
 globs:
-  - app/editors/mindmap/**
+  - apps/web/editors/mindmap/**
   - public/mind-map/**
 alwaysApply: true
 ---
@@ -9,9 +9,9 @@ alwaysApply: true
 # Source Before Generated Assets
 
 - Do not hand-edit generated build artifacts as the primary fix.
-- For MindMap embeds, source lives under `app/editors/mindmap/native/web/src/**` and `app/editors/mindmap/native/simple-mind-map/src/**`.
-- `app/editors/mindmap/native/dist/**` and `public/mind-map/dist/**` are generated assets. Update them only by running the relevant build and copying/syncing the build output when the served embed path requires it.
-- After changing MindMap native source that affects embedded/editor runtime behavior, run the MindMap Web build from `app/editors/mindmap/native/web` (typically `NODE_OPTIONS=--openssl-legacy-provider yarn build`) and sync `native/index.html` plus `native/dist/**` into `public/mind-map/`, because the app/server iframe loads the generated static files.
+- For MindMap embeds, source lives under `apps/web/editors/mindmap/native/web/src/**` and `apps/web/editors/mindmap/native/simple-mind-map/src/**`.
+- `apps/web/editors/mindmap/native/dist/**` and `public/mind-map/dist/**` are generated assets. Update them only by running the relevant build and copying/syncing the build output when the served embed path requires it.
+- After changing MindMap native source that affects embedded/editor runtime behavior, run the MindMap Web build from `apps/web/editors/mindmap/native/web` (typically `NODE_OPTIONS=--openssl-legacy-provider yarn build`) and sync `native/index.html` plus `native/dist/**` into `public/mind-map/`, because the app/server iframe loads the generated static files.
 - Do not stop at `yarn build:app` or Vite app build for MindMap iframe changes; that build consumes existing `public/mind-map` assets and will not regenerate the native Vue bundle.
 - If a generated HTML shell such as `native/index.html`, `public/mind-map/index.html`, or `native/web/public/index.html` contains custom bridge code, keep the source copies in sync and explain why they are touched.
 - In final summaries, distinguish source changes from regenerated artifacts so it is clear what was authored and what was produced by build output.

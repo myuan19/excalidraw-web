@@ -568,6 +568,24 @@ export const useApp = () => useContext(AppContext);
 export const useAppProps = () => useContext(AppPropsContext);
 export const useEditorInterface = () =>
   useContext<EditorInterface>(EditorInterfaceContext);
+export const useDevice = (): import("../types").Device => {
+  const editorInterface = useEditorInterface();
+  const isEditorMobile =
+    editorInterface.formFactor === "phone" ||
+    editorInterface.userAgent.isMobileDevice;
+
+  return {
+    viewport: {
+      isMobile: editorInterface.formFactor === "phone",
+      isLandscape: editorInterface.isLandscape,
+    },
+    editor: {
+      isMobile: isEditorMobile,
+      canFitSidebar: editorInterface.canFitSidebar,
+    },
+    isTouchScreen: editorInterface.isTouchScreen,
+  };
+};
 export const useStylesPanelMode = () =>
   deriveStylesPanelMode(useEditorInterface());
 export const useExcalidrawContainer = () =>

@@ -4,15 +4,15 @@
 # PREBUILT=0：在容器内完整安装依赖并构建（需稳定 registry 网络）
 #   构建目标: --target final-full
 
-# ── Stage 1a: 宿主机预构建前端（仅 COPY app/build，避免 COPY . . 与 .dockerignore 冲突） ──
+# ── Stage 1a: 宿主机预构建前端（仅 COPY apps/web/build，避免 COPY . . 与 .dockerignore 冲突） ──
 FROM node:20-bookworm AS frontend-prebuilt
 WORKDIR /opt/node_app
-COPY app/build ./app/build
+COPY apps/web/build ./apps/web/build
 RUN set -eux; \
-    test -f app/build/index.html || { echo "缺少 app/build/index.html，请先运行 yarn build:production"; exit 1; }; \
-    test -d app/build/mind-map/dist || { echo "缺少 app/build/mind-map/dist，请先运行 yarn build:production（MindMap 未同步进 app/build）"; exit 1; }; \
-    test -f app/build/mind-map/index.html || { echo "缺少 app/build/mind-map/index.html"; exit 1; }; \
-    test -f app/build/icons/excalidraw.svg || { echo "缺少 app/build/icons/（请 yarn build:production）"; exit 1; }
+    test -f apps/web/build/index.html || { echo "缺少 apps/web/build/index.html，请先运行 yarn build:production"; exit 1; }; \
+    test -d apps/web/build/mind-map/dist || { echo "缺少 apps/web/build/mind-map/dist，请先运行 yarn build:production（MindMap 未同步进 apps/web/build）"; exit 1; }; \
+    test -f apps/web/build/mind-map/index.html || { echo "缺少 apps/web/build/mind-map/index.html"; exit 1; }; \
+    test -f apps/web/build/icons/excalidraw.svg || { echo "缺少 apps/web/build/icons/（请 yarn build:production）"; exit 1; }
 
 # ── Stage 1b: 容器内完整构建 ─────────────────────────────────
 FROM node:20-bookworm AS frontend-full
@@ -109,11 +109,11 @@ ENTRYPOINT ["/usr/local/bin/entrypoint-excalidraw.sh"]
 
 # ── 最终镜像：宿主机预构建 ───────────────────────────────────
 FROM runtime-base AS final-prebuilt
-COPY --from=frontend-prebuilt /opt/node_app/app/build /var/www/excalidraw-static
+COPY --from=frontend-prebuilt /opt/node_app/apps/web/build /var/www/excalidraw-static
 
 # ── 最终镜像：容器内构建 ─────────────────────────────────────
 FROM runtime-base AS final-full
-COPY --from=frontend-full /opt/node_app/app/build /var/www/excalidraw-static
+COPY --from=frontend-full /opt/node_app/apps/web/build /var/www/excalidraw-static
 
 # 默认 target（无 PREBUILT 时走完整构建）
 FROM final-full AS final

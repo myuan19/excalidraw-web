@@ -1,4 +1,4 @@
-import { useEditorInterface } from "../App";
+import { useDevice } from "../App";
 import { RadioGroup } from "../RadioGroup";
 
 type Props<T> = {
@@ -22,12 +22,14 @@ const DropdownMenuItemContentRadio = <T,>({
   children,
   name,
 }: Props<T>) => {
-  const editorInterface = useEditorInterface();
+  const device = useDevice();
 
   return (
     <>
       <div className="dropdown-menu-item-base dropdown-menu-item-bare">
-        <label className="dropdown-menu-item__text">{children}</label>
+        <label className="dropdown-menu-item__text" htmlFor={name}>
+          {children}
+        </label>
         <RadioGroup
           name={name}
           value={value}
@@ -35,7 +37,7 @@ const DropdownMenuItemContentRadio = <T,>({
           choices={choices}
         />
       </div>
-      {shortcut && editorInterface.formFactor !== "phone" && (
+      {shortcut && !device.editor.isMobile && (
         <div className="dropdown-menu-item__shortcut dropdown-menu-item__shortcut--orphaned">
           {shortcut}
         </div>

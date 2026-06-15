@@ -992,6 +992,18 @@ export interface ExcalidrawImperativeAPI {
   onEvent: InstanceType<typeof App>["onEvent"];
 }
 
+export type Device = Readonly<{
+  viewport: {
+    isMobile: boolean;
+    isLandscape: boolean;
+  };
+  editor: {
+    isMobile: boolean;
+    canFitSidebar: boolean;
+  };
+  isTouchScreen: boolean;
+}>;
+
 export type FrameNameBounds = {
   x: number;
   y: number;

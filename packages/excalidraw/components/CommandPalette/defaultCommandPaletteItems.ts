@@ -1,5 +1,4 @@
 import { actionToggleTheme } from "../../actions";
-
 import type { CommandPaletteItem } from "./types";
 
 export const toggleTheme: CommandPaletteItem = {

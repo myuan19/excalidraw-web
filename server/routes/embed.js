@@ -1,11 +1,13 @@
 /**
  * Embed HTTP routes — thin layer over embedAccess + static/asset helpers.
  */
-import { Router } from "express";
 import { randomUUID } from "crypto";
 import { existsSync, readFileSync, statSync } from "fs";
 import { join, dirname, resolve } from "path";
 import { fileURLToPath } from "url";
+
+import { Router } from "express";
+
 import db, { DATA_DIR } from "../db.js";
 import { createLogger } from "../lib/logger.js";
 import {
@@ -92,7 +94,9 @@ const requireEmbedAccessForFile = createRequireEmbedAccess({
   requireFileId: true,
 });
 
-const mindMapEmbedGate = createMindMapEmbedGate({ lookupToken: lookupEmbedToken });
+const mindMapEmbedGate = createMindMapEmbedGate({
+  lookupToken: lookupEmbedToken,
+});
 
 function currentPath(fileId) {
   return join(DATA_DIR, "files", fileId, "current.excalidraw");
@@ -221,14 +225,17 @@ tokenRouter.delete("/:id", (req, res) => {
 
 function findSpaIndexHtml() {
   const raw = (process.env.SERVE_SPA || "").trim();
-  const defaultRoot = join(__dirname, "../../app/build");
+  const defaultRoot = join(__dirname, "../../apps/web/build");
   const dockerRoot = "/var/www/excalidraw-static";
   let root;
   if (!raw || raw === "1" || raw === "true") {
     root = defaultRoot;
   } else if (raw !== "0" && raw !== "false") {
     root = join(__dirname, raw);
-    if (!existsSync(join(root, "index.html")) && existsSync(join(raw, "index.html"))) {
+    if (
+      !existsSync(join(root, "index.html")) &&
+      existsSync(join(raw, "index.html"))
+    ) {
       root = raw;
     }
   } else {
@@ -323,7 +330,7 @@ function getMindMapRoot() {
 function safeJoin(base, userPath) {
   const resolved = resolve(base, userPath);
   const baseResolved = resolve(base);
-  if (!resolved.startsWith(baseResolved + "/")) {
+  if (!resolved.startsWith(`${baseResolved}/`)) {
     return null;
   }
   return resolved;
@@ -338,7 +345,6 @@ function routePath(req) {
 }
 
 const _cssCache = new Map();
-
 
 function sendEmbedAsset(req, res) {
   const root = getAssetsRoot();
@@ -402,7 +408,10 @@ function sendEmbedFont(req, res) {
 function sendEmbedMindMap(req, res) {
   const root = getMindMapRoot();
   if (!root) {
-    return res.status(500).type("text/plain").send("MindMap assets not available");
+    return res
+      .status(500)
+      .type("text/plain")
+      .send("MindMap assets not available");
   }
 
   const rawAssetPath = routePath(req);
@@ -449,8 +458,7 @@ function sendEmbedMindMap(req, res) {
 }
 
 function resolveSessionEmbeddingHost(req, accessResult) {
-  let host =
-    accessResult.embeddingHost || captureEmbeddingHostForSession(req);
+  let host = accessResult.embeddingHost || captureEmbeddingHostForSession(req);
   if (!host && isWildcardAllowedDomains(accessResult.row.allowed_domains)) {
     host = getRequestHost(req);
   }
@@ -461,56 +469,52 @@ function resolveSessionEmbeddingHost(req, accessResult) {
 // Embed public surface — all paths use requireEmbedAccess (domain → token)
 // ---------------------------------------------------------------------------
 
-pageRouter.get(
-  "/api/:fileId/data",
-  requireEmbedAccessForFile,
-  (req, res) => {
-    const fileId = req.params.fileId;
-    const fileRow = db.prepare("SELECT * FROM files WHERE id = ?").get(fileId);
-    if (!fileRow) {
-      return res.status(404).json({ error: "File not found" });
-    }
+pageRouter.get("/api/:fileId/data", requireEmbedAccessForFile, (req, res) => {
+  const fileId = req.params.fileId;
+  const fileRow = db.prepare("SELECT * FROM files WHERE id = ?").get(fileId);
+  if (!fileRow) {
+    return res.status(404).json({ error: "File not found" });
+  }
 
-    const fp = currentPath(fileId);
-    if (!existsSync(fp)) {
-      return res.status(404).json({ error: "File data missing" });
-    }
+  const fp = currentPath(fileId);
+  if (!existsSync(fp)) {
+    return res.status(404).json({ error: "File data missing" });
+  }
 
-    if (
-      fileRow.content_sha256 &&
-      ifNoneMatchSatisfied(req.get("if-none-match"), fileRow.content_sha256)
-    ) {
-      return sendNotModified(res, fileRow.content_sha256);
-    }
+  if (
+    fileRow.content_sha256 &&
+    ifNoneMatchSatisfied(req.get("if-none-match"), fileRow.content_sha256)
+  ) {
+    return sendNotModified(res, fileRow.content_sha256);
+  }
 
-    try {
-      const raw = readFileSync(fp, "utf-8");
-      const data = JSON.parse(raw);
-      log.info("embed data served", {
-        fileId: fileId.slice(0, 8),
-        kind: fileRow.kind || "excalidraw",
-        summary: summarizeEmbedData(data),
-      });
-      res.setHeader("Cache-Control", "no-store");
-      const etag = formatDocumentEtag(fileRow.content_sha256);
-      if (etag) {
-        res.setHeader("ETag", etag);
-      }
-      res.json({
-        id: fileId,
-        name: fileRow.name,
-        kind: fileRow.kind || "excalidraw",
-        data,
-      });
-    } catch (error) {
-      log.warn("embed data corrupt", {
-        fileId: fileId.slice(0, 8),
-        message: error?.message,
-      });
-      res.status(500).json({ error: "Corrupt scene file" });
+  try {
+    const raw = readFileSync(fp, "utf-8");
+    const data = JSON.parse(raw);
+    log.info("embed data served", {
+      fileId: fileId.slice(0, 8),
+      kind: fileRow.kind || "excalidraw",
+      summary: summarizeEmbedData(data),
+    });
+    res.setHeader("Cache-Control", "no-store");
+    const etag = formatDocumentEtag(fileRow.content_sha256);
+    if (etag) {
+      res.setHeader("ETag", etag);
     }
-  },
-);
+    res.json({
+      id: fileId,
+      name: fileRow.name,
+      kind: fileRow.kind || "excalidraw",
+      data,
+    });
+  } catch (error) {
+    log.warn("embed data corrupt", {
+      fileId: fileId.slice(0, 8),
+      message: error?.message,
+    });
+    res.status(500).json({ error: "Corrupt scene file" });
+  }
+});
 
 // Hashed chunks: public (import() / lazy() do not carry embed cookies or full Referer).
 pageRouter.use("/assets", sendEmbedAsset);

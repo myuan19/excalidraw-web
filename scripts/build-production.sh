@@ -3,17 +3,35 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MM_DIR="${ROOT}/app/editors/mindmap/native"
+WEB_DIR="${ROOT}/apps/web"
+MM_DIR="${WEB_DIR}/editors/mindmap/native"
 MM_WEB="${MM_DIR}/web"
 TARGET="${1:-all}"
 
 log() { echo "[build-production] $*"; }
 
+run_yarn() {
+  if command -v yarn >/dev/null 2>&1; then
+    yarn "$@"
+  else
+    corepack yarn "$@"
+  fi
+}
+
 prepare_mindmap_web_deps() {
   if [[ ! -d "$MM_WEB" ]]; then
-    log "skip: mind-map/web missing"
-    return 1
+    echo "[build-production] ERROR: missing MindMap web source: $MM_WEB" >&2
+    exit 1
   fi
+
+  [[ -f "$MM_WEB/package.json" ]] || {
+    echo "[build-production] ERROR: missing $MM_WEB/package.json" >&2
+    exit 1
+  }
+  [[ -f "$MM_DIR/copy.js" ]] || {
+    echo "[build-production] ERROR: missing $MM_DIR/copy.js" >&2
+    exit 1
+  }
 
   if [[ ! -d "$MM_WEB/node_modules" ]]; then
     log "npm install (mind-map/web)..."
@@ -41,11 +59,11 @@ prepare_mindmap_web_deps() {
 }
 
 build_mindmap() {
-  prepare_mindmap_web_deps || return 0
-  log "vue-cli-service build + sync public/mind-map/"
+  prepare_mindmap_web_deps
+  log "MindMap native/web build + sync public/mind-map/"
   (
     cd "$MM_WEB"
-    NODE_OPTIONS=--openssl-legacy-provider npx vue-cli-service build
+    npm run build
     node ../copy.js
   )
   log "mind-map ready"
@@ -54,13 +72,13 @@ build_mindmap() {
 }
 
 verify_mindmap_in_app_build() {
-  local app_mm="${ROOT}/app/build/mind-map"
+  local app_mm="${WEB_DIR}/build/mind-map"
   if [[ ! -f "${app_mm}/index.html" ]]; then
-    log "ERROR: missing app/build/mind-map/index.html — Vite did not copy public/mind-map/"
+    log "ERROR: missing apps/web/build/mind-map/index.html — Vite did not copy public/mind-map/"
     exit 1
   fi
-  log "verify app/build/mind-map/"
-  node "${ROOT}/scripts/verify-mind-map-public.mjs" --root app/build/mind-map
+  log "verify apps/web/build/mind-map/"
+  node "${ROOT}/scripts/verify-mind-map-public.mjs" --root apps/web/build/mind-map
 }
 
 run_app_build() {
@@ -69,11 +87,11 @@ run_app_build() {
   case "$mode" in
     docker)
       log "app vite build (docker)"
-      (cd "$ROOT/app" && yarn build:app:docker)
+      (cd "$WEB_DIR" && run_yarn build:app:docker)
       ;;
     *)
       log "app vite build"
-      (cd "$ROOT/app" && yarn build:app-only && yarn build:version)
+      (cd "$WEB_DIR" && run_yarn build:app-only && run_yarn build:version)
       ;;
   esac
   verify_mindmap_in_app_build

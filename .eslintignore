@@ -6,7 +6,8 @@ firebase/
 dist/
 public/workbox
 packages/excalidraw/types
-_references/**/public
+_references/**
 _dev_data/**
+apps/desktop/.runtime/**
 dev-dist
 coverage

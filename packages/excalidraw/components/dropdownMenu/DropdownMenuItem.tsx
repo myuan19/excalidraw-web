@@ -1,62 +1,66 @@
-import React from "react";
-
-import { THEME } from "@excalidraw/common";
-
-import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui";
-
-import type { ValueOf } from "@excalidraw/common/utility-types";
-
-import { useExcalidrawAppState } from "../App";
-
+import type { JSX } from "react";
+import React, { useEffect, useRef } from "react";
 import {
   getDropdownMenuItemClassName,
-  useHandleDropdownMenuItemSelect,
+  useHandleDropdownMenuItemClick,
 } from "./common";
 import MenuItemContent from "./DropdownMenuItemContent";
-
-import type { JSX } from "react";
-
-export type DropdownMenuItemProps = {
-  icon?: JSX.Element;
-  badge?: React.ReactNode;
-  value?: string | number | undefined;
-  onSelect?: (event: Event) => void;
-  children: React.ReactNode;
-  shortcut?: string;
-  selected?: boolean;
-  className?: string;
-} & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "onSelect">;
+import { useExcalidrawAppState } from "../App";
+import { THEME } from "../../constants";
+import type { ValueOf } from "../../utility-types";
 
 const DropdownMenuItem = ({
   icon,
-  badge,
   value,
+  order,
   children,
   shortcut,
   className,
+  hovered,
   selected,
+  textStyle,
   onSelect,
+  onClick,
   ...rest
-}: DropdownMenuItemProps) => {
-  const handleSelect = useHandleDropdownMenuItemSelect(onSelect);
+}: {
+  icon?: JSX.Element;
+  value?: string | number | undefined;
+  order?: number;
+  onSelect?: (event: Event) => void;
+  children: React.ReactNode;
+  shortcut?: string;
+  hovered?: boolean;
+  selected?: boolean;
+  textStyle?: React.CSSProperties;
+  className?: string;
+} & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "onSelect">) => {
+  const handleClick = useHandleDropdownMenuItemClick(onClick, onSelect);
+  const ref = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (hovered) {
+      if (order === 0) {
+        // scroll into the first item differently, so it's visible what is above (i.e. group title)
+        ref.current?.scrollIntoView({ block: "end" });
+      } else {
+        ref.current?.scrollIntoView({ block: "nearest" });
+      }
+    }
+  }, [hovered, order]);
 
   return (
-    <DropdownMenuPrimitive.Item
-      className="radix-menu-item"
-      onSelect={handleSelect}
-      asChild
+    <button
+      {...rest}
+      ref={ref}
+      value={value}
+      onClick={handleClick}
+      className={getDropdownMenuItemClassName(className, selected, hovered)}
+      title={rest.title ?? rest["aria-label"]}
     >
-      <button
-        {...rest}
-        value={value}
-        className={getDropdownMenuItemClassName(className, selected)}
-        title={rest.title ?? rest["aria-label"]}
-      >
-        <MenuItemContent icon={icon} shortcut={shortcut} badge={badge}>
-          {children}
-        </MenuItemContent>
-      </button>
-    </DropdownMenuPrimitive.Item>
+      <MenuItemContent textStyle={textStyle} icon={icon} shortcut={shortcut}>
+        {children}
+      </MenuItemContent>
+    </button>
   );
 };
 DropdownMenuItem.displayName = "DropdownMenuItem";

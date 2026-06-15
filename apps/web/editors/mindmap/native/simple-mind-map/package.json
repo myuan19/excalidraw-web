@@ -1,0 +1,6 @@
+{
+  "name": "simple-mind-map",
+  "version": "0.0.0-editorhub",
+  "main": "index.js",
+  "private": true
+}

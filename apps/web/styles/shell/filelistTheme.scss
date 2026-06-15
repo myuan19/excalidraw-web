@@ -1,0 +1,17 @@
+.excalidraw-app {
+  --nb-filelist-bg: var(--nb-page-bg);
+  --nb-filelist-surface: var(--nb-surface);
+  --nb-filelist-surface-hover: var(--nb-surface-row-hover);
+  --nb-filelist-border: var(--nb-border);
+  --nb-filelist-text: var(--nb-text);
+  --nb-filelist-muted: var(--nb-text-muted);
+}
+
+.excalidraw-app.theme--dark {
+  --nb-filelist-bg: var(--nb-fork-home-surface);
+  --nb-filelist-surface: var(--nb-fill-ghost);
+  --nb-filelist-surface-hover: var(--nb-fill-hover);
+  --nb-filelist-border: var(--nb-border);
+  --nb-filelist-text: var(--nb-fork-home-text);
+  --nb-filelist-muted: var(--nb-fork-home-muted);
+}

@@ -10,7 +10,6 @@ interface CollapsibleProps {
   openTrigger: () => void;
   children: React.ReactNode;
   className?: string;
-  showCollapsedIcon?: boolean;
 }
 
 const Collapsible = ({
@@ -19,7 +18,6 @@ const Collapsible = ({
   openTrigger,
   children,
   className,
-  showCollapsedIcon = true,
 }: CollapsibleProps) => {
   return (
     <>
@@ -34,9 +32,7 @@ const Collapsible = ({
         onClick={openTrigger}
       >
         {label}
-        {showCollapsedIcon && (
-          <InlineIcon icon={open ? collapseUpIcon : collapseDownIcon} />
-        )}
+        <InlineIcon icon={open ? collapseUpIcon : collapseDownIcon} />
       </div>
       {open && (
         <div style={{ display: "flex", flexDirection: "column" }}>

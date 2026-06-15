@@ -1,0 +1,13 @@
+{
+  "private": true,
+  "name": "editorhub-mindmap-native-web",
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs"
+  },
+  "dependencies": {
+    "esbuild": "^0.28.1",
+    "simple-mind-map": "^0.14.0-fix.2"
+  }
+}

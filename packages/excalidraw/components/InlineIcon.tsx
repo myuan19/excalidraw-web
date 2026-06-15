@@ -1,23 +1,12 @@
-export const InlineIcon = ({
-  className,
-  icon,
-  size = "1em",
-}: {
-  className?: string;
-  icon: React.ReactNode;
-  size?: string;
-}) => {
+export const InlineIcon = ({ icon }: { icon: React.ReactNode }) => {
   return (
     <span
-      className={className}
       style={{
-        width: size,
-        height: "100%",
+        width: "1em",
         margin: "0 0.5ex 0 0.5ex",
-        display: "inline-flex",
+        display: "inline-block",
         lineHeight: 0,
         verticalAlign: "middle",
-        flex: "0 0 auto",
       }}
     >
       {icon}

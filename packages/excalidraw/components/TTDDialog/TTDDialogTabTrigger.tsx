@@ -1,4 +1,4 @@
-import { Tabs as RadixTabs } from "radix-ui";
+import * as RadixTabs from "@radix-ui/react-tabs";
 
 export const TTDDialogTabTrigger = ({
   children,

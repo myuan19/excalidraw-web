@@ -1,11 +1,11 @@
-import { trackEvent } from "../../analytics";
+import type { JSX } from "react";
+import type { ReactNode } from "react";
 import { useTunnels } from "../../context/tunnels";
-import { useI18n } from "../../i18n";
-import { useExcalidrawSetAppState } from "../App";
 import DropdownMenu from "../dropdownMenu/DropdownMenu";
+import { useExcalidrawSetAppState } from "../App";
 import { brainIcon } from "../icons";
-
-import type { JSX, ReactNode } from "react";
+import { t } from "../../i18n";
+import { trackEvent } from "../../analytics";
 
 export const TTDDialogTrigger = ({
   children,
@@ -14,7 +14,6 @@ export const TTDDialogTrigger = ({
   children?: ReactNode;
   icon?: JSX.Element;
 }) => {
-  const { t } = useI18n();
   const { TTDDialogTriggerTunnel } = useTunnels();
   const setAppState = useExcalidrawSetAppState();
 
@@ -26,9 +25,9 @@ export const TTDDialogTrigger = ({
           setAppState({ openDialog: { name: "ttd", tab: "text-to-diagram" } });
         }}
         icon={icon ?? brainIcon}
-        badge={<DropdownMenu.Item.Badge>AI</DropdownMenu.Item.Badge>}
       >
         {children ?? t("labels.textToDiagram")}
+        <DropdownMenu.Item.Badge>AI</DropdownMenu.Item.Badge>
       </DropdownMenu.Item>
     </TTDDialogTriggerTunnel.In>
   );

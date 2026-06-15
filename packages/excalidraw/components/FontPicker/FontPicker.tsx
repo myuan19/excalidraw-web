@@ -1,22 +1,18 @@
-import { Popover } from "radix-ui";
-import clsx from "clsx";
 import React, { useCallback, useMemo } from "react";
+import * as Popover from "@radix-ui/react-popover";
 
-import { FONT_FAMILY } from "@excalidraw/common";
-
-import type { FontFamilyValues } from "@excalidraw/element/types";
-
-import { t } from "../../i18n";
-import { RadioSelection } from "../RadioSelection";
-import { ButtonSeparator } from "../ButtonSeparator";
+import { FontPickerList } from "./FontPickerList";
+import { FontPickerTrigger } from "./FontPickerTrigger";
+import { ButtonIconSelect } from "../ButtonIconSelect";
 import {
   FontFamilyCodeIcon,
   FontFamilyNormalIcon,
   FreedrawIcon,
 } from "../icons";
-
-import { FontPickerList } from "./FontPickerList";
-import { FontPickerTrigger } from "./FontPickerTrigger";
+import { ButtonSeparator } from "../ButtonSeparator";
+import type { FontFamilyValues } from "../../element/types";
+import { FONT_FAMILY } from "../../constants";
+import { t } from "../../i18n";
 
 import "./FontPicker.scss";
 
@@ -59,7 +55,6 @@ interface FontPickerProps {
   onHover: (fontFamily: FontFamilyValues) => void;
   onLeave: () => void;
   onPopupChange: (open: boolean) => void;
-  compactMode?: boolean;
 }
 
 export const FontPicker = React.memo(
@@ -71,7 +66,6 @@ export const FontPicker = React.memo(
     onHover,
     onLeave,
     onPopupChange,
-    compactMode = false,
   }: FontPickerProps) => {
     const defaultFonts = useMemo(() => DEFAULT_FONTS, []);
     const onSelectCallback = useCallback(
@@ -84,30 +78,16 @@ export const FontPicker = React.memo(
     );
 
     return (
-      <div
-        role="dialog"
-        aria-modal="true"
-        className={clsx("FontPicker__container", {
-          "FontPicker__container--compact": compactMode,
-        })}
-      >
-        {!compactMode && (
-          <div className="buttonList">
-            <RadioSelection<FontFamilyValues | false>
-              type="button"
-              options={defaultFonts}
-              value={selectedFontFamily}
-              onClick={onSelectCallback}
-            />
-          </div>
-        )}
-        {!compactMode && <ButtonSeparator />}
+      <div role="dialog" aria-modal="true" className="FontPicker__container">
+        <ButtonIconSelect<FontFamilyValues | false>
+          type="button"
+          options={defaultFonts}
+          value={selectedFontFamily}
+          onClick={onSelectCallback}
+        />
+        <ButtonSeparator />
         <Popover.Root open={isOpened} onOpenChange={onPopupChange}>
-          <FontPickerTrigger
-            selectedFontFamily={selectedFontFamily}
-            isOpened={isOpened}
-            compactMode={compactMode}
-          />
+          <FontPickerTrigger selectedFontFamily={selectedFontFamily} />
           {isOpened && (
             <FontPickerList
               selectedFontFamily={selectedFontFamily}

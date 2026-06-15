@@ -1,6 +1,6 @@
 // Self-destructing service worker for dev mode.
 //
-// vite-plugin-pwa generates the real sw.js into app/build/ at
+// vite-plugin-pwa generates the real sw.js into apps/web/build/ at
 // build time, overwriting this file in the output directory. So production
 // deployments are unaffected.
 //

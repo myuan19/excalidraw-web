@@ -1,0 +1,59 @@
+{
+  "name": "app",
+  "version": "0.0.1",
+  "private": true,
+  "homepage": ".",
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not ie <= 11",
+      "not op_mini all",
+      "not safari < 12",
+      "not kaios <= 2.5",
+      "not edge < 79",
+      "not chrome < 70",
+      "not and_uc < 13",
+      "not samsung < 10"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@excalidraw/random-username": "1.0.0",
+    "callsites": "4.2.0",
+    "i18next-browser-languagedetector": "6.1.4",
+    "idb-keyval": "6.0.3",
+    "jotai": "2.11.0",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "simple-mind-map": "file:./editors/mindmap/native/simple-mind-map",
+    "uqr": "0.1.2",
+    "vite-plugin-html": "3.2.2"
+  },
+  "prettier": "@excalidraw/prettier-config",
+  "scripts": {
+    "build-node": "node ./scripts/build-node.js",
+    "prebuild:app:docker": "node ../../scripts/verify-mind-map-public.mjs",
+    "build:app:docker": "vite build",
+    "build:app": "cross-env VITE_APP_GIT_SHA=$VERCEL_GIT_COMMIT_SHA vite build",
+    "prebuild:app-only": "node ../../scripts/verify-mind-map-public.mjs",
+    "build:app-only": "cross-env VITE_APP_GIT_SHA=$VERCEL_GIT_COMMIT_SHA vite build",
+    "build:version": "node ../../scripts/build-version.js",
+    "build": "yarn build:app && yarn build:version",
+    "start": "cross-env NODE_OPTIONS=--no-deprecation vite",
+    "start:production": "yarn build && yarn serve",
+    "serve": "npx http-server build -a localhost -p 5001 -o",
+    "build:preview": "cross-env NODE_OPTIONS=--no-deprecation yarn build && cross-env NODE_OPTIONS=--no-deprecation vite preview --port 5000",
+    "preview": "cross-env NODE_OPTIONS=--no-deprecation vite preview"
+  },
+  "devDependencies": {
+    "vite-plugin-sitemap": "0.7.1"
+  }
+}

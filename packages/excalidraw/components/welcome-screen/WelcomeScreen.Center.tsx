@@ -1,13 +1,12 @@
+import type { JSX } from "react";
 import { actionLoadScene, actionShortcuts } from "../../actions";
 import { getShortcutFromShortcutName } from "../../actions/shortcuts";
-import { useTunnels } from "../../context/tunnels";
-import { useUIAppState } from "../../context/ui-appState";
 import { t, useI18n } from "../../i18n";
-import { useEditorInterface, useExcalidrawActionManager } from "../App";
-import { ExcalidrawLogo } from "../ExcalidrawLogo";
+import { useDevice, useExcalidrawActionManager } from "../App";
+import { useTunnels } from "../../context/tunnels";
 import { HelpIcon, LoadIcon, usersIcon } from "../icons";
-
-import type { JSX } from "react";
+import { useUIAppState } from "../../context/ui-appState";
+import { ExcalidrawLogo } from "../ExcalidrawLogo";
 
 const WelcomeScreenMenuItemContent = ({
   icon,
@@ -18,12 +17,12 @@ const WelcomeScreenMenuItemContent = ({
   shortcut?: string | null;
   children: React.ReactNode;
 }) => {
-  const editorInterface = useEditorInterface();
+  const device = useDevice();
   return (
     <>
       <div className="welcome-screen-menu-item__icon">{icon}</div>
       <div className="welcome-screen-menu-item__text">{children}</div>
-      {shortcut && editorInterface.formFactor !== "phone" && (
+      {shortcut && !device.editor.isMobile && (
         <div className="welcome-screen-menu-item__shortcut">{shortcut}</div>
       )}
     </>
@@ -78,7 +77,7 @@ const WelcomeScreenMenuItemLink = ({
       className={`welcome-screen-menu-item ${className}`}
       href={href}
       target="_blank"
-      rel="noopener"
+      rel="noreferrer"
     >
       <WelcomeScreenMenuItemContent icon={icon} shortcut={shortcut}>
         {children}

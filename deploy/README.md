@@ -21,9 +21,9 @@ docker compose -f deploy/docker-compose.full.yml up -d --build
 
 | Option | Type | What it does |
 |--------|------|----------------|
-| **1) ship** | **One-click** | Host `yarn build:production` → verify `app/build` → Docker deploy → `:17888` |
+| **1) ship** | **One-click** | Host `yarn build:production` → verify `apps/web/build` → Docker deploy → `:17888` |
 | **2) debug-ship** | **One-click (debug)** | Same as ship, debug image/container (still only `:17888`, verbose logs) |
-| **3) deploy** | **Deploy only** | Docker build + start only — **no** host `yarn build:production` (needs existing `app/build` or in-image build) |
+| **3) deploy** | **Deploy only** | Docker build + start only — **no** host `yarn build:production` (needs existing `apps/web/build` or in-image build) |
 | **4) debug-deploy** | **Deploy only (debug)** | Same as deploy, debug profile |
 | 5) build | Other | Docker image only |
 | 6) start | Other | Start container |
@@ -39,15 +39,15 @@ docker compose -f deploy/docker-compose.full.yml up -d --build
 PREBUILT=1 ./_scripts/deploy.sh deploy
 ```
 
-Build pipeline (host or Docker): `yarn build:production` = MindMap iframe + SPA (`app/build/`).
+Build pipeline (host or Docker): `yarn build:production` = MindMap iframe + SPA (`apps/web/build/`).
 
-**`ship` / `debug-ship`** always run host build first, then Docker with `PREBUILT=1` (packages `app/build/` only — **no yarn inside Docker**, avoids registry timeouts). **`deploy` / `debug-deploy`** skip host build; use when artifacts already exist or you accept a full in-container build (`PREBUILT=0`).
+**`ship` / `debug-ship`** always run host build first, then Docker with `PREBUILT=1` (packages `apps/web/build/` only — **no yarn inside Docker**, avoids registry timeouts). **`deploy` / `debug-deploy`** skip host build; use when artifacts already exist or you accept a full in-container build (`PREBUILT=0`).
 
 Data volume: `editorhub_web_data` → `/var/lib/excalidraw` in container (bind mount default: `/opt/editorhub-web/data`).
 
 ### MindMap static assets (`/mind-map/dist/`)
 
-Deploy **the entire** `public/mind-map/dist/` (or `app/build/mind-map/dist/`) on every release. `index.html` + `app.*.js` alone are not enough: Vue lazy-loads `chunk-*.js` (~3MB). A partial copy causes `ChunkLoadError` and “原生界面未完成初始化”.
+Deploy **the entire** `public/mind-map/dist/` (or `apps/web/build/mind-map/dist/`) on every release. `index.html` + `app.*.js` alone are not enough: Vue lazy-loads `chunk-*.js` (~3MB). A partial copy causes `ChunkLoadError` and “原生界面未完成初始化”.
 
 **Auth model (intended)**
 
@@ -58,7 +58,7 @@ Deploy **the entire** `public/mind-map/dist/` (or `app/build/mind-map/dist/`) on
 
 **Symptom: `ChunkLoadError` / `ERR_HTTP2_PROTOCOL_ERROR` while already logged in on the main app**
 
-1. **Incomplete deploy** — sync the full `app/build/mind-map/dist/js/` (all `chunk-*.js`, not only `app.*.js` + `index.html`). Run `node scripts/verify-mind-map-public.mjs` before release.
+1. **Incomplete deploy** — sync the full `apps/web/build/mind-map/dist/js/` (all `chunk-*.js`, not only `app.*.js` + `index.html`). Run `node scripts/verify-mind-map-public.mjs` before release.
 2. **HTTP/2 proxy / frp** — lazy chunks are multi‑MB. Some gateways abort with `ERR_HTTP2_PROTOCOL_ERROR` even when auth succeeds. On the **outer** reverse proxy in front of `17888`, for static locations use `proxy_http_version 1.1`, enable `gzip` for `application/javascript`, and raise buffers, e.g.:
 
 ```nginx
@@ -112,7 +112,7 @@ curl -sI 'https://YOUR_HOST/api/files/tree' | head -5
 
 **Symptom: many 404 on `/assets/*.js`, `/icons/*`, `/api/files/*`**
 
-Usually **stale or partial release**: `index.html` was updated but `app/build/assets/` was not copied atomically, or the running container/image predates routes like `GET /api/files/hashes`. Fix: run `./_scripts/deploy.sh ship` on the server (full `yarn build:production` + Docker replace). Host check before ship: `node scripts/verify-app-build.mjs`.
+Usually **stale or partial release**: `index.html` was updated but `apps/web/build/assets/` was not copied atomically, or the running container/image predates routes like `GET /api/files/hashes`. Fix: run `./_scripts/deploy.sh ship` on the server (full `yarn build:production` + Docker replace). Host check before ship: `node scripts/verify-app-build.mjs`.
 
 ### Embed security (`/embed`)
 

@@ -1,0 +1,56 @@
+{
+  "name": "editorhub-desktop",
+  "productName": "EditorHub",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.mjs",
+  "scripts": {
+    "start": "electron .",
+    "start:server": "node src/main.mjs",
+    "start:workspace": "node src/main.mjs --workspace",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win nsis portable"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "rotating-file-stream": "^3.2.9"
+  },
+  "devDependencies": {
+    "electron": "42.4.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.editorhub.desktop",
+    "productName": "EditorHub",
+    "directories": {
+      "output": "../../dist/desktop"
+    },
+    "asar": true,
+    "files": [
+      "electron/**",
+      "src/**",
+      "adapters/**",
+      ".runtime/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../../apps/web/build",
+        "to": "apps/web/build"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

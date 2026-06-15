@@ -7,11 +7,12 @@ Self-hosted multi-editor hub: file list, Excalidraw canvas, MindMap editor, embe
 ### Product code（日常开发）
 
 ```text
-app/          Host application — routing, sync, file list, editor shells (app/editors/)
-server/       Express API + SQLite + on-disk JSON
-packages/     @excalidraw/* editor libraries (canvas engine)
-public/       Static assets served by Vite (MindMap iframe → public/mind-map/)
-lib/          Shared logger core (app/lib + server/lib are thin adapters)
+apps/web/      Web app — routing, sync, file list, editor shells (apps/web/editors/)
+apps/desktop/  Electron desktop app + local folder mapping adapter
+server/        Shared Express API + SQLite + on-disk JSON
+packages/      @excalidraw/* editor libraries (canvas engine)
+public/        Static assets served by Vite (MindMap iframe → public/mind-map/)
+lib/           Shared logger core (apps/web/lib + server/lib are thin adapters)
 ```
 
 ### Tooling & deploy
@@ -42,14 +43,14 @@ Yarn workspaces、TypeScript、ESLint、Vitest、Prettier、Husky 等只能从�
 | `tsconfig.json` | 全仓 TypeScript 基线 |
 | `vitest.config.mts` | 单元测试 |
 | `.eslintrc.json` / `.eslintignore` | Lint |
-| `.env.development` / `.env.production` | Vite 环境变量（app 通过 `envDir: ".."` 读取） |
+| `.env.development` / `.env.production` | Vite 环境变量（apps/web 通过 `envDir: "../.."` 读取） |
 | `.lintstagedrc.js` / `.husky/` | Git hooks |
 | `.github/` | CI |
 | `LICENSE` / `README.md` / `CLAUDE.md` | 文档 |
 
 ## Local data directory（`_dev_data/`，与源码分离）
 
-本地开发数据放在仓库根目录 **`_dev_data/`**（单独目录，不混在 `app/`/`server/` 源码树里）：
+本地开发数据放在仓库根目录 **`_dev_data/`**（单独目录，不混在 `apps/web/`/`server/` 源码树里）：
 
 | 场景 | 路径 |
 |------|------|
@@ -92,8 +93,12 @@ yarn docker:full              # deploy/docker-compose.full.yml
 
 | Command | Description |
 |---------|-------------|
-| `yarn start` | Vite dev server (app/) |
+| `yarn start` | Vite dev server (apps/web/) |
 | `yarn build` | Production frontend build |
+| `yarn start:desktop -- --workspace <dir>` | Open the Electron desktop app with a local workspace |
+| `yarn start:desktop:server -- --workspace <dir>` | Server-only desktop API debugging |
+| `yarn build:desktop` | Build Web assets and Windows installer + portable desktop app |
+| `yarn build:desktop:pack` | Build unpacked Electron app |
 | `yarn test:typecheck` | TypeScript check |
 | `yarn test:app` | Vitest unit tests |
 | `yarn docker:full` | Full-stack Docker compose |

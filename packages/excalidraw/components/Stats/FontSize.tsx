@@ -1,23 +1,17 @@
-import {
-  getBoundTextElement,
-  redrawTextBoundingBox,
-} from "@excalidraw/element";
-import { hasBoundTextElement, isTextElement } from "@excalidraw/element";
-
 import type {
   ExcalidrawElement,
   ExcalidrawTextElement,
 } from "@excalidraw/element/types";
-
-import type { Scene } from "@excalidraw/element";
-
-import { fontSizeIcon } from "../icons";
-
 import StatsDragInput from "./DragInput";
-import { getStepSizedValue } from "./utils";
-
 import type { DragInputCallbackType } from "./DragInput";
+import { mutateElement } from "@excalidraw/element";
+import { getStepSizedValue } from "./utils";
+import { fontSizeIcon } from "../icons";
+import type Scene from "../../scene/Scene";
 import type { AppState } from "../../types";
+import { isTextElement, redrawTextBoundingBox } from "@excalidraw/element";
+import { hasBoundTextElement } from "@excalidraw/element";
+import { getBoundTextElement } from "@excalidraw/element";
 
 interface FontSizeProps {
   element: ExcalidrawElement;
@@ -65,13 +59,13 @@ const handleFontSizeChange: DragInputCallbackType<
     }
 
     if (nextFontSize) {
-      scene.mutateElement(latestElement, {
+      mutateElement(latestElement, {
         fontSize: nextFontSize,
       });
       redrawTextBoundingBox(
         latestElement,
         scene.getContainerElement(latestElement),
-        scene,
+        scene.getNonDeletedElementsMap(),
       );
     }
   }

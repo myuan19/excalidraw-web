@@ -1,11 +1,8 @@
-import type { Scene } from "@excalidraw/element";
-
-import { getNormalizedGridStep } from "../../scene";
-
 import StatsDragInput from "./DragInput";
-import { getStepSizedValue } from "./utils";
-
+import type Scene from "../../scene/Scene";
 import type { AppState } from "../../types";
+import { getStepSizedValue } from "./utils";
+import { getNormalizedGridStep } from "../../scene";
 
 interface PositionProps {
   property: "gridStep";

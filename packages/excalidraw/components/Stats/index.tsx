@@ -1,44 +1,37 @@
-import { round } from "@excalidraw/math";
-import clsx from "clsx";
-import throttle from "lodash.throttle";
 import { useEffect, useMemo, useState, memo } from "react";
-
-import { STATS_PANELS } from "@excalidraw/common";
 import { getCommonBounds } from "@excalidraw/element";
-import { getUncroppedWidthAndHeight } from "@excalidraw/element";
-import { isImageElement } from "@excalidraw/element";
-
-import { frameAndChildrenSelectedTogether } from "@excalidraw/element";
-
-import { elementsAreInSameGroup } from "@excalidraw/element";
-
 import type { NonDeletedExcalidrawElement } from "@excalidraw/element/types";
-
 import { t } from "../../i18n";
-import { isGridModeEnabled } from "../../snapping";
-import { useExcalidrawAppState, useExcalidrawSetAppState } from "../App";
-import { Island } from "../Island";
-import { CloseIcon } from "../icons";
-
-import Angle from "./Angle";
-import CanvasGrid from "./CanvasGrid";
-import Collapsible from "./Collapsible";
-import Dimension from "./Dimension";
-import FontSize from "./FontSize";
-import MultiAngle from "./MultiAngle";
-import MultiDimension from "./MultiDimension";
-import MultiFontSize from "./MultiFontSize";
-import MultiPosition from "./MultiPosition";
-import Position from "./Position";
-import { getAtomicUnits } from "./utils";
-
-import "./Stats.scss";
-
 import type {
   AppClassProperties,
   AppState,
   ExcalidrawProps,
 } from "../../types";
+import { CloseIcon } from "../icons";
+import { Island } from "../Island";
+import throttle from "lodash.throttle";
+import Dimension from "./Dimension";
+import Angle from "./Angle";
+import FontSize from "./FontSize";
+import MultiDimension from "./MultiDimension";
+import { elementsAreInSameGroup } from "@excalidraw/element";
+import MultiAngle from "./MultiAngle";
+import MultiFontSize from "./MultiFontSize";
+import Position from "./Position";
+import MultiPosition from "./MultiPosition";
+import Collapsible from "./Collapsible";
+import { useExcalidrawAppState, useExcalidrawSetAppState } from "../App";
+import { getAtomicUnits } from "./utils";
+import { STATS_PANELS } from "../../constants";
+import { isElbowArrow, isImageElement } from "@excalidraw/element";
+import CanvasGrid from "./CanvasGrid";
+import clsx from "clsx";
+
+import "./Stats.scss";
+import { isGridModeEnabled } from "../../snapping";
+import { getUncroppedWidthAndHeight } from "@excalidraw/element";
+import { round } from "@excalidraw/math";
+import { frameAndChildrenSelectedTogether } from "@excalidraw/element";
 
 interface StatsProps {
   app: AppClassProperties;
@@ -289,11 +282,7 @@ export const StatsInner = memo(
                           </StatsRow>
                         )}
 
-                      <StatsRow
-                        heading
-                        data-testid="stats-element-type"
-                        style={{ margin: "0.3125rem 0" }}
-                      >
+                      <StatsRow heading data-testid="stats-element-type">
                         {appState.croppingElementId
                           ? t("labels.imageCropping")
                           : t(`element.${singleElement.type}`)}
@@ -333,14 +322,16 @@ export const StatsInner = memo(
                           appState={appState}
                         />
                       </StatsRow>
-                      <StatsRow>
-                        <Angle
-                          property="angle"
-                          element={singleElement}
-                          scene={scene}
-                          appState={appState}
-                        />
-                      </StatsRow>
+                      {!isElbowArrow(singleElement) && (
+                        <StatsRow>
+                          <Angle
+                            property="angle"
+                            element={singleElement}
+                            scene={scene}
+                            appState={appState}
+                          />
+                        </StatsRow>
+                      )}
                       <StatsRow>
                         <FontSize
                           property="fontSize"
