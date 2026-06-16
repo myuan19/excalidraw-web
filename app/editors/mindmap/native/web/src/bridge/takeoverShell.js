@@ -698,16 +698,39 @@
         }
         let textEditDirtyTimer = null
         scheduleDirtyNotifyEnable('bootstrap-start')
-        const notifyDirty = () => {
-          if (!dirtyNotifyEnabled) {
+        const userEditCommandNames = new Set([
+          'INSERT_NODE',
+          'INSERT_CHILD_NODE',
+          'INSERT_PARENT_NODE',
+          'INSERT_MULTI_NODE',
+          'INSERT_MULTI_CHILD_NODE',
+          'REMOVE_NODE',
+          'REMOVE_CURRENT_NODE',
+          'MOVE_UP_ONE_LEVEL',
+          'MOVE_NODE_TO',
+          'MOVE_NODE_BY_DROP_TARGET',
+          'UP_NODE',
+          'DOWN_NODE'
+        ])
+        const notifyDirty = (opts = {}) => {
+          const forceUserEdit = opts.userEdit === true
+          if (!dirtyNotifyEnabled && !forceUserEdit) {
             debugMindMapOpen(
               'dirty notify suppressed',
               describeDirtyNotifyWindow()
             )
             return
           }
-          debugMindMapOpen('dirty notify emit', { phase: 'user-edit' })
-          postToHost('mindMapDirtyState', { dirty: true })
+          debugMindMapOpen('dirty notify emit', {
+            phase: forceUserEdit ? 'text-edit' : 'data-change',
+            forced: forceUserEdit && !dirtyNotifyEnabled,
+            reason: opts.reason || null
+          })
+          postToHost('mindMapDirtyState', {
+            dirty: true,
+            userEdit: forceUserEdit,
+            reason: opts.reason || null
+          })
         }
         window.$bus.$on('data_change', notifyDirty)
         window.$bus.$on('hide_text_edit', () => {
@@ -786,10 +809,17 @@
           // 直接在 mindMap 实例上监听文本编辑变化（不通过 $bus 转发，避免触发 RichText 内部错误）
           nativeMindMap.on('node_text_edit_change', () => {
             if (textEditDirtyTimer) return
+            notifyDirty({ userEdit: true, reason: 'text-edit' })
             textEditDirtyTimer = setTimeout(() => {
               textEditDirtyTimer = null
-              notifyDirty()
             }, 150)
+          })
+          nativeMindMap.on('afterExecCommand', commandName => {
+            if (!userEditCommandNames.has(commandName)) return
+            notifyDirty({
+              userEdit: true,
+              reason: `command:${commandName}`
+            })
           })
         })
         window.$bus.$on('node_tree_render_end', () => {

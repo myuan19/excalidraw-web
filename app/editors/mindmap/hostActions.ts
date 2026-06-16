@@ -35,10 +35,7 @@ export async function importMindMapFile({
   const data = await MindMapAdapter.parse(rawMindMapData);
   const created = await ServerSync.createFile(fileName, folderId, "mindmap");
   const document = MindMapAdapter.toDocument(data);
-  await ServerSync.saveFileImmediate(
-    created.id,
-    document,
-    fileName,
-  );
+  const thumbnail = await generateMindMapThumbnailAndCache(created.id, data);
+  await ServerSync.saveFileImmediate(created.id, document, fileName, thumbnail);
   return { id: created.id };
 }

@@ -5,6 +5,7 @@ import { FileSyncState } from "../../data/FileSyncState";
 import { MindMapAdapter } from "../../data/formats/registry";
 import { saveMindMapBrowserViewFromData } from "../../data/mindMapBrowserViewStorage";
 import { hashDocumentSnapshot } from "../../data/sceneHash";
+import { buildThumbnail } from "../../data/thumbnailService";
 import { ServerSync } from "../../data/ServerSync";
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
 import {
@@ -23,16 +24,19 @@ import { clearAppShellPendingNavigation } from "../../shell/appShellNavigate";
 import { isAutoSaveEligibleFile, notifyEdit } from "../../data/autoSaveSession";
 import {
   CHECKPOINT_LABELS,
+  type CheckpointLabel,
   isManualCheckpointSource,
-  resolveCheckpointPolicy,
 } from "../../data/checkpointPolicy";
-import { maybeCreateCheckpointBeforeLeave } from "../../data/checkpointBeforeLeave";
+import { executeCheckpointSave } from "../../data/checkpointSaveOrchestrator";
+import { confirmBeforeRestoreCheckpoint } from "../../data/checkpointRestoreConfirm";
 import { isAutoSaveOnExitActive } from "../../data/appSettings";
 import { installExecutor, requestSaveAndWait } from "../../data/saveQueue";
 import {
   clearTabFileDirty,
   markTabFileDirty,
 } from "../../data/tabFileDirtyState";
+import { patchFileListTreeCacheSavedFile } from "../../data/fileListSessionCache";
+import { LocalThumbnailCache } from "../../data/localThumbnailCache";
 
 import {
   clearMindMapDraftIfUnchanged,
@@ -75,6 +79,18 @@ type ServerSaveMeta = {
 };
 
 const MINDMAP_SAVE_TIMEOUT_MS = 8000;
+
+function isSilentSaveSource(source: SaveToServerSource): boolean {
+  return source === "auto" || source === "visibility" || source === "thumbnail";
+}
+
+export function shouldSkipMindMapThumbnailServerSave(opts: {
+  source: SaveToServerSource;
+  contentHash: string;
+  baselineHash: string | null;
+}): boolean {
+  return opts.source === "thumbnail" && opts.contentHash !== opts.baselineHash;
+}
 
 function legacyMindMapCacheKey(fileId: string): string {
   return `mindmap-local-cache-${fileId}`;
@@ -225,14 +241,8 @@ export function useMindMapFileSave(opts: {
 
   const finishNavigateHome = useCallback(() => {
     window.setTimeout(() => {
-      void (async () => {
-        const fileId = getFileIdFromHash();
-        if (fileId && !isLocalDraftFileId(fileId)) {
-          await maybeCreateCheckpointBeforeLeave(fileId);
-        }
-        skipLeaveStashOnceRef.current = true;
-        navigateToFileListHome();
-      })();
+      skipLeaveStashOnceRef.current = true;
+      navigateToFileListHome();
     }, 80);
   }, [navigateToFileListHome]);
 
@@ -359,7 +369,7 @@ export function useMindMapFileSave(opts: {
         return false;
       }
       if (isLocalDraftFileId(fileId)) {
-        if (source === "auto" || source === "visibility") {
+        if (isSilentSaveSource(source)) {
           return false;
         }
         onRequestSaveNew?.({ navigateAfter: !!navigateAfter });
@@ -379,7 +389,39 @@ export function useMindMapFileSave(opts: {
 
       const hash = hashDocumentSnapshot(document);
       const baseline = FileSyncState.getBaselineHash(fileId);
-      const contentChanged = !baseline || hash !== baseline;
+      const unchanged = !!baseline && hash === baseline && !forceThumbnail;
+
+      if (
+        shouldSkipMindMapThumbnailServerSave({
+          source,
+          contentHash: hash,
+          baselineHash: baseline,
+        })
+      ) {
+        const state = evaluateCurrentFileModificationState({
+          fileId,
+          kind: "mindmap",
+          mindMapDocument: document,
+        });
+        if (state.modified) {
+          FileSyncState.setLocalCache(
+            fileId,
+            toMindMapLocalCacheRecord(document),
+          );
+          applyFileModificationState(fileId, state);
+          if (thumbnail) {
+            LocalThumbnailCache.set(fileId, thumbnail);
+          }
+        }
+        debugMindMapPersist("thumbnail save skipped for dirty document", {
+          fileId8: fileId.slice(0, 8),
+          contentHash8: hash.slice(0, 8),
+          baselineHash8: baseline?.slice(0, 8) ?? null,
+          modified: state.modified,
+        });
+        return false;
+      }
+
       debugMindMapPersist("saveCurrentFileToServer start", {
         fileId8: fileId.slice(0, 8),
         source,
@@ -387,78 +429,115 @@ export function useMindMapFileSave(opts: {
         baselineHash8: baseline?.slice(0, 8) ?? null,
         sampleNode: findFirstRichMindMapNodeSummary(document.data),
       });
-      if (baseline && hash === baseline && !forceThumbnail) {
-        debugMindMapPersist("saveCurrentFileToServer skipped: baseline match", {
-          fileId8: fileId.slice(0, 8),
-          source,
-        });
-        clearTabFileDirty(fileId);
-        let checkpointCreated = false;
-        if (isManualCheckpointSource(source)) {
-          try {
-            await ServerSync.createCheckpoint(fileId, CHECKPOINT_LABELS.manual);
-            checkpointCreated = true;
-            lastServerSaveMetaRef.current = {
-              skipped: false,
-              contentSha256: baseline,
-            };
-            window.dispatchEvent(
-              new CustomEvent("excalidraw-server-saved", {
-                detail: { id: fileId, hash },
-              }),
-            );
-          } catch (err: any) {
-            setErrorMessage(err?.message || "创建存档失败");
-            return false;
-          }
-        }
-        if (source === "toolbar" || source === "hotkey") {
-          setMindMapSaveHint(
-            checkpointCreated
-              ? "已创建手动存档"
-              : "内容与最新状态一致，无需保存",
-          );
-          setStatus("已保存");
-        }
-        if (navigateAfter) {
-          FileSyncState.clearLocalCache(fileId);
-          finishNavigateHome();
-        }
-        return checkpointCreated;
-      }
-      const thumbnailForSave = thumbnail ?? (contentChanged ? null : undefined);
 
-      if (source !== "visibility" && source !== "auto") {
-        setMindMapSaving(true);
-        setMindMapSaveHint(null);
-      } else {
-        visibilitySaveInFlightRef.current = true;
+      if (unchanged) {
+        clearTabFileDirty(fileId);
+      }
+
+      if (!unchanged) {
+        if (!isSilentSaveSource(source)) {
+          setMindMapSaving(true);
+          setMindMapSaveHint(null);
+        } else {
+          visibilitySaveInFlightRef.current = true;
+        }
       }
 
       try {
-        const result = await ServerSync.saveFileImmediate(
-          fileId,
-          document,
-          getFileName(),
-          thumbnailForSave,
+        const outcome = await executeCheckpointSave(
           {
-            suppressSavedEvent: true,
-            checkpointPolicy: resolveCheckpointPolicy(source),
+            fileId,
+            source,
+            contentHash: hash,
+            baselineHash: baseline,
+            forceThumbnail,
+            document,
+          },
+          {
+            resolveFileThumbnailForPut: async () => thumbnail ?? undefined,
+            resolveArchiveThumbnailSvg: async () => {
+              if (thumbnail) {
+                return thumbnail;
+              }
+              const built = await buildThumbnail({
+                kind: "mindmap",
+                data: document,
+                purpose: "archive",
+              });
+              return built.thumbnailSvg;
+            },
+            putDocument: async ({ thumbnail: thumbForPut, checkpointPolicy }) =>
+              ServerSync.saveFileImmediate(
+                fileId,
+                document,
+                getFileName(),
+                thumbForPut,
+                {
+                  suppressSavedEvent: true,
+                  checkpointPolicy,
+                },
+              ),
           },
         );
+
+        if (!outcome.saved && !outcome.checkpointCreated) {
+          if (isManualCheckpointSource(source)) {
+            setMindMapSaveHint("内容与最新状态一致，无需保存");
+            setStatus("已保存");
+          }
+          if (navigateAfter) {
+            FileSyncState.clearLocalCache(fileId);
+            finishNavigateHome();
+          }
+          return false;
+        }
+
+        if (outcome.checkpointCreated && unchanged) {
+          lastServerSaveMetaRef.current = {
+            skipped: false,
+            contentSha256: baseline,
+          };
+          window.dispatchEvent(
+            new CustomEvent("excalidraw-server-saved", {
+              detail: { id: fileId, hash },
+            }),
+          );
+          if (isManualCheckpointSource(source)) {
+            setMindMapSaveHint("已完成 checkpoint 检查");
+            setStatus("已保存");
+          }
+          if (navigateAfter) {
+            FileSyncState.clearLocalCache(fileId);
+            finishNavigateHome();
+          }
+          return true;
+        }
+
         updateDraftHashDebouncedRef.current.cancel();
         lastServerSaveMetaRef.current = {
-          skipped: !!result?.skipped,
-          contentSha256: result?.content_sha256 ?? null,
+          skipped: !!outcome.skipped,
+          contentSha256: outcome.contentSha256 ?? null,
         };
         recordMindMapPersisted(fileId, document, {
-          serverContentSha256: result?.content_sha256,
+          serverContentSha256: outcome.contentSha256 ?? undefined,
+        });
+        if (thumbnail && outcome.contentSha256) {
+          LocalThumbnailCache.set(fileId, thumbnail, {
+            contentSha: outcome.contentSha256,
+          });
+        }
+        patchFileListTreeCacheSavedFile(fileId, {
+          name: getFileName(),
+          kind: "mindmap",
+          has_thumbnail: thumbnail ? true : undefined,
+          content_sha256: outcome.contentSha256 ?? undefined,
+          updated_at: outcome.updatedAt ?? undefined,
         });
         debugMindMapPersist("saveCurrentFileToServer success", {
           fileId8: fileId.slice(0, 8),
           source,
-          skipped: !!result?.skipped,
-          serverSha8: result?.content_sha256?.slice(0, 8) ?? null,
+          skipped: !!outcome.skipped,
+          serverSha8: outcome.contentSha256?.slice(0, 8) ?? null,
         });
         localStorage.removeItem(legacyMindMapCacheKey(fileId));
         window.dispatchEvent(
@@ -467,11 +546,13 @@ export function useMindMapFileSave(opts: {
           }),
         );
         window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
-        window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
+        if (!navigateAfter) {
+          window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
+        }
         if (source === "auto") {
           setMindMapSaveHint("自动保存完成");
-        } else if (source === "toolbar" || source === "hotkey") {
-          setMindMapSaveHint(result?.skipped ? "已是最新状态" : "已保存");
+        } else if (isManualCheckpointSource(source)) {
+          setMindMapSaveHint(outcome.skipped ? "已是最新状态" : "已保存");
         }
         setStatus("已保存");
         setErrorMessage(null);
@@ -486,7 +567,7 @@ export function useMindMapFileSave(opts: {
           source,
           message: err?.message || String(err),
         });
-        if (source !== "visibility") {
+        if (source !== "visibility" && source !== "thumbnail") {
           setErrorMessage(err?.message || "保存失败");
         }
         if (navigateAfter) {
@@ -502,7 +583,7 @@ export function useMindMapFileSave(opts: {
         }
         return false;
       } finally {
-        if (source !== "visibility" && source !== "auto") {
+        if (!isSilentSaveSource(source)) {
           setMindMapSaving(false);
         } else {
           visibilitySaveInFlightRef.current = false;
@@ -519,6 +600,113 @@ export function useMindMapFileSave(opts: {
       setStatus,
     ],
   );
+
+  const saveCurrentFileAsCheckpoint = useCallback(
+    async (
+      label: CheckpointLabel,
+      nativeSaveOverride?: MindMapNativeSaveResult,
+    ): Promise<boolean> => {
+      const fileId = getFileIdFromHash();
+      if (!fileId || isLocalDraftFileId(fileId)) {
+        return false;
+      }
+      updateDraftHashDebouncedRef.current.flush();
+      const nativeSave =
+        nativeSaveOverride ?? (await requestNativeMindMapData());
+      if (!nativeSave) {
+        return false;
+      }
+      const { document, thumbnail } = nativeSave;
+      const hash = hashDocumentSnapshot(document);
+      const baseline = FileSyncState.getBaselineHash(fileId);
+      try {
+        const outcome = await executeCheckpointSave(
+          {
+            fileId,
+            source: "sidebar",
+            contentHash: hash,
+            baselineHash: baseline,
+            forcePut: true,
+            document,
+            checkpointPolicyOverride: { mode: "force", label },
+          },
+          {
+            resolveFileThumbnailForPut: async () => thumbnail ?? undefined,
+            resolveArchiveThumbnailSvg: async () => {
+              if (thumbnail) {
+                return thumbnail;
+              }
+              const built = await buildThumbnail({
+                kind: "mindmap",
+                data: document,
+                purpose: "archive",
+              });
+              return built.thumbnailSvg;
+            },
+            putDocument: async ({ thumbnail: thumbForPut, checkpointPolicy }) =>
+              ServerSync.saveFileImmediate(
+                fileId,
+                document,
+                getFileName(),
+                thumbForPut,
+                {
+                  suppressSavedEvent: true,
+                  checkpointPolicy,
+                },
+              ),
+          },
+        );
+        if (!outcome.saved) {
+          return false;
+        }
+        updateDraftHashDebouncedRef.current.cancel();
+        recordMindMapPersisted(fileId, document, {
+          serverContentSha256: outcome.contentSha256 ?? undefined,
+        });
+        if (thumbnail && outcome.contentSha256) {
+          LocalThumbnailCache.set(fileId, thumbnail, {
+            contentSha: outcome.contentSha256,
+          });
+        }
+        patchFileListTreeCacheSavedFile(fileId, {
+          name: getFileName(),
+          kind: "mindmap",
+          has_thumbnail: thumbnail ? true : undefined,
+          content_sha256: outcome.contentSha256 ?? undefined,
+          updated_at: outcome.updatedAt ?? undefined,
+        });
+        localStorage.removeItem(legacyMindMapCacheKey(fileId));
+        window.dispatchEvent(
+          new CustomEvent("excalidraw-server-saved", {
+            detail: { id: fileId, hash },
+          }),
+        );
+        window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
+        window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
+        setStatus("已保存");
+        setErrorMessage(null);
+        return true;
+      } catch (err: any) {
+        setErrorMessage(err?.message || "创建存档失败");
+        return false;
+      }
+    },
+    [getFileName, requestNativeMindMapData, setErrorMessage, setStatus],
+  );
+
+  const confirmBeforeRestoreArchive =
+    useCallback(async (): Promise<boolean> => {
+      const fileId = getFileIdFromHash();
+      if (!fileId || isLocalDraftFileId(fileId)) {
+        return false;
+      }
+      updateDraftHashDebouncedRef.current.flush();
+      return confirmBeforeRestoreCheckpoint({
+        fileId,
+        saveCurrentAsCheckpoint: () =>
+          saveCurrentFileAsCheckpoint(CHECKPOINT_LABELS.restoreBackup),
+      });
+    }, [saveCurrentFileAsCheckpoint]);
 
   useEffect(() => {
     saveToServerRef.current = saveCurrentFileToServer;
@@ -678,6 +866,7 @@ export function useMindMapFileSave(opts: {
     markNativeDocumentDirty,
     persistLocalDraftToCache,
     saveCurrentFileToServer,
+    confirmBeforeRestoreArchive,
     mindMapGoHomeWithServerSave,
     mindMapHomeConfirmSave,
     mindMapHomeConfirmDiscard,

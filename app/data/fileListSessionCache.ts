@@ -75,6 +75,37 @@ export function patchFileListTreeCacheFileName(
   writeFileListTreeCache({ folders: tree.folders, files: nextFiles });
 }
 
+export function patchFileListTreeCacheSavedFile(
+  fileId: string,
+  patch: Pick<ServerFile, "name"> &
+    Partial<
+      Pick<
+        ServerFile,
+        "content_sha256" | "has_thumbnail" | "kind" | "updated_at"
+      >
+    >,
+): void {
+  const tree = readFileListTreeCache();
+  if (!tree) {
+    return;
+  }
+  const index = tree.files.findIndex((file) => file.id === fileId);
+  if (index === -1) {
+    return;
+  }
+  const file = tree.files[index];
+  const nextFiles = [...tree.files];
+  nextFiles[index] = {
+    ...file,
+    name: patch.name.trim() || file.name,
+    kind: patch.kind ?? file.kind,
+    has_thumbnail: patch.has_thumbnail ?? file.has_thumbnail,
+    content_sha256: patch.content_sha256 ?? file.content_sha256 ?? null,
+    updated_at: patch.updated_at ?? file.updated_at,
+  };
+  writeFileListTreeCache({ folders: tree.folders, files: nextFiles });
+}
+
 /**
  * 缩略图 404 后修正本 tab 的列表缓存，避免首页再次用旧 has_thumbnail
  * 乐观拉取同一版本的缺失缩略图。

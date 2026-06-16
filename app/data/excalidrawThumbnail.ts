@@ -1,6 +1,6 @@
 import { createLogger } from "../lib/logger";
-import { LocalThumbnailCache } from "./localThumbnailCache";
-import { buildSceneThumbnailSvg } from "./thumbnailSvg";
+
+import { buildAndCacheFileThumbnail } from "./thumbnailService";
 
 const logThumb = createLogger({ module: "thumbnail" });
 
@@ -31,17 +31,18 @@ export async function generateExcalidrawThumbnailAndCache(
   scene: ExcalidrawThumbnailScene,
 ): Promise<string | undefined> {
   try {
-    const thumbnail = await buildSceneThumbnailSvg(scene);
-    LocalThumbnailCache.set(fileId, thumbnail);
+    const thumbnail = await buildAndCacheFileThumbnail(fileId, {
+      kind: "excalidraw",
+      data: scene,
+    });
     logThumb.debug(
-      `generateExcalidrawThumb ${fileId.slice(0, 8)}, svgLen=${thumbnail.length}`,
+      `generateExcalidrawThumb ${fileId.slice(0, 8)}, svgLen=${
+        thumbnail?.length ?? 0
+      }`,
     );
     return thumbnail;
   } catch (err) {
-    logThumb.debug(
-      `generateExcalidrawThumb ${fileId.slice(0, 8)} FAILED`,
-      err,
-    );
+    logThumb.debug(`generateExcalidrawThumb ${fileId.slice(0, 8)} FAILED`, err);
     return undefined;
   }
 }

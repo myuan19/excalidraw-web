@@ -31,12 +31,31 @@ function currentPath(fileId) {
   return join(fileDir(fileId), "current.excalidraw");
 }
 
-function archivePath(fileId, archiveId) {
+function archiveDir(fileId, ensure = false) {
   const dir = join(fileDir(fileId), "archives");
-  if (!existsSync(dir)) {
+  if (ensure && !existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
+  return dir;
+}
+
+function archivePath(fileId, archiveId) {
+  const dir = archiveDir(fileId, true);
   return join(dir, `${archiveId}.excalidraw`);
+}
+
+function archiveThumbnailPath(fileId, archiveId) {
+  return join(archiveDir(fileId), `${archiveId}.thumb.svg`);
+}
+
+function archiveThumbnailPathFromRow(row) {
+  if (row?.file_id && row?.id) {
+    return archiveThumbnailPath(row.file_id, row.id);
+  }
+  if (typeof row?.path === "string") {
+    return join(DATA_DIR, row.path.replace(/\.excalidraw$/i, ".thumb.svg"));
+  }
+  return null;
 }
 
 function thumbnailPath(fileId) {
@@ -53,11 +72,11 @@ function hashSceneDataJson(data) {
 
 /** 每个文件最多保留的版本快照条数（更早的从 DB 与磁盘删除） */
 const MAX_ARCHIVES_PER_FILE = 8;
+const MAX_THUMBNAIL_SVG_CHARS = 150_000;
 const AUTO_ARCHIVE_LABEL_PREFIX = "auto:";
 const CHECKPOINT_LABELS = {
   manual: "checkpoint:manual",
   interval: "checkpoint:interval",
-  switch: "checkpoint:switch",
   restoreBackup: "checkpoint:restore-backup",
 };
 
@@ -107,7 +126,43 @@ function deleteArchiveRow(row) {
       // ignore
     }
   }
+  const thumbPath = archiveThumbnailPathFromRow(row);
+  if (thumbPath && existsSync(thumbPath)) {
+    try {
+      rmSync(thumbPath);
+    } catch {
+      // ignore
+    }
+  }
   db.prepare("DELETE FROM archives WHERE id = ?").run(row.id);
+}
+
+function mapArchiveRow(row) {
+  return {
+    id: row.id,
+    label: row.label,
+    created_at: row.created_at,
+    content_sha256: row.content_sha256 ?? null,
+    has_thumbnail: !!(
+      row.file_id &&
+      row.id &&
+      existsSync(archiveThumbnailPath(row.file_id, row.id))
+    ),
+  };
+}
+
+function normalizeThumbnailSvgInput(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const svg = value.trim();
+  if (!svg || svg.length > MAX_THUMBNAIL_SVG_CHARS) {
+    return null;
+  }
+  if (!/<svg\b/i.test(svg) || !/<\/svg>/i.test(svg)) {
+    return null;
+  }
+  return svg;
 }
 
 function deleteArchivesByLabel(fileId, label) {
@@ -132,17 +187,29 @@ function getLatestArchiveRow(fileId) {
     .get(fileId);
 }
 
-function hasArchiveWithSha(fileId, contentSha256) {
+function findArchiveBySha(fileId, contentSha256) {
   if (!contentSha256) {
-    return false;
+    return null;
   }
-  return !!db
-    .prepare(
-      `SELECT id FROM archives
-       WHERE file_id = ? AND content_sha256 = ?
-       LIMIT 1`,
-    )
-    .get(fileId, contentSha256);
+  return (
+    db
+      .prepare(
+        `SELECT id, label, created_at, content_sha256
+         FROM archives
+         WHERE file_id = ? AND content_sha256 = ?
+         ORDER BY created_at DESC
+         LIMIT 1`,
+      )
+      .get(fileId, contentSha256) ?? null
+  );
+}
+
+function hasArchiveWithSha(fileId, contentSha256) {
+  return !!findArchiveBySha(fileId, contentSha256);
+}
+
+function shouldDedupeCheckpointLabel(label) {
+  return label !== CHECKPOINT_LABELS.manual;
 }
 
 function normalizeFolderId(value) {
@@ -300,6 +367,16 @@ function appendCurrentSnapshot(fileId, options = {}) {
 
   const content = readFileSync(src, "utf-8");
   const dataObj = JSON.parse(content);
+  const label = normalizeArchiveLabel(options.label);
+  const parsedForHash = { ...dataObj };
+  delete parsedForHash._deltas;
+  const sha = hashSceneDataJson(parsedForHash);
+  const existing = shouldDedupeCheckpointLabel(label)
+    ? findArchiveBySha(fileId, sha)
+    : null;
+  if (existing && shouldDedupeCheckpointLabel(label)) {
+    return { reused: true, ...mapArchiveRow(existing) };
+  }
   if (Array.isArray(options.deltas) && options.deltas.length > 0) {
     return appendVersionSnapshot(
       fileId,
@@ -314,13 +391,17 @@ function shouldCreateCheckpoint(fileId, contentSha256, policy) {
   if (!policy || policy.mode === "none") {
     return false;
   }
+  const label = normalizeArchiveLabel(policy.label) || CHECKPOINT_LABELS.manual;
+  if (
+    shouldDedupeCheckpointLabel(label) &&
+    hasArchiveWithSha(fileId, contentSha256)
+  ) {
+    return false;
+  }
   if (policy.mode === "force") {
     return true;
   }
   if (policy.mode !== "interval") {
-    return false;
-  }
-  if (hasArchiveWithSha(fileId, contentSha256)) {
     return false;
   }
   const latest = getLatestArchiveRow(fileId);
@@ -370,9 +451,37 @@ function ensureFileDir(fileId) {
     }
   }
   if (rows.length) {
-    console.log(
-      `[excalidraw-web-server] backfilled content_sha256 for ${rows.length} file(s)`,
-    );
+    log.info("backfilled content_sha256 for files", { count: rows.length });
+  }
+}
+
+// ---------- backfill content_sha256 for existing archives ----------
+{
+  const rows = db
+    .prepare(`SELECT id, path FROM archives WHERE content_sha256 IS NULL`)
+    .all();
+  for (const r of rows) {
+    const absPath = join(DATA_DIR, r.path);
+    if (!existsSync(absPath)) {
+      continue;
+    }
+    try {
+      const data = JSON.parse(readFileSync(absPath, "utf-8"));
+      const parsedForHash = { ...data };
+      delete parsedForHash._deltas;
+      const sha = hashSceneDataJson(parsedForHash);
+      db.prepare("UPDATE archives SET content_sha256 = ? WHERE id = ?").run(
+        sha,
+        r.id,
+      );
+    } catch {
+      /* skip corrupt archives */
+    }
+  }
+  if (rows.length) {
+    log.info("backfilled content_sha256 for archives", {
+      count: rows.length,
+    });
   }
 }
 
@@ -1009,13 +1118,19 @@ router.get("/:id/archive-status", (req, res) => {
     }
   }
 
+  const matchingArchive = findArchiveBySha(req.params.id, currentContentSha256);
+
   res.json({
     fileId: req.params.id,
     currentContentSha256,
-    hasCurrentCheckpoint: hasArchiveWithSha(
-      req.params.id,
-      currentContentSha256,
-    ),
+    hasCurrentCheckpoint: !!matchingArchive,
+    matchingArchive: matchingArchive
+      ? {
+          id: matchingArchive.id,
+          label: matchingArchive.label,
+          created_at: matchingArchive.created_at,
+        }
+      : null,
     latestArchive: getLatestArchiveRow(req.params.id) ?? null,
   });
 });
@@ -1023,7 +1138,7 @@ router.get("/:id/archive-status", (req, res) => {
 router.get("/:id/archives", (req, res) => {
   const rows = db
     .prepare(
-      `SELECT id, label, created_at, content_sha256 FROM archives WHERE file_id = ? ORDER BY created_at DESC LIMIT ?`,
+      `SELECT id, file_id, label, created_at, content_sha256 FROM archives WHERE file_id = ? ORDER BY created_at DESC LIMIT ?`,
     )
     .all(req.params.id, MAX_ARCHIVES_PER_FILE);
   log.info("GET /:id/archives (导入保存前会调)", {
@@ -1031,7 +1146,7 @@ router.get("/:id/archives", (req, res) => {
     count: rows.length,
     max: MAX_ARCHIVES_PER_FILE,
   });
-  res.json(rows);
+  res.json(rows.map(mapArchiveRow));
 });
 
 router.patch("/:id/archives/:archiveId", (req, res) => {
@@ -1049,15 +1164,63 @@ router.patch("/:id/archives/:archiveId", (req, res) => {
   }
   const updated = db
     .prepare(
-      "SELECT id, label, created_at, content_sha256 FROM archives WHERE id = ?",
+      "SELECT id, file_id, label, created_at, content_sha256 FROM archives WHERE id = ?",
     )
     .get(req.params.archiveId);
-  res.json({ ok: true, ...updated });
+  res.json({ ok: true, ...mapArchiveRow(updated) });
+});
+
+router.get("/:id/archives/:archiveId/thumbnail", (req, res) => {
+  const archive = db
+    .prepare("SELECT id, file_id FROM archives WHERE id = ? AND file_id = ?")
+    .get(req.params.archiveId, req.params.id);
+  if (!archive) {
+    return res.status(404).json({ error: "archive not found" });
+  }
+  const tp = archiveThumbnailPath(req.params.id, req.params.archiveId);
+  if (!existsSync(tp)) {
+    return res.status(404).json({ error: "no archive thumbnail" });
+  }
+  const svg = readFileSync(tp, "utf-8");
+  res.setHeader("Content-Type", "image/svg+xml");
+  if (req.query.h) {
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  } else {
+    res.setHeader("Cache-Control", "public, max-age=300");
+  }
+  res.send(svg);
+});
+
+router.put("/:id/archives/:archiveId/thumbnail", (req, res) => {
+  const archive = db
+    .prepare(
+      "SELECT id, file_id, label, created_at, content_sha256 FROM archives WHERE id = ? AND file_id = ?",
+    )
+    .get(req.params.archiveId, req.params.id);
+  if (!archive) {
+    return res.status(404).json({ error: "archive not found" });
+  }
+  const svg = normalizeThumbnailSvgInput(req.body?.thumbnail);
+  if (!svg) {
+    return res.status(400).json({ error: "invalid thumbnail" });
+  }
+  mkdirSync(archiveDir(req.params.id, true), { recursive: true });
+  writeFileSync(
+    archiveThumbnailPath(req.params.id, req.params.archiveId),
+    svg,
+    "utf-8",
+  );
+  res.json({ ok: true, ...mapArchiveRow(archive) });
 });
 
 router.get("/:id/archives/:archiveId", (req, res) => {
   const row = db
-    .prepare("SELECT * FROM archives WHERE id = ? AND file_id = ?")
+    .prepare(
+      `SELECT archives.*, files.kind
+       FROM archives
+       JOIN files ON files.id = archives.file_id
+       WHERE archives.id = ? AND archives.file_id = ?`,
+    )
     .get(req.params.archiveId, req.params.id);
   if (!row) {
     return res.status(404).json({ error: "archive not found" });

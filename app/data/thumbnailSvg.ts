@@ -1,21 +1,18 @@
 import { devDebug, isDevDebugChannelEnabled } from "../lib/devDebug";
 import {
-  FILE_LIST_THUMB_EXPORT_PADDING,
-  FILE_LIST_THUMB_MIN_VIEWPORT_HEIGHT,
-  FILE_LIST_THUMB_MIN_VIEWPORT_WIDTH,
-  appStateForThumbnailExport,
-} from "./thumbnailExport";
-import { expandRectToMinimumSize } from "./thumbnailViewport";
-import {
   computeMindMapFocusedViewBoxFromNodeBounds,
   formatMindMapViewBox,
   buildMindMapThumbnailFocusedViewBoxOptions,
 } from "../editors/mindmap/mindMapFocusedViewBox.js";
 
-import type {
-  MindMapDocumentData,
-  MindMapNode,
-} from "./formats/MindMapAdapter";
+import {
+  FILE_LIST_THUMB_EXPORT_PADDING,
+  FILE_LIST_THUMB_MIN_VIEWPORT_HEIGHT,
+  FILE_LIST_THUMB_MIN_VIEWPORT_WIDTH,
+} from "./thumbnailExport";
+import { computeExcalidrawThumbnailSceneBounds } from "./thumbnailViewport";
+
+export type { MindMapDocumentData } from "./formats/MindMapAdapter";
 
 /** Remove broken embedded fonts from exported SVG thumbnails. */
 export function sanitizeThumbnailSvg(svgMarkup: string): string {
@@ -262,7 +259,9 @@ function getMindMapNodeShapeBounds(markup: string): Bounds | null {
     return pathBounds;
   }
 
-  const rects = [...markup.matchAll(/<rect\b[^>]*>/gi)].map((match) => match[0]);
+  const rects = [...markup.matchAll(/<rect\b[^>]*>/gi)].map(
+    (match) => match[0],
+  );
   const rect =
     rects.find((item) => hasClassToken(item, "smm-node-shape")) ??
     rects.find(
@@ -292,7 +291,9 @@ function getMindMapNodeShapeBounds(markup: string): Bounds | null {
 function getMindMapNodeOpenTags(
   svgMarkup: string,
 ): { index: number; markup: string }[] {
-  return [...svgMarkup.matchAll(/<g\b[^>]*\bclass="[^"]*smm-node[^"]*"[^>]*>/gi)]
+  return [
+    ...svgMarkup.matchAll(/<g\b[^>]*\bclass="[^"]*smm-node[^"]*"[^>]*>/gi),
+  ]
     .filter((match) => hasClassToken(match[0], "smm-node"))
     .map((match) => ({
       index: match.index ?? 0,
@@ -406,8 +407,7 @@ function removeElementByClassAt(
   const openEnd = openMatch.index + openMatch[0].length;
   if (/\/>\s*$/i.test(openMatch[0])) {
     return {
-      svg:
-        svgMarkup.slice(0, openMatch.index) + svgMarkup.slice(openEnd),
+      svg: svgMarkup.slice(0, openMatch.index) + svgMarkup.slice(openEnd),
       removed: true,
     };
   }
@@ -566,41 +566,48 @@ export function normalizeMindMapThumbnailSvg(svgMarkup: string): string {
   return svg;
 }
 
-type MindMapThumbnailNode = {
-  depth: number;
-  order: number;
-  parentOrder: number | null;
-  label: string;
-  width: number;
-  height: number;
-};
+export type MindMapThumbnailSource = "native";
 
-function collectMindMapThumbnailNodes(
-  node: MindMapNode,
-  depth: number,
-  parentOrder: number | null,
-  nodes: MindMapThumbnailNode[],
-): void {
-  const label = mindMapRichTextToPlainText(node.data.text) || "Untitled";
-  const order = nodes.length;
-  nodes.push({
-    depth,
-    order,
-    parentOrder,
-    label,
-    width: clamp(48 + label.length * 12, 120, 260),
-    height: 44,
-  });
-  for (const child of node.children ?? []) {
-    collectMindMapThumbnailNodes(child, depth + 1, order, nodes);
+export function markMindMapThumbnailSource(
+  svgMarkup: string,
+  source: MindMapThumbnailSource,
+): string {
+  if (!/<svg\b/i.test(svgMarkup)) {
+    return svgMarkup;
   }
+  let svg = setOrAddSvgAttr(
+    svgMarkup,
+    "data-excal-thumb-source",
+    `mindmap-${source}`,
+  );
+  svg = setOrAddSvgAttr(svg, "data-excal-filelist-thumb", "1");
+  if (!/\bdata-excal-thumb-bg\s*=/i.test(svg)) {
+    svg = setOrAddSvgAttr(svg, "data-excal-thumb-bg", "#ffffff");
+  }
+  return svg;
 }
 
-function buildMindMapThumbnailPath(node: MindMapThumbnailNode): string {
-  return `M0 0L${node.width} 0L${node.width} ${node.height}L0 ${node.height}Z`;
+export function isSchematicMindMapThumbnailSvg(svgMarkup: string): boolean {
+  if (/data-excal-thumb-source=["']mindmap-native["']/i.test(svgMarkup)) {
+    return false;
+  }
+  if (/data-excal-thumb-source=["']mindmap-schematic["']/i.test(svgMarkup)) {
+    return true;
+  }
+  if (!/class=["'][^"']*\bsmm-container\b/i.test(svgMarkup)) {
+    return false;
+  }
+  return (
+    /class=["'][^"']*\bsmm-node-shape\b/i.test(svgMarkup) &&
+    !/<foreignObject\b/i.test(svgMarkup) &&
+    !/<image\b/i.test(svgMarkup)
+  );
 }
 
-function withFileListThumbnailAttrs(svgMarkup: string, background: string): string {
+function withFileListThumbnailAttrs(
+  svgMarkup: string,
+  background: string,
+): string {
   if (/\bdata-excal-filelist-thumb\s*=/i.test(svgMarkup)) {
     return svgMarkup;
   }
@@ -610,72 +617,6 @@ function withFileListThumbnailAttrs(svgMarkup: string, background: string): stri
       background,
     )}" `,
   );
-}
-
-export async function buildMindMapThumbnailSvg(
-  data: MindMapDocumentData,
-): Promise<string> {
-  const nodes: MindMapThumbnailNode[] = [];
-  collectMindMapThumbnailNodes(data.root, 0, null, nodes);
-
-  const xGap = 210;
-  const yGap = 82;
-  const padding = 48;
-  const positions = nodes.map((node) => ({
-    x: padding + node.depth * xGap,
-    y: padding + node.order * yGap,
-  }));
-  const maxRight = Math.max(
-    ...nodes.map((node, index) => positions[index].x + node.width),
-  );
-  const maxBottom = Math.max(
-    ...nodes.map((node, index) => positions[index].y + node.height),
-  );
-  const width = Math.max(420, maxRight + padding);
-  const height = Math.max(240, maxBottom + padding);
-  const background = "#ffffff";
-
-  const links = nodes
-    .filter((node) => node.parentOrder !== null)
-    .map((node) => {
-      const fromNode = nodes[node.parentOrder!];
-      const from = positions[node.parentOrder!];
-      const to = positions[node.order];
-      const x1 = from.x + fromNode.width;
-      const y1 = from.y + fromNode.height / 2;
-      const x2 = to.x;
-      const y2 = to.y + node.height / 2;
-      const midX = x1 + (x2 - x1) / 2;
-      return `<path d="M${x1} ${y1}C${midX} ${y1},${midX} ${y2},${x2} ${y2}" fill="none" stroke="#8b9bb4" stroke-width="2"/>`;
-    })
-    .join("");
-
-  const renderedNodes = nodes
-    .map((node, index) => {
-      const { x, y } = positions[index];
-      const fill = node.depth === 0 ? "#4f8cff" : "#ffffff";
-      const stroke = node.depth === 0 ? "#4f8cff" : "#d0d7e2";
-      const textFill = node.depth === 0 ? "#ffffff" : "#1f2937";
-      return (
-        `<g class="smm-node" transform="matrix(1,0,0,1,${x},${y})">` +
-        `<path class="smm-node-shape" d="${buildMindMapThumbnailPath(
-          node,
-        )}" fill="${fill}" stroke="${stroke}" stroke-width="2"></path>` +
-        `<text x="24" y="28" fill="${textFill}" font-size="16" font-family="Arial, sans-serif">${escapeXmlText(
-          node.label,
-        )}</text>` +
-        "</g>"
-      );
-    })
-    .join("");
-
-  const raw =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
-    `<rect width="${width}" height="${height}" fill="${background}"/>` +
-    `<g class="smm-container">${links}${renderedNodes}</g>` +
-    "</svg>";
-
-  return withFileListThumbnailAttrs(normalizeMindMapThumbnailSvg(raw), background);
 }
 
 function viewBackgroundFromSceneAppState(appState: unknown): string {
@@ -689,54 +630,153 @@ function viewBackgroundFromSceneAppState(appState: unknown): string {
   return "#ffffff";
 }
 
-function expandThumbnailSvgToMinimumViewport(
-  svgMarkup: string,
-  minWidth: number,
-  minHeight: number,
-  background: string,
-): string {
-  const vbMatch = svgMarkup.match(/viewBox\s*=\s*"([^"]+)"/i);
-  if (!vbMatch) {
-    return svgMarkup;
-  }
-  const parts = vbMatch[1]
-    .trim()
-    .split(/[\s,]+/)
-    .filter(Boolean);
-  if (parts.length !== 4) {
-    return svgMarkup;
-  }
-  const minX = Number(parts[0]);
-  const minY = Number(parts[1]);
-  const width = Number(parts[2]);
-  const height = Number(parts[3]);
-  if (
-    ![minX, minY, width, height].every((value) => Number.isFinite(value)) ||
-    width <= 0 ||
-    height <= 0
-  ) {
-    return svgMarkup;
-  }
+type ThumbnailSceneElement = {
+  type?: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  angle?: number;
+  strokeColor?: string;
+  backgroundColor?: string;
+  strokeWidth?: number;
+  opacity?: number;
+  text?: string;
+  fontSize?: number;
+  points?: Array<readonly [number, number]>;
+  isDeleted?: boolean;
+};
 
-  const expanded = expandRectToMinimumSize(
-    { x: minX, y: minY, width, height },
-    minWidth,
-    minHeight,
+function isRenderableSceneElement(
+  element: unknown,
+): element is ThumbnailSceneElement {
+  return (
+    element !== null &&
+    typeof element === "object" &&
+    !(element as ThumbnailSceneElement).isDeleted &&
+    typeof (element as ThumbnailSceneElement).type === "string"
   );
-  const nextViewBox = `${expanded.x} ${expanded.y} ${expanded.width} ${expanded.height}`;
-  let out = svgMarkup.replace(
-    /viewBox\s*=\s*"[^"]*"/i,
-    `viewBox="${nextViewBox}"`,
-  );
-  const openMatch = out.match(/<svg\b[^>]*>/i);
-  if (!openMatch || openMatch.index === undefined) {
-    return out;
+}
+
+function finiteNumber(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function sceneFillColor(element: ThumbnailSceneElement): string {
+  const color = element.backgroundColor?.trim();
+  if (!color || color === "transparent") {
+    return "none";
   }
-  const endOpen = openMatch.index + openMatch[0].length;
-  const rect = `<rect x="${expanded.x}" y="${expanded.y}" width="${expanded.width}" height="${expanded.height}" fill="${escapeXmlAttr(
-    background,
-  )}"/>`;
-  return out.slice(0, endOpen) + rect + out.slice(endOpen);
+  return color;
+}
+
+function sceneStrokeColor(element: ThumbnailSceneElement): string {
+  const color = element.strokeColor?.trim();
+  return color && color !== "transparent" ? color : "#1e1e1e";
+}
+
+function sceneOpacityAttr(element: ThumbnailSceneElement): string {
+  const opacity = finiteNumber(element.opacity, 100);
+  return opacity >= 100 ? "" : ` opacity="${clamp(opacity, 0, 100) / 100}"`;
+}
+
+function sceneTransformAttr(element: ThumbnailSceneElement): string {
+  const angle = finiteNumber(element.angle);
+  if (!angle) {
+    return "";
+  }
+  const x = finiteNumber(element.x);
+  const y = finiteNumber(element.y);
+  const width = finiteNumber(element.width);
+  const height = finiteNumber(element.height);
+  const deg = (angle * 180) / Math.PI;
+  return ` transform="rotate(${deg} ${x + width / 2} ${y + height / 2})"`;
+}
+
+function sceneShapeAttrs(element: ThumbnailSceneElement): string {
+  const stroke = escapeXmlAttr(sceneStrokeColor(element));
+  const fill = escapeXmlAttr(sceneFillColor(element));
+  const strokeWidth = Math.max(1, finiteNumber(element.strokeWidth, 1.5));
+  return ` fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}"${sceneOpacityAttr(
+    element,
+  )}${sceneTransformAttr(element)}`;
+}
+
+function renderLinearElement(element: ThumbnailSceneElement): string {
+  const x = finiteNumber(element.x);
+  const y = finiteNumber(element.y);
+  const points =
+    Array.isArray(element.points) && element.points.length > 0
+      ? element.points
+      : ([
+          [0, 0],
+          [finiteNumber(element.width), finiteNumber(element.height)],
+        ] as Array<readonly [number, number]>);
+  const d = points
+    .map((point, index) => {
+      const px = x + finiteNumber(point[0]);
+      const py = y + finiteNumber(point[1]);
+      return `${index === 0 ? "M" : "L"}${px} ${py}`;
+    })
+    .join("");
+  const stroke = escapeXmlAttr(sceneStrokeColor(element));
+  const strokeWidth = Math.max(1, finiteNumber(element.strokeWidth, 1.5));
+  const markerEnd =
+    element.type === "arrow" ? ' marker-end="url(#arrow-head)"' : "";
+  return `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round"${sceneOpacityAttr(
+    element,
+  )}${markerEnd}${sceneTransformAttr(element)}/>`;
+}
+
+function renderSceneElement(element: ThumbnailSceneElement): string {
+  const x = finiteNumber(element.x);
+  const y = finiteNumber(element.y);
+  const width = Math.max(1, finiteNumber(element.width, 1));
+  const height = Math.max(1, finiteNumber(element.height, 1));
+  const attrs = sceneShapeAttrs(element);
+
+  switch (element.type) {
+    case "rectangle":
+      return `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="${Math.min(
+        12,
+        width / 8,
+        height / 8,
+      )}"${attrs}/>`;
+    case "diamond": {
+      const points = `${x + width / 2},${y} ${x + width},${y + height / 2} ${
+        x + width / 2
+      },${y + height} ${x},${y + height / 2}`;
+      return `<polygon points="${points}"${attrs}/>`;
+    }
+    case "ellipse":
+      return `<ellipse cx="${x + width / 2}" cy="${y + height / 2}" rx="${
+        width / 2
+      }" ry="${height / 2}"${attrs}/>`;
+    case "line":
+    case "arrow":
+    case "freedraw":
+      return renderLinearElement(element);
+    case "text": {
+      const fontSize = Math.max(10, finiteNumber(element.fontSize, 20));
+      const text = escapeXmlText(element.text ?? "");
+      return `<text x="${x}" y="${y + fontSize}" fill="${escapeXmlAttr(
+        sceneStrokeColor(element),
+      )}" font-size="${fontSize}" font-family="Arial, sans-serif"${sceneOpacityAttr(
+        element,
+      )}${sceneTransformAttr(element)}>${text}</text>`;
+    }
+    case "image":
+      return (
+        `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="2"${sceneOpacityAttr(
+          element,
+        )}${sceneTransformAttr(element)}/>` +
+        `<text x="${x + width / 2}" y="${
+          y + height / 2
+        }" text-anchor="middle" dominant-baseline="middle" fill="#64748b" font-size="16" font-family="Arial, sans-serif">IMG</text>`
+      );
+    default:
+      return "";
+  }
 }
 
 export async function buildSceneThumbnailSvg(scene: {
@@ -744,27 +784,45 @@ export async function buildSceneThumbnailSvg(scene: {
   appState: unknown;
   files: unknown;
 }): Promise<string> {
-  const { exportToSvg } = await import("@excalidraw/excalidraw");
-  const svg = await exportToSvg({
-    elements: scene.elements as any,
-    appState: appStateForThumbnailExport(scene.appState as any),
-    files: scene.files as any,
-    exportPadding: FILE_LIST_THUMB_EXPORT_PADDING,
-  });
   const bg = viewBackgroundFromSceneAppState(scene.appState);
-  let html = sanitizeThumbnailSvg(svg.outerHTML);
-  if (Array.isArray(scene.elements) && scene.elements.length > 0) {
-    html = expandThumbnailSvgToMinimumViewport(
-      html,
-      FILE_LIST_THUMB_MIN_VIEWPORT_WIDTH,
-      FILE_LIST_THUMB_MIN_VIEWPORT_HEIGHT,
+  const elements = Array.isArray(scene.elements)
+    ? scene.elements.filter(isRenderableSceneElement)
+    : [];
+  if (elements.length === 0) {
+    return withFileListThumbnailAttrs(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><rect width="16" height="16" fill="${escapeXmlAttr(
+        bg,
+      )}"/></svg>`,
       bg,
     );
   }
-  if (!/\bdata-excal-filelist-thumb\s*=/i.test(html)) {
-    html = withFileListThumbnailAttrs(html, bg);
-  }
-  return html;
+
+  const bounds = computeExcalidrawThumbnailSceneBounds(elements as any, {
+    exportPadding: FILE_LIST_THUMB_EXPORT_PADDING,
+    minWidth: FILE_LIST_THUMB_MIN_VIEWPORT_WIDTH,
+    minHeight: FILE_LIST_THUMB_MIN_VIEWPORT_HEIGHT,
+  });
+  const viewBox = bounds
+    ? `${bounds[0]} ${bounds[1]} ${bounds[2] - bounds[0]} ${
+        bounds[3] - bounds[1]
+      }`
+    : `0 0 ${FILE_LIST_THUMB_MIN_VIEWPORT_WIDTH} ${FILE_LIST_THUMB_MIN_VIEWPORT_HEIGHT}`;
+  const [viewX, viewY, viewWidth, viewHeight] = viewBox
+    .split(/\s+/)
+    .map(Number);
+  const backgroundRect =
+    [viewX, viewY, viewWidth, viewHeight].every(Number.isFinite) &&
+    viewWidth > 0 &&
+    viewHeight > 0
+      ? `<rect x="${viewX}" y="${viewY}" width="${viewWidth}" height="${viewHeight}" fill="${escapeXmlAttr(
+          bg,
+        )}"/>`
+      : `<rect width="100%" height="100%" fill="${escapeXmlAttr(bg)}"/>`;
+  const body = elements.map(renderSceneElement).join("");
+  return withFileListThumbnailAttrs(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${FILE_LIST_THUMB_MIN_VIEWPORT_WIDTH}" height="${FILE_LIST_THUMB_MIN_VIEWPORT_HEIGHT}" viewBox="${viewBox}"><defs><marker id="arrow-head" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#1e1e1e"/></marker></defs>${backgroundRect}${body}</svg>`,
+    bg,
+  );
 }
 
 /**
@@ -774,18 +832,39 @@ export function extractThumbBg(svgMarkup: string): string {
   return svgMarkup.match(/\bdata-excal-thumb-bg="([^"]*)"/i)?.[1] ?? "#ffffff";
 }
 
+export function thumbnailSvgHasVisibleContent(svgMarkup: string): boolean {
+  const withoutDefs = svgMarkup.replace(/<defs\b[\s\S]*?<\/defs>/gi, "");
+  if (
+    /<(?:path|polygon|ellipse|circle|line|polyline|text|image)\b/i.test(
+      withoutDefs,
+    )
+  ) {
+    return true;
+  }
+  return [...withoutDefs.matchAll(/<rect\b/gi)].length > 1;
+}
+
 /**
  * 列表卡片内：保持 SVG 原始宽高比，以 xMidYMid meet 居中显示在 5/3 预览区内。
  * 留白区域由父容器背景色（与画布底色一致，见 extractThumbBg）填充，确保四周留白均等。
  * 父级 `overflow: hidden` + 圆角负责裁切。
  */
 export function patchThumbnailSvgForCard(svgMarkup: string): string {
-  const withoutEmbeddedFonts =
-    new RegExp(`\\b${MINDMAP_THUMB_NORMALIZED_ATTR}\\s*=\\s*"1"`, "i").test(
+  const isMindMapSvg = /class="smm-container"/.test(svgMarkup);
+  let withoutEmbeddedFonts =
+    isMindMapSvg &&
+    !new RegExp(`\\b${MINDMAP_THUMB_NORMALIZED_ATTR}\\s*=\\s*"1"`, "i").test(
       svgMarkup,
     )
-      ? svgMarkup
-      : normalizeMindMapThumbnailSvg(svgMarkup);
+      ? normalizeMindMapThumbnailSvg(svgMarkup)
+      : sanitizeThumbnailSvg(svgMarkup);
+  if (!getSvgAttr(withoutEmbeddedFonts, "viewBox")) {
+    withoutEmbeddedFonts = setOrAddSvgAttr(
+      withoutEmbeddedFonts,
+      "viewBox",
+      deriveSvgViewBox(withoutEmbeddedFonts),
+    );
+  }
   const patched = withoutEmbeddedFonts.replace(
     /(<svg\b)([^>]*)(>)/i,
     (_match, open: string, attrs: string, close: string) => {

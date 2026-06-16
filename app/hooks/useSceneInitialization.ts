@@ -3,7 +3,6 @@ import {
   EVENT,
   resolvablePromise,
 } from "@excalidraw/common";
-import { getAppSettings } from "../data/appSettings";
 import {
   isAutoSaveEligibleForCurrentFile,
   registerAutoSaveTrigger,
@@ -27,7 +26,6 @@ import type { ResolvablePromise } from "@excalidraw/common/utils";
 
 import { createLogger } from "../lib/logger";
 import { DeltaStorage } from "../data/DeltaStorage";
-import { FileEditDirty, VISIBILITY_BACKGROUND_SAVE_DELAY_MS } from "../data/fileEditDirty";
 import { FileSyncState } from "../data/FileSyncState";
 import { hashSceneSnapshot } from "../data/sceneHash";
 import { LocalData } from "../data/LocalData";
@@ -57,7 +55,6 @@ export function useSceneInitialization(opts: {
   updateDraftHashDebouncedRef: React.MutableRefObject<{ flush: () => void; cancel: () => void } & ((...args: any[]) => void)>;
   localPersistGenRef: React.MutableRefObject<number>;
   saveToServerRef: React.MutableRefObject<(opts?: SaveToServerOptions) => Promise<boolean>>;
-  visibilitySaveInFlightRef: React.MutableRefObject<boolean>;
 }) {
   const {
     excalidrawAPI,
@@ -65,7 +62,6 @@ export function useSceneInitialization(opts: {
     updateDraftHashDebouncedRef,
     localPersistGenRef,
     saveToServerRef,
-    visibilitySaveInFlightRef,
   } = opts;
 
   const initialStatePromiseRef = useRef<{
@@ -177,7 +173,7 @@ export function useSceneInitialization(opts: {
     if (!excalidrawAPI) {
       return;
     }
-    logHook.info("mounted — registering hashchange / unload / visibility listeners");
+    logHook.info("mounted — registering hashchange / unload listeners");
 
     const finishOpen = async (data: ExcalidrawInitSceneResult) => {
       loadImages(data, true);
@@ -271,38 +267,6 @@ export function useSceneInitialization(opts: {
       LocalData.flushSave();
     };
 
-    let visibilityFlushTimer: number | null = null;
-    const onVisibilityChange = () => {
-      if (visibilityFlushTimer != null) {
-        window.clearTimeout(visibilityFlushTimer);
-        visibilityFlushTimer = null;
-      }
-      if (!document.hidden) {
-        return;
-      }
-      if (!isAutoSaveEligibleForCurrentFile()) {
-        return;
-      }
-      if (!getAppSettings().autoSaveOnBlur) {
-        return;
-      }
-      visibilityFlushTimer = window.setTimeout(() => {
-        visibilityFlushTimer = null;
-        if (document.hidden) {
-          logHook.info("visibility hidden — running background save pipeline");
-          FileEditDirty.runVisibilityHiddenSavePipeline({
-            flushEmbeddedLocalFiles: () => LocalData.flushSave(),
-            draftFlusher: updateDraftHashDebouncedRef.current,
-            fileId: getFileIdFromHash(),
-            uploadInFlight: visibilitySaveInFlightRef.current,
-            onShouldUpload: () => {
-              requestSave({ source: "visibility" });
-            },
-          });
-        }
-      }, VISIBILITY_BACKGROUND_SAVE_DELAY_MS);
-    };
-
     const unregisterAutoSave = registerAutoSaveTrigger(() => {
       if (!isAutoSaveEligibleForCurrentFile()) {
         return;
@@ -312,23 +276,10 @@ export function useSceneInitialization(opts: {
 
     window.addEventListener(EVENT.HASHCHANGE, onHashChange, false);
     window.addEventListener(EVENT.UNLOAD, onUnload, false);
-    document.addEventListener(
-      EVENT.VISIBILITY_CHANGE,
-      onVisibilityChange,
-      false,
-    );
     return () => {
-      if (visibilityFlushTimer != null) {
-        window.clearTimeout(visibilityFlushTimer);
-      }
       unregisterAutoSave();
       window.removeEventListener(EVENT.HASHCHANGE, onHashChange, false);
       window.removeEventListener(EVENT.UNLOAD, onUnload, false);
-      document.removeEventListener(
-        EVENT.VISIBILITY_CHANGE,
-        onVisibilityChange,
-        false,
-      );
     };
   }, [
     excalidrawAPI,
@@ -339,7 +290,6 @@ export function useSceneInitialization(opts: {
     onOpenPhase,
     updateDraftHashDebouncedRef,
     saveToServerRef,
-    visibilitySaveInFlightRef,
   ]);
 
   return {

@@ -1,28 +1,28 @@
 import { createLogger } from "../lib/logger";
-import { LocalThumbnailCache } from "./localThumbnailCache";
-import { buildMindMapThumbnailSvg } from "./thumbnailSvg";
+import { generateMindMapThumbnailAndCache as generateNativeMindMapThumbnailAndCache } from "../editors/mindmap/mindMapNativeThumbnailRenderer";
 
 import type { MindMapDocumentData } from "./formats/MindMapAdapter";
 
 const logThumb = createLogger({ module: "thumbnail" });
 
-/** Schematic MindMap list thumbnail (create/import before native render). */
+/** Native simple-mind-map thumbnail export for list cards and imports. */
 export async function generateMindMapThumbnailAndCache(
   fileId: string,
   data: MindMapDocumentData,
 ): Promise<string | undefined> {
   try {
-    const thumbnail = await buildMindMapThumbnailSvg(data);
-    LocalThumbnailCache.set(fileId, thumbnail);
+    const thumbnail = await generateNativeMindMapThumbnailAndCache(
+      fileId,
+      data,
+    );
     logThumb.debug(
-      `generateMindMapThumb ${fileId.slice(0, 8)}, svgLen=${thumbnail.length}`,
+      `generateMindMapThumb ${fileId.slice(0, 8)}, svgLen=${
+        thumbnail?.length ?? 0
+      }`,
     );
     return thumbnail;
   } catch (err) {
-    logThumb.debug(
-      `generateMindMapThumb ${fileId.slice(0, 8)} FAILED`,
-      err,
-    );
+    logThumb.debug(`generateMindMapThumb ${fileId.slice(0, 8)} FAILED`, err);
     return undefined;
   }
 }

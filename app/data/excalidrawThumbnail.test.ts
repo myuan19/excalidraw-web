@@ -1,7 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("./thumbnailSvg", () => ({
-  buildSceneThumbnailSvg: vi.fn(async () => "<svg></svg>"),
+import { LocalThumbnailCache } from "./localThumbnailCache";
+import { generateExcalidrawThumbnailAndCache } from "./excalidrawThumbnail";
+
+const { buildAndCacheFileThumbnailMock } = vi.hoisted(() => ({
+  buildAndCacheFileThumbnailMock: vi.fn(async () => "<svg></svg>"),
+}));
+
+vi.mock("./thumbnailService", () => ({
+  buildAndCacheFileThumbnail: buildAndCacheFileThumbnailMock,
 }));
 
 vi.mock("./localThumbnailCache", () => ({
@@ -10,14 +17,10 @@ vi.mock("./localThumbnailCache", () => ({
   },
 }));
 
-import { LocalThumbnailCache } from "./localThumbnailCache";
-import { buildSceneThumbnailSvg } from "./thumbnailSvg";
-import { generateExcalidrawThumbnailAndCache } from "./excalidrawThumbnail";
-
 describe("generateExcalidrawThumbnailAndCache", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(buildSceneThumbnailSvg).mockResolvedValue("<svg></svg>");
+    buildAndCacheFileThumbnailMock.mockResolvedValue("<svg></svg>");
   });
 
   it("builds svg and writes session cache", async () => {
@@ -29,13 +32,16 @@ describe("generateExcalidrawThumbnailAndCache", () => {
 
     const svg = await generateExcalidrawThumbnailAndCache("file-id-123", scene);
 
-    expect(buildSceneThumbnailSvg).toHaveBeenCalledWith(scene);
-    expect(LocalThumbnailCache.set).toHaveBeenCalledWith("file-id-123", "<svg></svg>");
+    expect(buildAndCacheFileThumbnailMock).toHaveBeenCalledWith("file-id-123", {
+      kind: "excalidraw",
+      data: scene,
+    });
     expect(svg).toBe("<svg></svg>");
+    expect(LocalThumbnailCache.set).not.toHaveBeenCalled();
   });
 
-  it("returns undefined when export fails", async () => {
-    vi.mocked(buildSceneThumbnailSvg).mockRejectedValueOnce(new Error("boom"));
+  it("returns undefined when build fails", async () => {
+    buildAndCacheFileThumbnailMock.mockRejectedValueOnce(new Error("boom"));
 
     const svg = await generateExcalidrawThumbnailAndCache("file-id-123", {
       elements: [],

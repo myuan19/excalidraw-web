@@ -1,26 +1,26 @@
-import { DeltaStorage } from "./DeltaStorage";
-import { FileSyncState } from "./FileSyncState";
-import { generateExcalidrawThumbnailAndCache } from "./excalidrawThumbnail";
-import { generateMindMapThumbnailAndCache } from "./mindMapThumbnail";
-import { hashDocumentSnapshot, hashSceneSnapshot } from "./sceneHash";
-import { LocalThumbnailCache } from "./localThumbnailCache";
-import { copyForkBrowserSceneBetweenFiles } from "./forkBrowserSceneStorage";
-import { discardLocalDraftSession } from "./discardLocalDraftSession";
-import { isLocalDraftFileId } from "./localDraftFileId";
-import { DEFAULT_DOCUMENT_DISPLAY_NAME } from "./defaultDocumentName";
-import { recordRecentFileAccess } from "./recentFiles";
-import { ServerSync } from "./ServerSync";
-import { clearMindMapBrowserView } from "./mindMapBrowserViewStorage";
+import { toMindMapLocalCacheRecord } from "../editors/mindmap/useMindMapFileSave";
 
-import type { ManagedDocument } from "./documentTypes";
+import { DeltaStorage } from "./DeltaStorage";
+import { DEFAULT_DOCUMENT_DISPLAY_NAME } from "./defaultDocumentName";
+import { discardLocalDraftSession } from "./discardLocalDraftSession";
+import { buildAndCacheFileThumbnail } from "./thumbnailService";
+import { FileSyncState } from "./FileSyncState";
+import { copyForkBrowserSceneBetweenFiles } from "./forkBrowserSceneStorage";
 import {
   createMindMapRootText,
   isMindMapSingleRootOnly,
   MindMapAdapter,
 } from "./formats/MindMapAdapter";
+import { isLocalDraftFileId } from "./localDraftFileId";
+import { LocalThumbnailCache } from "./localThumbnailCache";
+import { clearMindMapBrowserView } from "./mindMapBrowserViewStorage";
+import { recordRecentFileAccess } from "./recentFiles";
+import { hashDocumentSnapshot, hashSceneSnapshot } from "./sceneHash";
+import { ServerSync } from "./ServerSync";
+
+import type { ManagedDocument } from "./documentTypes";
 import type { MindMapDocumentData } from "./formats/MindMapAdapter";
 import type { ForkSceneSnapshot } from "./forkFileTypes";
-import { toMindMapLocalCacheRecord } from "../editors/mindmap/useMindMapFileSave";
 
 export async function saveNewDocument(opts: {
   kind: string;
@@ -29,7 +29,7 @@ export async function saveNewDocument(opts: {
   draftId?: string | null;
   excalidrawScene?: ForkSceneSnapshot | null;
   mindMapDocument?: ManagedDocument<MindMapDocumentData>;
-  /** 原生 export 的 SVG；优先于示意图缩略图。 */
+  /** Native simple-mind-map export SVG. */
   mindMapThumbnail?: string | null;
 }): Promise<{ id: string; kind: string }> {
   const finalName = opts.name.trim() || DEFAULT_DOCUMENT_DISPLAY_NAME;
@@ -67,7 +67,10 @@ export async function saveNewDocument(opts: {
     }
     const thumbnail =
       opts.mindMapThumbnail ??
-      (await generateMindMapThumbnailAndCache(created.id, data));
+      (await buildAndCacheFileThumbnail(created.id, {
+        kind: "mindmap",
+        data,
+      }));
     await ServerSync.saveFileImmediate(
       created.id,
       persistDocument,
@@ -88,10 +91,13 @@ export async function saveNewDocument(opts: {
     if (!scene) {
       throw new Error("没有可保存的画布内容");
     }
-    const thumbnail = await generateExcalidrawThumbnailAndCache(created.id, {
-      elements: scene.elements ?? [],
-      appState: scene.appState ?? {},
-      files: scene.files ?? {},
+    const thumbnail = await buildAndCacheFileThumbnail(created.id, {
+      kind: "excalidraw",
+      data: {
+        elements: scene.elements ?? [],
+        appState: scene.appState ?? {},
+        files: scene.files ?? {},
+      },
     });
     await ServerSync.saveFileImmediate(
       created.id,

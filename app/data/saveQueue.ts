@@ -7,15 +7,19 @@
  * 1. **合并**：短时间内（COALESCE_MS）多次触发只执行一次保存
  * 2. **串行**：上一次保存完成前不启动下一次，避免并发竞争
  * 3. **优先级**：合并时保留优先级最高的 source（用户主动 > 自动）
- * 4. **后处理**：保存成功后统一执行 broadcastFileSaved
+ * 4. **幂等**：同一 requestId 的重复投递只执行一次
+ * 5. **后处理**：保存成功后统一执行 broadcastFileSaved
  *
  * 编辑器只需在初始化时 `installExecutor(fn)` 注册实际保存函数，
  * 各触发点改为 `requestSave({ source })` 即可。
  */
 
-import type { SaveToServerSource } from "../hooks/types";
-import { broadcastFileSaved } from "./crossTabFileSync";
 import { createLogger } from "../lib/logger";
+
+import { getAppSettings } from "./appSettings";
+import { broadcastFileSaved } from "./crossTabFileSync";
+
+import type { SaveToServerSource } from "../hooks/types";
 
 const log = createLogger({ module: "saveQueue" });
 
@@ -28,6 +32,7 @@ const SOURCE_PRIORITY: Record<SaveToServerSource, number> = {
   home: 9,
   visibility: 5,
   auto: 1,
+  thumbnail: 0,
 };
 
 function higherPrioritySource(
@@ -41,6 +46,8 @@ export interface SaveRequest {
   source: SaveToServerSource;
   navigateAfter?: boolean;
   forceThumbnail?: boolean;
+  /** 同一次 UI 命令的幂等 key，避免重复事件创建重复 checkpoint。 */
+  requestId?: string;
 }
 
 export interface SaveResult {
@@ -60,6 +67,7 @@ let pendingResolvers: Array<(r: SaveResult) => void> = [];
 let coalesceTimer: number | null = null;
 let running = false;
 let runningPromise: Promise<SaveResult> | null = null;
+let runningRequestId: string | null = null;
 
 function clearCoalesceTimer() {
   if (coalesceTimer != null) {
@@ -68,15 +76,77 @@ function clearCoalesceTimer() {
   }
 }
 
-function mergeRequest(existing: SaveRequest, incoming: SaveRequest): SaveRequest {
+function mergeRequest(
+  existing: SaveRequest,
+  incoming: SaveRequest,
+): SaveRequest {
   return {
     source: higherPrioritySource(existing.source, incoming.source),
     navigateAfter: existing.navigateAfter || incoming.navigateAfter,
     forceThumbnail: existing.forceThumbnail || incoming.forceThumbnail,
+    requestId:
+      existing.requestId === incoming.requestId
+        ? existing.requestId
+        : incoming.requestId ?? existing.requestId,
   };
 }
 
 const NO_SAVE: SaveResult = { saved: false };
+const COMPLETED_REQUEST_TTL_MS = 2_000;
+
+const completedRequests = new Map<
+  string,
+  { result: SaveResult; completedAt: number }
+>();
+
+function pruneCompletedRequests(now = Date.now()): void {
+  for (const [requestId, entry] of completedRequests) {
+    if (now - entry.completedAt > COMPLETED_REQUEST_TTL_MS) {
+      completedRequests.delete(requestId);
+    }
+  }
+}
+
+function getCompletedRequestResult(
+  requestId: string | undefined,
+): SaveResult | null {
+  if (!requestId) {
+    return null;
+  }
+  pruneCompletedRequests();
+  return completedRequests.get(requestId)?.result ?? null;
+}
+
+function rememberCompletedRequest(
+  requestId: string | null,
+  result: SaveResult,
+): void {
+  if (!requestId) {
+    return;
+  }
+  pruneCompletedRequests();
+  completedRequests.set(requestId, {
+    result,
+    completedAt: Date.now(),
+  });
+}
+
+function hasSameRequestId(
+  requestId: string | undefined,
+  activeRequestId: string | null | undefined,
+): boolean {
+  return !!requestId && requestId === activeRequestId;
+}
+
+function shouldIgnoreSaveRequest(req: SaveRequest): boolean {
+  if (req.source === "visibility") {
+    return true;
+  }
+  return (
+    (req.source === "auto" || req.source === "thumbnail") &&
+    !getAppSettings().autoSaveEnabled
+  );
+}
 
 async function drain(): Promise<SaveResult> {
   if (!pending || !executor) {
@@ -85,11 +155,23 @@ async function drain(): Promise<SaveResult> {
   if (running) {
     return runningPromise ?? Promise.resolve(NO_SAVE);
   }
-  running = true;
   const req = pending;
   const resolvers = pendingResolvers;
   pending = null;
   pendingResolvers = [];
+
+  if (shouldIgnoreSaveRequest(req)) {
+    for (const resolve of resolvers) {
+      resolve(NO_SAVE);
+    }
+    if (pending) {
+      void drain();
+    }
+    return NO_SAVE;
+  }
+
+  running = true;
+  runningRequestId = req.requestId ?? null;
 
   let result: SaveResult = NO_SAVE;
   const p = (async () => {
@@ -109,8 +191,10 @@ async function drain(): Promise<SaveResult> {
     } catch (e) {
       log.debug("save failed", e);
     } finally {
+      rememberCompletedRequest(runningRequestId, result);
       running = false;
       runningPromise = null;
+      runningRequestId = null;
       for (const resolve of resolvers) {
         resolve(result);
       }
@@ -152,6 +236,25 @@ export function requestSave(req: SaveRequest): void {
     return;
   }
 
+  if (shouldIgnoreSaveRequest(req)) {
+    log.debug("requestSave ignored: disabled source", { source: req.source });
+    return;
+  }
+
+  if (getCompletedRequestResult(req.requestId)) {
+    log.debug("requestSave ignored: duplicate completed request", {
+      requestId: req.requestId,
+    });
+    return;
+  }
+
+  if (hasSameRequestId(req.requestId, runningRequestId)) {
+    log.debug("requestSave ignored: duplicate running request", {
+      requestId: req.requestId,
+    });
+    return;
+  }
+
   if (pending) {
     pending = mergeRequest(pending, req);
   } else {
@@ -170,6 +273,19 @@ export function requestSave(req: SaveRequest): void {
 export function requestSaveAndWait(req: SaveRequest): Promise<SaveResult> {
   if (!executor) {
     return Promise.resolve(NO_SAVE);
+  }
+
+  if (shouldIgnoreSaveRequest(req)) {
+    return Promise.resolve(NO_SAVE);
+  }
+
+  const completed = getCompletedRequestResult(req.requestId);
+  if (completed) {
+    return Promise.resolve(completed);
+  }
+
+  if (hasSameRequestId(req.requestId, runningRequestId)) {
+    return runningPromise ?? Promise.resolve(NO_SAVE);
   }
 
   if (pending) {
@@ -204,6 +320,7 @@ export function requestSaveAndWait(req: SaveRequest): Promise<SaveResult> {
  */
 export function installExecutor(fn: SaveExecutor): () => void {
   executor = fn;
+  completedRequests.clear();
   return () => {
     if (executor === fn) {
       executor = null;

@@ -1,11 +1,14 @@
+import { editorRegistry } from "../editors/registry";
+
 import { isLocalDraftFileId } from "./localDraftFileId";
 import {
   buildFileCardThumbnailSlot,
   chooseFileCardThumbnailForFile,
 } from "./resolveFileCardThumbnail";
 import { isThumbnailServerMiss } from "./thumbnailServerFetchMiss";
-import { extractThumbBg, patchThumbnailSvgForCard } from "./thumbnailSvg";
-import { editorRegistry } from "../editors/registry";
+import { toCardSvg } from "./thumbnailService";
+import { extractThumbBg } from "./thumbnailSvg";
+
 import type { ServerFile } from "./ServerSync";
 
 export type FileCardThumbBadge = "temp" | "draft" | null;
@@ -32,7 +35,7 @@ export function resolveFileCardThumbDisplay(
     fetchedThumb,
   );
   const thumbSvg = thumbnailChoice.thumbSvg;
-  const cardThumbSvg = thumbSvg ? patchThumbnailSvgForCard(thumbSvg) : null;
+  const cardThumbSvg = toCardSvg(thumbSvg);
   const thumbLoading =
     !thumbSvg &&
     !!file.has_thumbnail &&
@@ -41,15 +44,15 @@ export function resolveFileCardThumbDisplay(
   const badge: FileCardThumbBadge = isBrowserDraft
     ? "temp"
     : slot.syncState === "draft"
-      ? "draft"
-      : null;
+    ? "draft"
+    : null;
 
   return {
     kind: editorRegistry.resolveKind(file.kind),
     badge,
     cardThumbSvg,
     thumbLoading,
-    thumbBg: thumbSvg ? extractThumbBg(thumbSvg) : undefined,
+    thumbBg: cardThumbSvg ? extractThumbBg(thumbSvg!) : undefined,
   };
 }
 

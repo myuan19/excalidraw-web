@@ -29,10 +29,11 @@ import { isAutoSaveOnExitActive } from "../../data/appSettings";
 import { isAutoSaveEligibleFile } from "../../data/autoSaveSession";
 import {
   CHECKPOINT_LABELS,
+  type CheckpointLabel,
   isManualCheckpointSource,
-  resolveCheckpointPolicy,
 } from "../../data/checkpointPolicy";
-import { maybeCreateCheckpointBeforeLeave } from "../../data/checkpointBeforeLeave";
+import { executeCheckpointSave } from "../../data/checkpointSaveOrchestrator";
+import { confirmBeforeRestoreCheckpoint } from "../../data/checkpointRestoreConfirm";
 import { installExecutor, requestSaveAndWait } from "../../data/saveQueue";
 import {
   clearTabFileDirty,
@@ -162,14 +163,8 @@ export function useForkFileSave(opts: {
 
   const finishNavigateHome = useCallback(() => {
     window.setTimeout(() => {
-      void (async () => {
-        const fileId = getFileIdFromHash();
-        if (fileId && !isLocalDraftFileId(fileId)) {
-          await maybeCreateCheckpointBeforeLeave(fileId);
-        }
-        skipLeaveStashOnceRef.current = true;
-        navigateToFileListHome();
-      })();
+      skipLeaveStashOnceRef.current = true;
+      navigateToFileListHome();
     }, 80);
   }, [navigateToFileListHome]);
 
@@ -259,75 +254,99 @@ export function useForkFileSave(opts: {
       }
       const h = hashSceneSnapshot(sceneData);
       const baseline = FileSyncState.getBaselineHash(fid);
-      if (baseline && h === baseline) {
+      const unchanged =
+        !!baseline && h === baseline && !saveOpts?.forceThumbnail;
+
+      if (unchanged) {
         clearTabFileDirty(fid);
-        let checkpointCreated = false;
-        if (isManualCheckpointSource(source)) {
-          try {
-            await ServerSync.createCheckpoint(fid, CHECKPOINT_LABELS.manual);
-            checkpointCreated = true;
-            lastServerSaveMetaRef.current = {
-              skipped: false,
-              contentSha256: baseline,
-            };
-            window.dispatchEvent(
-              new CustomEvent("excalidraw-server-saved", {
-                detail: { id: fid, hash: h },
-              }),
-            );
-          } catch (e: any) {
-            setErrorMessage(e?.message ?? String(e));
-            return false;
-          }
-        }
-        if (source === "toolbar" || source === "hotkey") {
-          setForkSaveHint(
-            checkpointCreated
-              ? "已创建手动存档"
-              : "内容与最新状态一致，无需保存",
-          );
-        }
-        if (navigateAfter) {
-          FileSyncState.clearLocalCache(fid);
-          finishNavigateHome();
-        }
-        return checkpointCreated;
       }
-      if (source !== "visibility" && source !== "auto") {
-        setForkSaving(true);
-      } else {
-        visibilitySaveInFlightRef.current = true;
+
+      if (!unchanged) {
+        if (source !== "visibility" && source !== "auto") {
+          setForkSaving(true);
+        } else {
+          visibilitySaveInFlightRef.current = true;
+        }
+        if (isManualCheckpointSource(source) || source === "home") {
+          setForkSaveHint(null);
+        }
       }
-      if (source === "toolbar" || source === "home" || source === "hotkey") {
-        setForkSaveHint(null);
-      }
+
       try {
-        const nameForPut = await resolveSaveDisplayName(
-          fid,
-          sceneData.appState,
-        );
-        const thumbnail = await generateExcalidrawThumbnailAndCache(
-          fid,
-          sceneData,
-        );
-        logSave.debug(
-          `saveToServer file=${fid.slice(
-            0,
-            8,
-          )}, name=${nameForPut}, hasThumb=${!!thumbnail}, elements=${
-            sceneData.elements.length
-          }, source=${source}`,
-        );
-        const result = await ServerSync.saveFileImmediate(
-          fid,
-          sceneData,
-          nameForPut,
-          thumbnail,
+        const outcome = await executeCheckpointSave(
           {
-            suppressSavedEvent: true,
-            checkpointPolicy: resolveCheckpointPolicy(source),
+            fileId: fid,
+            source,
+            contentHash: h,
+            baselineHash: baseline,
+            forceThumbnail: saveOpts?.forceThumbnail,
+            document: sceneData,
+          },
+          {
+            resolveFileThumbnailForPut: () =>
+              generateExcalidrawThumbnailAndCache(fid, sceneData),
+            resolveArchiveThumbnailSvg: async () =>
+              (await generateExcalidrawThumbnailAndCache(fid, sceneData)) ??
+              null,
+            putDocument: async ({ thumbnail, checkpointPolicy }) => {
+              const nameForPut = await resolveSaveDisplayName(
+                fid,
+                sceneData.appState,
+              );
+              logSave.debug(
+                `saveToServer file=${fid.slice(
+                  0,
+                  8,
+                )}, name=${nameForPut}, hasThumb=${!!thumbnail}, elements=${
+                  sceneData.elements.length
+                }, source=${source}`,
+              );
+              return ServerSync.saveFileImmediate(
+                fid,
+                sceneData,
+                nameForPut,
+                thumbnail,
+                {
+                  suppressSavedEvent: true,
+                  checkpointPolicy,
+                },
+              );
+            },
           },
         );
+
+        if (!outcome.saved && !outcome.checkpointCreated) {
+          if (isManualCheckpointSource(source)) {
+            setForkSaveHint("内容与最新状态一致，无需保存");
+          }
+          if (navigateAfter) {
+            FileSyncState.clearLocalCache(fid);
+            finishNavigateHome();
+          }
+          return false;
+        }
+
+        if (outcome.checkpointCreated && unchanged) {
+          lastServerSaveMetaRef.current = {
+            skipped: false,
+            contentSha256: baseline,
+          };
+          window.dispatchEvent(
+            new CustomEvent("excalidraw-server-saved", {
+              detail: { id: fid, hash: h },
+            }),
+          );
+          if (isManualCheckpointSource(source)) {
+            setForkSaveHint("已完成 checkpoint 检查");
+          }
+          if (navigateAfter) {
+            FileSyncState.clearLocalCache(fid);
+            finishNavigateHome();
+          }
+          return true;
+        }
+
+        const result = outcome;
         logSave.debug(`saveToServer file=${fid.slice(0, 8)}, result`, result);
         const deltasAfterSave = await DeltaStorage.getAllPersistedDtos();
         FileSyncState.setLocalCache(fid, {
@@ -337,14 +356,14 @@ export function useForkFileSave(opts: {
           deltas: deltasAfterSave,
         });
 
-        if (result?.content_sha256) {
-          FileSyncState.setServerHash(fid, result.content_sha256);
+        if (outcome.contentSha256) {
+          FileSyncState.setServerHash(fid, outcome.contentSha256);
         }
         updateDraftHashDebouncedRef.current.cancel();
         localPersistGenRef.current += 1;
         lastServerSaveMetaRef.current = {
-          skipped: !!result?.skipped,
-          contentSha256: result?.content_sha256 ?? null,
+          skipped: !!outcome.skipped,
+          contentSha256: outcome.contentSha256 ?? null,
         };
         const hAfter = hashSceneSnapshot(getSceneData() ?? sceneData);
         FileSyncState.alignHashes(fid, hAfter);
@@ -355,7 +374,7 @@ export function useForkFileSave(opts: {
             0,
             8,
           )}, baseline=draft=${hAfter.slice(0, 8)}, serverSha=${
-            result?.content_sha256?.slice(0, 8) ?? "none"
+            outcome.contentSha256?.slice(0, 8) ?? "none"
           }`,
         );
 
@@ -371,15 +390,15 @@ export function useForkFileSave(opts: {
         );
         window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
         window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
-        if (result?.skipped) {
-          if (source === "toolbar" || source === "hotkey") {
+        if (outcome.skipped) {
+          if (isManualCheckpointSource(source)) {
             setForkSaveHint("已是最新状态");
           }
         } else if (source === "auto") {
           excalidrawAPI.setToast({ message: "自动保存完成" });
         } else if (source === "visibility") {
           excalidrawAPI.setToast({ message: "切换到后台时已保存到服务器" });
-        } else if (source === "hotkey" || source === "toolbar") {
+        } else if (isManualCheckpointSource(source)) {
           excalidrawAPI.setToast({ message: "已保存" });
         } else if (source === "home") {
           /* 主页：不单独提示成功，直接返回 */
@@ -427,6 +446,104 @@ export function useForkFileSave(opts: {
       setErrorMessage,
     ],
   );
+
+  const saveCurrentFileAsCheckpoint = useCallback(
+    async (label: CheckpointLabel): Promise<boolean> => {
+      const fid = getFileIdFromHash();
+      if (!excalidrawAPI || !fid || isLocalDraftFileId(fid)) {
+        return false;
+      }
+      updateDraftHashDebouncedRef.current.flush();
+      localPersistGenRef.current += 1;
+      const sceneData = getSceneData();
+      if (!sceneData) {
+        return false;
+      }
+      try {
+        const h = hashSceneSnapshot(sceneData);
+        const baseline = FileSyncState.getBaselineHash(fid);
+        const outcome = await executeCheckpointSave(
+          {
+            fileId: fid,
+            source: "sidebar",
+            contentHash: h,
+            baselineHash: baseline,
+            forcePut: true,
+            document: sceneData,
+            checkpointPolicyOverride: { mode: "force", label },
+          },
+          {
+            resolveFileThumbnailForPut: () =>
+              generateExcalidrawThumbnailAndCache(fid, sceneData),
+            resolveArchiveThumbnailSvg: async () =>
+              (await generateExcalidrawThumbnailAndCache(fid, sceneData)) ??
+              null,
+            putDocument: async ({ thumbnail, checkpointPolicy }) => {
+              const nameForPut = await resolveSaveDisplayName(
+                fid,
+                sceneData.appState,
+              );
+              return ServerSync.saveFileImmediate(
+                fid,
+                sceneData,
+                nameForPut,
+                thumbnail,
+                {
+                  suppressSavedEvent: true,
+                  checkpointPolicy,
+                },
+              );
+            },
+          },
+        );
+        if (!outcome.saved) {
+          return false;
+        }
+        const deltasAfterSave = await DeltaStorage.getAllPersistedDtos();
+        FileSyncState.setLocalCache(fid, {
+          elements: sceneData.elements,
+          appState: sceneData.appState,
+          files: sceneData.files,
+          deltas: deltasAfterSave,
+        });
+        if (outcome.contentSha256) {
+          FileSyncState.setServerHash(fid, outcome.contentSha256);
+        }
+        updateDraftHashDebouncedRef.current.cancel();
+        localPersistGenRef.current += 1;
+        const hAfter = hashSceneSnapshot(getSceneData() ?? sceneData);
+        FileSyncState.alignHashes(fid, hAfter);
+        FileSyncState.clearLocalEditTime(fid);
+        clearTabFileDirty(fid);
+        window.dispatchEvent(
+          new CustomEvent("excalidraw-server-saved", {
+            detail: { id: fid, hash: hAfter },
+          }),
+        );
+        window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
+        window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
+        return true;
+      } catch (e: any) {
+        setErrorMessage(e?.message ?? String(e));
+        return false;
+      }
+    },
+    [excalidrawAPI, getSceneData, setErrorMessage],
+  );
+
+  const confirmBeforeRestoreArchive =
+    useCallback(async (): Promise<boolean> => {
+      const fid = getFileIdFromHash();
+      if (!fid || isLocalDraftFileId(fid)) {
+        return false;
+      }
+      updateDraftHashDebouncedRef.current.flush();
+      return confirmBeforeRestoreCheckpoint({
+        fileId: fid,
+        saveCurrentAsCheckpoint: () =>
+          saveCurrentFileAsCheckpoint(CHECKPOINT_LABELS.restoreBackup),
+      });
+    }, [saveCurrentFileAsCheckpoint]);
 
   useEffect(() => {
     saveToServerRef.current = saveCurrentFileToServer;
@@ -525,6 +642,7 @@ export function useForkFileSave(opts: {
     saveCurrentFileToServer,
     persistLocalDraftToCache,
     forkGoHomeWithServerSave,
+    confirmBeforeRestoreArchive,
     forkHomeConfirmSave,
     forkHomeConfirmDiscard,
     forkHomeDismissDialog,

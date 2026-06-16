@@ -8,32 +8,24 @@ export const AUTO_SAVE_IDLE_SEC_OPTIONS = [
   1, 2, 5, 10, 30, 60, 120, 300,
 ] as const;
 
-/** checkpoint 自动存档间隔（分钟），0 表示关闭自动 checkpoint，仅保留手动存档。 */
-export const CHECKPOINT_INTERVAL_MIN_OPTIONS = [
-  0, 10, 20, 30, 60, 720,
-] as const;
+/** checkpoint 间隔检查可选时间（分钟） */
+export const CHECKPOINT_INTERVAL_MIN_OPTIONS = [10, 20, 30, 60, 720] as const;
 
 export interface AppSettings {
-  /** 切换到后台（visibilitychange → hidden）时自动保存到服务器 */
-  autoSaveOnBlur: boolean;
-  /** 空闲一段时间无编辑后自动保存 */
+  /** 自动保存：空闲保存、离开直接保存；关闭后仅手动或离开确认时保存 */
   autoSaveEnabled: boolean;
   /** 空闲自动保存等待时间（秒），编辑停止后多久触发保存 */
   autoSaveIdleSec: number;
-  /** 离开编辑器时自动保存（需同时开启空闲自动保存） */
-  autoSaveOnExit: boolean;
-  /** 自动 checkpoint 间隔（分钟），0 表示关闭 */
+  /** 保存到 latest 时 checkpoint 间隔检查的阈值（分钟） */
   checkpointIntervalMin: number;
 }
 
 const STORAGE_KEY = "editorhub-app-settings";
 
 const DEFAULT_SETTINGS: AppSettings = {
-  autoSaveOnBlur: true,
   autoSaveEnabled: false,
   autoSaveIdleSec: 10,
-  autoSaveOnExit: false,
-  checkpointIntervalMin: 0,
+  checkpointIntervalMin: 30,
 };
 
 let cache: AppSettings = { ...DEFAULT_SETTINGS };
@@ -51,6 +43,31 @@ function notify() {
   }
 }
 
+function normalizeSettings(parsed: Record<string, unknown>): AppSettings {
+  const autoSaveEnabled =
+    typeof parsed.autoSaveEnabled === "boolean"
+      ? parsed.autoSaveEnabled
+      : DEFAULT_SETTINGS.autoSaveEnabled;
+
+  const autoSaveIdleSec =
+    typeof parsed.autoSaveIdleSec === "number" &&
+    (AUTO_SAVE_IDLE_SEC_OPTIONS as readonly number[]).includes(
+      parsed.autoSaveIdleSec,
+    )
+      ? parsed.autoSaveIdleSec
+      : DEFAULT_SETTINGS.autoSaveIdleSec;
+
+  const checkpointIntervalMin =
+    typeof parsed.checkpointIntervalMin === "number" &&
+    (CHECKPOINT_INTERVAL_MIN_OPTIONS as readonly number[]).includes(
+      parsed.checkpointIntervalMin,
+    )
+      ? parsed.checkpointIntervalMin
+      : DEFAULT_SETTINGS.checkpointIntervalMin;
+
+  return { autoSaveEnabled, autoSaveIdleSec, checkpointIntervalMin };
+}
+
 function load(): AppSettings {
   if (loaded) {
     return cache;
@@ -58,35 +75,8 @@ function load(): AppSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw);
-      cache = {
-        autoSaveOnBlur:
-          typeof parsed.autoSaveOnBlur === "boolean"
-            ? parsed.autoSaveOnBlur
-            : DEFAULT_SETTINGS.autoSaveOnBlur,
-        autoSaveEnabled:
-          typeof parsed.autoSaveEnabled === "boolean"
-            ? parsed.autoSaveEnabled
-            : DEFAULT_SETTINGS.autoSaveEnabled,
-        autoSaveIdleSec:
-          typeof parsed.autoSaveIdleSec === "number" &&
-          (AUTO_SAVE_IDLE_SEC_OPTIONS as readonly number[]).includes(
-            parsed.autoSaveIdleSec,
-          )
-            ? parsed.autoSaveIdleSec
-            : DEFAULT_SETTINGS.autoSaveIdleSec,
-        autoSaveOnExit:
-          typeof parsed.autoSaveOnExit === "boolean"
-            ? parsed.autoSaveOnExit
-            : DEFAULT_SETTINGS.autoSaveOnExit,
-        checkpointIntervalMin:
-          typeof parsed.checkpointIntervalMin === "number" &&
-          (CHECKPOINT_INTERVAL_MIN_OPTIONS as readonly number[]).includes(
-            parsed.checkpointIntervalMin,
-          )
-            ? parsed.checkpointIntervalMin
-            : DEFAULT_SETTINGS.checkpointIntervalMin,
-      };
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      cache = normalizeSettings(parsed);
     }
   } catch {
     // ignore
@@ -117,8 +107,7 @@ export function subscribeAppSettings(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
-/** 空闲自动保存与离开自动保存均已开启 */
+/** 离开编辑器时是否直接保存（无需确认） */
 export function isAutoSaveOnExitActive(): boolean {
-  const settings = getAppSettings();
-  return settings.autoSaveEnabled && settings.autoSaveOnExit;
+  return getAppSettings().autoSaveEnabled;
 }

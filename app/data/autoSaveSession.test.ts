@@ -5,7 +5,7 @@ import { updateAppSettings } from "./appSettings";
 import { CHECKPOINT_LABELS, resolveCheckpointPolicy } from "./checkpointPolicy";
 
 beforeEach(() => {
-  updateAppSettings({ checkpointIntervalMin: 0 });
+  updateAppSettings({ autoSaveEnabled: false, checkpointIntervalMin: 30 });
 });
 
 describe("isAutoSaveEligibleFile", () => {
@@ -21,33 +21,45 @@ describe("isAutoSaveEligibleFile", () => {
 });
 
 describe("checkpoint policy", () => {
-  it("keeps manual saves as forced checkpoints", () => {
+  it("uses interval checkpoints for manual saves", () => {
     expect(resolveCheckpointPolicy("toolbar")).toEqual({
-      mode: "force",
-      label: CHECKPOINT_LABELS.manual,
-    });
-    expect(resolveCheckpointPolicy("hotkey")).toEqual({
-      mode: "force",
-      label: CHECKPOINT_LABELS.manual,
-    });
-  });
-
-  it("keeps automatic saves as latest-only when interval checkpoint is disabled", () => {
-    updateAppSettings({ checkpointIntervalMin: 0 });
-
-    expect(resolveCheckpointPolicy("auto")).toEqual({ mode: "none" });
-    expect(resolveCheckpointPolicy("visibility")).toEqual({ mode: "none" });
-    expect(resolveCheckpointPolicy("home")).toEqual({ mode: "none" });
-  });
-
-  it("uses interval checkpoints for automatic/latest saves when configured", () => {
-    updateAppSettings({ checkpointIntervalMin: 30 });
-
-    expect(resolveCheckpointPolicy("auto")).toEqual({
       mode: "interval",
       intervalMinutes: 30,
       label: CHECKPOINT_LABELS.interval,
     });
+    expect(resolveCheckpointPolicy("hotkey")).toEqual({
+      mode: "interval",
+      intervalMinutes: 30,
+      label: CHECKPOINT_LABELS.interval,
+    });
+  });
+
+  it("does not checkpoint automatic or visibility saves when auto-save is disabled", () => {
+    updateAppSettings({ autoSaveEnabled: false, checkpointIntervalMin: 20 });
+
+    expect(resolveCheckpointPolicy("auto")).toEqual({ mode: "none" });
+    expect(resolveCheckpointPolicy("visibility")).toEqual({ mode: "none" });
+    expect(resolveCheckpointPolicy("thumbnail")).toEqual({ mode: "none" });
+    expect(resolveCheckpointPolicy("home")).toEqual({
+      mode: "interval",
+      intervalMinutes: 20,
+      label: CHECKPOINT_LABELS.interval,
+    });
+  });
+
+  it("uses the configured interval for latest saves when auto-save is enabled", () => {
+    updateAppSettings({ autoSaveEnabled: true, checkpointIntervalMin: 60 });
+
+    const intervalPolicy = {
+      mode: "interval" as const,
+      intervalMinutes: 60,
+      label: CHECKPOINT_LABELS.interval,
+    };
+
+    expect(resolveCheckpointPolicy("auto")).toEqual(intervalPolicy);
+    expect(resolveCheckpointPolicy("visibility")).toEqual({ mode: "none" });
+    expect(resolveCheckpointPolicy("thumbnail")).toEqual({ mode: "none" });
+    expect(resolveCheckpointPolicy("home")).toEqual(intervalPolicy);
     expect(isAutoSaveLabel("auto:legacy")).toBe(true);
   });
 });

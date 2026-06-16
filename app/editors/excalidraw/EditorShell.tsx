@@ -64,6 +64,10 @@ import {
   applyAppShellPendingNavigation,
   type AppShellNavigateDetail,
 } from "../../shell/appShellNavigate";
+import {
+  EDITOR_HOST_COMMAND_EVENT,
+  getEditorHostCommandDetail,
+} from "../../shell/editorHostCommand";
 import { APP_SHELL_GO_HOME } from "../../shell/Sidebar";
 import { buildViewHash } from "../../shell/useAppView";
 import { EmbedTokenManager } from "../../components/EmbedTokenManager";
@@ -281,6 +285,7 @@ const ExcalidrawWrapper = () => {
     saveCurrentFileToServer,
     persistLocalDraftToCache,
     forkGoHomeWithServerSave,
+    confirmBeforeRestoreArchive,
     forkHomeConfirmSave,
     forkHomeConfirmDiscard,
     forkHomeDismissDialog,
@@ -345,7 +350,8 @@ const ExcalidrawWrapper = () => {
   }, [excalidrawAPI]);
 
   useEffect(() => {
-    const onSave = () => requestSave({ source: "sidebar" });
+    const onSave = (requestId?: string) =>
+      requestSave({ source: "sidebar", requestId });
     const onExport = () => {
       excalidrawAPI?.setOpenDialog({ name: "imageExport" });
     };
@@ -373,24 +379,44 @@ const ExcalidrawWrapper = () => {
       );
       void forkGoHomeWithServerSave();
     };
-    window.addEventListener("excalidraw-host-request-save", onSave);
+    const onHostCommand = (event: Event) => {
+      const detail = getEditorHostCommandDetail(event);
+      if (!detail) {
+        return;
+      }
+      switch (detail.command) {
+        case "save":
+          onSave(detail.requestId);
+          break;
+        case "export":
+          onExport();
+          break;
+        case "import":
+          onImport();
+          break;
+        case "history":
+          onHistory();
+          break;
+        case "embed":
+          onEmbed();
+          break;
+      }
+    };
+    const onLegacySave = () => onSave();
+    window.addEventListener(EDITOR_HOST_COMMAND_EVENT, onHostCommand);
+    window.addEventListener("excalidraw-host-request-save", onLegacySave);
     window.addEventListener("excalidraw-host-open-export", onExport);
     window.addEventListener("excalidraw-host-open-import", onImport);
     window.addEventListener("excalidraw-host-open-history", onHistory);
     window.addEventListener("excalidraw-host-open-embed", onEmbed);
-    window.addEventListener("mindmap-host-request-save", onSave);
-    window.addEventListener("mindmap-host-open-history", onHistory);
-    window.addEventListener("mindmap-host-open-embed", onEmbed);
     window.addEventListener(APP_SHELL_GO_HOME, onShellGoHome);
     return () => {
-      window.removeEventListener("excalidraw-host-request-save", onSave);
+      window.removeEventListener(EDITOR_HOST_COMMAND_EVENT, onHostCommand);
+      window.removeEventListener("excalidraw-host-request-save", onLegacySave);
       window.removeEventListener("excalidraw-host-open-export", onExport);
       window.removeEventListener("excalidraw-host-open-import", onImport);
       window.removeEventListener("excalidraw-host-open-history", onHistory);
       window.removeEventListener("excalidraw-host-open-embed", onEmbed);
-      window.removeEventListener("mindmap-host-request-save", onSave);
-      window.removeEventListener("mindmap-host-open-history", onHistory);
-      window.removeEventListener("mindmap-host-open-embed", onEmbed);
       window.removeEventListener(APP_SHELL_GO_HOME, onShellGoHome);
     };
   }, [
@@ -412,7 +438,6 @@ const ExcalidrawWrapper = () => {
     updateDraftHashDebouncedRef,
     localPersistGenRef,
     saveToServerRef,
-    visibilitySaveInFlightRef,
   });
 
   // Bridge: keep save hook's getSceneData in sync
@@ -821,6 +846,7 @@ const ExcalidrawWrapper = () => {
         {forkFileId && showHistoryPanel && (
           <ArchivePanel
             fileId={forkFileId}
+            onBeforeRestore={confirmBeforeRestoreArchive}
             onAfterRestore={async () => {
               await reloadSceneFromServer();
             }}

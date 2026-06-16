@@ -59,10 +59,6 @@
       ref="mindMapOverlayRoot"
       :class="MINDMAP_OVERLAY_ROOT_CLASS"
     ></div>
-    <NodeNoteContentShow
-      v-if="mindMap && !isEmbedMode"
-      :mindMap="mindMap"
-    ></NodeNoteContentShow>
     <NodeImgPreview
       v-if="mindMap && !isEmbedMode"
       :mindMap="mindMap"
@@ -100,10 +96,6 @@
       :mindMap="mindMap"
     ></Setting>
     <!-- NodeImgPlacementToolbar removed: image placement is now adjusted by dragging -->
-    <NodeNoteSidebar
-      v-if="mindMap && !isEmbedMode"
-      :mindMap="mindMap"
-    ></NodeNoteSidebar>
     <TextFormatSidebar
       v-if="mindMap && !isEmbedMode && activeSidebar === 'textFormat'"
       :mindMap="mindMap"
@@ -165,7 +157,6 @@ import Count from './Count.vue'
 import NavigatorToolbar from './NavigatorToolbar.vue'
 import Contextmenu from './Contextmenu.vue'
 import RichTextToolbar from './RichTextToolbar.vue'
-import NodeNoteContentShow from './NodeNoteContentShow.vue'
 import { getData, getConfig, storeData, storeConfig } from '@/api'
 import { isHostMode, requestSave } from '@/utils/hostBridge'
 import Navigator from './Navigator.vue'
@@ -185,7 +176,6 @@ import NodeOuterFrame from './NodeOuterFrame.vue'
 import NodeTagStyle from './NodeTagStyle.vue'
 import AssociativeLineStyle from './AssociativeLineStyle.vue'
 // NodeImgPlacementToolbar removed: image placement adjusted by dragging
-import NodeNoteSidebar from './NodeNoteSidebar.vue'
 import AiCreate from './AiCreate.vue'
 import previewViewportConfig from '../../../../../previewViewportConfig.json'
 import {
@@ -321,7 +311,6 @@ export default {
     ShortcutKey,
     Contextmenu,
     RichTextToolbar,
-    NodeNoteContentShow,
     Navigator,
     NodeImgPreview,
     SidebarTrigger,
@@ -335,7 +324,6 @@ export default {
     NodeTagStyle,
     Setting,
     AssociativeLineStyle,
-    NodeNoteSidebar,
     AiCreate,
     TextFormatSidebar,
     AiSidebar
@@ -761,14 +749,6 @@ export default {
         themeConfig: theme.config,
         viewData: view,
         ...getMindMapRuntimeOverlayOptions(this.$refs.mindMapOverlayRoot),
-        customNoteContentShow: {
-          show: (content, left, top, node) => {
-            this.$bus.$emit('showNoteContent', content, left, top, node)
-          },
-          hide: () => {
-            // this.$bus.$emit('hideNoteContent')
-          }
-        },
         openRealtimeRenderOnNodeTextEdit: true,
         enableAutoEnterTextEditWhenKeydown: true,
         demonstrateConfig: {
@@ -902,7 +882,7 @@ export default {
         'node_attachmentContextmenu',
         'demonstrate_jump',
         'exit_demonstrate',
-        'node_note_dblclick',
+        'node_note_click',
         'node_mousedown',
         'node_img_selected',
         'node_img_deselected',

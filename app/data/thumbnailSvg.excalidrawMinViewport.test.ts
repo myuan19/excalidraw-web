@@ -1,17 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-vi.mock("@excalidraw/excalidraw", () => ({
-  exportToSvg: vi.fn(async () => {
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("width", "18");
-    svg.setAttribute("height", "18");
-    svg.setAttribute("viewBox", "0 0 18 18");
-    svg.innerHTML = '<path d="M0 0L18 0L0 18Z" fill="#111111"/>';
-    return svg;
-  }),
-}));
-
-import { buildSceneThumbnailSvg } from "./thumbnailSvg";
+import {
+  buildSceneThumbnailSvg,
+  thumbnailSvgHasVisibleContent,
+} from "./thumbnailSvg";
 
 const getViewBoxNumbers = (svg: string) =>
   svg
@@ -22,7 +14,22 @@ const getViewBoxNumbers = (svg: string) =>
 describe("Excalidraw thumbnail minimum viewport", () => {
   it("keeps tiny drawings from filling the file-list thumbnail", async () => {
     const svg = await buildSceneThumbnailSvg({
-      elements: [{ id: "tiny-triangle" }],
+      elements: [
+        {
+          id: "tiny-rect",
+          type: "rectangle",
+          x: 0,
+          y: 0,
+          width: 18,
+          height: 18,
+          angle: 0,
+          strokeColor: "#111111",
+          backgroundColor: "transparent",
+          strokeWidth: 1,
+          opacity: 100,
+          isDeleted: false,
+        },
+      ],
       appState: { viewBackgroundColor: "#ffffff" },
       files: {},
     });
@@ -33,5 +40,18 @@ describe("Excalidraw thumbnail minimum viewport", () => {
     expect(x).toBeCloseTo(-231, 6);
     expect(y).toBeCloseTo(-135, 6);
     expect(svg).toContain('data-excal-filelist-thumb="1"');
+    expect(svg).toContain("<rect");
+    expect(svg).toContain('stroke="#111111"');
+    expect(thumbnailSvgHasVisibleContent(svg)).toBe(true);
+  });
+
+  it("does not treat background-only SVGs as visible thumbnails", async () => {
+    const svg = await buildSceneThumbnailSvg({
+      elements: [],
+      appState: { viewBackgroundColor: "#ffffff" },
+      files: {},
+    });
+
+    expect(thumbnailSvgHasVisibleContent(svg)).toBe(false);
   });
 });

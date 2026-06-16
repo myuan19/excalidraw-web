@@ -54,6 +54,7 @@ import {
   dispatchAppShellNavigate,
   type AppShellPendingNavigationChangeDetail,
 } from "../shell/appShellNavigate";
+import { dispatchEditorHostCommand } from "../shell/editorHostCommand";
 import type { AppView } from "../shell/useAppView";
 
 import "./EditorPlatformSidebar.scss";
@@ -405,18 +406,15 @@ function SidebarGlyph({ type }: { type: ActionIcon }) {
 }
 
 function dispatchHostSave() {
-  window.dispatchEvent(new Event("excalidraw-host-request-save"));
-  window.dispatchEvent(new Event("mindmap-host-request-save"));
+  dispatchEditorHostCommand("save");
 }
 
 function dispatchHostExport() {
-  window.dispatchEvent(new Event("excalidraw-host-open-export"));
-  window.dispatchEvent(new Event("mindmap-host-open-export"));
+  dispatchEditorHostCommand("export");
 }
 
 function dispatchHostImport() {
-  window.dispatchEvent(new Event("excalidraw-host-open-import"));
-  window.dispatchEvent(new Event("mindmap-host-open-import"));
+  dispatchEditorHostCommand("import");
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -430,13 +428,11 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 function dispatchHostHistory() {
-  window.dispatchEvent(new Event("excalidraw-host-open-history"));
-  window.dispatchEvent(new Event("mindmap-host-open-history"));
+  dispatchEditorHostCommand("history");
 }
 
 function dispatchHostEmbed() {
-  window.dispatchEvent(new Event("excalidraw-host-open-embed"));
-  window.dispatchEvent(new Event("mindmap-host-open-embed"));
+  dispatchEditorHostCommand("embed");
 }
 
 function dispatchShellNavigate(target: Exclude<AppView, "editor">) {

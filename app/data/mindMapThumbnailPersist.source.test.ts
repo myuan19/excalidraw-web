@@ -12,9 +12,11 @@ function read(relativePath: string): string {
 }
 
 describe("MindMap thumbnail persistence source contract", () => {
-  it("lets MindMap saves explicitly clear stale server thumbnails", () => {
+  it("keeps native MindMap thumbnails authoritative without clearing stale ones prematurely", () => {
     const serverSyncSource = read("data/ServerSync.ts");
     const mindMapSaveSource = read("editors/mindmap/useMindMapFileSave.ts");
+    const mindMapShellSource = read("editors/mindmap/MindMapEditorShell.tsx");
+    const hookTypesSource = read("hooks/types.ts");
     const filesRouteSource = fs.readFileSync(
       path.join(appRoot, "../server/routes/files.js"),
       "utf8",
@@ -32,27 +34,23 @@ describe("MindMap thumbnail persistence source contract", () => {
       "hasThumbnailField ? { thumbnail } : {}",
     );
 
-    expect(mindMapSaveSource).toContain(
-      "const contentChanged = !baseline || hash !== baseline",
-    );
-    expect(mindMapSaveSource).toContain(
-      "thumbnail ?? (contentChanged ? null : undefined)",
-    );
+    expect(mindMapSaveSource).toContain("thumbnail ?? undefined");
+    expect(mindMapSaveSource).toContain('source === "thumbnail"');
+    expect(mindMapSaveSource).toContain("if (thumbnail)");
+    expect(mindMapShellSource).toContain('source: "thumbnail"');
+    expect(mindMapShellSource).toContain("shouldRefreshMindMapServerThumbnail");
+    expect(mindMapShellSource).toContain("isSchematicMindMapThumbnailSvg");
+    expect(hookTypesSource).toContain('"thumbnail"');
 
-    expect(putRouteSource).toContain(
-      'Object.prototype.hasOwnProperty.call(req.body, "thumbnail")',
-    );
+    expect(putRouteSource).toContain("Object.prototype.hasOwnProperty.call(");
+    expect(putRouteSource).toContain('"thumbnail",');
     expect(putRouteSource).toContain(
       "const clearThumb = req.body.thumbnail === null",
     );
     expect(putRouteSource).toContain(
       "const mutatesThumbnail = hasThumb || clearThumb",
     );
-    expect(putRouteSource).toContain(
-      "rmSync(thumbFile, { force: true })",
-    );
-    expect(putRouteSource).toContain(
-      "rmSync(metaFile, { force: true })",
-    );
+    expect(putRouteSource).toContain("rmSync(thumbFile, { force: true })");
+    expect(putRouteSource).toContain("rmSync(metaFile, { force: true })");
   });
 });

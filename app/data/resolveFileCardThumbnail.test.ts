@@ -1,14 +1,18 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { FileSyncState } from "./FileSyncState";
-import { MindMapAdapter } from "./formats/MindMapAdapter";
+import { ensureLocalDraftThumbnailFromCache } from "./localDraftThumbnailRecovery";
 import { LocalThumbnailCache } from "./localThumbnailCache";
 import {
   chooseFileCardThumbnailForFile,
   fileCardThumbnailCanPreview,
   resolveFileCardThumbnailSvg,
 } from "./resolveFileCardThumbnail";
+
 import type { ServerFile } from "./ServerSync";
+
+vi.mock("./localDraftThumbnailRecovery", () => ({
+  ensureLocalDraftThumbnailFromCache: vi.fn(),
+}));
 
 function mockFile(overrides: Partial<ServerFile> = {}): ServerFile {
   return {
@@ -41,6 +45,32 @@ describe("resolveFileCardThumbnail", () => {
     expect(choice.thumbSvg).toContain("server");
   });
 
+  it("uses warm local thumb for synced server files only when content hash matches", () => {
+    LocalThumbnailCache.set("file-1", "<svg id='local'></svg>", {
+      contentSha: "sha-1",
+    });
+    const matching = chooseFileCardThumbnailForFile("file-1", mockFile(), null);
+    expect(matching.finalSource).toBe("localThumb");
+    expect(matching.thumbSvg).toContain("local");
+
+    const stale = chooseFileCardThumbnailForFile(
+      "file-1",
+      mockFile({ content_sha256: "sha-2" }),
+      null,
+    );
+    expect(stale.finalSource).toBe("none");
+    expect(stale.thumbSvg).toBeNull();
+
+    LocalThumbnailCache.set("file-1", "<svg id='draft'></svg>");
+    const overwritten = chooseFileCardThumbnailForFile(
+      "file-1",
+      mockFile(),
+      null,
+    );
+    expect(overwritten.finalSource).toBe("none");
+    expect(overwritten.thumbSvg).toBeNull();
+  });
+
   it("prefers local thumb for browser drafts like the file list", () => {
     LocalThumbnailCache.set("local-draft:abc", "<svg id='draft'></svg>");
     const choice = chooseFileCardThumbnailForFile(
@@ -70,25 +100,14 @@ describe("resolveFileCardThumbnail", () => {
 
   it("recovers local draft thumbnail from persisted mindmap cache", async () => {
     const id = "local-draft:mindmap-1";
-    const document = MindMapAdapter.toDocument({
-      ...MindMapAdapter.createEmpty(),
-      root: {
-        ...MindMapAdapter.createEmpty().root,
-        children: [
-          {
-            data: { text: "<p>子节点</p>", richText: true },
-            children: [],
-          },
-        ],
+    vi.mocked(ensureLocalDraftThumbnailFromCache).mockImplementationOnce(
+      async (fileId: string) => {
+        const thumb =
+          '<svg width="120" height="80" viewBox="0 0 120 80"><circle cx="60" cy="40" r="20" fill="#111"/></svg>';
+        LocalThumbnailCache.set(fileId, thumb);
+        return thumb;
       },
-    });
-    FileSyncState.setLocalCache(id, {
-      document,
-      elements: undefined,
-      appState: undefined,
-      files: {},
-      deltas: [],
-    });
+    );
 
     expect(LocalThumbnailCache.get(id)).toBeNull();
     const svg = await resolveFileCardThumbnailSvg(

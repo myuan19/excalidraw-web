@@ -4,7 +4,7 @@ import { readMindMapBrowserView } from "../../data/mindMapBrowserViewStorage";
 
 import {
   getCachedMindMapDocument,
-  toMindMapLocalCacheRecord,
+  shouldSkipMindMapThumbnailServerSave,
 } from "./useMindMapFileSave";
 
 describe("useMindMapFileSave cache helpers", () => {
@@ -53,5 +53,37 @@ describe("useMindMapFileSave cache helpers", () => {
     expect(
       FileSyncState.getLocalCache("mindmap-file")?.document?.data,
     ).not.toHaveProperty("view");
+  });
+});
+
+describe("MindMap thumbnail maintenance saves", () => {
+  it("skips server writes when thumbnail maintenance sees dirty content", () => {
+    expect(
+      shouldSkipMindMapThumbnailServerSave({
+        source: "thumbnail",
+        contentHash: "draft-hash",
+        baselineHash: "baseline-hash",
+      }),
+    ).toBe(true);
+  });
+
+  it("allows thumbnail maintenance only when content still matches baseline", () => {
+    expect(
+      shouldSkipMindMapThumbnailServerSave({
+        source: "thumbnail",
+        contentHash: "baseline-hash",
+        baselineHash: "baseline-hash",
+      }),
+    ).toBe(false);
+  });
+
+  it("does not affect real content save sources", () => {
+    expect(
+      shouldSkipMindMapThumbnailServerSave({
+        source: "auto",
+        contentHash: "draft-hash",
+        baselineHash: "baseline-hash",
+      }),
+    ).toBe(false);
   });
 });

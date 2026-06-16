@@ -179,31 +179,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <div className="settings-panel__option">
                 <div className="settings-panel__option-text">
                   <span className="settings-panel__option-label">
-                    切换后台时自动保存
+                    自动保存
                   </span>
                   <span className="settings-panel__option-desc">
-                    当页面切换到后台或失去焦点时，自动将当前编辑内容保存到服务器（仅对已入库文件生效）
-                  </span>
-                </div>
-                <label className="settings-panel__toggle">
-                  <input
-                    type="checkbox"
-                    checked={appSettings.autoSaveOnBlur}
-                    onChange={(e) =>
-                      handleAppSettingChange("autoSaveOnBlur", e.target.checked)
-                    }
-                  />
-                  <span className="settings-panel__toggle-track" />
-                </label>
-              </div>
-              <div className="settings-panel__option">
-                <div className="settings-panel__option-text">
-                  <span className="settings-panel__option-label">
-                    空闲自动保存
-                  </span>
-                  <span className="settings-panel__option-desc">
-                    停止编辑一段时间后自动保存到服务器 latest；历史 checkpoint
-                    由下方存档策略控制
+                    开启后，停止编辑一段时间会自动保存到服务器；离开编辑器时直接保存并退出。关闭后不会自动保存，离开时若未保存会提示确认（仅对已入库文件生效）
                   </span>
                 </div>
                 <label className="settings-panel__toggle">
@@ -221,75 +200,50 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 </label>
               </div>
               {appSettings.autoSaveEnabled && (
-                <>
-                  <div className="settings-panel__option settings-panel__option--sub">
-                    <div className="settings-panel__option-text">
-                      <span className="settings-panel__option-label">
-                        空闲等待时间
-                      </span>
-                      <span className="settings-panel__option-desc">
-                        停止编辑后等待多久触发保存
-                      </span>
-                    </div>
-                    <select
-                      className="settings-panel__select"
-                      value={appSettings.autoSaveIdleSec}
-                      onChange={(e) => {
-                        handleAppSettingChange(
-                          "autoSaveIdleSec",
-                          Number(e.target.value),
-                        );
-                        e.currentTarget.blur();
-                      }}
-                    >
-                      {AUTO_SAVE_IDLE_SEC_OPTIONS.map((sec) => (
-                        <option key={sec} value={sec}>
-                          {sec < 60
-                            ? `${sec} 秒`
-                            : sec === 60
-                            ? "1 分钟"
-                            : sec === 120
-                            ? "2 分钟"
-                            : sec === 300
-                            ? "5 分钟"
-                            : `${sec / 60} 分钟`}
-                        </option>
-                      ))}
-                    </select>
+                <div className="settings-panel__option settings-panel__option--sub">
+                  <div className="settings-panel__option-text">
+                    <span className="settings-panel__option-label">
+                      空闲等待时间
+                    </span>
+                    <span className="settings-panel__option-desc">
+                      停止编辑后等待多久触发保存
+                    </span>
                   </div>
-                  <div className="settings-panel__option settings-panel__option--sub">
-                    <div className="settings-panel__option-text">
-                      <span className="settings-panel__option-label">
-                        离开自动保存
-                      </span>
-                      <span className="settings-panel__option-desc">
-                        切换文件、返回列表或最近访问时，若有未保存更改则自动保存后再离开（仅对已入库文件生效）
-                      </span>
-                    </div>
-                    <label className="settings-panel__toggle">
-                      <input
-                        type="checkbox"
-                        checked={appSettings.autoSaveOnExit}
-                        onChange={(e) =>
-                          handleAppSettingChange(
-                            "autoSaveOnExit",
-                            e.target.checked,
-                          )
-                        }
-                      />
-                      <span className="settings-panel__toggle-track" />
-                    </label>
-                  </div>
-                </>
+                  <select
+                    className="settings-panel__select"
+                    value={appSettings.autoSaveIdleSec}
+                    onChange={(e) => {
+                      handleAppSettingChange(
+                        "autoSaveIdleSec",
+                        Number(e.target.value),
+                      );
+                      e.currentTarget.blur();
+                    }}
+                  >
+                    {AUTO_SAVE_IDLE_SEC_OPTIONS.map((sec) => (
+                      <option key={sec} value={sec}>
+                        {sec < 60
+                          ? `${sec} 秒`
+                          : sec === 60
+                          ? "1 分钟"
+                          : sec === 120
+                          ? "2 分钟"
+                          : sec === 300
+                          ? "5 分钟"
+                          : `${sec / 60} 分钟`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               )}
               <div className="settings-panel__option">
                 <div className="settings-panel__option-text">
                   <span className="settings-panel__option-label">
-                    自动 checkpoint
+                    checkpoint 间隔
                   </span>
                   <span className="settings-panel__option-desc">
-                    latest 始终正常保存；checkpoint
-                    可关闭或按间隔自动创建。手动保存始终创建 checkpoint
+                    每次保存到 latest 时检查；距离上次 checkpoint
+                    超过该间隔才创建新 checkpoint
                   </span>
                 </div>
                 <select
@@ -305,9 +259,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 >
                   {CHECKPOINT_INTERVAL_MIN_OPTIONS.map((min) => (
                     <option key={min} value={min}>
-                      {min === 0
-                        ? "关闭自动 checkpoint"
-                        : min < 60
+                      {min < 60
                         ? `${min} 分钟`
                         : min === 60
                         ? "1 小时"

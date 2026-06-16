@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { getAppSettings } from "../../data/appSettings";
 import {
   isAutoSaveEligibleForCurrentFile,
   registerAutoSaveTrigger,
 } from "../../data/autoSaveSession";
 import { useRemoteFileRefresh } from "../../hooks/useRemoteFileRefresh";
-import { clearTabFileDirty } from "../../data/tabFileDirtyState";
 import { requestSave } from "../../data/saveQueue";
 import { SettingsPanel } from "../../components/SettingsPanel";
 import { ArchivePanel } from "../../components/ArchivePanel";
@@ -14,6 +12,10 @@ import {
   applyAppShellPendingNavigation,
   type AppShellNavigateDetail,
 } from "../../shell/appShellNavigate";
+import {
+  EDITOR_HOST_COMMAND_EVENT,
+  getEditorHostCommandDetail,
+} from "../../shell/editorHostCommand";
 import { APP_SHELL_GO_HOME } from "../../shell/Sidebar";
 import { buildViewHash } from "../../shell/useAppView";
 import { EmbedTokenManager } from "../../components/EmbedTokenManager";
@@ -40,12 +42,10 @@ import {
   createEmptyMindMapData,
   isEffectivelyEmptyMindMapData,
   isMindMapSingleRootOnly,
-  SIMPLE_MIND_MAP_VERSION,
 } from "../../data/formats/MindMapAdapter";
 import { compactMindMapPersistedConfig } from "../../data/formats/mindMapPersistedConfig";
 import { MindMapAdapter } from "../../data/formats/registry";
 import {
-  applyMindMapBrowserView,
   clearMindMapBrowserView,
   saveMindMapBrowserView,
   saveMindMapBrowserViewFromData,
@@ -58,17 +58,15 @@ import {
 } from "../../lib/editorOpenPhases";
 import { hashDocumentSnapshot } from "../../data/sceneHash";
 import { ServerSync } from "../../data/ServerSync";
-import { normalizeMindMapThumbnailSvg } from "../../data/thumbnailSvg";
-import previewViewportConfig from "./native/previewViewportConfig.json";
-import { applyMindMapMediaLimitsToConfig } from "./mindMapMediaLimits";
+import {
+  isSchematicMindMapThumbnailSvg,
+} from "../../data/thumbnailSvg";
 import {
   debugMindMapBridge,
   warnMindMapBridge,
 } from "./mindMapBridgeDebug";
 import {
   isNativeMindMapMessage,
-  stampMindMapDataSourceVersion,
-  type NativeMindMapBridgePayload,
   type NativeMindMapMessage,
 } from "./mindMapBridgeProtocol";
 import {
@@ -77,6 +75,8 @@ import {
   NATIVE_MINDMAP_URL,
 } from "./mindMapBridgeOrigins";
 import { useMindMapHostBridge } from "./useMindMapHostBridge";
+import { toNativeMindMapBridgePayload } from "./mindMapBridgePayload";
+import { decodeNativeMindMapThumbnail } from "./mindMapNativeThumbnailRenderer";
 import { recordMindMapPersisted } from "./mindMapPersistCoordinator";
 import { explainRefreshCacheOnOpen } from "./mindMapOpenSyncPolicy";
 import { createMindMapHydrateCoordinator } from "./mindMapHydrateCoordinator";
@@ -126,29 +126,6 @@ function debugMindMapOpen(label: string, data?: Record<string, unknown>) {
   forwardMindMapHostDebug("mindmap-open", label, data);
 }
 
-function toBridgePayload(
-  data: MindMapDocumentData,
-  fileId: string | null,
-): NativeMindMapBridgePayload {
-  const mindMapData = stampMindMapDataSourceVersion(
-    applyMindMapBrowserView(data, fileId),
-    SIMPLE_MIND_MAP_VERSION,
-  );
-  const mindMapConfig = applyMindMapMediaLimitsToConfig({
-    ...(mindMapData.config ?? {}),
-  });
-  if (!mindMapData.view) {
-    mindMapConfig.__nbPreviewRootScreenRatioMultiplier =
-      previewViewportConfig.editorRootScreenRatioMultiplier;
-  }
-  return {
-    mindMapData,
-    mindMapConfig,
-    lang: mindMapData.lang ?? "zh",
-    localConfig: mindMapData.localConfig ?? null,
-  };
-}
-
 function getClipboardRequestId(payload: unknown): string | undefined {
   return payload &&
     typeof payload === "object" &&
@@ -187,26 +164,30 @@ function getClipboardImagePayload(payload: unknown):
   return { dataUrl, type };
 }
 
-function decodeMindMapThumbnail(payload: unknown): string | null {
-  if (typeof payload !== "string" || !payload) {
-    return null;
+async function shouldRefreshMindMapServerThumbnail(
+  fileId: string,
+  opts: { hasThumbnail?: boolean; contentSha?: string | null },
+): Promise<boolean> {
+  if (!opts.hasThumbnail) {
+    return true;
   }
-  if (!payload.startsWith("data:image/svg+xml")) {
-    return payload;
-  }
-  const commaIndex = payload.indexOf(",");
-  if (commaIndex === -1) {
-    return null;
-  }
-  const meta = payload.slice(0, commaIndex);
-  const body = payload.slice(commaIndex + 1);
+  const suffix = opts.contentSha
+    ? `?h=${encodeURIComponent(opts.contentSha)}`
+    : "";
   try {
-    const decoded = meta.includes(";base64")
-      ? new TextDecoder().decode(Uint8Array.from(atob(body), (c) => c.charCodeAt(0)))
-      : decodeURIComponent(body);
-    return normalizeMindMapThumbnailSvg(decoded);
+    const response = await fetch(`/api/files/${fileId}/thumbnail${suffix}`, {
+      cache: "no-store",
+      headers: { Accept: "image/svg+xml,text/plain,*/*;q=0.8" },
+    });
+    if (response.status === 404) {
+      return true;
+    }
+    if (!response.ok) {
+      return false;
+    }
+    return isSchematicMindMapThumbnailSvg(await response.text());
   } catch {
-    return null;
+    return false;
   }
 }
 
@@ -221,7 +202,7 @@ function getMindMapSavePayload(payload: unknown): {
     const revision = (payload as { revision?: unknown }).revision;
     return {
       data: (payload as { data?: unknown }).data,
-      thumbnail: decodeMindMapThumbnail(
+      thumbnail: decodeNativeMindMapThumbnail(
         (payload as { thumbnail?: unknown }).thumbnail,
       ),
       requestId: typeof requestId === "string" ? requestId : undefined,
@@ -588,6 +569,7 @@ const MindMapEditorShell = () => {
     markNativeDocumentDirty,
     persistLocalDraftToCache,
     saveCurrentFileToServer,
+    confirmBeforeRestoreArchive,
     mindMapGoHomeWithServerSave,
     mindMapHomeConfirmSave,
     mindMapHomeConfirmDiscard,
@@ -694,7 +676,7 @@ const MindMapEditorShell = () => {
         richText: summarizeMindMapRichTextTree(data),
         sampleNode: findFirstRichMindMapNodeSummary(data),
       });
-      publishDocument(toBridgePayload(data, fileId), reason);
+      publishDocument(toNativeMindMapBridgePayload(data, fileId), reason);
     },
     [extendNativeHydrateSettle, fileId, noteOpenHydrateSession, publishDocument],
   );
@@ -779,7 +761,11 @@ const MindMapEditorShell = () => {
             return;
           }
 
-          needsInitialThumbnailRef.current = !serverFile.has_thumbnail;
+          needsInitialThumbnailRef.current =
+            await shouldRefreshMindMapServerThumbnail(resolvedId, {
+              hasThumbnail: serverFile.has_thumbnail,
+              contentSha: serverFile.content_sha256,
+            });
           const parseStart = performance.now();
           saveMindMapBrowserViewFromData(resolvedId, serverFile.data);
           const data = serverFile.data
@@ -1003,7 +989,7 @@ const MindMapEditorShell = () => {
             needsInitialThumbnailRef.current = false;
             debugMindMapOpen("trigger initial thumbnail save");
             requestSave({
-              source: "visibility",
+              source: "thumbnail",
               forceThumbnail: true,
             });
           } else {
@@ -1132,7 +1118,13 @@ const MindMapEditorShell = () => {
               });
             } else if (draftResult.shouldExtendSettle) {
               extendNativeHydrateSettle("draft-push");
-              if (fileId && draftResult.shouldAdoptBaseline) {
+              const hasUserDirtyPending =
+                fileId && isMindMapNativeDirtyPending(fileId);
+              if (
+                fileId &&
+                draftResult.shouldAdoptBaseline &&
+                !hasUserDirtyPending
+              ) {
                 adoptMindMapNativeBaseline(fileId, document);
                 setStatus("");
                 debugMindMapPersist("hydrate draft adopted", {
@@ -1145,6 +1137,7 @@ const MindMapEditorShell = () => {
                   revision: savePayload.revision ?? null,
                   fileId8: fileId.slice(0, 8),
                   reason: hydrateDecision.reason,
+                  nativeDirtyPending: hasUserDirtyPending,
                 });
               }
             } else if (draftResult.shouldMarkChanged) {
@@ -1189,7 +1182,7 @@ const MindMapEditorShell = () => {
         ) {
           return;
         }
-        const thumbnail = decodeMindMapThumbnail(
+        const thumbnail = decodeNativeMindMapThumbnail(
           (payload as { thumbnail?: unknown }).thumbnail,
         );
         if (thumbnail && fileId) {
@@ -1202,7 +1195,11 @@ const MindMapEditorShell = () => {
         return;
       }
       if (event.data.type === "mindMapDirtyState") {
-        if (nativeHydratingRef.current) {
+        const isUserEdit =
+          event.data.payload &&
+          typeof event.data.payload === "object" &&
+          (event.data.payload as { userEdit?: unknown }).userEdit === true;
+        if (nativeHydratingRef.current && !isUserEdit) {
           debugMindMapOpen("mindMapDirtyState suppressed during hydrate");
           return;
         }
@@ -1293,7 +1290,6 @@ const MindMapEditorShell = () => {
   ]);
 
   const reloadMindMapFromServer = useCallback(async (opts?: {
-    clearLocalCache?: boolean;
     reason?: string;
     status?: string;
   }) => {
@@ -1310,16 +1306,17 @@ const MindMapEditorShell = () => {
     const document = MindMapAdapter.toDocument(data);
     latestDocumentRef.current = document;
     publishMindMapDataToNative(data, opts?.reason ?? "history-restore");
-    if (opts?.clearLocalCache ?? true) {
-      FileSyncState.clearLocalCache(fileId);
-      clearTabFileDirty(fileId);
-    } else {
-      recordMindMapPersisted(fileId, document, {
-        serverContentSha256: serverFile.content_sha256 ?? undefined,
-      });
-    }
+    recordMindMapPersisted(fileId, document, {
+      serverContentSha256: serverFile.content_sha256 ?? undefined,
+    });
     setFileName(serverFile.name || DEFAULT_DOCUMENT_DISPLAY_NAME);
-    needsInitialThumbnailRef.current = !serverFile.has_thumbnail;
+    needsInitialThumbnailRef.current = await shouldRefreshMindMapServerThumbnail(
+      fileId,
+      {
+        hasThumbnail: serverFile.has_thumbnail,
+        contentSha: serverFile.content_sha256,
+      },
+    );
     setStatus(opts?.status ?? "已恢复历史版本");
     setError(null);
     window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
@@ -1329,7 +1326,6 @@ const MindMapEditorShell = () => {
   const reloadFromCrossTabSave = useCallback(
     () =>
       reloadMindMapFromServer({
-        clearLocalCache: false,
         reason: "cross-tab-file-saved",
         status: "已同步远端更新",
       }),
@@ -1341,7 +1337,8 @@ const MindMapEditorShell = () => {
   });
 
   useEffect(() => {
-    const onSave = () => requestSave({ source: "sidebar" });
+    const onSave = (requestId?: string) =>
+      requestSave({ source: "sidebar", requestId });
     const onExport = () => {
       postToNative("mindMapHostOpenExport");
     };
@@ -1371,24 +1368,44 @@ const MindMapEditorShell = () => {
       );
       void mindMapGoHomeWithServerSave();
     };
-    window.addEventListener("mindmap-host-request-save", onSave);
-    window.addEventListener("excalidraw-host-request-save", onSave);
+    const onHostCommand = (event: Event) => {
+      const detail = getEditorHostCommandDetail(event);
+      if (!detail) {
+        return;
+      }
+      switch (detail.command) {
+        case "save":
+          onSave(detail.requestId);
+          break;
+        case "export":
+          onExport();
+          break;
+        case "import":
+          onImport();
+          break;
+        case "history":
+          onHistory();
+          break;
+        case "embed":
+          onEmbed();
+          break;
+      }
+    };
+    const onLegacySave = () => onSave();
+    window.addEventListener(EDITOR_HOST_COMMAND_EVENT, onHostCommand);
+    window.addEventListener("mindmap-host-request-save", onLegacySave);
     window.addEventListener("mindmap-host-open-export", onExport);
     window.addEventListener("mindmap-host-open-import", onImport);
     window.addEventListener("mindmap-host-open-history", onHistory);
-    window.addEventListener("excalidraw-host-open-history", onHistory);
     window.addEventListener("mindmap-host-open-embed", onEmbed);
-    window.addEventListener("excalidraw-host-open-embed", onEmbed);
     window.addEventListener(APP_SHELL_GO_HOME, onShellGoHome);
     return () => {
-      window.removeEventListener("mindmap-host-request-save", onSave);
-      window.removeEventListener("excalidraw-host-request-save", onSave);
+      window.removeEventListener(EDITOR_HOST_COMMAND_EVENT, onHostCommand);
+      window.removeEventListener("mindmap-host-request-save", onLegacySave);
       window.removeEventListener("mindmap-host-open-export", onExport);
       window.removeEventListener("mindmap-host-open-import", onImport);
       window.removeEventListener("mindmap-host-open-history", onHistory);
-      window.removeEventListener("excalidraw-host-open-history", onHistory);
       window.removeEventListener("mindmap-host-open-embed", onEmbed);
-      window.removeEventListener("excalidraw-host-open-embed", onEmbed);
       window.removeEventListener(APP_SHELL_GO_HOME, onShellGoHome);
     };
   }, [
@@ -1460,54 +1477,29 @@ const MindMapEditorShell = () => {
   }, [fileId]);
 
   useEffect(() => {
-    let visibilitySaveTimer: number | null = null;
     // hydrate settle 前画布数据尚未达到权威状态（iframe 初始化可能产出
     // 与基线不符的程序化快照），自动上行会把它写到服务器覆盖正确版本。
-    const requestAutoSave = (source: "auto" | "visibility") => {
+    const requestAutoSave = () => {
       if (nativeHydratingRef.current) {
-        debugMindMapPersist("auto save suppressed during hydrate", { source });
+        debugMindMapPersist("auto save suppressed during hydrate", {
+          source: "auto",
+        });
         return;
       }
-      requestSave({ source });
-    };
-    const onVisibilityChange = () => {
-      if (visibilitySaveTimer !== null) {
-        window.clearTimeout(visibilitySaveTimer);
-        visibilitySaveTimer = null;
-      }
-      if (!document.hidden || !isAutoSaveEligibleForCurrentFile()) {
-        return;
-      }
-      if (!isBridgeReady || !isAppReady) {
-        return;
-      }
-      if (!getAppSettings().autoSaveOnBlur) {
-        return;
-      }
-      visibilitySaveTimer = window.setTimeout(() => {
-        visibilitySaveTimer = null;
-        if (document.hidden) {
-          requestAutoSave("visibility");
-        }
-      }, 600);
+      requestSave({ source: "auto" });
     };
 
     const unregisterAutoSave = registerAutoSaveTrigger(() => {
       if (!isAutoSaveEligibleForCurrentFile()) {
         return;
       }
-      requestAutoSave("auto");
+      requestAutoSave();
     });
 
-    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
-      if (visibilitySaveTimer !== null) {
-        window.clearTimeout(visibilitySaveTimer);
-      }
       unregisterAutoSave();
-      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [isAppReady, isBridgeReady, saveToServerRef]);
+  }, [saveToServerRef]);
 
   useEffect(() => {
     if (!isAppReady) {
@@ -1560,6 +1552,7 @@ const MindMapEditorShell = () => {
       {fileId && showHistoryPanel ? (
         <ArchivePanel
           fileId={fileId}
+          onBeforeRestore={confirmBeforeRestoreArchive}
           onAfterRestore={async () => {
             await reloadMindMapFromServer();
           }}

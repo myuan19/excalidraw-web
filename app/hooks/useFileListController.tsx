@@ -839,7 +839,8 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   );
 
   const draftStateById = useMemo(() => {
-    const slotFor = (fileId: string) => {
+    const slotFor = (file: ServerFile) => {
+      const fileId = file.id;
       const syncState = FileSyncState.getSyncState(fileId);
       const preferLocalThumb =
         isLocalDraftFileId(fileId) || syncState === "draft";
@@ -849,7 +850,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         draftHash: FileSyncState.getDraftHash(fileId),
         localDraftThumb: preferLocalThumb
           ? LocalThumbnailCache.get(fileId)
-          : null,
+          : LocalThumbnailCache.getForContent(fileId, file.content_sha256),
       };
     };
     const byId: Record<
@@ -857,11 +858,11 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       ReturnType<typeof slotFor>
     > = {};
     for (const f of files) {
-      byId[f.id] = slotFor(f.id);
+      byId[f.id] = slotFor(f);
     }
     for (const draft of LocalDraftSessions.listIndexed()) {
       if (!byId[draft.id]) {
-        byId[draft.id] = slotFor(draft.id);
+        byId[draft.id] = slotFor(draftSessionToServerFile(draft));
       }
     }
     return byId;
@@ -2378,8 +2379,10 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     const preferLocalThumb = isBrowserDraft || syncState === "draft";
     const localDraftThumb =
       state?.localDraftThumb ??
-      (preferLocalThumb ? LocalThumbnailCache.get(f.id) : null);
-    const localThumb = preferLocalThumb ? localDraftThumb : null;
+      (preferLocalThumb
+        ? LocalThumbnailCache.get(f.id)
+        : LocalThumbnailCache.getForContent(f.id, f.content_sha256));
+    const localThumb = localDraftThumb;
     const shouldUseDraftPreview = preferLocalThumb;
     const thumbnailChoice = chooseFileCardThumbnail({
       syncState,
@@ -2640,7 +2643,13 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     <div className={`filelist theme--${shellTheme}`}>
       {importing && (
         <div className="filelist__import-blocking" aria-busy>
-          <span>正在导入…</span>
+          <div className="filelist__import-card" role="status">
+            <span className="filelist__import-spinner" aria-hidden />
+            <span className="filelist__import-title">正在导入</span>
+            <span className="filelist__import-desc">
+              正在解析文件并生成预览，请稍候
+            </span>
+          </div>
         </div>
       )}
 

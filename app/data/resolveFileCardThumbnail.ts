@@ -9,14 +9,14 @@ import {
   markThumbnailServerMiss,
   shouldFetchServerThumbnail,
 } from "./thumbnailServerFetchMiss";
-import { patchThumbnailSvgForCard } from "./thumbnailSvg";
+import { toCardSvg } from "./thumbnailService";
+
 import type { ServerFile } from "./ServerSync";
 
 /** 与文件列表卡片 `draftStateById` 单槽逻辑一致 */
 export function buildFileCardThumbnailSlot(fileId: string) {
   const syncState = FileSyncState.getSyncState(fileId);
-  const preferLocalThumb =
-    isLocalDraftFileId(fileId) || syncState === "draft";
+  const preferLocalThumb = isLocalDraftFileId(fileId) || syncState === "draft";
   return {
     syncState,
     preferLocalThumb,
@@ -31,10 +31,13 @@ export function chooseFileCardThumbnailForFile(
   fetchedThumb?: string | null,
 ) {
   const slot = buildFileCardThumbnailSlot(fileId);
+  const localThumb = slot.preferLocalThumb
+    ? slot.localThumb
+    : LocalThumbnailCache.getForContent(fileId, file.content_sha256);
   return chooseFileCardThumbnail({
     syncState: slot.syncState,
     preferLocalThumb: slot.preferLocalThumb,
-    localThumb: slot.localThumb,
+    localThumb,
     fetchedThumb: fetchedThumb ?? null,
   });
 }
@@ -65,19 +68,20 @@ export async function resolveFileCardThumbnailSvg(
 ): Promise<string | null> {
   const choice = chooseFileCardThumbnailForFile(fileId, file, fetchedThumb);
   if (choice.thumbSvg) {
-    return patchThumbnailSvgForCard(choice.thumbSvg);
+    return toCardSvg(choice.thumbSvg);
   }
   if (isLocalDraftFileId(fileId)) {
-    const recovered = await ensureLocalDraftThumbnailFromCache(fileId, file.kind);
-    return recovered ? patchThumbnailSvgForCard(recovered) : null;
+    const recovered = await ensureLocalDraftThumbnailFromCache(
+      fileId,
+      file.kind,
+    );
+    return recovered ? toCardSvg(recovered) : null;
   }
   if (!shouldFetchServerThumbnail(fileId, file)) {
     return null;
   }
   const url = `/api/files/${fileId}/thumbnail${
-    file.content_sha256
-      ? `?h=${encodeURIComponent(file.content_sha256)}`
-      : ""
+    file.content_sha256 ? `?h=${encodeURIComponent(file.content_sha256)}` : ""
   }`;
   const { svg, status } = await fetchThumbnailSvgForCard(url, {
     id8: fileId.slice(0, 8),
@@ -89,5 +93,5 @@ export async function resolveFileCardThumbnailSvg(
     }
     return null;
   }
-  return patchThumbnailSvgForCard(svg);
+  return toCardSvg(svg);
 }

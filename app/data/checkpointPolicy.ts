@@ -5,7 +5,6 @@ import type { SaveToServerSource } from "../hooks/types";
 export const CHECKPOINT_LABELS = {
   manual: "checkpoint:manual",
   interval: "checkpoint:interval",
-  switch: "checkpoint:switch",
   restoreBackup: "checkpoint:restore-backup",
 } as const;
 
@@ -24,15 +23,22 @@ export function isManualCheckpointSource(source: SaveToServerSource): boolean {
 export function resolveCheckpointPolicy(
   source: SaveToServerSource,
 ): CheckpointPolicy {
-  if (isManualCheckpointSource(source)) {
-    return { mode: "force", label: CHECKPOINT_LABELS.manual };
+  if (source === "visibility" || source === "thumbnail") {
+    return { mode: "none" };
   }
 
-  const intervalMinutes = getAppSettings().checkpointIntervalMin;
-  if (intervalMinutes > 0) {
+  if (source === "auto" && !getAppSettings().autoSaveEnabled) {
+    return { mode: "none" };
+  }
+
+  if (
+    source === "auto" ||
+    source === "home" ||
+    isManualCheckpointSource(source)
+  ) {
     return {
       mode: "interval",
-      intervalMinutes,
+      intervalMinutes: getAppSettings().checkpointIntervalMin,
       label: CHECKPOINT_LABELS.interval,
     };
   }
@@ -50,8 +56,6 @@ export function getCheckpointLabelText(label: string): string {
       return "手动存档";
     case CHECKPOINT_LABELS.interval:
       return "定时存档";
-    case CHECKPOINT_LABELS.switch:
-      return "切换前存档";
     case CHECKPOINT_LABELS.restoreBackup:
       return "恢复前备份";
     default:

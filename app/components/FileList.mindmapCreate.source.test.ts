@@ -7,20 +7,23 @@ import { describe, expect, it } from "vitest";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 describe("MindMap editor plugin host actions", () => {
-  it("creates MindMap files with an eagerly saved thumbnail", () => {
+  it("creates MindMap files with a native-rendered thumbnail", () => {
     const source = fs.readFileSync(
       path.join(__dirname, "../editors/mindmap/hostActions.ts"),
       "utf8",
     );
 
-    expect(source).toContain("const mindMapData = createEmptyMindMapData(name)");
+    expect(source).toContain(
+      "const mindMapData = createEmptyMindMapData(name)",
+    );
     expect(source).toContain("generateMindMapThumbnailAndCache");
+    expect(source).not.toContain("buildAndCacheFileThumbnail");
     expect(source).toContain(
       "await ServerSync.saveFileImmediate(created.id, document, name, thumbnail)",
     );
   });
 
-  it("imports MindMap files with the same eager thumbnail save path", () => {
+  it("imports MindMap files with the same native thumbnail path", () => {
     const source = fs.readFileSync(
       path.join(__dirname, "../editors/mindmap/hostActions.ts"),
       "utf8",
@@ -28,11 +31,11 @@ describe("MindMap editor plugin host actions", () => {
 
     expect(source).toContain("parseImportFileJson(file)");
     expect(source).not.toContain("saveMindMapBrowserViewFromData");
-    expect(source).not.toContain(
-      "generateMindMapThumbnailAndCache(\n      created.id,\n      data",
+    expect(source).toContain(
+      "generateMindMapThumbnailAndCache(created.id, data)",
     );
     expect(source).toContain(
-      "await ServerSync.saveFileImmediate(\n    created.id,\n    document,\n    fileName,\n  )",
+      "await ServerSync.saveFileImmediate(created.id, document, fileName, thumbnail)",
     );
   });
 });

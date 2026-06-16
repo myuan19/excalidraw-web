@@ -1,8 +1,9 @@
 import { afterEach, vi } from "vitest";
 
 import {
-  buildMindMapThumbnailSvg,
   buildSceneThumbnailSvg,
+  isSchematicMindMapThumbnailSvg,
+  markMindMapThumbnailSource,
   mindMapRichTextToPlainText,
   normalizeMindMapThumbnailSvg,
   patchThumbnailSvgForCard,
@@ -70,24 +71,30 @@ const nativePathNode = (
   "</g>";
 
 describe("MindMap SVG thumbnails", () => {
-  it("builds an eager import thumbnail from MindMap document data", async () => {
-    const svg = await buildMindMapThumbnailSvg({
-      root: {
-        data: { text: "<p>产品规划</p>", richText: true },
-        children: [
-          {
-            data: { text: "<p>调研</p>", richText: true },
-            children: [],
-          },
-        ],
-      },
-    });
+  it("marks native MindMap thumbnails for file-list storage", () => {
+    const svg = markMindMapThumbnailSource(
+      normalizeMindMapThumbnailSvg(
+        '<svg viewBox="0 0 100 60"><g class="smm-container"><foreignObject width="80" height="40"></foreignObject></g></svg>',
+      ),
+      "native",
+    );
 
     expect(svg).toContain('data-excal-filelist-thumb="1"');
     expect(svg).toContain('data-excal-thumb-bg="#ffffff"');
-    expect(svg).toContain(">产品规划</text>");
-    expect(svg).toContain(">调研</text>");
-    expect(svg).not.toContain("&lt;p&gt;");
+    expect(svg).toContain('data-excal-thumb-source="mindmap-native"');
+    expect(isSchematicMindMapThumbnailSvg(svg)).toBe(false);
+  });
+
+  it("does not classify native-tagged MindMap thumbnails as schematic", () => {
+    const nativeSvg = markMindMapThumbnailSource(
+      normalizeMindMapThumbnailSvg(
+        '<svg viewBox="0 0 100 60"><g class="smm-container"><foreignObject width="80" height="40"></foreignObject></g></svg>',
+      ),
+      "native",
+    );
+
+    expect(nativeSvg).toContain('data-excal-thumb-source="mindmap-native"');
+    expect(isSchematicMindMapThumbnailSvg(nativeSvg)).toBe(false);
   });
 
   it("uses the configured root offset and visible limit ratios", () => {

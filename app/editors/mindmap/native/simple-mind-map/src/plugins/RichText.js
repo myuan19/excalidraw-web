@@ -406,11 +406,31 @@ class RichText {
     if (useClickPosition && e && !isInserting) {
       this.focusAtMouseEvent(e)
     } else {
-      this.focus(
-        isInserting || (selectTextOnEnterEditText && !isFromKeyDown) ? 0 : null
-      )
+      const shouldSelectAll =
+        isInserting || (selectTextOnEnterEditText && !isFromKeyDown)
+      if (isInserting) {
+        this.selectAllAfterInsert(node)
+      } else {
+        this.focus(shouldSelectAll ? 0 : null)
+      }
     }
     this.cacheEditingText = ''
+  }
+
+  selectAllAfterInsert(node) {
+    this.focus(0)
+    const restore = () => {
+      if (this.node === node && this.isShowTextEdit() && this.quill) {
+        this.focus(0)
+      }
+    }
+    if (window.requestAnimationFrame) {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(restore)
+      })
+      return
+    }
+    window.setTimeout(restore, 0)
   }
 
   // 当openRealtimeRenderOnNodeTextEdit配置更新后需要更新编辑框样式

@@ -117,7 +117,8 @@ class Render {
     this.nodeInvalidation = createNodeInvalidationState()
     // 渲染代际登记（renderGeneration字段由orchestrator初始化并独占维护）
     this.renderOrchestrator = createRenderOrchestrator(this)
-    this.pendingInsertEditNodes = []
+    this.pendingInsertEditRequest = null
+    this.pendingInsertEditToken = 0
     // 文本编辑框，需要再bindEvent之前实例化，否则单击事件只能触发隐藏文本编辑框，而无法保存文本修改
     this.textEdit = new TextEdit(this)
     // 当前复制的数据
@@ -299,24 +300,27 @@ class Render {
     })
   }
 
-  // 只记录uid：全量重建会替换节点实例，兑现时再解析最新实例
+  // 只保留最新插入节点：全量重建会替换节点实例，兑现时再解析最新实例。
   queueOpenAfterInsert(node) {
     if (!node || !node.uid) {
       return
     }
-    if (!this.pendingInsertEditNodes.includes(node.uid)) {
-      this.pendingInsertEditNodes.push(node.uid)
+    this.pendingInsertEditRequest = {
+      uid: node.uid,
+      token: ++this.pendingInsertEditToken
     }
   }
 
   flushPendingInsertEdits() {
-    const pending = this.pendingInsertEditNodes.splice(0)
-    pending.forEach(uid => {
-      const node = this.findNodeByUid(uid)
-      if (node) {
-        this.textEdit.openAfterInsert(node)
-      }
-    })
+    const request = this.pendingInsertEditRequest
+    this.pendingInsertEditRequest = null
+    if (!request || request.token !== this.pendingInsertEditToken) {
+      return
+    }
+    const node = this.findNodeByUid(request.uid)
+    if (node) {
+      this.textEdit.openAfterInsert(node, request.token)
+    }
   }
 
   // 强制渲染节点，不考虑是否在画布可视区域内

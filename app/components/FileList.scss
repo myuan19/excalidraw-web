@@ -49,6 +49,12 @@
   }
 }
 
+@keyframes importSpinner {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* ── Header ── */
 .filelist__header {
   display: flex;
@@ -1436,11 +1442,43 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--nb-filelist-import-block-bg);
-  backdrop-filter: blur(var(--nb-blur-sheet));
-  font-size: var(--nb-font-body-lg);
-  font-weight: 500;
+  padding: var(--nb-space-8);
+  background: color-mix(in srgb, var(--fl-bg) 62%, transparent);
+  backdrop-filter: blur(calc(var(--nb-blur-sheet) * 0.45)) saturate(1.08);
+}
+
+.filelist__import-card {
+  display: grid;
+  justify-items: center;
+  gap: var(--nb-space-3);
+  min-width: min(20rem, calc(100vw - var(--nb-space-16)));
+  padding: var(--nb-space-9) var(--nb-space-11);
+  border: var(--nb-border-width) solid var(--fl-border);
+  border-radius: var(--nb-radius-xl);
+  background: color-mix(in srgb, var(--nb-surface) 90%, transparent);
+  box-shadow: var(--nb-shadow-lg);
   color: var(--nb-text);
+  animation: modalSlideUp var(--nb-dur-enter) var(--nb-ease-ui);
+}
+
+.filelist__import-spinner {
+  width: var(--nb-space-10);
+  height: var(--nb-space-10);
+  border-radius: 999px;
+  border: 2px solid var(--fl-border);
+  border-top-color: var(--fl-primary);
+  animation: importSpinner 0.85s linear infinite;
+}
+
+.filelist__import-title {
+  font-size: var(--nb-font-body-lg);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.filelist__import-desc {
+  font-size: var(--nb-font-body-sm);
+  color: var(--nb-text-muted);
 }
 
 .filelist__hl {

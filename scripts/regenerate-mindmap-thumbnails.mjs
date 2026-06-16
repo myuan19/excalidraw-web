@@ -5,15 +5,8 @@
  * 用法: node scripts/regenerate-mindmap-thumbnails.mjs
  */
 import { chromium } from "playwright";
-import {
-  createServer,
-} from "node:http";
-import {
-  existsSync,
-  readdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { createServer } from "node:http";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { resolveDevFilesRoot } from "./lib/devDataDir.mjs";
 
@@ -46,7 +39,9 @@ function serveStatic(baseDir) {
       return;
     }
     const ext = extname(filePath).toLowerCase();
-    res.writeHead(200, { "Content-Type": MIME[ext] || "application/octet-stream" });
+    res.writeHead(200, {
+      "Content-Type": MIME[ext] || "application/octet-stream",
+    });
     res.end(readFileSync(filePath));
   });
 }
@@ -69,10 +64,36 @@ function collectMindMapFiles() {
   return results;
 }
 
+function setOrAddSvgAttr(svg, attrName, attrValue) {
+  const openTag = svg.match(/<svg\b[^>]*>/i)?.[0];
+  if (!openTag) return svg;
+  const escaped = attrValue.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+  const attrPattern = new RegExp(`\\s${attrName}=(["'])[^"']*\\1`, "i");
+  if (attrPattern.test(openTag)) {
+    return svg.replace(attrPattern, ` ${attrName}="${escaped}"`);
+  }
+  return svg.replace(/<svg\b/i, `<svg ${attrName}="${escaped}"`);
+}
+
+function markNativeMindMapThumbnail(svg) {
+  let marked = setOrAddSvgAttr(
+    svg,
+    "data-excal-thumb-source",
+    "mindmap-native",
+  );
+  marked = setOrAddSvgAttr(marked, "data-excal-filelist-thumb", "1");
+  if (!/\bdata-excal-thumb-bg\s*=/i.test(marked)) {
+    marked = setOrAddSvgAttr(marked, "data-excal-thumb-bg", "#ffffff");
+  }
+  return marked;
+}
+
 async function exportNativeSvg(page, baseUrl, mindMapData) {
   await page.goto(`${baseUrl}/index.html`, { waitUntil: "load" });
   await page.waitForFunction(
-    () => typeof window.$bus !== "undefined" && typeof window.initApp === "function",
+    () =>
+      typeof window.$bus !== "undefined" &&
+      typeof window.initApp === "function",
     { timeout: 15000, polling: 100 },
   );
 
@@ -83,12 +104,23 @@ async function exportNativeSvg(page, baseUrl, mindMapData) {
     });
   });
 
-  const initPayload = { mindMapData, mindMapConfig: {}, lang: "zh", localConfig: null };
+  const initPayload = {
+    mindMapData,
+    mindMapConfig: {},
+    lang: "zh",
+    localConfig: null,
+  };
   await page.evaluate((payload) => {
-    window.postMessage({ source: "excalidraw-web", type: "initMindMap", payload }, "*");
+    window.postMessage(
+      { source: "excalidraw-web", type: "initMindMap", payload },
+      "*",
+    );
   }, initPayload);
 
-  await page.waitForFunction(() => window.__mm !== null, { timeout: 30000, polling: 200 });
+  await page.waitForFunction(() => window.__mm !== null, {
+    timeout: 30000,
+    polling: 200,
+  });
   await page.waitForTimeout(1500);
 
   const dataUrl = await page.evaluate(async () => {
@@ -101,9 +133,11 @@ async function exportNativeSvg(page, baseUrl, mindMapData) {
   const meta = dataUrl.slice(0, commaIdx);
   const body = dataUrl.slice(commaIdx + 1);
   if (meta.includes(";base64")) {
-    return Buffer.from(body, "base64").toString("utf8");
+    return markNativeMindMapThumbnail(
+      Buffer.from(body, "base64").toString("utf8"),
+    );
   }
-  return decodeURIComponent(body);
+  return markNativeMindMapThumbnail(decodeURIComponent(body));
 }
 
 // ---------- main ----------

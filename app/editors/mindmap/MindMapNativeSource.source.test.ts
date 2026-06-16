@@ -522,11 +522,15 @@ describe("MindMap native source contract", () => {
     expect(renderPassBlock.indexOf("this.mindMap.clearDraw()")).toBeLessThan(
       renderPassBlock.indexOf("this.lastNodeCache = this.nodeCache"),
     );
-    // 插入后编辑队列按uid解析最新实例，避免引用被全量重建替换的旧实例
+    // 插入后编辑只保留最新请求，并按 uid 解析最新实例，避免旧延迟回调选中上一个节点
+    expect(renderSource).toContain("this.pendingInsertEditRequest = {");
+    expect(renderSource).toContain("token: ++this.pendingInsertEditToken");
     expect(renderSource).toContain(
-      "this.pendingInsertEditNodes.push(node.uid)",
+      "request.token !== this.pendingInsertEditToken",
     );
-    expect(renderSource).toContain("const node = this.findNodeByUid(uid)");
+    expect(renderSource).toContain(
+      "const node = this.findNodeByUid(request.uid)",
+    );
   });
 
   it("keeps realtime text edit rebuilds driven by quill text-change events", () => {
