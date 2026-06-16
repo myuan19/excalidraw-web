@@ -527,8 +527,8 @@ export type LibraryItem = {
   created: number;
   name?: string;
   error?: string;
-  /** Fork: persisted scope when using CombinedLibraryAdapter (public / personal / canvas). */
-  scope?: "personal" | "public" | "canvas";
+  /** Fork: persisted scope when using CombinedLibraryAdapter (global / canvas). */
+  scope?: "global" | "canvas" | "personal" | "public";
 };
 export type LibraryItems = readonly LibraryItem[];
 export type LibraryItems_anyVersion = LibraryItems | LibraryItems_v1;

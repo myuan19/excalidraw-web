@@ -668,6 +668,12 @@ class MindMapNode {
     } else if (openPerformance && performanceConfig.removeNodeWhenOutCanvas) {
       this.removeSelf()
     }
+    // 手动插入的节点：先登记，确保随后任何 render callback 都能在 onRenderEnd 中兑现
+    if (this.nodeData.inserting) {
+      delete this.nodeData.inserting
+      this.active()
+      this.mindMap.renderer.queueOpenAfterInsert(this)
+    }
     // 子节点
     if (
       this.children &&
@@ -696,12 +702,6 @@ class MindMapNode {
       })
     } else {
       callback()
-    }
-    // 手动插入的节点：渲染结束后再进入编辑，避免与全树 render 交错
-    if (this.nodeData.inserting) {
-      delete this.nodeData.inserting
-      this.active()
-      this.mindMap.renderer.queueOpenAfterInsert(this)
     }
   }
 

@@ -495,6 +495,13 @@ describe("MindMap native source contract", () => {
       ),
       "utf8",
     );
+    const mindMapNodeSource = fs.readFileSync(
+      path.join(
+        appRoot,
+        "editors/mindmap/native/simple-mind-map/src/core/render/node/MindMapNode.js",
+      ),
+      "utf8",
+    );
     const indexSource = fs.readFileSync(
       path.join(appRoot, "editors/mindmap/native/simple-mind-map/index.js"),
       "utf8",
@@ -521,6 +528,19 @@ describe("MindMap native source contract", () => {
     expect(renderPassBlock).toContain("this.mindMap.clearDraw()");
     expect(renderPassBlock.indexOf("this.mindMap.clearDraw()")).toBeLessThan(
       renderPassBlock.indexOf("this.lastNodeCache = this.nodeCache"),
+    );
+    // 插入后编辑请求必须早于 render callback 登记，否则最后一个子节点会先 flush 再入队
+    const nodeRenderSource = mindMapNodeSource.slice(
+      mindMapNodeSource.indexOf(
+        "render(callback = () => {}, forceRender = false, async = false)",
+      ),
+      mindMapNodeSource.indexOf("// 删除自身"),
+    );
+    expect(nodeRenderSource.indexOf("this.nodeData.inserting")).toBeLessThan(
+      nodeRenderSource.indexOf("callback()"),
+    );
+    expect(nodeRenderSource.indexOf("queueOpenAfterInsert")).toBeLessThan(
+      nodeRenderSource.indexOf("callback()"),
     );
     // 插入后编辑只保留最新请求，并按 uid 解析最新实例，避免旧延迟回调选中上一个节点
     expect(renderSource).toContain("this.pendingInsertEditRequest = {");

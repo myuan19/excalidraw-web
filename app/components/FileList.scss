@@ -1,4 +1,5 @@
 @import "./filelist-design-tokens";
+@import "../styles/shell/shellInput";
 
 /* ── Design Tokens — alias global --nb-* / --fl-* for local readability ── */
 .filelist {
@@ -148,29 +149,13 @@
 }
 
 .filelist__search {
+  @include shell-search-input;
   padding: var(--nb-space-3) var(--nb-space-5) var(--nb-space-3)
     calc(var(--nb-unit) * 15);
-  border: var(--nb-border-width) solid transparent;
-  border-radius: var(--nb-radius-lg);
   font-size: var(--nb-font-body-sm);
   width: var(--nb-filelist-search-width);
-  outline: none;
-  transition: border-color 80ms ease-in,
-    box-shadow var(--nb-dur-hover) var(--nb-ease-ui),
-    background-color var(--nb-dur-hover) var(--nb-ease-ui);
-  background: var(--fl-surface-high);
   color: var(--nb-text);
   font-family: inherit;
-
-  &:hover:not(:focus) {
-    background: var(--nb-surface-muted);
-  }
-
-  &:focus {
-    border-color: var(--fl-shell-focus-border);
-    box-shadow: var(--fl-shell-focus-ring);
-    background: var(--nb-surface);
-  }
 
   &::placeholder {
     color: var(--nb-text-faint);

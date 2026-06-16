@@ -41,7 +41,6 @@ import { TextField } from "./TextField";
 import { useApp, useEditorInterface } from "./App";
 
 import { Button } from "./Button";
-import { getLibraryGroupActions } from "../data/libraryGroupActions";
 import { getLibraryAIActions } from "../data/libraryAIActions";
 
 import type { ExcalidrawLibraryIds } from "../data/types";
@@ -86,27 +85,21 @@ function getDraggedLibraryItemId(dataTransfer: DataTransfer): string | null {
   return null;
 }
 
-function getLibraryScope(item: LibraryItem): "personal" | "public" | "canvas" {
-  if (
-    item.scope === "public" ||
-    item.scope === "canvas" ||
-    item.scope === "personal"
-  ) {
-    return item.scope;
-  }
-  return item.status === "published" ? "public" : "personal";
+function isCanvasLibraryItem(item: LibraryItem): boolean {
+  return item.scope === "canvas";
 }
 
-function reorderPersonalBlock(
+function isGlobalLibraryItem(item: LibraryItem): boolean {
+  return !isCanvasLibraryItem(item);
+}
+
+function reorderGlobalBlock(
   full: LibraryItems,
   fromId: string,
   toId: string,
   placeAfter: boolean,
 ): LibraryItems {
-  const isBlock = (item: LibraryItem) => {
-    const s = getLibraryScope(item);
-    return s === "canvas" || s === "personal";
-  };
+  const isBlock = (item: LibraryItem) => isGlobalLibraryItem(item);
   const block = full.filter(isBlock);
   const tail = full.filter((item) => !isBlock(item));
   const fromIdx = block.findIndex((i) => i.id === fromId);
@@ -125,33 +118,6 @@ function reorderPersonalBlock(
   }
   next.splice(insertAt, 0, removed);
   return [...next, ...tail];
-}
-
-function reorderPublicBlock(
-  full: LibraryItems,
-  fromId: string,
-  toId: string,
-  placeAfter: boolean,
-): LibraryItems {
-  const isBlock = (item: LibraryItem) => getLibraryScope(item) === "public";
-  const head = full.filter((item) => !isBlock(item));
-  const block = full.filter(isBlock);
-  const fromIdx = block.findIndex((i) => i.id === fromId);
-  const toIdx = block.findIndex((i) => i.id === toId);
-  if (fromIdx < 0 || toIdx < 0) {
-    return [...full];
-  }
-  const next = [...block];
-  const [removed] = next.splice(fromIdx, 1);
-  let insertAt = next.findIndex((i) => i.id === toId);
-  if (insertAt === -1) {
-    return [...full];
-  }
-  if (placeAfter) {
-    insertAt += 1;
-  }
-  next.splice(insertAt, 0, removed);
-  return [...head, ...next];
 }
 
 // ---------------------------------------------------------------------------
@@ -194,7 +160,7 @@ function LibraryItemDetailPanel({
   const createdDate = item.created
     ? new Date(item.created).toLocaleString()
     : "—";
-  const scope = getLibraryScope(item);
+  const scope = isCanvasLibraryItem(item) ? "canvas" : "global";
 
   const handleSave = () => {
     const trimmed = editingName.trim();
@@ -342,8 +308,11 @@ function SelectionBar({
   return (
     <div className={clsx("lib-selection-bar", { "lib-selection-bar--empty": !hasItems })}>
       <span className="lib-selection-bar__count">
-        {count} {t("stats.selected").toLowerCase()}
+        {hasItems
+          ? `${count} ${t("stats.selected").toLowerCase()}`
+          : ""}
       </span>
+      {hasItems && (
       <div className="lib-selection-bar__actions">
         {showInsert && onInsertSelectedItems && (
           <button
@@ -369,7 +338,7 @@ function SelectionBar({
           type="button"
           className="lib-selection-bar__btn"
           onClick={onSelectAll}
-          title="全选当前 Tab"
+          title="全选"
         >
           全选
         </button>
@@ -391,16 +360,15 @@ function SelectionBar({
         >
           {t("buttons.remove")}
         </button>
-        {hasItems && (
-          <button
-            type="button"
-            className="lib-selection-bar__btn"
-            onClick={onDeselectAll}
-          >
-            {t("buttons.cancel")}
-          </button>
-        )}
+        <button
+          type="button"
+          className="lib-selection-bar__btn"
+          onClick={onDeselectAll}
+        >
+          {t("buttons.cancel")}
+        </button>
       </div>
+      )}
       {aiError && (
         <div
           className="lib-selection-bar__error"
@@ -447,9 +415,10 @@ export default function LibraryMenuItems({
   const libraryContainerRef = useRef<HTMLDivElement>(null);
   const scrollPosition = useScrollPosition<HTMLDivElement>(libraryContainerRef);
 
-  const [libraryTab, setLibraryTab] = useState<"personal" | "public">(
-    "personal",
-  );
+  const [searchInputValue, setSearchInputValue] = useState("");
+  const [lastSelectedItem, setLastSelectedItem] = useState<
+    LibraryItem["id"] | null
+  >(null);
 
   useEffect(() => {
     if (scrollPosition > 0) {
@@ -457,19 +426,7 @@ export default function LibraryMenuItems({
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    const handler = () => setLibraryTab("public");
-    window.addEventListener("excalidraw-library-imported", handler);
-    return () =>
-      window.removeEventListener("excalidraw-library-imported", handler);
-  }, []);
-
   const { svgCache } = useLibraryCache();
-  const [lastSelectedItem, setLastSelectedItem] = useState<
-    LibraryItem["id"] | null
-  >(null);
-
-  const [searchInputValue, setSearchInputValue] = useState("");
   const [reorderDropIndicator, setReorderDropIndicator] =
     useState<LibraryReorderDropIndicator | null>(null);
   const [reorderDragSourceId, setReorderDragSourceId] = useState<string | null>(
@@ -507,77 +464,11 @@ export default function LibraryMenuItems({
     });
   }, [libraryItems, searchInputValue]);
 
-  const unpublishedItems = useMemo(
-    () => libraryItems.filter((item) => item.status !== "published"),
+  const globalItems = useMemo(
+    () => libraryItems.filter((item) => isGlobalLibraryItem(item)),
     [libraryItems],
   );
 
-  const publishedItems = useMemo(
-    () => libraryItems.filter((item) => item.status === "published"),
-    [libraryItems],
-  );
-
-
-  // ---------------------------------------------------------------------------
-  // Cross-tab drag
-  // ---------------------------------------------------------------------------
-
-  const tabSwitchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const clearTabSwitchTimer = useCallback(() => {
-    if (tabSwitchTimerRef.current != null) {
-      clearTimeout(tabSwitchTimerRef.current);
-      tabSwitchTimerRef.current = null;
-    }
-  }, []);
-
-  const handleTabDragOver = useCallback(
-    (tabName: "personal" | "public", e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const el = e.currentTarget as HTMLElement;
-      el.classList.add("lib-tab--drop-hover");
-      if (libraryTab !== tabName && tabSwitchTimerRef.current == null) {
-        tabSwitchTimerRef.current = setTimeout(() => {
-          tabSwitchTimerRef.current = null;
-          setLibraryTab(tabName);
-          el.classList.remove("lib-tab--drop-hover");
-        }, 400);
-      }
-    },
-    [libraryTab],
-  );
-
-  const handleTabDragLeave = useCallback(
-    (e: React.DragEvent) => {
-      if (
-        !(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)
-      ) {
-        (e.currentTarget as HTMLElement).classList.remove("lib-tab--drop-hover");
-        clearTabSwitchTimer();
-      }
-    },
-    [clearTabSwitchTimer],
-  );
-
-  const handleTabDrop = useCallback(
-    (tabName: "personal" | "public", e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      clearTabSwitchTimer();
-      (e.currentTarget as HTMLElement).classList.remove("lib-tab--drop-hover");
-      const itemId = e.dataTransfer.getData("text/x-library-item-id");
-      if (itemId) {
-        const targetStatus =
-          tabName === "personal" ? "unpublished" : "published";
-        getLibraryGroupActions().moveItem(itemId, { status: targetStatus });
-        setLibraryTab(tabName);
-      }
-    },
-    [clearTabSwitchTimer],
-  );
-
-  const dragOriginTabRef = useRef<"personal" | "public" | null>(null);
   const onLibraryReorderRef = useRef<
     ((draggedId: string, targetId: string, placeAfter: boolean) => void) | null
   >(null);
@@ -600,7 +491,6 @@ export default function LibraryMenuItems({
       e.preventDefault();
       e.stopPropagation();
       if ((e.target as Element | null)?.closest?.(".library-unit")) {
-        dragOriginTabRef.current = null;
         return;
       }
       const gapTarget = resolveGridGapDropTarget(
@@ -616,26 +506,9 @@ export default function LibraryMenuItems({
           gapTarget.targetId,
           gapTarget.placeAfter,
         );
-        return;
       }
-      if (
-        itemId &&
-        dragOriginTabRef.current != null &&
-        dragOriginTabRef.current !== libraryTab
-      ) {
-        e.preventDefault();
-        e.stopPropagation();
-        const targetStatus =
-          libraryTab === "personal" ? "unpublished" : "published";
-        getLibraryGroupActions().moveItem(itemId, { status: targetStatus });
-        dragOriginTabRef.current = null;
-        return;
-      }
-      e.preventDefault();
-      e.stopPropagation();
-      dragOriginTabRef.current = null;
     },
-    [libraryTab],
+    [],
   );
 
   const handleLibraryPanelDragOver = useCallback((e: React.DragEvent) => {
@@ -646,17 +519,14 @@ export default function LibraryMenuItems({
 
   useEffect(() => {
     const onDragEnd = () => {
-      clearTabSwitchTimer();
-      dragOriginTabRef.current = null;
       setReorderDropIndicator(null);
       setReorderDragSourceId(null);
     };
     document.addEventListener("dragend", onDragEnd);
     return () => {
       document.removeEventListener("dragend", onDragEnd);
-      clearTabSwitchTimer();
     };
-  }, [clearTabSwitchTimer]);
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Selection, insert, drag
@@ -666,47 +536,23 @@ export default function LibraryMenuItems({
     if (IS_SEARCHING) {
       return filteredItems;
     }
-    return libraryTab === "public" ? publishedItems : unpublishedItems;
-  }, [IS_SEARCHING, filteredItems, libraryTab, publishedItems, unpublishedItems]);
+    return globalItems;
+  }, [IS_SEARCHING, filteredItems, globalItems]);
 
   const onLibraryReorder = useCallback(
     (draggedId: string, targetId: string, placeAfter: boolean) => {
       if (draggedId === targetId) {
         return;
       }
-      const isCrossTab =
-        dragOriginTabRef.current != null &&
-        dragOriginTabRef.current !== libraryTab;
-
-      if (isCrossTab) {
-        const targetStatus =
-          libraryTab === "personal" ? "unpublished" : "published";
-        getLibraryGroupActions().moveItem(draggedId, {
-          status: targetStatus,
-          ...(libraryTab === "personal"
-            ? { targetItemId: targetId, placeAfter }
-            : {}),
-        });
-        dragOriginTabRef.current = null;
-        return;
-      }
-
-      const next =
-        libraryTab === "public"
-          ? reorderPublicBlock(libraryItems, draggedId, targetId, placeAfter)
-          : reorderPersonalBlock(libraryItems, draggedId, targetId, placeAfter);
-      if (libraryTab === "public") {
-        getLibraryGroupActions().reorderItemWithinGroups(
-          draggedId,
-          targetId,
-          next,
-          placeAfter,
-        );
-      } else {
-        library.setLibrary(next);
-      }
+      const next = reorderGlobalBlock(
+        libraryItems,
+        draggedId,
+        targetId,
+        placeAfter,
+      );
+      library.setLibrary(next);
     },
-    [libraryTab, libraryItems, library],
+    [libraryItems, library],
   );
   onLibraryReorderRef.current = onLibraryReorder;
 
@@ -790,10 +636,9 @@ export default function LibraryMenuItems({
         JSON.stringify(data),
       );
       event.dataTransfer.setData("text/x-library-item-id", itemId);
-      dragOriginTabRef.current = libraryTab;
       setReorderDragSourceId(itemId);
     },
-    [selectedItems, libraryTab],
+    [selectedItems],
   );
 
   const isItemSelected = useCallback(
@@ -1021,11 +866,7 @@ export default function LibraryMenuItems({
     });
   }, []);
 
-  const enableReorder =
-    !IS_SEARCHING &&
-    (libraryTab === "public"
-      ? publishedItems.length > 1
-      : unpublishedItems.length > 1);
+  const enableReorder = !IS_SEARCHING && globalItems.length > 1;
 
   const handleReorderHoverChange = useCallback(
     (ind: LibraryReorderDropIndicator | null) => {
@@ -1043,27 +884,22 @@ export default function LibraryMenuItems({
     [enableReorder, handleReorderHoverChange, reorderDragSourceId],
   );
 
-  const currentTabItems =
-    libraryTab === "public" ? publishedItems : unpublishedItems;
+  const listItems = globalItems;
 
   const handleSelectAll = useCallback(() => {
-    const ids = currentTabItems.map((item) => item.id);
+    const ids = listItems.map((item) => item.id);
     onSelectItems(ids);
-  }, [currentTabItems, onSelectItems]);
+  }, [listItems, onSelectItems]);
 
   const handleSelectUnnamed = useCallback(() => {
-    const ids = currentTabItems
+    const ids = listItems
       .filter((item) => !item.name?.trim())
       .map((item) => item.id);
     onSelectItems(ids);
-  }, [currentTabItems, onSelectItems]);
+  }, [listItems, onSelectItems]);
 
-  // ---------------------------------------------------------------------------
-  // JSX: Personal tab content
-  // ---------------------------------------------------------------------------
-
-  const renderPersonalContent = () => {
-    if (!pendingElements.length && !unpublishedItems.length) {
+  const renderLibraryContent = () => {
+    if (!pendingElements.length && !globalItems.length) {
       return (
         <div className="lib-empty">
           <div className="lib-empty__icon">
@@ -1072,11 +908,7 @@ export default function LibraryMenuItems({
             </svg>
           </div>
           <div className="lib-empty__title">{t("library.noItems")}</div>
-          <div className="lib-empty__hint">
-            {publishedItems.length > 0
-              ? t("library.hint_emptyPrivateLibrary")
-              : t("library.hint_emptyLibrary")}
-          </div>
+          <div className="lib-empty__hint">{t("library.hint_emptyLibrary")}</div>
         </div>
       );
     }
@@ -1097,41 +929,7 @@ export default function LibraryMenuItems({
         )}
         <LibraryMenuSection
           itemsRenderedPerBatch={itemsRenderedPerBatch}
-          items={unpublishedItems}
-          onItemSelectToggle={onItemSelectToggle}
-          onItemDrag={onItemDrag}
-          onClick={onItemClick}
-          onOpenDetail={handleOpenLibraryDetail}
-          isItemSelected={isItemSelected}
-          svgCache={svgCache}
-          enableLibraryReorder={enableReorder}
-          onLibraryReorder={onLibraryReorder}
-          reorderDropIndicator={reorderDropIndicator}
-          onReorderDragSourceId={setReorderDragSourceId}
-        />
-      </LibraryMenuSectionGrid>
-    );
-  };
-
-  // ---------------------------------------------------------------------------
-  // JSX: Public tab content
-  // ---------------------------------------------------------------------------
-
-  const renderPublicContent = () => {
-    if (publishedItems.length === 0) {
-      return (
-        <div className="lib-empty">
-          <div className="lib-empty__hint">
-            {t("library.hint_emptyPublicTab")}
-          </div>
-        </div>
-      );
-    }
-    return (
-      <LibraryMenuSectionGrid {...libraryGridReorderProps}>
-        <LibraryMenuSection
-          itemsRenderedPerBatch={itemsRenderedPerBatch}
-          items={publishedItems}
+          items={globalItems}
           onItemSelectToggle={onItemSelectToggle}
           onItemDrag={onItemDrag}
           onClick={onItemClick}
@@ -1241,45 +1039,13 @@ export default function LibraryMenuItems({
             onDismissAiError={() => setAiTagError(null)}
             onSelectAll={handleSelectAll}
             onSelectUnnamed={handleSelectUnnamed}
-            hasUnnamed={currentTabItems.some((item) => !item.name?.trim())}
+            hasUnnamed={listItems.some((item) => !item.name?.trim())}
             showInsert={
               editorInterface.formFactor === "phone" && selectedItems.length > 0
             }
             onInsertSelectedItems={onInsertSelectedItems}
           />
 
-          <div className="lib-tab-row">
-            <div className="lib-tabs" role="tablist">
-              <button
-                type="button"
-                role="tab"
-                className={clsx("lib-tab", {
-                  "lib-tab--active": libraryTab === "personal",
-                })}
-                aria-selected={libraryTab === "personal"}
-                onClick={() => setLibraryTab("personal")}
-                onDragOver={(e) => handleTabDragOver("personal", e)}
-                onDragLeave={handleTabDragLeave}
-                onDrop={(e) => handleTabDrop("personal", e)}
-              >
-                {t("labels.libraryTabPersonal")}
-              </button>
-              <button
-                type="button"
-                role="tab"
-                className={clsx("lib-tab", {
-                  "lib-tab--active": libraryTab === "public",
-                })}
-                aria-selected={libraryTab === "public"}
-                onClick={() => setLibraryTab("public")}
-                onDragOver={(e) => handleTabDragOver("public", e)}
-                onDragLeave={handleTabDragLeave}
-                onDrop={(e) => handleTabDrop("public", e)}
-              >
-                {t("labels.libraryTabPublic")}
-              </button>
-            </div>
-          </div>
           {!detailItemId && (
             <p className="lib-interaction-hint" id="lib-interaction-hint">
               {t("library.interactionHint")}
@@ -1328,8 +1094,7 @@ export default function LibraryMenuItems({
               renderSearchResults()
             ) : (
               <>
-                {libraryTab === "personal" && renderPersonalContent()}
-                {libraryTab === "public" && renderPublicContent()}
+                {renderLibraryContent()}
               </>
             )}
           </>

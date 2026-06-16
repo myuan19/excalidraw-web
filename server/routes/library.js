@@ -12,7 +12,18 @@ function mapRow(r) {
   };
 }
 
-// ---------- public library ----------
+// ---------- global library (personal + public merged) ----------
+
+router.get("/global", (_req, res) => {
+  const rows = db
+    .prepare(
+      "SELECT id, scope, file_id, name, data, created_at, sort_index FROM library_items WHERE scope IN ('personal', 'public') ORDER BY sort_index ASC, id ASC",
+    )
+    .all();
+  res.json(rows.map(mapRow));
+});
+
+// ---------- public library (legacy) ----------
 
 router.get("/", (_req, res) => {
   const rows = db
