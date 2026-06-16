@@ -13,7 +13,11 @@ import {
 } from "./formats/MindMapAdapter";
 import { isLocalDraftFileId } from "./localDraftFileId";
 import { LocalThumbnailCache } from "./localThumbnailCache";
-import { clearMindMapBrowserView } from "./mindMapBrowserViewStorage";
+import {
+  clearMindMapBrowserView,
+  moveMindMapBrowserViewBetweenFiles,
+  saveMindMapBrowserViewFromData,
+} from "./mindMapBrowserViewStorage";
 import { recordRecentFileAccess } from "./recentFiles";
 import { hashDocumentSnapshot, hashSceneSnapshot } from "./sceneHash";
 import { ServerSync } from "./ServerSync";
@@ -59,9 +63,13 @@ export async function saveNewDocument(opts: {
     const persistDocument = isMindMapSingleRootOnly(document)
       ? MindMapAdapter.toDocument({ ...data, view: undefined })
       : document;
-    if (shouldSyncSingleRootName) {
-      if (opts.draftId) {
-        clearMindMapBrowserView(opts.draftId);
+    if (draftId && isLocalDraftFileId(draftId)) {
+      saveMindMapBrowserViewFromData(draftId, document);
+      saveMindMapBrowserViewFromData(draftId, document.data);
+      moveMindMapBrowserViewBetweenFiles(draftId, created.id);
+    } else if (shouldSyncSingleRootName) {
+      if (draftId) {
+        clearMindMapBrowserView(draftId);
       }
       clearMindMapBrowserView(created.id);
     }
@@ -71,7 +79,7 @@ export async function saveNewDocument(opts: {
         kind: "mindmap",
         data,
       }));
-    await ServerSync.saveFileImmediate(
+    const saveResult = await ServerSync.saveFileImmediate(
       created.id,
       persistDocument,
       finalName,
@@ -79,7 +87,10 @@ export async function saveNewDocument(opts: {
     );
     FileSyncState.setLocalCache(
       created.id,
-      toMindMapLocalCacheRecord(persistDocument),
+      toMindMapLocalCacheRecord(
+        persistDocument,
+        saveResult.content_sha256 ?? FileSyncState.getServerHash(created.id),
+      ),
     );
     const hash = hashDocumentSnapshot(persistDocument);
     FileSyncState.alignHashes(created.id, hash);
@@ -127,8 +138,12 @@ export async function saveNewDocument(opts: {
     await discardLocalDraftSession(draftId);
   }
 
-  if (created.content_sha256) {
-    FileSyncState.setServerHash(created.id, created.content_sha256);
+  const savedContentSha =
+    kind === "mindmap" || kind === "excalidraw"
+      ? FileSyncState.getServerHash(created.id)
+      : created.content_sha256 ?? null;
+  if (savedContentSha) {
+    FileSyncState.setServerHash(created.id, savedContentSha);
   }
 
   recordRecentFileAccess(created.id);

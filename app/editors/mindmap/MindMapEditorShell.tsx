@@ -47,6 +47,7 @@ import { compactMindMapPersistedConfig } from "../../data/formats/mindMapPersist
 import { MindMapAdapter } from "../../data/formats/registry";
 import {
   clearMindMapBrowserView,
+  readMindMapBrowserView,
   saveMindMapBrowserView,
   saveMindMapBrowserViewFromData,
 } from "../../data/mindMapBrowserViewStorage";
@@ -569,7 +570,7 @@ const MindMapEditorShell = () => {
     markNativeDocumentDirty,
     persistLocalDraftToCache,
     saveCurrentFileToServer,
-    confirmBeforeRestoreArchive,
+    saveAndArchiveCurrentVersion,
     mindMapGoHomeWithServerSave,
     mindMapHomeConfirmSave,
     mindMapHomeConfirmDiscard,
@@ -718,7 +719,10 @@ const MindMapEditorShell = () => {
           const document =
             cached ?? MindMapAdapter.toDocument(MindMapAdapter.createEmpty());
           const data = document.data;
-          if (isMindMapSingleRootOnly(document)) {
+          if (
+            isMindMapSingleRootOnly(document) &&
+            !readMindMapBrowserView(fileId)
+          ) {
             clearMindMapBrowserView(fileId);
           }
           setFileName(
@@ -785,7 +789,10 @@ const MindMapEditorShell = () => {
             reason,
           });
           const document = MindMapAdapter.toDocument(data);
-          if (isMindMapSingleRootOnly(document)) {
+          if (
+            isMindMapSingleRootOnly(document) &&
+            !readMindMapBrowserView(resolvedId)
+          ) {
             clearMindMapBrowserView(resolvedId);
           }
           latestDocumentRef.current = document;
@@ -1552,7 +1559,10 @@ const MindMapEditorShell = () => {
       {fileId && showHistoryPanel ? (
         <ArchivePanel
           fileId={fileId}
-          onBeforeRestore={confirmBeforeRestoreArchive}
+          saving={mindMapSaving}
+          onSave={() => requestSave({ source: "sidebar" })}
+          onArchive={saveAndArchiveCurrentVersion}
+          onPrepareAction={() => updateDraftHashDebouncedRef.current.flush()}
           onAfterRestore={async () => {
             await reloadMindMapFromServer();
           }}

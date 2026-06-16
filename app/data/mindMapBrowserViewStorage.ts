@@ -18,11 +18,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isMindMapBrowserViewState(
   value: unknown,
 ): value is MindMapBrowserViewState {
-  return (
-    isRecord(value) &&
-    isRecord(value.transform) &&
-    isRecord(value.state)
-  );
+  return isRecord(value) && isRecord(value.transform) && isRecord(value.state);
 }
 
 export function saveMindMapBrowserView(fileId: string, view: unknown): void {
@@ -55,6 +51,26 @@ export function saveMindMapBrowserViewFromData(
 export function clearMindMapBrowserView(fileId: string): void {
   try {
     localStorage.removeItem(storageKey(fileId));
+  } catch {
+    // ignore
+  }
+}
+
+export function moveMindMapBrowserViewBetweenFiles(
+  fromFileId: string,
+  toFileId: string,
+): void {
+  try {
+    const raw = localStorage.getItem(storageKey(fromFileId));
+    if (!raw) {
+      return;
+    }
+    const parsed = JSON.parse(raw) as { v?: unknown; view?: unknown };
+    if (parsed.v !== 1 || !isMindMapBrowserViewState(parsed.view)) {
+      return;
+    }
+    localStorage.setItem(storageKey(toFileId), raw);
+    localStorage.removeItem(storageKey(fromFileId));
   } catch {
     // ignore
   }

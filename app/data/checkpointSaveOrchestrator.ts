@@ -3,7 +3,6 @@ import {
   resolveCheckpointPolicy,
   type CheckpointPolicy,
 } from "./checkpointPolicy";
-import { uploadArchiveThumbnail } from "./thumbnailService";
 
 import type { PutFileResult } from "./ServerSync";
 import type { SaveToServerSource } from "../hooks/types";
@@ -23,7 +22,6 @@ export type CheckpointSaveInput = {
 
 export type CheckpointSaveDeps = {
   resolveFileThumbnailForPut: () => Promise<string | null | undefined>;
-  resolveArchiveThumbnailSvg: () => Promise<string | null>;
   putDocument: (args: {
     thumbnail: string | null | undefined;
     checkpointPolicy: CheckpointPolicy;
@@ -78,14 +76,6 @@ export async function executeCheckpointSave(
     thumbnail: fileThumbnail,
     checkpointPolicy,
   });
-  const archiveThumbnail = await deps.resolveArchiveThumbnailSvg();
-  if (result?.checkpoint?.id) {
-    await uploadArchiveThumbnail(
-      input.fileId,
-      result.checkpoint.id,
-      archiveThumbnail,
-    );
-  }
 
   return {
     saved: true,

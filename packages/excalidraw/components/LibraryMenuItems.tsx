@@ -269,7 +269,7 @@ function LibraryItemDetailPanel({
 // (GroupDividerRow / GroupGapRow removed — public tab is now flat list)
 
 // ---------------------------------------------------------------------------
-// SelectionBar (shown when items are selected, replaces tabs)
+// SelectionBar (always visible in library header)
 // ---------------------------------------------------------------------------
 
 function SelectionBar({
@@ -308,11 +308,8 @@ function SelectionBar({
   return (
     <div className={clsx("lib-selection-bar", { "lib-selection-bar--empty": !hasItems })}>
       <span className="lib-selection-bar__count">
-        {hasItems
-          ? `${count} ${t("stats.selected").toLowerCase()}`
-          : ""}
+        {`${count} ${t("stats.selected").toLowerCase()}`}
       </span>
-      {hasItems && (
       <div className="lib-selection-bar__actions">
         {showInsert && onInsertSelectedItems && (
           <button
@@ -368,7 +365,6 @@ function SelectionBar({
           {t("buttons.cancel")}
         </button>
       </div>
-      )}
       {aiError && (
         <div
           className="lib-selection-bar__error"
@@ -1040,9 +1036,7 @@ export default function LibraryMenuItems({
             onSelectAll={handleSelectAll}
             onSelectUnnamed={handleSelectUnnamed}
             hasUnnamed={listItems.some((item) => !item.name?.trim())}
-            showInsert={
-              editorInterface.formFactor === "phone" && selectedItems.length > 0
-            }
+            showInsert={editorInterface.formFactor === "phone"}
             onInsertSelectedItems={onInsertSelectedItems}
           />
 

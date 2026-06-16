@@ -1274,13 +1274,13 @@ export function EditorPlatformSidebar() {
                 onClick={() => closeAndRun(dispatchHostEmbed)}
               />
               <SidebarActionButton
-                label="历史"
+                label="存档"
                 icon="history"
                 disabled={!fileActionsEnabled}
                 title={
                   fileActionsEnabled
-                    ? "历史版本"
-                    : "打开文档后可查看历史"
+                    ? "存档"
+                    : "打开文档后可查看存档"
                 }
                 onClick={() => closeAndRun(dispatchHostHistory)}
               />

@@ -5,7 +5,6 @@ import { FileSyncState } from "../../data/FileSyncState";
 import { MindMapAdapter } from "../../data/formats/registry";
 import { saveMindMapBrowserViewFromData } from "../../data/mindMapBrowserViewStorage";
 import { hashDocumentSnapshot } from "../../data/sceneHash";
-import { buildThumbnail } from "../../data/thumbnailService";
 import { ServerSync } from "../../data/ServerSync";
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
 import {
@@ -28,7 +27,6 @@ import {
   isManualCheckpointSource,
 } from "../../data/checkpointPolicy";
 import { executeCheckpointSave } from "../../data/checkpointSaveOrchestrator";
-import { confirmBeforeRestoreCheckpoint } from "../../data/checkpointRestoreConfirm";
 import { isAutoSaveOnExitActive } from "../../data/appSettings";
 import { installExecutor, requestSaveAndWait } from "../../data/saveQueue";
 import {
@@ -455,17 +453,6 @@ export function useMindMapFileSave(opts: {
           },
           {
             resolveFileThumbnailForPut: async () => thumbnail ?? undefined,
-            resolveArchiveThumbnailSvg: async () => {
-              if (thumbnail) {
-                return thumbnail;
-              }
-              const built = await buildThumbnail({
-                kind: "mindmap",
-                data: document,
-                purpose: "archive",
-              });
-              return built.thumbnailSvg;
-            },
             putDocument: async ({ thumbnail: thumbForPut, checkpointPolicy }) =>
               ServerSync.saveFileImmediate(
                 fileId,
@@ -632,17 +619,6 @@ export function useMindMapFileSave(opts: {
           },
           {
             resolveFileThumbnailForPut: async () => thumbnail ?? undefined,
-            resolveArchiveThumbnailSvg: async () => {
-              if (thumbnail) {
-                return thumbnail;
-              }
-              const built = await buildThumbnail({
-                kind: "mindmap",
-                data: document,
-                purpose: "archive",
-              });
-              return built.thumbnailSvg;
-            },
             putDocument: async ({ thumbnail: thumbForPut, checkpointPolicy }) =>
               ServerSync.saveFileImmediate(
                 fileId,
@@ -694,19 +670,19 @@ export function useMindMapFileSave(opts: {
     [getFileName, requestNativeMindMapData, setErrorMessage, setStatus],
   );
 
-  const confirmBeforeRestoreArchive =
-    useCallback(async (): Promise<boolean> => {
-      const fileId = getFileIdFromHash();
-      if (!fileId || isLocalDraftFileId(fileId)) {
-        return false;
-      }
-      updateDraftHashDebouncedRef.current.flush();
-      return confirmBeforeRestoreCheckpoint({
-        fileId,
-        saveCurrentAsCheckpoint: () =>
-          saveCurrentFileAsCheckpoint(CHECKPOINT_LABELS.restoreBackup),
-      });
-    }, [saveCurrentFileAsCheckpoint]);
+  const saveAndArchiveCurrentVersion = useCallback(async (): Promise<boolean> => {
+    const fileId = getFileIdFromHash();
+    if (!fileId || isLocalDraftFileId(fileId)) {
+      onRequestSaveNew?.({ navigateAfter: false });
+      return false;
+    }
+    await saveCurrentFileToServer({ source: "sidebar" });
+    return saveCurrentFileAsCheckpoint(CHECKPOINT_LABELS.manual);
+  }, [
+    onRequestSaveNew,
+    saveCurrentFileAsCheckpoint,
+    saveCurrentFileToServer,
+  ]);
 
   useEffect(() => {
     saveToServerRef.current = saveCurrentFileToServer;
@@ -866,7 +842,7 @@ export function useMindMapFileSave(opts: {
     markNativeDocumentDirty,
     persistLocalDraftToCache,
     saveCurrentFileToServer,
-    confirmBeforeRestoreArchive,
+    saveAndArchiveCurrentVersion,
     mindMapGoHomeWithServerSave,
     mindMapHomeConfirmSave,
     mindMapHomeConfirmDiscard,

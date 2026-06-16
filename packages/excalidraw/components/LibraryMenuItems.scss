@@ -329,12 +329,10 @@
   }
 
   .lib-selection-bar--empty {
-    background: transparent;
-    min-height: 0;
-    padding: 0;
+    background: var(--color-surface-low);
 
     .lib-selection-bar__count {
-      display: none;
+      color: var(--color-gray-50);
     }
   }
 
@@ -343,7 +341,11 @@
   }
 
   &.theme--dark .lib-selection-bar--empty {
-    background: transparent;
+    background: var(--color-surface-low);
+
+    .lib-selection-bar__count {
+      color: var(--color-gray-50);
+    }
   }
 
   // ---------------------------------------------------------------------------

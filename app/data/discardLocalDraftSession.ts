@@ -2,6 +2,7 @@ import { DeltaStorage } from "./DeltaStorage";
 import { FileSyncState } from "./FileSyncState";
 import { LocalThumbnailCache } from "./localThumbnailCache";
 import { isLocalDraftFileId } from "./localDraftFileId";
+import { clearMindMapBrowserView } from "./mindMapBrowserViewStorage";
 import {
   LocalDraftSessions,
   removeLocalDraftFromRecent,
@@ -31,6 +32,7 @@ export async function discardLocalDraftSession(draftId: string): Promise<void> {
   try {
     localStorage.removeItem(legacyMindMapCacheKey(draftId));
     localStorage.removeItem(`${FORK_BROWSER_SCENE_PREFIX}${draftId}`);
+    clearMindMapBrowserView(draftId);
   } catch {
     /* ignore */
   }

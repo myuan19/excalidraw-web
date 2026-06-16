@@ -22,8 +22,6 @@ describe("executeCheckpointSave", () => {
       },
       {
         resolveFileThumbnailForPut: async () => undefined,
-        resolveArchiveThumbnailSvg: async () =>
-          '<svg data-excal-filelist-thumb="1"><rect width="10" height="10"/></svg>',
         putDocument,
       },
     );
@@ -57,7 +55,6 @@ describe("executeCheckpointSave", () => {
       },
       {
         resolveFileThumbnailForPut: async () => "<svg></svg>",
-        resolveArchiveThumbnailSvg: async () => null,
         putDocument,
       },
     );

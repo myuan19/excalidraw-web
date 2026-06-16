@@ -33,7 +33,6 @@ import {
   isManualCheckpointSource,
 } from "../../data/checkpointPolicy";
 import { executeCheckpointSave } from "../../data/checkpointSaveOrchestrator";
-import { confirmBeforeRestoreCheckpoint } from "../../data/checkpointRestoreConfirm";
 import { installExecutor, requestSaveAndWait } from "../../data/saveQueue";
 import {
   clearTabFileDirty,
@@ -285,9 +284,6 @@ export function useForkFileSave(opts: {
           {
             resolveFileThumbnailForPut: () =>
               generateExcalidrawThumbnailAndCache(fid, sceneData),
-            resolveArchiveThumbnailSvg: async () =>
-              (await generateExcalidrawThumbnailAndCache(fid, sceneData)) ??
-              null,
             putDocument: async ({ thumbnail, checkpointPolicy }) => {
               const nameForPut = await resolveSaveDisplayName(
                 fid,
@@ -475,9 +471,6 @@ export function useForkFileSave(opts: {
           {
             resolveFileThumbnailForPut: () =>
               generateExcalidrawThumbnailAndCache(fid, sceneData),
-            resolveArchiveThumbnailSvg: async () =>
-              (await generateExcalidrawThumbnailAndCache(fid, sceneData)) ??
-              null,
             putDocument: async ({ thumbnail, checkpointPolicy }) => {
               const nameForPut = await resolveSaveDisplayName(
                 fid,
@@ -531,19 +524,20 @@ export function useForkFileSave(opts: {
     [excalidrawAPI, getSceneData, setErrorMessage],
   );
 
-  const confirmBeforeRestoreArchive =
-    useCallback(async (): Promise<boolean> => {
-      const fid = getFileIdFromHash();
-      if (!fid || isLocalDraftFileId(fid)) {
-        return false;
-      }
-      updateDraftHashDebouncedRef.current.flush();
-      return confirmBeforeRestoreCheckpoint({
-        fileId: fid,
-        saveCurrentAsCheckpoint: () =>
-          saveCurrentFileAsCheckpoint(CHECKPOINT_LABELS.restoreBackup),
-      });
-    }, [saveCurrentFileAsCheckpoint]);
+  const saveAndArchiveCurrentVersion = useCallback(async (): Promise<boolean> => {
+    const fid = getFileIdFromHash();
+    if (!excalidrawAPI || !fid || isLocalDraftFileId(fid)) {
+      onRequestSaveNew?.({ navigateAfter: false });
+      return false;
+    }
+    await saveCurrentFileToServer({ source: "sidebar" });
+    return saveCurrentFileAsCheckpoint(CHECKPOINT_LABELS.manual);
+  }, [
+    excalidrawAPI,
+    onRequestSaveNew,
+    saveCurrentFileAsCheckpoint,
+    saveCurrentFileToServer,
+  ]);
 
   useEffect(() => {
     saveToServerRef.current = saveCurrentFileToServer;
@@ -640,9 +634,9 @@ export function useForkFileSave(opts: {
     forkSaveHint,
     forkHomeNavDialogOpen,
     saveCurrentFileToServer,
+    saveAndArchiveCurrentVersion,
     persistLocalDraftToCache,
     forkGoHomeWithServerSave,
-    confirmBeforeRestoreArchive,
     forkHomeConfirmSave,
     forkHomeConfirmDiscard,
     forkHomeDismissDialog,

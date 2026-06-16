@@ -283,9 +283,9 @@ const ExcalidrawWrapper = () => {
     forkSaveHint,
     forkHomeNavDialogOpen,
     saveCurrentFileToServer,
+    saveAndArchiveCurrentVersion,
     persistLocalDraftToCache,
     forkGoHomeWithServerSave,
-    confirmBeforeRestoreArchive,
     forkHomeConfirmSave,
     forkHomeConfirmDiscard,
     forkHomeDismissDialog,
@@ -846,7 +846,10 @@ const ExcalidrawWrapper = () => {
         {forkFileId && showHistoryPanel && (
           <ArchivePanel
             fileId={forkFileId}
-            onBeforeRestore={confirmBeforeRestoreArchive}
+            saving={forkSaving}
+            onSave={() => requestSave({ source: "sidebar" })}
+            onArchive={saveAndArchiveCurrentVersion}
+            onPrepareAction={() => updateDraftHashDebouncedRef.current.flush()}
             onAfterRestore={async () => {
               await reloadSceneFromServer();
             }}

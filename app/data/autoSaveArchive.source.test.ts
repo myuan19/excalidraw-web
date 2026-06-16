@@ -80,7 +80,6 @@ describe("checkpoint archive source contract", () => {
     expect(filesRouteSource).toContain(
       "hasArchiveWithSha(fileId, contentSha256)",
     );
-    expect(filesRouteSource).toContain("matchingArchive");
     expect(filesRouteSource).toContain(
       "appendVersionSnapshot(fileId, dataObj, options = {})",
     );
@@ -93,53 +92,25 @@ describe("checkpoint archive source contract", () => {
     expect(putRouteSource).toContain("maybeAppendCheckpoint(");
   });
 
-  it("restore confirm relies on server archive coverage instead of local dirty state", () => {
-    const restoreConfirmSource = fs.readFileSync(
-      path.join(appRoot, "data/checkpointRestoreConfirm.ts"),
+  it("restore confirm uses hash match and archive panel prompt styling", () => {
+    const archivePanelSource = fs.readFileSync(
+      path.join(appRoot, "components/ArchivePanel.tsx"),
       "utf8",
     );
-    const excalidrawSaveSource = fs.readFileSync(
-      path.join(appRoot, "editors/excalidraw/useForkFileSave.ts"),
+    const promptSource = fs.readFileSync(
+      path.join(appRoot, "components/ArchivePanelPrompt.tsx"),
       "utf8",
     );
-    const mindMapSaveSource = fs.readFileSync(
-      path.join(appRoot, "editors/mindmap/useMindMapFileSave.ts"),
-      "utf8",
-    );
-
-    expect(restoreConfirmSource).toContain("fetchCheckpointCoverage");
-    expect(restoreConfirmSource).not.toContain("hasLocalChanges");
-    expect(excalidrawSaveSource).not.toMatch(
-      /confirmBeforeRestoreCheckpoint\([\s\S]*hasLocalChanges/,
-    );
-    expect(mindMapSaveSource).not.toMatch(
-      /confirmBeforeRestoreCheckpoint\([\s\S]*hasLocalChanges/,
-    );
-  });
-
-  it("stores archive thumbnails separately from latest thumbnails", () => {
-    const filesRouteSource = fs.readFileSync(
-      path.join(appRoot, "../server/routes/files.js"),
+    const matchSource = fs.readFileSync(
+      path.join(appRoot, "data/archiveVersionMatch.ts"),
       "utf8",
     );
     const serverSyncSource = fs.readFileSync(
       path.join(appRoot, "data/ServerSync.ts"),
       "utf8",
     );
-    const archivePreviewSource = fs.readFileSync(
-      path.join(appRoot, "data/thumbnailService.ts"),
-      "utf8",
-    );
-    const checkpointOrchestratorSource = fs.readFileSync(
-      path.join(appRoot, "data/checkpointSaveOrchestrator.ts"),
-      "utf8",
-    );
-    const documentThumbnailSource = fs.readFileSync(
-      path.join(appRoot, "data/documentThumbnail.ts"),
-      "utf8",
-    );
-    const archiveThumbPersistenceSource = fs.readFileSync(
-      path.join(appRoot, "data/archiveThumbnailPersistence.ts"),
+    const filesRouteSource = fs.readFileSync(
+      path.join(appRoot, "../server/routes/files.js"),
       "utf8",
     );
     const excalidrawSaveSource = fs.readFileSync(
@@ -151,28 +122,17 @@ describe("checkpoint archive source contract", () => {
       "utf8",
     );
 
-    expect(filesRouteSource).toContain("archiveThumbnailPath");
-    expect(filesRouteSource).toContain(
-      'router.get("/:id/archives/:archiveId/thumbnail"',
-    );
-    expect(filesRouteSource).toContain(
-      'router.put("/:id/archives/:archiveId/thumbnail"',
-    );
-    expect(filesRouteSource).toContain("has_thumbnail");
-    expect(serverSyncSource).toContain("getArchiveThumbnail");
-    expect(serverSyncSource).toContain("putArchiveThumbnail");
-    expect(archivePreviewSource).toContain("resolveArchivePreview");
-    expect(archivePreviewSource).toContain("buildDocumentThumbnailSvg");
-    expect(archivePreviewSource).toContain("ServerSync.getArchiveThumbnail");
-    expect(archivePreviewSource).toContain("uploadArchiveThumbnail");
-    expect(checkpointOrchestratorSource).toContain("executeCheckpointSave");
-    expect(documentThumbnailSource).toContain("buildSceneThumbnailSvg");
-    expect(documentThumbnailSource).not.toContain("buildMindMapThumbnailSvg");
-    expect(archivePreviewSource).toContain("buildNativeMindMapThumbnailSvg");
-    expect(archiveThumbPersistenceSource).toContain(
-      "persistArchiveThumbnailIfAvailable",
-    );
-    expect(excalidrawSaveSource).toContain("executeCheckpointSave");
-    expect(mindMapSaveSource).toContain("executeCheckpointSave");
+    expect(archivePanelSource).toContain("ArchivePanelPrompt");
+    expect(archivePanelSource).toContain("isContentHashArchived");
+    expect(archivePanelSource).not.toContain("存档前需要保存，是否继续？");
+    expect(promptSource).toContain("nb-history-overlay--prompt");
+    expect(promptSource).toContain("当前版本未存档，是否要先存档当前版本？");
+    expect(promptSource).toContain("存档前需要保存，是否继续？");
+    expect(promptSource).toContain("确认删除该存档？此操作不可恢复。");
+    expect(serverSyncSource).not.toContain("getCheckpointStatus");
+    expect(filesRouteSource).not.toContain('router.get("/:id/archive-status"');
+    expect(matchSource).toContain("content_sha256");
+    expect(excalidrawSaveSource).not.toContain("confirmBeforeRestoreCheckpoint");
+    expect(mindMapSaveSource).not.toContain("confirmBeforeRestoreCheckpoint");
   });
 });

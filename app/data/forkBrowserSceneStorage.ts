@@ -19,6 +19,23 @@ function storageKey(fileId: string): string {
   return `${STORAGE_PREFIX}${fileId}`;
 }
 
+/** Fork does not persist library sidebar open/docked UI between opens. */
+function clearAppStateForForkBrowserPersist(appState: AppState) {
+  const cleared = clearAppStateForLocalStorage(appState);
+  delete cleared.openSidebar;
+  delete cleared.defaultSidebarDockedPreference;
+  return cleared;
+}
+
+function stripPersistedSidebarState(
+  overlay: Partial<AppState>,
+): Partial<AppState> {
+  const next = { ...overlay };
+  delete next.openSidebar;
+  delete next.defaultSidebarDockedPreference;
+  return next;
+}
+
 export type ForkBrowserScenePayloadV1 = {
   v: 1;
   elements: ReturnType<typeof getNonDeletedElements>;
@@ -34,7 +51,7 @@ export function saveForkBrowserScene(
     const payload: ForkBrowserScenePayloadV1 = {
       v: 1,
       elements: getNonDeletedElements(elements),
-      appState: clearAppStateForLocalStorage(appState),
+      appState: clearAppStateForForkBrowserPersist(appState),
     };
     localStorage.setItem(storageKey(fileId), JSON.stringify(payload));
   } catch {
@@ -60,7 +77,10 @@ export function readForkBrowserAppStateOverlay(fileId: string): Partial<AppState
     if (raw) {
       const p = JSON.parse(raw) as Partial<ForkBrowserScenePayloadV1>;
       if (p?.v === 1 && p.appState && typeof p.appState === "object") {
-        return restoreAppState(p.appState as Partial<AppState>, null) as Partial<AppState>;
+        const overlay = stripPersistedSidebarState(
+          restoreAppState(p.appState as Partial<AppState>, null) as Partial<AppState>,
+        );
+        return Object.keys(overlay).length > 0 ? overlay : null;
       }
     }
   } catch {

@@ -207,21 +207,6 @@ export interface ArchiveEntry {
   created_at: string;
   /** 服务端 SHA-256（场景 JSON），可选 */
   content_sha256?: string | null;
-  has_thumbnail?: boolean;
-}
-
-export interface CheckpointMatchingArchive {
-  id: string;
-  label: string;
-  created_at: string;
-}
-
-export interface CheckpointStatus {
-  fileId: string;
-  currentContentSha256: string | null;
-  hasCurrentCheckpoint: boolean;
-  matchingArchive?: CheckpointMatchingArchive | null;
-  latestArchive?: ArchiveEntry | null;
 }
 
 export interface ServerFolder {
@@ -451,50 +436,8 @@ export const ServerSync = {
     URL.revokeObjectURL(a.href);
   },
 
-  getCheckpointStatus(fileId: string): Promise<CheckpointStatus> {
-    return api(`/files/${fileId}/archive-status`);
-  },
-
   listArchives(fileId: string): Promise<ArchiveEntry[]> {
     return api(`/files/${fileId}/archives`);
-  },
-
-  getArchive(fileId: string, archiveId: string): Promise<unknown> {
-    return api(`/files/${fileId}/archives/${archiveId}`);
-  },
-
-  async getArchiveThumbnail(
-    fileId: string,
-    archiveId: string,
-    contentSha?: string | null,
-  ): Promise<string | null> {
-    const suffix = contentSha ? `?h=${encodeURIComponent(contentSha)}` : "";
-    const res = await fetch(
-      url(`/files/${fileId}/archives/${archiveId}/thumbnail${suffix}`),
-      {
-        cache: contentSha ? "force-cache" : "no-store",
-        headers: { Accept: "image/svg+xml,text/plain,*/*;q=0.8" },
-      },
-    );
-    if (res.status === 404) {
-      return null;
-    }
-    if (!res.ok) {
-      throw new Error(`GET archive thumbnail failed: ${res.status}`);
-    }
-    const svg = await res.text();
-    return svg.trim() ? svg : null;
-  },
-
-  putArchiveThumbnail(
-    fileId: string,
-    archiveId: string,
-    thumbnail: string,
-  ): Promise<ArchiveEntry> {
-    return api(`/files/${fileId}/archives/${archiveId}/thumbnail`, {
-      method: "PUT",
-      body: JSON.stringify({ thumbnail }),
-    });
   },
 
   restoreArchive(

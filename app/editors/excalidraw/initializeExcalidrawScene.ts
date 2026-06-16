@@ -49,10 +49,15 @@ function buildInitResult(
   data: ForkSceneSnapshot,
   overlay: Partial<AppState> | null,
 ): Pick<ExcalidrawInitSceneResult, "scene" | "hasBrowserViewport"> {
+  const restoredAppState = restoreSceneAppState(data.appState, overlay);
   return {
     scene: {
       elements: restoreSceneElements(data.elements),
-      appState: restoreSceneAppState(data.appState, overlay),
+      appState: {
+        ...restoredAppState,
+        openSidebar: null,
+        defaultSidebarDockedPreference: false,
+      },
       files: (data.files || {}) as BinaryFiles,
       ...(overlay ? {} : { scrollToContent: true }),
     },

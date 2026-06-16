@@ -1,5 +1,6 @@
 import {
   applyMindMapBrowserView,
+  moveMindMapBrowserViewBetweenFiles,
   readMindMapBrowserView,
   saveMindMapBrowserView,
   saveMindMapBrowserViewFromData,
@@ -65,5 +66,29 @@ describe("mindMapBrowserViewStorage", () => {
 
     expect(readMindMapBrowserView("plain")).toEqual(plainView);
     expect(readMindMapBrowserView("managed")).toEqual(managedView);
+  });
+
+  it("moves valid viewport state between file ids", () => {
+    const view = {
+      transform: { scaleX: 1.2, scaleY: 1.2, translateX: 42, translateY: -8 },
+      state: { scale: 1.2, x: 42, y: -8, sx: 0, sy: 0 },
+    };
+
+    saveMindMapBrowserView("local-draft:a", view);
+    moveMindMapBrowserViewBetweenFiles("local-draft:a", "server-file");
+
+    expect(readMindMapBrowserView("local-draft:a")).toBe(null);
+    expect(readMindMapBrowserView("server-file")).toEqual(view);
+  });
+
+  it("does not migrate invalid viewport payloads", () => {
+    window.localStorage.setItem(
+      "mindmap-browser-view-v1-local-draft:a",
+      JSON.stringify({ v: 1, view: { transform: {}, state: null } }),
+    );
+
+    moveMindMapBrowserViewBetweenFiles("local-draft:a", "server-file");
+
+    expect(readMindMapBrowserView("server-file")).toBe(null);
   });
 });

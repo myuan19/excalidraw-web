@@ -44,20 +44,6 @@ function archivePath(fileId, archiveId) {
   return join(dir, `${archiveId}.excalidraw`);
 }
 
-function archiveThumbnailPath(fileId, archiveId) {
-  return join(archiveDir(fileId), `${archiveId}.thumb.svg`);
-}
-
-function archiveThumbnailPathFromRow(row) {
-  if (row?.file_id && row?.id) {
-    return archiveThumbnailPath(row.file_id, row.id);
-  }
-  if (typeof row?.path === "string") {
-    return join(DATA_DIR, row.path.replace(/\.excalidraw$/i, ".thumb.svg"));
-  }
-  return null;
-}
-
 function thumbnailPath(fileId) {
   return join(fileDir(fileId), "thumbnail.svg");
 }
@@ -126,7 +112,12 @@ function deleteArchiveRow(row) {
       // ignore
     }
   }
-  const thumbPath = archiveThumbnailPathFromRow(row);
+  const thumbPath =
+    row.file_id && row.id
+      ? join(archiveDir(row.file_id), `${row.id}.thumb.svg`)
+      : typeof row?.path === "string"
+        ? join(DATA_DIR, row.path.replace(/\.excalidraw$/i, ".thumb.svg"))
+        : null;
   if (thumbPath && existsSync(thumbPath)) {
     try {
       rmSync(thumbPath);
@@ -143,11 +134,6 @@ function mapArchiveRow(row) {
     label: row.label,
     created_at: row.created_at,
     content_sha256: row.content_sha256 ?? null,
-    has_thumbnail: !!(
-      row.file_id &&
-      row.id &&
-      existsSync(archiveThumbnailPath(row.file_id, row.id))
-    ),
   };
 }
 
@@ -1100,41 +1086,6 @@ router.post("/:id/archive", (req, res) => {
   }
 });
 
-router.get("/:id/archive-status", (req, res) => {
-  const row = db.prepare("SELECT * FROM files WHERE id = ?").get(req.params.id);
-  if (!row) {
-    return res.status(404).json({ error: "not found" });
-  }
-
-  let currentContentSha256 = row.content_sha256 ?? null;
-  if (!currentContentSha256 && existsSync(currentPath(req.params.id))) {
-    try {
-      const parsed = JSON.parse(
-        readFileSync(currentPath(req.params.id), "utf-8"),
-      );
-      currentContentSha256 = hashSceneDataJson(parsed);
-    } catch {
-      currentContentSha256 = null;
-    }
-  }
-
-  const matchingArchive = findArchiveBySha(req.params.id, currentContentSha256);
-
-  res.json({
-    fileId: req.params.id,
-    currentContentSha256,
-    hasCurrentCheckpoint: !!matchingArchive,
-    matchingArchive: matchingArchive
-      ? {
-          id: matchingArchive.id,
-          label: matchingArchive.label,
-          created_at: matchingArchive.created_at,
-        }
-      : null,
-    latestArchive: getLatestArchiveRow(req.params.id) ?? null,
-  });
-});
-
 router.get("/:id/archives", (req, res) => {
   const rows = db
     .prepare(
@@ -1168,49 +1119,6 @@ router.patch("/:id/archives/:archiveId", (req, res) => {
     )
     .get(req.params.archiveId);
   res.json({ ok: true, ...mapArchiveRow(updated) });
-});
-
-router.get("/:id/archives/:archiveId/thumbnail", (req, res) => {
-  const archive = db
-    .prepare("SELECT id, file_id FROM archives WHERE id = ? AND file_id = ?")
-    .get(req.params.archiveId, req.params.id);
-  if (!archive) {
-    return res.status(404).json({ error: "archive not found" });
-  }
-  const tp = archiveThumbnailPath(req.params.id, req.params.archiveId);
-  if (!existsSync(tp)) {
-    return res.status(404).json({ error: "no archive thumbnail" });
-  }
-  const svg = readFileSync(tp, "utf-8");
-  res.setHeader("Content-Type", "image/svg+xml");
-  if (req.query.h) {
-    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-  } else {
-    res.setHeader("Cache-Control", "public, max-age=300");
-  }
-  res.send(svg);
-});
-
-router.put("/:id/archives/:archiveId/thumbnail", (req, res) => {
-  const archive = db
-    .prepare(
-      "SELECT id, file_id, label, created_at, content_sha256 FROM archives WHERE id = ? AND file_id = ?",
-    )
-    .get(req.params.archiveId, req.params.id);
-  if (!archive) {
-    return res.status(404).json({ error: "archive not found" });
-  }
-  const svg = normalizeThumbnailSvgInput(req.body?.thumbnail);
-  if (!svg) {
-    return res.status(400).json({ error: "invalid thumbnail" });
-  }
-  mkdirSync(archiveDir(req.params.id, true), { recursive: true });
-  writeFileSync(
-    archiveThumbnailPath(req.params.id, req.params.archiveId),
-    svg,
-    "utf-8",
-  );
-  res.json({ ok: true, ...mapArchiveRow(archive) });
 });
 
 router.get("/:id/archives/:archiveId", (req, res) => {
