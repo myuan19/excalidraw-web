@@ -1,11 +1,19 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { isAutoSaveEligibleFile, isAutoSaveLabel } from "./autoSaveSession";
-import { updateAppSettings } from "./appSettings";
+import {
+  isAutoSaveOnExitActive,
+  isIdleAutoSaveActive,
+  updateAppSettings,
+} from "./appSettings";
 import { CHECKPOINT_LABELS, resolveCheckpointPolicy } from "./checkpointPolicy";
 
 beforeEach(() => {
-  updateAppSettings({ autoSaveEnabled: false, checkpointIntervalMin: 30 });
+  updateAppSettings({
+    autoSaveEnabled: false,
+    autoSaveIdleSec: 10,
+    checkpointIntervalMin: 30,
+  });
 });
 
 describe("isAutoSaveEligibleFile", () => {
@@ -61,5 +69,22 @@ describe("checkpoint policy", () => {
     expect(resolveCheckpointPolicy("thumbnail")).toEqual({ mode: "none" });
     expect(resolveCheckpointPolicy("home")).toEqual(intervalPolicy);
     expect(isAutoSaveLabel("auto:legacy")).toBe(true);
+  });
+});
+
+describe("idle auto-save setting", () => {
+  it("can disable idle saves while keeping exit saves enabled", () => {
+    updateAppSettings({ autoSaveEnabled: true, autoSaveIdleSec: 0 });
+
+    expect(isIdleAutoSaveActive()).toBe(false);
+    expect(isAutoSaveOnExitActive()).toBe(true);
+  });
+
+  it("requires both the global switch and a positive idle delay", () => {
+    updateAppSettings({ autoSaveEnabled: false, autoSaveIdleSec: 120 });
+    expect(isIdleAutoSaveActive()).toBe(false);
+
+    updateAppSettings({ autoSaveEnabled: true, autoSaveIdleSec: 120 });
+    expect(isIdleAutoSaveActive()).toBe(true);
   });
 });

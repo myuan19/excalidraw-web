@@ -3,18 +3,18 @@
  * 与 AI 配置独立，AI 配置走 server SQLite。
  */
 
-/** 空闲自动保存可选等待时间（秒） */
+/** 空闲自动保存可选等待时间（秒）；0 表示不开启空闲等待保存。 */
 export const AUTO_SAVE_IDLE_SEC_OPTIONS = [
-  1, 2, 5, 10, 30, 60, 120, 300,
+  0, 1, 2, 5, 10, 30, 60, 120, 300,
 ] as const;
 
 /** checkpoint 间隔检查可选时间（分钟） */
 export const CHECKPOINT_INTERVAL_MIN_OPTIONS = [10, 20, 30, 60, 720] as const;
 
 export interface AppSettings {
-  /** 自动保存：空闲保存、离开直接保存；关闭后仅手动或离开确认时保存 */
+  /** 自动保存总开关：控制退出/切换时直接保存；空闲等待保存还需 autoSaveIdleSec > 0。 */
   autoSaveEnabled: boolean;
-  /** 空闲自动保存等待时间（秒），编辑停止后多久触发保存 */
+  /** 空闲自动保存等待时间（秒），0 表示不自动等待触发保存。 */
   autoSaveIdleSec: number;
   /** 保存到 latest 时 checkpoint 间隔检查的阈值（分钟） */
   checkpointIntervalMin: number;
@@ -110,4 +110,10 @@ export function subscribeAppSettings(listener: () => void): () => void {
 /** 离开编辑器时是否直接保存（无需确认） */
 export function isAutoSaveOnExitActive(): boolean {
   return getAppSettings().autoSaveEnabled;
+}
+
+/** 编辑停止一段时间后是否触发保存；与退出/切换保存解耦。 */
+export function isIdleAutoSaveActive(): boolean {
+  const settings = getAppSettings();
+  return settings.autoSaveEnabled && settings.autoSaveIdleSec > 0;
 }

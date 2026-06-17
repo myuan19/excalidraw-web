@@ -182,7 +182,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     自动保存
                   </span>
                   <span className="settings-panel__option-desc">
-                    开启后，停止编辑一段时间会自动保存到服务器；离开编辑器时直接保存并退出。关闭后不会自动保存，离开时若未保存会提示确认（仅对已入库文件生效）
+                    开启后，离开编辑器时直接保存并退出；空闲等待保存可在下方单独关闭。关闭后不会自动保存，离开时若未保存会提示确认（仅对已入库文件生效）
                   </span>
                 </div>
                 <label className="settings-panel__toggle">
@@ -206,7 +206,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                       空闲等待时间
                     </span>
                     <span className="settings-panel__option-desc">
-                      停止编辑后等待多久触发保存
+                      停止编辑后等待多久触发保存；选择“不开启”时仅保留退出/切换保存
                     </span>
                   </div>
                   <select
@@ -222,7 +222,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   >
                     {AUTO_SAVE_IDLE_SEC_OPTIONS.map((sec) => (
                       <option key={sec} value={sec}>
-                        {sec < 60
+                        {sec === 0
+                          ? "不开启"
+                          : sec < 60
                           ? `${sec} 秒`
                           : sec === 60
                           ? "1 分钟"

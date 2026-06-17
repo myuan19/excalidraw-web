@@ -30,7 +30,11 @@ let cleanup: (() => void) | null = null;
 afterEach(() => {
   cleanup?.();
   cleanup = null;
-  updateAppSettings({ autoSaveEnabled: false, checkpointIntervalMin: 30 });
+  updateAppSettings({
+    autoSaveEnabled: false,
+    autoSaveIdleSec: 10,
+    checkpointIntervalMin: 30,
+  });
   vi.useRealTimers();
 });
 
@@ -131,6 +135,20 @@ describe("saveQueue automatic source guards", () => {
     const executor = vi.fn(async () => ({
       saved: true,
       fileId: "file-auto-disabled",
+    }));
+    cleanup = installExecutor(executor);
+
+    requestSave({ source: "auto" });
+    await flushMicrotasks();
+
+    expect(executor).not.toHaveBeenCalled();
+  });
+
+  it("ignores auto saves when idle auto-save is disabled", async () => {
+    updateAppSettings({ autoSaveEnabled: true, autoSaveIdleSec: 0 });
+    const executor = vi.fn(async () => ({
+      saved: true,
+      fileId: "file-auto-idle-disabled",
     }));
     cleanup = installExecutor(executor);
 

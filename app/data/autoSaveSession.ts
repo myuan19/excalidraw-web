@@ -3,13 +3,13 @@
  *
  * 核心逻辑：
  * 1. 每次编辑变更时调用 `notifyEdit()`，重置空闲计时器
- * 2. 空闲 N 秒后自动触发一次保存到服务器
+ * 2. 空闲等待时间大于 0 时，空闲 N 秒后自动触发一次保存到服务器
  * 3. 自动保存只负责更新 latest；是否生成 checkpoint 由 checkpointPolicy 决定
  */
 
 import { createLogger } from "../lib/logger";
 
-import { getAppSettings } from "./appSettings";
+import { getAppSettings, isIdleAutoSaveActive } from "./appSettings";
 import { getFileIdFromHash } from "./fileIdFromHash";
 import { isLocalDraftFileId } from "./localDraftFileId";
 export { broadcastFileSaved, onCrossTabFileSaved } from "./crossTabFileSync";
@@ -53,12 +53,12 @@ function clearIdleTimer() {
 function startIdleTimer() {
   clearIdleTimer();
   const settings = getAppSettings();
-  if (!settings.autoSaveEnabled) {
+  if (!isIdleAutoSaveActive()) {
     return;
   }
   idleTimer = window.setTimeout(() => {
     idleTimer = null;
-    if (!getAppSettings().autoSaveEnabled) {
+    if (!isIdleAutoSaveActive()) {
       return;
     }
     if (!isAutoSaveEligibleForCurrentFile()) {
@@ -74,7 +74,8 @@ function startIdleTimer() {
  * 它会重置空闲计时器——只有持续无编辑 N 秒后才触发自动保存。
  */
 export function notifyEdit(): void {
-  if (!getAppSettings().autoSaveEnabled) {
+  if (!isIdleAutoSaveActive()) {
+    clearIdleTimer();
     return;
   }
   if (!isAutoSaveEligibleForCurrentFile()) {

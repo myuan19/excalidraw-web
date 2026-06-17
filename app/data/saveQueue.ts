@@ -16,7 +16,7 @@
 
 import { createLogger } from "../lib/logger";
 
-import { getAppSettings } from "./appSettings";
+import { getAppSettings, isIdleAutoSaveActive } from "./appSettings";
 import { broadcastFileSaved } from "./crossTabFileSync";
 
 import type { SaveToServerSource } from "../hooks/types";
@@ -142,8 +142,11 @@ function shouldIgnoreSaveRequest(req: SaveRequest): boolean {
   if (req.source === "visibility") {
     return true;
   }
+  if (req.source === "auto") {
+    return !isIdleAutoSaveActive();
+  }
   return (
-    (req.source === "auto" || req.source === "thumbnail") &&
+    req.source === "thumbnail" &&
     !getAppSettings().autoSaveEnabled
   );
 }
