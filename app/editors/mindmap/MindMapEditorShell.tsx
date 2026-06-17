@@ -42,6 +42,7 @@ import { FileSyncState } from "../../data/FileSyncState";
 import { readFileListTreeCache } from "../../data/fileListSessionCache";
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
 import { LocalThumbnailCache } from "../../data/localThumbnailCache";
+import { removeRecentFileEntry } from "../../data/recentFiles";
 import {
   createEmptyMindMapData,
   isEffectivelyEmptyMindMapData,
@@ -62,7 +63,10 @@ import {
   type EditorOpenPhase,
 } from "../../lib/editorOpenPhases";
 import { hashDocumentSnapshot } from "../../data/sceneHash";
-import { ServerSync } from "../../data/ServerSync";
+import {
+  isServerSyncNotFoundError,
+  ServerSync,
+} from "../../data/ServerSync";
 import {
   isSchematicMindMapThumbnailSvg,
 } from "../../data/thumbnailSvg";
@@ -151,6 +155,8 @@ function getCachedFileListName(fileId: string): string | null {
   return readFileListTreeCache()?.files.find((file) => file.id === fileId)
     ?.name ?? null;
 }
+
+const MISSING_FILE_REDIRECT_MS = 3000;
 
 function getClipboardImagePayload(payload: unknown):
   | {
@@ -320,6 +326,7 @@ const MindMapEditorShell = () => {
   > | null>(null);
   const saveTimeoutRef = useRef<number | null>(null);
   const saveRequestIdRef = useRef<string | null>(null);
+  const missingFileRedirectTimerRef = useRef<number | null>(null);
   const latestNativeRevisionRef = useRef(0);
   const latestDocumentRef = useRef<ManagedDocument<MindMapDocumentData> | null>(
     null,
@@ -538,6 +545,29 @@ const MindMapEditorShell = () => {
   const navigateToFileListHome = useCallback(() => {
     navigateToFileListHomeRef.current();
   }, []);
+
+  const handleMissingServerFile = useCallback(
+    (missingFileId: string) => {
+      FileSyncState.clearLocalCache(missingFileId);
+      FileSyncState.clearHashStateForFile(missingFileId);
+      FileSyncState.clearLocalEditTime(missingFileId);
+      LocalThumbnailCache.clear(missingFileId);
+      removeRecentFileEntry(missingFileId);
+      window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
+      window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
+      setStatus("");
+      setError("该文件不存在或已被删除，稍后返回文件列表。");
+
+      if (missingFileRedirectTimerRef.current != null) {
+        window.clearTimeout(missingFileRedirectTimerRef.current);
+      }
+      missingFileRedirectTimerRef.current = window.setTimeout(() => {
+        missingFileRedirectTimerRef.current = null;
+        navigateToFileListHome();
+      }, MISSING_FILE_REDIRECT_MS);
+    },
+    [navigateToFileListHome],
+  );
 
   const mindMapSaveRef = useRef<{
     persistLocalDraftToCache: (forcedFileId?: string) => Promise<boolean>;
@@ -875,9 +905,8 @@ const MindMapEditorShell = () => {
           try {
             const hashStart = performance.now();
             const hashes = await ServerSync.listFileHashes();
-            const remoteHash =
-              hashes.find((entry) => entry.id === resolvedId)?.content_sha256 ??
-              null;
+            const remoteEntry = hashes.find((entry) => entry.id === resolvedId);
+            const remoteHash = remoteEntry?.content_sha256 ?? null;
             debugMindMapOpen("after ServerSync.listFileHashes", {
               fileId8: resolvedId.slice(0, 8),
               elapsed: Math.round(performance.now() - hashStart),
@@ -887,6 +916,13 @@ const MindMapEditorShell = () => {
               hasUnsavedChanges,
             });
             if (disposed) {
+              return;
+            }
+            if (!remoteEntry) {
+              debugMindMapOpen("cached file missing on server", {
+                fileId8: resolvedId.slice(0, 8),
+              });
+              handleMissingServerFile(resolvedId);
               return;
             }
             const refreshDecision = explainRefreshCacheOnOpen({
@@ -930,6 +966,14 @@ const MindMapEditorShell = () => {
         await loadFromServer("no-cache");
         logMindMapOpenPhase("ready");
       } catch (err: any) {
+        if (fileId && isServerSyncNotFoundError(err)) {
+          debugMindMapOpen("init missing server file", {
+            fileId8: fileId.slice(0, 8),
+            message: err?.message || String(err),
+          });
+          handleMissingServerFile(fileId);
+          return;
+        }
         warnMindMapBridge("init failed", {
           message: err?.message || String(err),
           stack: err?.stack,
@@ -951,6 +995,10 @@ const MindMapEditorShell = () => {
         window.clearTimeout(saveTimeoutRef.current);
         saveTimeoutRef.current = null;
       }
+      if (missingFileRedirectTimerRef.current != null) {
+        window.clearTimeout(missingFileRedirectTimerRef.current);
+        missingFileRedirectTimerRef.current = null;
+      }
       disposeNativeHydrate();
       saveResolveRef.current = null;
       savePromiseRef.current = null;
@@ -958,6 +1006,7 @@ const MindMapEditorShell = () => {
   }, [
     disposeNativeHydrate,
     fileId,
+    handleMissingServerFile,
     logMindMapOpenPhase,
     publishMindMapDataToNative,
   ]);

@@ -31,6 +31,22 @@ function formatIfNoneMatchHeader(sha256: string): string {
   return trimmed.startsWith('"') ? trimmed : `"${trimmed}"`;
 }
 
+export class ServerSyncError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly path: string,
+    public readonly body: string,
+  ) {
+    super(message);
+    this.name = "ServerSyncError";
+  }
+}
+
+export function isServerSyncNotFoundError(error: unknown): boolean {
+  return error instanceof ServerSyncError && error.status === 404;
+}
+
 function rebuildServerFileFromLocalCache(
   fileId: string,
   contentSha256: string | null,
@@ -171,7 +187,12 @@ async function parseGetFileResponse(
   }
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`API ${res.status}: ${text}`);
+    throw new ServerSyncError(
+      `API ${res.status}: ${text}`,
+      res.status,
+      `/files/${id}`,
+      text,
+    );
   }
   const file = (await res.json()) as ServerFile;
   const etag = res.headers.get("etag")?.replace(/^"|"$/g, "");

@@ -107,6 +107,7 @@ export const FileSyncState = {
   clearHashStateForFile(fileId: string): void {
     localStorage.removeItem(this.baselineHashKey(fileId));
     localStorage.removeItem(this.draftHashKey(fileId));
+    localStorage.removeItem(this.serverHashKey(fileId));
     emitSyncState();
   },
 

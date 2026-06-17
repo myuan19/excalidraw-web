@@ -178,6 +178,18 @@ describe("fileModificationState", () => {
     expect(isTabFileDirty(fileId)).toBe(false);
     clearTabFileDirty(fileId);
   });
+
+  it("clears server hash with file hash state", () => {
+    const fileId = "server-file";
+    FileSyncState.alignHashes(fileId, "client-hash");
+    FileSyncState.setServerHash(fileId, "server-sha");
+
+    FileSyncState.clearHashStateForFile(fileId);
+
+    expect(FileSyncState.getBaselineHash(fileId)).toBeNull();
+    expect(FileSyncState.getDraftHash(fileId)).toBeNull();
+    expect(FileSyncState.getServerHash(fileId)).toBeNull();
+  });
 });
 
 describe("evaluateArchiveCoverage", () => {
