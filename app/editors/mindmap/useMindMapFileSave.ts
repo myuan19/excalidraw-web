@@ -51,6 +51,7 @@ import {
   getCachedMindMapServerSha,
   toMindMapLocalCacheRecord,
 } from "./mindMapLocalCacheRecord";
+import { resolveMindMapSaveDisplayName } from "./mindMapRootNamePolicy";
 
 import type { ManagedDocument } from "../../data/documentTypes";
 import type { MindMapDocumentData } from "../../data/formats/MindMapAdapter";
@@ -384,6 +385,10 @@ export function useMindMapFileSave(opts: {
         return false;
       }
       const { document, thumbnail } = nativeSave;
+      const displayName = resolveMindMapSaveDisplayName(
+        document.data,
+        getFileName(),
+      );
 
       const hash = hashDocumentSnapshot(document);
       const baseline = FileSyncState.getBaselineHash(fileId);
@@ -457,7 +462,7 @@ export function useMindMapFileSave(opts: {
               ServerSync.saveFileImmediate(
                 fileId,
                 document,
-                getFileName(),
+                displayName,
                 thumbForPut,
                 {
                   suppressSavedEvent: true,
@@ -514,7 +519,7 @@ export function useMindMapFileSave(opts: {
           });
         }
         patchFileListTreeCacheSavedFile(fileId, {
-          name: getFileName(),
+          name: displayName,
           kind: "mindmap",
           has_thumbnail: thumbnail ? true : undefined,
           content_sha256: outcome.contentSha256 ?? undefined,
@@ -604,6 +609,10 @@ export function useMindMapFileSave(opts: {
         return false;
       }
       const { document, thumbnail } = nativeSave;
+      const displayName = resolveMindMapSaveDisplayName(
+        document.data,
+        getFileName(),
+      );
       const hash = hashDocumentSnapshot(document);
       const baseline = FileSyncState.getBaselineHash(fileId);
       try {
@@ -623,7 +632,7 @@ export function useMindMapFileSave(opts: {
               ServerSync.saveFileImmediate(
                 fileId,
                 document,
-                getFileName(),
+                displayName,
                 thumbForPut,
                 {
                   suppressSavedEvent: true,
@@ -645,7 +654,7 @@ export function useMindMapFileSave(opts: {
           });
         }
         patchFileListTreeCacheSavedFile(fileId, {
-          name: getFileName(),
+          name: displayName,
           kind: "mindmap",
           has_thumbnail: thumbnail ? true : undefined,
           content_sha256: outcome.contentSha256 ?? undefined,

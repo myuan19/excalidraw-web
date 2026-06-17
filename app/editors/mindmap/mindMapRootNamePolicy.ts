@@ -1,5 +1,8 @@
 import { DEFAULT_DOCUMENT_DISPLAY_NAME } from "../../data/defaultDocumentName";
-import { getMindMapRootText } from "../../data/formats/MindMapAdapter";
+import {
+  getMindMapRootPlainText,
+  getMindMapRootText,
+} from "../../data/formats/MindMapAdapter";
 
 import type { MindMapDocumentData } from "../../data/formats/MindMapAdapter";
 
@@ -19,6 +22,10 @@ export function resolveMindMapOpenDisplayName(
   data: MindMapDocumentData,
   cachedName: string | null | undefined,
 ): string {
+  const rootPlainText = getMindMapRootPlainText(data);
+  if (!rootPlainText) {
+    return DEFAULT_DOCUMENT_DISPLAY_NAME;
+  }
   const rootText = getMindMapRootText(data);
   const listName = String(cachedName ?? "").trim();
   if (
@@ -32,6 +39,18 @@ export function resolveMindMapOpenDisplayName(
     return listName;
   }
   return rootText || DEFAULT_DOCUMENT_DISPLAY_NAME;
+}
+
+/** 保存时使用当前文档兜底推导文件显示名，避免标签 state 滞后于 native 文档。 */
+export function resolveMindMapSaveDisplayName(
+  data: MindMapDocumentData,
+  currentName: string | null | undefined,
+): string {
+  const rootPlainText = getMindMapRootPlainText(data);
+  if (!rootPlainText) {
+    return DEFAULT_DOCUMENT_DISPLAY_NAME;
+  }
+  return String(currentName ?? "").trim() || rootPlainText;
 }
 
 /**

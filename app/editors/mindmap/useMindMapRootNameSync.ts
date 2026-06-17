@@ -73,12 +73,9 @@ export function useMindMapRootNameSync({
     [fileId, setFileName],
   );
 
-  /** hydrate settle 后对齐根节点与文件显示名，避免过期「未命名」覆盖自定义根标题。 */
+  /** 对齐根节点与文件显示名；只修文件名时不依赖 native bridge。 */
   const syncFileNameToRootIfNeeded = useCallback(
     (displayName: string, data?: MindMapDocumentData | null) => {
-      if (!isBridgeReady) {
-        return false;
-      }
       const rootPlainText = data
         ? getMindMapRootPlainText(data)
         : (lastSyncedTextRef.current ?? "");
@@ -92,6 +89,9 @@ export function useMindMapRootNameSync({
       if (action.kind === "promote-root-to-file") {
         promoteRootToFileName(action.name);
         return true;
+      }
+      if (!isBridgeReady) {
+        return false;
       }
       lastSyncedTextRef.current = action.text;
       postToNative("updateRootText", { text: action.text });

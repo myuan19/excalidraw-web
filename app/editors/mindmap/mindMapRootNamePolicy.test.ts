@@ -8,6 +8,7 @@ import {
 import {
   reconcileMindMapRootAndFileName,
   resolveMindMapOpenDisplayName,
+  resolveMindMapSaveDisplayName,
 } from "./mindMapRootNamePolicy";
 
 describe("resolveMindMapOpenDisplayName", () => {
@@ -34,6 +35,44 @@ describe("resolveMindMapOpenDisplayName", () => {
       },
     };
     expect(resolveMindMapOpenDisplayName(data, "文件列表名")).toBe("文件列表名");
+  });
+
+  it("uses 未命名 when root was cleared even if cached list name is stale", () => {
+    const data = {
+      ...createEmptyMindMapData(),
+      root: {
+        data: {
+          text: "<p><br></p>",
+          richText: true,
+          expand: true,
+        },
+        children: [],
+      },
+    };
+    expect(resolveMindMapOpenDisplayName(data, "和")).toBe("未命名");
+  });
+});
+
+describe("resolveMindMapSaveDisplayName", () => {
+  it("uses 未命名 when saving a cleared root even if current tab name is stale", () => {
+    const data = {
+      ...createEmptyMindMapData(),
+      root: {
+        data: {
+          text: "<p><br></p>",
+          richText: true,
+          expand: true,
+        },
+        children: [],
+      },
+    };
+    expect(resolveMindMapSaveDisplayName(data, "和")).toBe("未命名");
+  });
+
+  it("keeps the current file name for non-empty roots", () => {
+    expect(
+      resolveMindMapSaveDisplayName(createEmptyMindMapData("根标题"), "文件名"),
+    ).toBe("文件名");
   });
 });
 

@@ -735,6 +735,13 @@ const MindMapEditorShell = () => {
               LocalDraftSessions.get(fileId)?.name ?? null,
             ),
           );
+          const localDraftName =
+            LocalDraftSessions.get(fileId)?.name ??
+            DEFAULT_DOCUMENT_DISPLAY_NAME;
+          syncFileNameToRootIfNeeded(
+            localDraftName,
+            data,
+          );
           initSyncedText(data);
           latestDocumentRef.current = document;
           logMindMapOpenPhase("preparing_surface");
@@ -787,6 +794,10 @@ const MindMapEditorShell = () => {
               serverFile.name || null,
             ),
           );
+          syncFileNameToRootIfNeeded(
+            serverFile.name || DEFAULT_DOCUMENT_DISPLAY_NAME,
+            data,
+          );
           debugMindMapOpen("after MindMapAdapter.parse", {
             elapsed: Math.round(performance.now() - parseStart),
             rootChildren: data.root?.children?.length ?? 0,
@@ -830,6 +841,10 @@ const MindMapEditorShell = () => {
               cached.data,
               getCachedFileListName(resolvedId),
             ),
+          );
+          syncFileNameToRootIfNeeded(
+            getCachedFileListName(resolvedId) ?? DEFAULT_DOCUMENT_DISPLAY_NAME,
+            cached.data,
           );
           latestDocumentRef.current = cached;
           initSyncedText(cached.data);
@@ -930,7 +945,12 @@ const MindMapEditorShell = () => {
       saveResolveRef.current = null;
       savePromiseRef.current = null;
     };
-  }, [disposeNativeHydrate, fileId, logMindMapOpenPhase, publishMindMapDataToNative]);
+  }, [
+    disposeNativeHydrate,
+    fileId,
+    logMindMapOpenPhase,
+    publishMindMapDataToNative,
+  ]);
 
   useEffect(() => {
     if (!fileId) {
@@ -1320,7 +1340,11 @@ const MindMapEditorShell = () => {
     recordMindMapPersisted(fileId, document, {
       serverContentSha256: serverFile.content_sha256 ?? undefined,
     });
-    setFileName(serverFile.name || DEFAULT_DOCUMENT_DISPLAY_NAME);
+    setFileName(resolveMindMapOpenDisplayName(data, serverFile.name || null));
+    syncFileNameToRootIfNeeded(
+      serverFile.name || DEFAULT_DOCUMENT_DISPLAY_NAME,
+      data,
+    );
     needsInitialThumbnailRef.current = await shouldRefreshMindMapServerThumbnail(
       fileId,
       {
@@ -1332,7 +1356,7 @@ const MindMapEditorShell = () => {
     setError(null);
     window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
     window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
-  }, [fileId, publishMindMapDataToNative]);
+  }, [fileId, publishMindMapDataToNative, syncFileNameToRootIfNeeded]);
 
   const reloadFromCrossTabSave = useCallback(
     () =>
