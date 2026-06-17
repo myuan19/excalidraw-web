@@ -36,7 +36,7 @@ export function resolveMindMapOpenDisplayName(
 
 /**
  * hydrate settle 结束时对齐根节点标题与文件显示名。
- * 默认显示名过期时以根节点为准，否则以文件显示名为准写回画布。
+ * 默认显示名过期时以根节点为准；根节点被清空时只重置文件显示名，不回写节点内容。
  */
 export function reconcileMindMapRootAndFileName(
   displayName: string,
@@ -46,7 +46,7 @@ export function reconcileMindMapRootAndFileName(
   const root = String(rootPlainText || "").trim();
   if (!root) {
     if (isDefaultDisplayName(name)) {
-      return { kind: "push-file-to-root", text: DEFAULT_DOCUMENT_DISPLAY_NAME };
+      return { kind: "noop" };
     }
     return { kind: "promote-root-to-file", name: DEFAULT_DOCUMENT_DISPLAY_NAME };
   }

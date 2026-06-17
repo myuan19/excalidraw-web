@@ -91,13 +91,7 @@ export function useMindMapRootNameSync({
       }
       if (action.kind === "promote-root-to-file") {
         promoteRootToFileName(action.name);
-        if (!rootPlainText.trim()) {
-          postToNative("updateRootText", { text: action.name });
-        }
         return true;
-      }
-      if (!rootPlainText.trim() && displayName !== DEFAULT_DOCUMENT_DISPLAY_NAME) {
-        promoteRootToFileName(DEFAULT_DOCUMENT_DISPLAY_NAME);
       }
       lastSyncedTextRef.current = action.text;
       postToNative("updateRootText", { text: action.text });
@@ -113,18 +107,12 @@ export function useMindMapRootNameSync({
       const displayName =
         rootPlainText || DEFAULT_DOCUMENT_DISPLAY_NAME;
 
-      if (!rootPlainText && isBridgeReady) {
-        postToNative("updateRootText", {
-          text: DEFAULT_DOCUMENT_DISPLAY_NAME,
-        });
-      }
-
       if (displayName === lastSyncedTextRef.current) {
         return;
       }
       promoteRootToFileName(displayName);
     },
-    [fileId, isBridgeReady, postToNative, promoteRootToFileName],
+    [fileId, promoteRootToFileName],
   );
 
   useEffect(() => {
