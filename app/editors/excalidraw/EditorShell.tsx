@@ -72,6 +72,10 @@ import { APP_SHELL_GO_HOME } from "../../shell/Sidebar";
 import { buildViewHash } from "../../shell/useAppView";
 import { EmbedTokenManager } from "../../components/EmbedTokenManager";
 import { ArchivePanel } from "../../components/ArchivePanel";
+import {
+  evaluateCurrentFileModificationState,
+  readStoredFileModificationState,
+} from "../../data/fileModificationState";
 import { LocalDraftLossConfirmDialog } from "../../components/LocalDraftLossConfirmDialog";
 import { SaveNewDocumentDialog } from "../../components/PromoteTempFileDialog";
 import { useLocalDraftLossConfirm } from "../../hooks/useLocalDraftLossConfirm";
@@ -100,7 +104,7 @@ import { DEFAULT_DOCUMENT_DISPLAY_NAME } from "../../data/defaultDocumentName";
 import { useRemoteFileRefresh } from "../../hooks/useRemoteFileRefresh";
 import { clearTabFileDirty } from "../../data/tabFileDirtyState";
 import { RemoteUpdateConfirmDialog } from "../../components/RemoteUpdateConfirmDialog";
-import { requestSave } from "../../data/saveQueue";
+import { requestSave, requestSaveAndWait } from "../../data/saveQueue";
 import { hashSceneSnapshot } from "../../data/sceneHash";
 import {
   formatImportErrorMessage,
@@ -847,9 +851,23 @@ const ExcalidrawWrapper = () => {
           <ArchivePanel
             fileId={forkFileId}
             saving={forkSaving}
-            onSave={() => requestSave({ source: "sidebar" })}
+            onSave={() => requestSaveAndWait({ source: "sidebar" })}
             onArchive={saveAndArchiveCurrentVersion}
-            onPrepareAction={() => updateDraftHashDebouncedRef.current.flush()}
+            readCurrentModificationState={() => {
+              updateDraftHashDebouncedRef.current.flush();
+              const scene = getSceneDataRef.current?.();
+              if (!scene || !forkFileId) {
+                return readStoredFileModificationState(
+                  forkFileId,
+                  "excalidraw",
+                );
+              }
+              return evaluateCurrentFileModificationState({
+                fileId: forkFileId,
+                kind: "excalidraw",
+                excalidrawScene: scene,
+              });
+            }}
             onAfterRestore={async () => {
               await reloadSceneFromServer();
             }}

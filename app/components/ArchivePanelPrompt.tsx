@@ -2,7 +2,8 @@ export type ArchivePanelPromptChoice = "yes" | "no" | "cancel";
 
 export type ArchivePanelPromptMode =
   | { type: "restore"; archiveId: string }
-  | { type: "archive" }
+  | { type: "archive-save" }
+  | { type: "archive-duplicate" }
   | { type: "delete"; archiveId: string };
 
 type ArchivePanelPromptProps = {
@@ -26,14 +27,18 @@ export function ArchivePanelPrompt({
       ? "恢复存档"
       : mode.type === "delete"
         ? "删除存档"
-        : "存档";
+        : mode.type === "archive-duplicate"
+          ? "存档"
+          : "存档";
 
   const message =
     mode.type === "restore"
-      ? "当前版本未存档，是否要先存档当前版本？"
+      ? "当前版本没有存档吗？是否需要先存档？若不存档，切换会丢失该版本。"
       : mode.type === "delete"
         ? "确认删除该存档？此操作不可恢复。"
-        : "存档前需要保存，是否继续？";
+        : mode.type === "archive-duplicate"
+          ? "当前版本已存在，是否继续存档？"
+          : "存档前需要保存，是否继续？";
 
   const confirmLabel =
     mode.type === "delete" ? (busy ? "删除中…" : "确认删除") : busy ? "处理中…" : "是";

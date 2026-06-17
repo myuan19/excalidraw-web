@@ -5,9 +5,13 @@ import {
   registerAutoSaveTrigger,
 } from "../../data/autoSaveSession";
 import { useRemoteFileRefresh } from "../../hooks/useRemoteFileRefresh";
-import { requestSave } from "../../data/saveQueue";
+import { requestSave, requestSaveAndWait } from "../../data/saveQueue";
 import { SettingsPanel } from "../../components/SettingsPanel";
 import { ArchivePanel } from "../../components/ArchivePanel";
+import {
+  evaluateCurrentFileModificationState,
+  readStoredFileModificationState,
+} from "../../data/fileModificationState";
 import {
   applyAppShellPendingNavigation,
   type AppShellNavigateDetail,
@@ -1560,9 +1564,20 @@ const MindMapEditorShell = () => {
         <ArchivePanel
           fileId={fileId}
           saving={mindMapSaving}
-          onSave={() => requestSave({ source: "sidebar" })}
+          onSave={() => requestSaveAndWait({ source: "sidebar" })}
           onArchive={saveAndArchiveCurrentVersion}
-          onPrepareAction={() => updateDraftHashDebouncedRef.current.flush()}
+          readCurrentModificationState={() => {
+            updateDraftHashDebouncedRef.current.flush();
+            const document = latestDocumentRef.current;
+            if (!document || !fileId) {
+              return readStoredFileModificationState(fileId, "mindmap");
+            }
+            return evaluateCurrentFileModificationState({
+              fileId,
+              kind: "mindmap",
+              mindMapDocument: document,
+            });
+          }}
           onAfterRestore={async () => {
             await reloadMindMapFromServer();
           }}

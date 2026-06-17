@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { FileSyncState } from "./FileSyncState";
 import {
   applyFileModificationState,
+  evaluateArchiveCoverage,
   evaluateCurrentFileModificationState,
+  evaluateManualArchiveGate,
   readStoredFileModificationState,
 } from "./fileModificationState";
 import { MindMapAdapter } from "./formats/MindMapAdapter";
@@ -175,5 +177,130 @@ describe("fileModificationState", () => {
     expect(FileSyncState.hasUnsavedChanges(fileId)).toBe(false);
     expect(isTabFileDirty(fileId)).toBe(false);
     clearTabFileDirty(fileId);
+  });
+});
+
+describe("evaluateArchiveCoverage", () => {
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  it("allows restore when synced and server sha matches an archive", () => {
+    const fileId = "file-archived";
+    FileSyncState.alignHashes(fileId, "client-fp");
+    FileSyncState.setServerHash(fileId, "server-sha-b");
+
+    const modification = readStoredFileModificationState(fileId, "excalidraw");
+    const coverage = evaluateArchiveCoverage(fileId, modification, [
+      {
+        id: "a1",
+        label: "checkpoint:manual",
+        created_at: "2026-01-01T00:00:00.000Z",
+        content_sha256: "server-sha-b",
+      },
+    ]);
+
+    expect(coverage.isSyncedWithBaseline).toBe(true);
+    expect(coverage.isServerSnapshotArchived).toBe(true);
+    expect(coverage.canRestoreWithoutArchivePrompt).toBe(true);
+  });
+
+  it("requires archive prompt when synced but server sha is not archived", () => {
+    const fileId = "file-not-archived";
+    FileSyncState.alignHashes(fileId, "client-fp");
+    FileSyncState.setServerHash(fileId, "server-sha-new");
+
+    const modification = readStoredFileModificationState(fileId, "excalidraw");
+    const coverage = evaluateArchiveCoverage(fileId, modification, [
+      {
+        id: "a1",
+        label: "checkpoint:manual",
+        created_at: "2026-01-01T00:00:00.000Z",
+        content_sha256: "server-sha-old",
+      },
+    ]);
+
+    expect(coverage.isSyncedWithBaseline).toBe(true);
+    expect(coverage.isServerSnapshotArchived).toBe(false);
+    expect(coverage.canRestoreWithoutArchivePrompt).toBe(false);
+  });
+
+  it("requires archive prompt when local edits differ from baseline", () => {
+    const fileId = "file-edited";
+    FileSyncState.setBaselineHash(fileId, "baseline-fp");
+    FileSyncState.setDraftHash(fileId, "edited-fp");
+    FileSyncState.setServerHash(fileId, "server-sha-a");
+
+    const modification = readStoredFileModificationState(fileId, "excalidraw");
+    const coverage = evaluateArchiveCoverage(fileId, modification, [
+      {
+        id: "a1",
+        label: "checkpoint:manual",
+        created_at: "2026-01-01T00:00:00.000Z",
+        content_sha256: "server-sha-a",
+      },
+    ]);
+
+    expect(coverage.isSyncedWithBaseline).toBe(false);
+    expect(coverage.canRestoreWithoutArchivePrompt).toBe(false);
+  });
+});
+
+describe("evaluateManualArchiveGate", () => {
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  it("requires save-first when local edits differ from baseline", () => {
+    const fileId = "file-edited";
+    FileSyncState.setBaselineHash(fileId, "baseline-fp");
+    FileSyncState.setDraftHash(fileId, "edited-fp");
+
+    const gate = evaluateManualArchiveGate(
+      fileId,
+      readStoredFileModificationState(fileId, "excalidraw"),
+      [],
+    );
+    expect(gate).toBe("save-first");
+  });
+
+  it("prompts duplicate when synced server sha is already archived", () => {
+    const fileId = "file-dup";
+    FileSyncState.alignHashes(fileId, "client-fp");
+    FileSyncState.setServerHash(fileId, "server-sha-a");
+
+    const gate = evaluateManualArchiveGate(
+      fileId,
+      readStoredFileModificationState(fileId, "excalidraw"),
+      [
+        {
+          id: "a1",
+          label: "checkpoint:manual",
+          created_at: "2026-01-01T00:00:00.000Z",
+          content_sha256: "server-sha-a",
+        },
+      ],
+    );
+    expect(gate).toBe("prompt-duplicate");
+  });
+
+  it("archives directly when synced and not yet archived", () => {
+    const fileId = "file-new";
+    FileSyncState.alignHashes(fileId, "client-fp");
+    FileSyncState.setServerHash(fileId, "server-sha-new");
+
+    const gate = evaluateManualArchiveGate(
+      fileId,
+      readStoredFileModificationState(fileId, "excalidraw"),
+      [
+        {
+          id: "a1",
+          label: "checkpoint:manual",
+          created_at: "2026-01-01T00:00:00.000Z",
+          content_sha256: "server-sha-old",
+        },
+      ],
+    );
+    expect(gate).toBe("archive");
   });
 });

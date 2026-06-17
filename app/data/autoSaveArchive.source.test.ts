@@ -101,8 +101,8 @@ describe("checkpoint archive source contract", () => {
       path.join(appRoot, "components/ArchivePanelPrompt.tsx"),
       "utf8",
     );
-    const matchSource = fs.readFileSync(
-      path.join(appRoot, "data/archiveVersionMatch.ts"),
+    const modificationSource = fs.readFileSync(
+      path.join(appRoot, "data/fileModificationState.ts"),
       "utf8",
     );
     const serverSyncSource = fs.readFileSync(
@@ -123,15 +123,21 @@ describe("checkpoint archive source contract", () => {
     );
 
     expect(archivePanelSource).toContain("ArchivePanelPrompt");
-    expect(archivePanelSource).toContain("isContentHashArchived");
+    expect(archivePanelSource).toContain("evaluateManualArchiveGate");
+    expect(archivePanelSource).toContain("readCurrentModificationState");
     expect(archivePanelSource).not.toContain("存档前需要保存，是否继续？");
     expect(promptSource).toContain("nb-history-overlay--prompt");
-    expect(promptSource).toContain("当前版本未存档，是否要先存档当前版本？");
+    expect(promptSource).toContain("当前版本没有存档吗？是否需要先存档？");
+    expect(promptSource).toContain("若不存档，切换会丢失该版本");
     expect(promptSource).toContain("存档前需要保存，是否继续？");
+    expect(promptSource).toContain("当前版本已存在，是否继续存档？");
     expect(promptSource).toContain("确认删除该存档？此操作不可恢复。");
+    expect(modificationSource).toContain("evaluateArchiveCoverage");
+    expect(modificationSource).toContain("evaluateManualArchiveGate");
+    expect(modificationSource).toContain("getServerHash");
     expect(serverSyncSource).not.toContain("getCheckpointStatus");
     expect(filesRouteSource).not.toContain('router.get("/:id/archive-status"');
-    expect(matchSource).toContain("content_sha256");
+    expect(modificationSource).toContain("content_sha256");
     expect(excalidrawSaveSource).not.toContain("confirmBeforeRestoreCheckpoint");
     expect(mindMapSaveSource).not.toContain("confirmBeforeRestoreCheckpoint");
   });

@@ -13,6 +13,7 @@ import {
 
 import type { ManagedDocument } from "./documentTypes";
 import type { ForkSceneSnapshot } from "./forkFileTypes";
+import type { ArchiveEntry } from "./ServerSync";
 
 export type FileModificationDraftStatus = "idle" | "draft" | "synced";
 
@@ -142,6 +143,68 @@ export function evaluateCurrentFileModificationState(opts: {
   }
 
   return readStoredFileModificationState(fileId, kind);
+}
+
+/** 与本地/服务器同步判定相同：同类型内容指纹一致即视为同一版本。 */
+export function areFileContentFingerprintsEqual(
+  contentHash: string | null | undefined,
+  referenceHash: string | null | undefined,
+): boolean {
+  return !!contentHash && !!referenceHash && contentHash === referenceHash;
+}
+
+/**
+ * 存档覆盖判定（恢复前是否需提示先存档；手动存档前是否提示重复）。
+ *
+ * 两层身份，与现有同步架构一致：
+ * - 客户端指纹（draft/baseline）：{@link FileModificationState.modified}
+ * - 服务端快照 SHA（{@link FileSyncState.getServerHash}）：与 archives.content_sha256 同源
+ */
+export type ArchiveCoverage = {
+  /** 当前编辑内容与上次保存基线一致（客户端指纹层）。 */
+  isSyncedWithBaseline: boolean;
+  /** 服务端最新快照 SHA 已出现在存档列表中。 */
+  isServerSnapshotArchived: boolean;
+  /** 可直接恢复，无需「先存档」提示。 */
+  canRestoreWithoutArchivePrompt: boolean;
+};
+
+/** 存档面板「存档」按钮的门禁：先保存 / 重复确认 / 直接存档。 */
+export type ManualArchiveGate = "save-first" | "prompt-duplicate" | "archive";
+
+export function evaluateArchiveCoverage(
+  fileId: string,
+  modification: FileModificationState,
+  archives: ArchiveEntry[],
+): ArchiveCoverage {
+  const isSyncedWithBaseline = !modification.modified;
+  const serverSha = FileSyncState.getServerHash(fileId);
+  const isServerSnapshotArchived =
+    !!serverSha &&
+    archives.some((archive) => archive.content_sha256 === serverSha);
+
+  return {
+    isSyncedWithBaseline,
+    isServerSnapshotArchived,
+    canRestoreWithoutArchivePrompt:
+      isSyncedWithBaseline && isServerSnapshotArchived,
+  };
+}
+
+/** 根据当前覆盖态决定手动存档下一步（与 {@link evaluateArchiveCoverage} 同一入口）。 */
+export function evaluateManualArchiveGate(
+  fileId: string,
+  modification: FileModificationState,
+  archives: ArchiveEntry[],
+): ManualArchiveGate {
+  const coverage = evaluateArchiveCoverage(fileId, modification, archives);
+  if (!coverage.isSyncedWithBaseline) {
+    return "save-first";
+  }
+  if (coverage.isServerSnapshotArchived) {
+    return "prompt-duplicate";
+  }
+  return "archive";
 }
 
 /**

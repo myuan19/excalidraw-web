@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useState } from "react";
 
 import {
-  isContentHashArchived,
-  readCurrentFileContentHash,
-} from "../data/archiveVersionMatch";
+  evaluateArchiveCoverage,
+  evaluateManualArchiveGate,
+  type FileModificationState,
+} from "../data/fileModificationState";
 import { isAutoSaveLabel } from "../data/autoSaveSession";
 import { getCheckpointLabelText } from "../data/checkpointPolicy";
 import { ServerSync, type ArchiveEntry } from "../data/ServerSync";
+import type { SaveResult } from "../data/saveQueue";
 
 import {
   useFileDraftStatus,
@@ -23,11 +25,12 @@ import "./ExcalToolbar.scss";
 
 interface ArchivePanelProps {
   fileId: string;
-  onSave: () => void | Promise<void>;
+  onSave: () => void | Promise<void | SaveResult>;
   onArchive: () => Promise<boolean>;
   onAfterRestore: () => void | Promise<void>;
   onClose: () => void;
-  onPrepareAction?: () => void;
+  /** 读取当前编辑态（与离开守卫、同步徽章同一套 evaluate 入口）。 */
+  readCurrentModificationState: () => FileModificationState;
   saving?: boolean;
 }
 
@@ -76,7 +79,7 @@ export const ArchivePanel: React.FC<ArchivePanelProps> = ({
   onArchive,
   onAfterRestore,
   onClose,
-  onPrepareAction,
+  readCurrentModificationState,
   saving = false,
 }) => {
   const [versions, setVersions] = useState<ArchiveEntry[]>([]);
@@ -125,10 +128,44 @@ export const ArchivePanel: React.FC<ArchivePanelProps> = ({
     return () => window.removeEventListener("excalidraw-server-saved", onSaved);
   }, [refresh]);
 
-  const isCurrentVersionArchived = () => {
-    onPrepareAction?.();
-    const contentHash = readCurrentFileContentHash(fileId);
-    return isContentHashArchived(versions, contentHash);
+  const readArchiveGate = () =>
+    evaluateManualArchiveGate(
+      fileId,
+      readCurrentModificationState(),
+      versions,
+    );
+
+  const canRestoreWithoutArchivePrompt = () => {
+    return evaluateArchiveCoverage(
+      fileId,
+      readCurrentModificationState(),
+      versions,
+    ).canRestoreWithoutArchivePrompt;
+  };
+
+  const runManualArchiveGate = async () => {
+    const gate = readArchiveGate();
+    if (gate === "save-first") {
+      setPromptMode({ type: "archive-save" });
+      return;
+    }
+    if (gate === "prompt-duplicate") {
+      setPromptMode({ type: "archive-duplicate" });
+      return;
+    }
+    await executeArchive();
+  };
+
+  const continueManualArchiveAfterSave = async () => {
+    await refresh({ silent: true });
+    const gate = readArchiveGate();
+    if (gate === "prompt-duplicate") {
+      setPromptMode({ type: "archive-duplicate" });
+      return;
+    }
+    if (gate === "archive") {
+      await executeArchive();
+    }
   };
 
   const handleSave = async () => {
@@ -160,11 +197,7 @@ export const ArchivePanel: React.FC<ArchivePanelProps> = ({
     if (actionsDisabled) {
       return;
     }
-    if (unsaved) {
-      setPromptMode({ type: "archive" });
-      return;
-    }
-    await executeArchive();
+    await runManualArchiveGate();
   };
 
   const performRestore = async (archiveId: string) => {
@@ -179,7 +212,7 @@ export const ArchivePanel: React.FC<ArchivePanelProps> = ({
     if (actionsDisabled) {
       return;
     }
-    if (isCurrentVersionArchived()) {
+    if (canRestoreWithoutArchivePrompt()) {
       setPanelBusy(true);
       try {
         await performRestore(archiveId);
@@ -199,7 +232,34 @@ export const ArchivePanel: React.FC<ArchivePanelProps> = ({
       return;
     }
 
-    if (promptMode.type === "archive") {
+    if (promptMode.type === "archive-save") {
+      if (choice !== "yes") {
+        setPromptMode(null);
+        return;
+      }
+      setPanelBusy(true);
+      try {
+        setActionLabel("save");
+        const saveResult = await onSave();
+        setActionLabel(null);
+        if (
+          saveResult &&
+          typeof saveResult === "object" &&
+          !saveResult.saved &&
+          !saveResult.skipped
+        ) {
+          return;
+        }
+        setPromptMode(null);
+        await continueManualArchiveAfterSave();
+      } finally {
+        setActionLabel(null);
+        setPanelBusy(false);
+      }
+      return;
+    }
+
+    if (promptMode.type === "archive-duplicate") {
       if (choice !== "yes") {
         setPromptMode(null);
         return;
