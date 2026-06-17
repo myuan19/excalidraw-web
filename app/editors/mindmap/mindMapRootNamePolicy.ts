@@ -50,7 +50,11 @@ export function resolveMindMapSaveDisplayName(
   if (!rootPlainText) {
     return DEFAULT_DOCUMENT_DISPLAY_NAME;
   }
-  return String(currentName ?? "").trim() || rootPlainText;
+  const name = String(currentName ?? "").trim();
+  if (!name || isDefaultDisplayName(name)) {
+    return rootPlainText;
+  }
+  return name;
 }
 
 /**

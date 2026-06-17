@@ -74,6 +74,12 @@ describe("resolveMindMapSaveDisplayName", () => {
       resolveMindMapSaveDisplayName(createEmptyMindMapData("根标题"), "文件名"),
     ).toBe("文件名");
   });
+
+  it("uses root text when saving from a default file name after typing into a cleared root", () => {
+    expect(
+      resolveMindMapSaveDisplayName(createEmptyMindMapData("新的标题"), "未命名"),
+    ).toBe("新的标题");
+  });
 });
 
 describe("reconcileMindMapRootAndFileName", () => {
