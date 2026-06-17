@@ -16,6 +16,10 @@ describe("MindMapEditorShell hydrate source contract", () => {
     expect(source).toContain("createMindMapHydrateCoordinator");
     expect(source).toContain("handleDraftPush");
     expect(source).toContain("hydrateCoordinatorRef.current.settle");
+    expect(source).toContain("isMindMapNativeDirtyPending(fileId)");
+    expect(source).toContain(
+      'debugMindMapPersist("native hydrate settle kept user dirty state"',
+    );
     expect(source).toContain('debugMindMapPersist("hydrate draft rejected"');
     expect(source).not.toContain("forwardMindMapHostDebug(\"mindmap-bridge\"");
     expect(source).not.toContain("explainHydrateDraftDecision");

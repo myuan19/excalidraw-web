@@ -637,6 +637,16 @@ const MindMapEditorShell = () => {
     if (!latest || !fileId) {
       return;
     }
+    const hasUserDirtyPending = isMindMapNativeDirtyPending(fileId);
+    if (hasUserDirtyPending) {
+      setStatus("有未保存更改");
+      debugMindMapPersist("native hydrate settle kept user dirty state", {
+        fileId8: fileId.slice(0, 8),
+        contentHash8: hashDocumentSnapshot(latest).slice(0, 8),
+        richText: summarizeMindMapRichTextTree(latest.data),
+      });
+      return;
+    }
     const baselineDocument = hydrateCoordinatorRef.current.settle(latest);
     latestDocumentRef.current = baselineDocument;
     adoptMindMapNativeBaseline(fileId, baselineDocument);
