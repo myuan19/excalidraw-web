@@ -40,12 +40,15 @@ export function resolveMindMapOpenDisplayName(
  */
 export function reconcileMindMapRootAndFileName(
   displayName: string,
-  rootText: string,
+  rootPlainText: string,
 ): MindMapRootNameReconcileAction {
-  const name = String(displayName || "").trim();
-  const root = String(rootText || "").trim();
-  if (!root && !name) {
-    return { kind: "noop" };
+  const name = String(displayName || "").trim() || DEFAULT_DOCUMENT_DISPLAY_NAME;
+  const root = String(rootPlainText || "").trim();
+  if (!root) {
+    if (isDefaultDisplayName(name)) {
+      return { kind: "push-file-to-root", text: DEFAULT_DOCUMENT_DISPLAY_NAME };
+    }
+    return { kind: "promote-root-to-file", name: DEFAULT_DOCUMENT_DISPLAY_NAME };
   }
   if (root === name) {
     return { kind: "noop" };

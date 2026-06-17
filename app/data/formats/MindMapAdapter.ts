@@ -95,12 +95,16 @@ export function isMindMapSingleRootOnly(data: unknown): boolean {
   return (root.children ?? []).length === 0;
 }
 
+/** Root label as stored on canvas (may be empty when the user clears the node). */
+export function getMindMapRootPlainText(data: MindMapDocumentData): string {
+  return mindMapRichTextToPlainText(data.root?.data?.text ?? "").trim();
+}
+
 /**
- * Extract the root node's plain-text label from a MindMap document,
- * suitable for use as the file display name.
+ * Root label for display / file-name sync. Empty canvas text falls back to 未命名.
  */
 export function getMindMapRootText(data: MindMapDocumentData): string {
-  return mindMapRichTextToPlainText(data.root?.data?.text ?? "").trim();
+  return getMindMapRootPlainText(data) || DEFAULT_DOCUMENT_DISPLAY_NAME;
 }
 
 export function stripMindMapViewportState(

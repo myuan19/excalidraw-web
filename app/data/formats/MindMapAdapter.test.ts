@@ -1,5 +1,7 @@
 import {
   createEmptyMindMapData,
+  getMindMapRootPlainText,
+  getMindMapRootText,
   isEffectivelyEmptyMindMapData,
   MindMapAdapter,
 } from "./MindMapAdapter";
@@ -30,6 +32,19 @@ describe("MindMapAdapter", () => {
     expect(createEmptyMindMapData("<unsafe&name>").root.data.text).toBe(
       "<p>&lt;unsafe&amp;name&gt;</p>",
     );
+  });
+
+  it("treats cleared root text as 未命名 for display-name sync", () => {
+    expect(
+      getMindMapRootText({
+        root: { data: { text: "<p><br></p>", richText: true }, children: [] },
+      }),
+    ).toBe("未命名");
+    expect(
+      getMindMapRootPlainText({
+        root: { data: { text: "<p><br></p>", richText: true }, children: [] },
+      }),
+    ).toBe("");
   });
 
   it("accepts current simple-mind-map data", async () => {

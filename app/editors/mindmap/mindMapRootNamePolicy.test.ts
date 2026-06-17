@@ -55,4 +55,18 @@ describe("reconcileMindMapRootAndFileName", () => {
       reconcileMindMapRootAndFileName("同一标题", "同一标题"),
     ).toEqual({ kind: "noop" });
   });
+
+  it("writes 未命名 to root when root was cleared and file name is default", () => {
+    expect(reconcileMindMapRootAndFileName("未命名", "")).toEqual({
+      kind: "push-file-to-root",
+      text: "未命名",
+    });
+  });
+
+  it("resets file name to 未命名 when root was cleared", () => {
+    expect(reconcileMindMapRootAndFileName("我的项目", "")).toEqual({
+      kind: "promote-root-to-file",
+      name: "未命名",
+    });
+  });
 });

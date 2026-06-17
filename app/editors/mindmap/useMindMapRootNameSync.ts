@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef } from "react";
 
 import { patchFileListTreeCacheFileName } from "../../data/fileListSessionCache";
-import { getMindMapRootText } from "../../data/formats/MindMapAdapter";
+import { DEFAULT_DOCUMENT_DISPLAY_NAME } from "../../data/defaultDocumentName";
+import {
+  getMindMapRootPlainText,
+  getMindMapRootText,
+} from "../../data/formats/MindMapAdapter";
 import { isLocalDraftFileId } from "../../data/localDraftFileId";
 import { LocalDraftSessions } from "../../data/localDraftSessions";
 import { ServerSync } from "../../data/ServerSync";
@@ -75,16 +79,25 @@ export function useMindMapRootNameSync({
       if (!isBridgeReady) {
         return false;
       }
-      const rootText = data
-        ? getMindMapRootText(data)
+      const rootPlainText = data
+        ? getMindMapRootPlainText(data)
         : (lastSyncedTextRef.current ?? "");
-      const action = reconcileMindMapRootAndFileName(displayName, rootText);
+      const action = reconcileMindMapRootAndFileName(
+        displayName,
+        rootPlainText,
+      );
       if (action.kind === "noop") {
         return false;
       }
       if (action.kind === "promote-root-to-file") {
         promoteRootToFileName(action.name);
+        if (!rootPlainText.trim()) {
+          postToNative("updateRootText", { text: action.name });
+        }
         return true;
+      }
+      if (!rootPlainText.trim() && displayName !== DEFAULT_DOCUMENT_DISPLAY_NAME) {
+        promoteRootToFileName(DEFAULT_DOCUMENT_DISPLAY_NAME);
       }
       lastSyncedTextRef.current = action.text;
       postToNative("updateRootText", { text: action.text });
@@ -96,13 +109,22 @@ export function useMindMapRootNameSync({
   const onDocumentChanged = useCallback(
     (data: MindMapDocumentData) => {
       if (!fileId) return;
-      const rootText = getMindMapRootText(data);
-      if (!rootText || rootText === lastSyncedTextRef.current) {
+      const rootPlainText = getMindMapRootPlainText(data);
+      const displayName =
+        rootPlainText || DEFAULT_DOCUMENT_DISPLAY_NAME;
+
+      if (!rootPlainText && isBridgeReady) {
+        postToNative("updateRootText", {
+          text: DEFAULT_DOCUMENT_DISPLAY_NAME,
+        });
+      }
+
+      if (displayName === lastSyncedTextRef.current) {
         return;
       }
-      promoteRootToFileName(rootText);
+      promoteRootToFileName(displayName);
     },
-    [fileId, promoteRootToFileName],
+    [fileId, isBridgeReady, postToNative, promoteRootToFileName],
   );
 
   useEffect(() => {
