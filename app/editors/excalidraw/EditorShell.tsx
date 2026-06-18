@@ -110,7 +110,11 @@ import {
   formatImportErrorMessage,
   loadExcalidrawFileAsServerSceneData,
 } from "../../data/importExcalidrawScene";
-import { restoreSceneAppState, restoreSceneElements } from "../../data/sceneRestore";
+import {
+  pickSceneViewportAppState,
+  restoreSceneAppState,
+  restoreSceneElements,
+} from "../../data/sceneRestore";
 import { ServerSync } from "../../data/ServerSync";
 import type { ForkSceneSnapshot } from "../../data/forkFileTypes";
 import { revealForkCanvasAfterFit } from "../../data/scrollEditorToFit";
@@ -535,7 +539,9 @@ const ExcalidrawWrapper = () => {
   // Reload from server (used by ArchivePanel)
   // ---------------------------------------------------------------------------
 
-  const reloadSceneFromServer = useCallback(async () => {
+  const reloadSceneFromServer = useCallback(async (opts?: {
+    preserveViewport?: boolean;
+  }) => {
     const fid = getFileIdFromHash();
     if (!fid || !excalidrawAPI) {
       return;
@@ -560,6 +566,9 @@ const ExcalidrawWrapper = () => {
     const restoredAppState = restoreSceneAppState(mergedAppState);
     const currentAppState = excalidrawAPI.getAppState();
     (restoredAppState as any).openSidebar = currentAppState.openSidebar;
+    if (opts?.preserveViewport) {
+      Object.assign(restoredAppState, pickSceneViewportAppState(currentAppState));
+    }
     excalidrawAPI.updateScene({
       elements: restoreSceneElements(serverData.elements),
       appState: restoredAppState,
@@ -575,7 +584,9 @@ const ExcalidrawWrapper = () => {
       files: serverData.files,
       deltas: [],
     });
-    revealForkCanvasAfterFit(excalidrawAPI, () => {});
+    revealForkCanvasAfterFit(excalidrawAPI, () => {}, {
+      skipFit: opts?.preserveViewport,
+    });
     window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
     window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
   }, [excalidrawAPI, localPersistGenRef]);
@@ -585,7 +596,7 @@ const ExcalidrawWrapper = () => {
   }, [excalidrawAPI]);
   const remoteRefresh = useRemoteFileRefresh({
     fileId: excalidrawAPI ? forkFileId : null,
-    reload: reloadSceneFromServer,
+    reload: () => reloadSceneFromServer({ preserveViewport: true }),
     onReloaded: notifyRemoteReloaded,
   });
 
