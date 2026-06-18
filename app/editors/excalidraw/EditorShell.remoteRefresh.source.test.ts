@@ -12,8 +12,9 @@ describe("EditorShell remote refresh source contract", () => {
       path.join(__dirname, "EditorShell.tsx"),
       "utf8",
     );
-    expect(source).toContain("pickSceneViewportAppState");
+    expect(source).toContain("applyRemoteExcalidrawScene");
     expect(source).toContain("preserveViewport?: boolean");
+    expect(source).toContain("preserveViewport: !!opts?.preserveViewport");
     expect(source).toContain(
       "reload: () => reloadSceneFromServer({ preserveViewport: true })",
     );

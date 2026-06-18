@@ -1,4 +1,3 @@
-import { CaptureUpdateAction } from "@excalidraw/excalidraw";
 import type {
   AppState,
   ExcalidrawImperativeAPI,
@@ -25,6 +24,11 @@ import { isLocalDraftFileId } from "../../data/localDraftFileId";
 import { restoreSceneAppState, restoreSceneElements } from "../../data/sceneRestore";
 import { LocalDraftSessions } from "../../data/localDraftSessions";
 import { ServerSync } from "../../data/ServerSync";
+import {
+  applyRemoteExcalidrawScene,
+  isForkSceneSnapshot,
+  mergeRemoteExcalidrawAppState,
+} from "./applyRemoteExcalidrawScene";
 
 import type { ForkLocalCacheRecord, ForkSceneSnapshot } from "../../data/forkFileTypes";
 
@@ -100,8 +104,8 @@ async function loadBlockingFromServer(
   let serverRecord: Awaited<ReturnType<typeof ServerSync.getFile>> | null = null;
   try {
     serverRecord = await ServerSync.getFile(fileId);
-    if (serverRecord.data && typeof serverRecord.data === "object") {
-      serverData = serverRecord.data as ForkSceneSnapshot;
+    if (isForkSceneSnapshot(serverRecord.data)) {
+      serverData = serverRecord.data;
     }
   } catch (err) {
     logInit.debug(`file=${fileId.slice(0, 8)} server fetch failed`, err);
@@ -119,10 +123,10 @@ async function loadBlockingFromServer(
   }
 
   if (serverData) {
-    const mergedAppState = {
-      ...(serverData.appState ?? {}),
-      name: serverRecord?.name ?? (serverData.appState as AppState)?.name ?? "",
-    };
+    const mergedAppState = mergeRemoteExcalidrawAppState(
+      serverData,
+      serverRecord?.name,
+    );
     const h = hashSceneSnapshot(serverData);
     FileSyncState.alignHashes(fileId, h);
     if (serverRecord?.content_sha256) {
@@ -241,6 +245,7 @@ export async function initializeExcalidrawScene(opts?: {
 export async function verifyExcalidrawRemoteAfterCachedOpen(opts: {
   excalidrawAPI: ExcalidrawImperativeAPI;
   onPhase?: (phase: EditorOpenPhase) => void;
+  bumpLocalPersistGeneration?: () => void;
 }): Promise<boolean> {
   const fileId = getFileIdFromHash();
   if (!fileId) {
@@ -282,49 +287,16 @@ export async function verifyExcalidrawRemoteAfterCachedOpen(opts: {
 
   opts.onPhase?.("background_sync");
   try {
+    opts.bumpLocalPersistGeneration?.();
     const serverRecord = await ServerSync.getFile(fileId);
-    const serverData = serverRecord.data as ForkSceneSnapshot | undefined;
-    if (!serverData || typeof serverData !== "object") {
-      opts.onPhase?.("ready");
-      return false;
-    }
-
-    const mergedAppState = {
-      ...(serverData.appState ?? {}),
-      name: serverRecord.name ?? (serverData.appState as AppState)?.name ?? "",
-    };
-    const h = hashSceneSnapshot(serverData);
-    FileSyncState.alignHashes(fileId, h);
-    if (serverRecord.content_sha256) {
-      FileSyncState.setServerHash(fileId, serverRecord.content_sha256);
-    }
-    FileSyncState.setLocalCache(fileId, {
-      elements: serverData.elements,
-      appState: mergedAppState,
-      files: serverData.files,
-      deltas: [],
+    const applied = await applyRemoteExcalidrawScene({
+      excalidrawAPI: opts.excalidrawAPI,
+      fileId,
+      serverFile: serverRecord,
+      preserveViewport: true,
     });
-    await DeltaStorage.restoreSnapshot([]);
-
-    const forkBrowserOverlay = readForkBrowserAppStateOverlay(fileId);
-    const { scene } = buildInitResult(
-      { ...serverData, appState: mergedAppState },
-      forkBrowserOverlay,
-    );
-    if (scene) {
-      opts.excalidrawAPI.updateScene({
-        elements: scene.elements,
-        appState: restoreSceneAppState(scene.appState ?? {}),
-        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-      });
-      const sceneFiles = (scene.files ?? {}) as BinaryFiles;
-      if (Object.keys(sceneFiles).length > 0) {
-        opts.excalidrawAPI.addFiles(Object.values(sceneFiles));
-      }
-    }
-    window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
     opts.onPhase?.("ready");
-    return true;
+    return applied;
   } catch (err) {
     logInit.debug(`file=${fileId.slice(0, 8)} background verify failed`, err);
     opts.onPhase?.("ready");

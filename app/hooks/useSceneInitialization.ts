@@ -193,6 +193,9 @@ export function useSceneInitialization(opts: {
         void verifyExcalidrawRemoteAfterCachedOpen({
           excalidrawAPI,
           onPhase: onOpenPhase,
+          bumpLocalPersistGeneration: () => {
+            localPersistGenRef.current += 1;
+          },
         });
       } else {
         onOpenPhase?.("ready");
@@ -253,6 +256,9 @@ export function useSceneInitialization(opts: {
             void verifyExcalidrawRemoteAfterCachedOpen({
               excalidrawAPI,
               onPhase: onOpenPhase,
+              bumpLocalPersistGeneration: () => {
+                localPersistGenRef.current += 1;
+              },
             });
           } else {
             onOpenPhase?.("ready");

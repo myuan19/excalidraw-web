@@ -102,22 +102,13 @@ import { FileSyncState } from "../../data/FileSyncState";
 import { notifyEdit } from "../../data/autoSaveSession";
 import { DEFAULT_DOCUMENT_DISPLAY_NAME } from "../../data/defaultDocumentName";
 import { useRemoteFileRefresh } from "../../hooks/useRemoteFileRefresh";
-import { clearTabFileDirty } from "../../data/tabFileDirtyState";
 import { RemoteUpdateConfirmDialog } from "../../components/RemoteUpdateConfirmDialog";
 import { requestSave, requestSaveAndWait } from "../../data/saveQueue";
-import { hashSceneSnapshot } from "../../data/sceneHash";
 import {
   formatImportErrorMessage,
   loadExcalidrawFileAsServerSceneData,
 } from "../../data/importExcalidrawScene";
-import {
-  pickSceneViewportAppState,
-  restoreSceneAppState,
-  restoreSceneElements,
-} from "../../data/sceneRestore";
 import { ServerSync } from "../../data/ServerSync";
-import type { ForkSceneSnapshot } from "../../data/forkFileTypes";
-import { revealForkCanvasAfterFit } from "../../data/scrollEditorToFit";
 import {
   getFileIdFromHash,
   getFileIdFromHashString,
@@ -132,6 +123,7 @@ import {
 import { useBeforeUnloadGuard } from "../../hooks/useBeforeUnloadGuard";
 import { useForkFileSave } from "./useForkFileSave";
 import { useSceneInitialization } from "../../hooks/useSceneInitialization";
+import { applyRemoteExcalidrawScene } from "./applyRemoteExcalidrawScene";
 
 const logStash = createLogger({ module: "stash" });
 const logShell = createLogger({ module: "EditorShell" });
@@ -536,7 +528,7 @@ const ExcalidrawWrapper = () => {
   }, [excalidrawAPI]);
 
   // ---------------------------------------------------------------------------
-  // Reload from server (used by ArchivePanel)
+  // Reload server scene: archive restore may fit, live remote refresh preserves viewport.
   // ---------------------------------------------------------------------------
 
   const reloadSceneFromServer = useCallback(async (opts?: {
@@ -548,47 +540,12 @@ const ExcalidrawWrapper = () => {
     }
     localPersistGenRef.current += 1;
     const serverFile = await ServerSync.getFile(fid, { force: true });
-    const serverData = serverFile.data as ForkSceneSnapshot;
-    if (!serverData || typeof serverData !== "object") {
-      return;
-    }
-    const mergedAppState = {
-      ...(serverData.appState ?? {}),
-      name: serverFile.name ?? (serverData.appState as any)?.name ?? "",
-    };
-    const h = hashSceneSnapshot(serverData);
-    FileSyncState.alignHashes(fid, h);
-    clearTabFileDirty(fid);
-    if (serverFile.content_sha256) {
-      FileSyncState.setServerHash(fid, serverFile.content_sha256);
-    }
-    await DeltaStorage.restoreSnapshot([]);
-    const restoredAppState = restoreSceneAppState(mergedAppState);
-    const currentAppState = excalidrawAPI.getAppState();
-    (restoredAppState as any).openSidebar = currentAppState.openSidebar;
-    if (opts?.preserveViewport) {
-      Object.assign(restoredAppState, pickSceneViewportAppState(currentAppState));
-    }
-    excalidrawAPI.updateScene({
-      elements: restoreSceneElements(serverData.elements),
-      appState: restoredAppState,
-      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    await applyRemoteExcalidrawScene({
+      excalidrawAPI,
+      fileId: fid,
+      serverFile,
+      preserveViewport: !!opts?.preserveViewport,
     });
-    const files = (serverData.files || {}) as BinaryFiles;
-    if (files && Object.keys(files).length) {
-      excalidrawAPI.addFiles(Object.values(files));
-    }
-    FileSyncState.setLocalCache(fid, {
-      elements: serverData.elements,
-      appState: mergedAppState,
-      files: serverData.files,
-      deltas: [],
-    });
-    revealForkCanvasAfterFit(excalidrawAPI, () => {}, {
-      skipFit: opts?.preserveViewport,
-    });
-    window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
-    window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
   }, [excalidrawAPI, localPersistGenRef]);
 
   const notifyRemoteReloaded = useCallback(() => {

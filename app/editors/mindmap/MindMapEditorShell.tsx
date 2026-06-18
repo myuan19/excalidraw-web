@@ -709,7 +709,11 @@ const MindMapEditorShell = () => {
   });
 
   const publishMindMapDataToNative = useCallback(
-    (data: MindMapDocumentData, reason: string) => {
+    (
+      data: MindMapDocumentData,
+      reason: string,
+      opts?: { preserveViewport?: boolean },
+    ) => {
       extendNativeHydrateSettle(`publish:${reason}`);
       const authoritativeDocument =
         latestDocumentRef.current ?? MindMapAdapter.toDocument(data);
@@ -721,7 +725,12 @@ const MindMapEditorShell = () => {
         richText: summarizeMindMapRichTextTree(data),
         sampleNode: findFirstRichMindMapNodeSummary(data),
       });
-      publishDocument(toNativeMindMapBridgePayload(data, fileId), reason);
+      publishDocument(
+        toNativeMindMapBridgePayload(data, fileId, {
+          applyBrowserView: !opts?.preserveViewport,
+        }),
+        reason,
+      );
     },
     [extendNativeHydrateSettle, fileId, noteOpenHydrateSession, publishDocument],
   );
@@ -797,7 +806,10 @@ const MindMapEditorShell = () => {
         const cached = getCachedMindMapDocument(resolvedId);
         const hasUnsavedChanges = FileSyncState.hasUnsavedChanges(resolvedId);
 
-        const loadFromServer = async (reason: string) => {
+        const loadFromServer = async (
+          reason: string,
+          opts?: { preserveViewport?: boolean },
+        ) => {
           const serverStart = performance.now();
           debugMindMapOpen("before ServerSync.getFile", {
             fileId8: resolvedId.slice(0, 8),
@@ -822,7 +834,9 @@ const MindMapEditorShell = () => {
               contentSha: serverFile.content_sha256,
             });
           const parseStart = performance.now();
-          saveMindMapBrowserViewFromData(resolvedId, serverFile.data);
+          if (!opts?.preserveViewport) {
+            saveMindMapBrowserViewFromData(resolvedId, serverFile.data);
+          }
           const data = serverFile.data
             ? await MindMapAdapter.parse(serverFile.data)
             : createEmptyMindMapData(
@@ -869,7 +883,7 @@ const MindMapEditorShell = () => {
             reason,
           });
           logMindMapOpenPhase("preparing_surface");
-          publishMindMapDataToNative(data, reason);
+          publishMindMapDataToNative(data, reason, opts);
         };
 
         if (
@@ -944,7 +958,9 @@ const MindMapEditorShell = () => {
             });
             if (refreshDecision.refresh) {
               logMindMapOpenPhase("background_sync");
-              await loadFromServer("remote-hash-changed-after-cache");
+              await loadFromServer("remote-hash-changed-after-cache", {
+                preserveViewport: true,
+              });
               logMindMapOpenPhase("ready");
               return;
             }
@@ -1382,12 +1398,15 @@ const MindMapEditorShell = () => {
   const reloadMindMapFromServer = useCallback(async (opts?: {
     reason?: string;
     status?: string;
+    preserveViewport?: boolean;
   }) => {
     if (!fileId) {
       return;
     }
     const serverFile = await ServerSync.getFile(fileId, { force: true });
-    saveMindMapBrowserViewFromData(fileId, serverFile.data);
+    if (!opts?.preserveViewport) {
+      saveMindMapBrowserViewFromData(fileId, serverFile.data);
+    }
     const data = serverFile.data
       ? await MindMapAdapter.parse(serverFile.data)
       : createEmptyMindMapData(
@@ -1395,7 +1414,7 @@ const MindMapEditorShell = () => {
         );
     const document = MindMapAdapter.toDocument(data);
     latestDocumentRef.current = document;
-    publishMindMapDataToNative(data, opts?.reason ?? "history-restore");
+    publishMindMapDataToNative(data, opts?.reason ?? "history-restore", opts);
     recordMindMapPersisted(fileId, document, {
       serverContentSha256: serverFile.content_sha256 ?? undefined,
     });
@@ -1422,6 +1441,7 @@ const MindMapEditorShell = () => {
       reloadMindMapFromServer({
         reason: "cross-tab-file-saved",
         status: "已同步远端更新",
+        preserveViewport: true,
       }),
     [reloadMindMapFromServer],
   );

@@ -13,13 +13,42 @@ describe("MindMapEditorShell browser viewport source contract", () => {
       "utf8",
     );
 
-    expect(source).toContain("applyMindMapBrowserView");
+    const bridgePayloadSource = fs.readFileSync(
+      path.join(__dirname, "mindMapBridgePayload.ts"),
+      "utf8",
+    );
+
+    expect(bridgePayloadSource).toContain("applyMindMapBrowserView");
+    expect(bridgePayloadSource).toContain("applyBrowserView?: boolean");
     expect(source).toContain("saveMindMapBrowserView(fileId, event.data.payload)");
     expect(source).toContain("event.data.type === \"mindMapViewState\"");
     expect(source).toContain("event.data.type === \"saveMindMapThumbnail\"");
     expect(source).not.toContain(
       "saveMindMapBrowserViewFromData(fileId, savePayload.data)",
     );
-    expect(source).toContain("toBridgePayload(data, fileId");
+    expect(source).toContain("toNativeMindMapBridgePayload(data, fileId,");
+  });
+
+  it("keeps live remote refresh from applying shared browser view", () => {
+    const source = fs.readFileSync(
+      path.join(__dirname, "MindMapEditorShell.tsx"),
+      "utf8",
+    );
+    const loadFromServerBlock = source.slice(
+      source.indexOf("const loadFromServer = async"),
+      source.indexOf("if (\n          shouldOpenCachedDocumentFirst"),
+    );
+    const reloadBlock = source.slice(
+      source.indexOf("const reloadMindMapFromServer = useCallback"),
+      source.indexOf("const reloadFromCrossTabSave = useCallback"),
+    );
+
+    expect(source).toContain("applyBrowserView: !opts?.preserveViewport");
+    expect(loadFromServerBlock).toContain("if (!opts?.preserveViewport)");
+    expect(source).toContain(
+      'await loadFromServer("remote-hash-changed-after-cache", {\n                preserveViewport: true,',
+    );
+    expect(reloadBlock).toContain("if (!opts?.preserveViewport)");
+    expect(source).toContain("preserveViewport: true");
   });
 });

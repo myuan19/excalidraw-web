@@ -89,7 +89,9 @@ export async function saveNewDocument(opts: {
       created.id,
       toMindMapLocalCacheRecord(
         persistDocument,
-        saveResult.content_sha256 ?? FileSyncState.getServerHash(created.id),
+        saveResult.content_sha256 ??
+          FileSyncState.getServerHash(created.id) ??
+          undefined,
       ),
     );
     const hash = hashDocumentSnapshot(persistDocument);
