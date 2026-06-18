@@ -55,6 +55,7 @@ export function useSceneInitialization(opts: {
   updateDraftHashDebouncedRef: React.MutableRefObject<{ flush: () => void; cancel: () => void } & ((...args: any[]) => void)>;
   localPersistGenRef: React.MutableRefObject<number>;
   saveToServerRef: React.MutableRefObject<(opts?: SaveToServerOptions) => Promise<boolean>>;
+  runRemoteSceneApply: <T>(apply: () => Promise<T>) => Promise<T>;
 }) {
   const {
     excalidrawAPI,
@@ -62,6 +63,7 @@ export function useSceneInitialization(opts: {
     updateDraftHashDebouncedRef,
     localPersistGenRef,
     saveToServerRef,
+    runRemoteSceneApply,
   } = opts;
 
   const initialStatePromiseRef = useRef<{
@@ -196,6 +198,7 @@ export function useSceneInitialization(opts: {
           bumpLocalPersistGeneration: () => {
             localPersistGenRef.current += 1;
           },
+          runRemoteSceneApply,
         });
       } else {
         onOpenPhase?.("ready");
@@ -259,6 +262,7 @@ export function useSceneInitialization(opts: {
               bumpLocalPersistGeneration: () => {
                 localPersistGenRef.current += 1;
               },
+              runRemoteSceneApply,
             });
           } else {
             onOpenPhase?.("ready");
@@ -296,6 +300,7 @@ export function useSceneInitialization(opts: {
     onOpenPhase,
     updateDraftHashDebouncedRef,
     saveToServerRef,
+    runRemoteSceneApply,
   ]);
 
   return {

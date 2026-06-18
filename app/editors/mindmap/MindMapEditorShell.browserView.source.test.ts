@@ -51,4 +51,26 @@ describe("MindMapEditorShell browser viewport source contract", () => {
     expect(reloadBlock).toContain("if (!opts?.preserveViewport)");
     expect(source).toContain("preserveViewport: true");
   });
+
+  it("suppresses programmatic remote updates from dirty and auto-save paths", () => {
+    const shellSource = fs.readFileSync(
+      path.join(__dirname, "MindMapEditorShell.tsx"),
+      "utf8",
+    );
+    const nativeBridgeSource = fs.readFileSync(
+      path.join(
+        __dirname,
+        "native/web/src/bridge/takeoverShell.js",
+      ),
+      "utf8",
+    );
+
+    expect(shellSource).toContain("extendNativeHydrateSettle(`publish:${reason}`)");
+    expect(shellSource).toContain("mindMapDirtyState suppressed during hydrate");
+    expect(shellSource).toContain("auto save suppressed during hydrate");
+    expect(nativeBridgeSource).toContain(
+      "scheduleDirtyNotifyEnable('set-mind-map-data')",
+    );
+    expect(nativeBridgeSource).toContain("dirty notify suppressed");
+  });
 });

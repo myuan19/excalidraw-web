@@ -72,7 +72,7 @@ export async function applyRemoteExcalidrawScene(opts: {
   excalidrawAPI.updateScene({
     elements: restoreSceneElements(serverData.elements),
     appState: restoredAppState,
-    captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    captureUpdate: CaptureUpdateAction.NEVER,
   });
 
   const files = (serverData.files || {}) as BinaryFiles;

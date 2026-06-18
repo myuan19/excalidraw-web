@@ -244,6 +244,26 @@ const ExcalidrawWrapper = () => {
   const [langCode] = useAppLangCode();
   const debugCanvasRef = useRef<HTMLCanvasElement>(null);
   const [, forceRefresh] = useState(false);
+  const remoteSceneApplyDepthRef = useRef(0);
+
+  const runRemoteSceneApply = useCallback(
+    async <T,>(apply: () => Promise<T>): Promise<T> => {
+      remoteSceneApplyDepthRef.current += 1;
+      try {
+        return await apply();
+      } finally {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            remoteSceneApplyDepthRef.current = Math.max(
+              0,
+              remoteSceneApplyDepthRef.current - 1,
+            );
+          });
+        });
+      }
+    },
+    [],
+  );
 
   // ---------------------------------------------------------------------------
   // File save hook
@@ -438,6 +458,7 @@ const ExcalidrawWrapper = () => {
     updateDraftHashDebouncedRef,
     localPersistGenRef,
     saveToServerRef,
+    runRemoteSceneApply,
   });
 
   // Bridge: keep save hook's getSceneData in sync
@@ -540,13 +561,15 @@ const ExcalidrawWrapper = () => {
     }
     localPersistGenRef.current += 1;
     const serverFile = await ServerSync.getFile(fid, { force: true });
-    await applyRemoteExcalidrawScene({
-      excalidrawAPI,
-      fileId: fid,
-      serverFile,
-      preserveViewport: !!opts?.preserveViewport,
-    });
-  }, [excalidrawAPI, localPersistGenRef]);
+    await runRemoteSceneApply(() =>
+      applyRemoteExcalidrawScene({
+        excalidrawAPI,
+        fileId: fid,
+        serverFile,
+        preserveViewport: !!opts?.preserveViewport,
+      }),
+    );
+  }, [excalidrawAPI, localPersistGenRef, runRemoteSceneApply]);
 
   const notifyRemoteReloaded = useCallback(() => {
     excalidrawAPI?.setToast({ message: "已同步远端更新" });
@@ -566,7 +589,8 @@ const ExcalidrawWrapper = () => {
     appState: AppState,
     files: BinaryFiles,
   ) => {
-    if (!document.hidden) {
+    const isRemoteSceneApply = remoteSceneApplyDepthRef.current > 0;
+    if (!isRemoteSceneApply && !document.hidden) {
       LocalData.save(elements, appState, files, () => {
         if (excalidrawAPI) {
           let didChange = false;
@@ -595,7 +619,7 @@ const ExcalidrawWrapper = () => {
     }
 
     const fid = getFileIdFromHash();
-    if (fid && excalidrawAPI) {
+    if (!isRemoteSceneApply && fid && excalidrawAPI) {
       updateDraftHashDebouncedRef.current(fid, getSceneData);
       notifyEdit();
     }

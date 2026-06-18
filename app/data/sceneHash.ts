@@ -3,8 +3,8 @@ import type { ForkSceneSnapshot } from "./forkFileTypes";
 /**
  * Stable fingerprint for scene content.
  *
- * Strips `appState.name` before hashing so that file-name changes (managed by
- * the server `files` table, not the canvas) never cause a hash mismatch.
+ * Strips UI-only appState before hashing so that file-name or viewport changes
+ * never cause a document-content mismatch.
  *
  * Uses plain `JSON.stringify` with sorted keys for determinism — avoids a
  * static import of `@excalidraw/excalidraw` which would pull the entire editor
@@ -24,8 +24,7 @@ export function hashSceneSnapshot(data: ForkSceneSnapshot | unknown): string {
 /**
  * Stable fingerprint for any managed document payload.
  *
- * Legacy Excalidraw scene payloads keep the existing scene hash semantics.
- * Managed Excalidraw documents still ignore `data.appState.name`, and managed
+ * Legacy Excalidraw scene payloads ignore UI-only appState, and managed
  * MindMap documents ignore `data.view` because viewport position is local UI
  * state rather than document content.
  */
@@ -51,8 +50,15 @@ function toSceneHashPayload(data: ForkSceneSnapshot | unknown): {
     files?: unknown;
   };
   let appState = o.appState;
-  if (appState && typeof appState === "object" && "name" in appState) {
-    const { name: _stripped, ...rest } = appState as Record<string, unknown>;
+  if (appState && typeof appState === "object") {
+    const {
+      name: _strippedName,
+      openSidebar: _strippedOpenSidebar,
+      scrollX: _strippedScrollX,
+      scrollY: _strippedScrollY,
+      zoom: _strippedZoom,
+      ...rest
+    } = appState as Record<string, unknown>;
     appState = rest;
   }
 

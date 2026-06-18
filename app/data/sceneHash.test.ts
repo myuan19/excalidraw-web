@@ -1,4 +1,47 @@
-import { hashDocumentSnapshot } from "./sceneHash";
+import { hashDocumentSnapshot, hashSceneSnapshot } from "./sceneHash";
+
+describe("hashSceneSnapshot", () => {
+  it("ignores Excalidraw viewport and shell-only appState changes", () => {
+    const base = {
+      type: "excalidraw",
+      version: 2,
+      source: "test",
+      elements: [
+        {
+          id: "rect-1",
+          type: "rectangle",
+          x: 10,
+          y: 20,
+          width: 100,
+          height: 80,
+        },
+      ],
+      appState: {
+        name: "远端名称",
+        openSidebar: null,
+        scrollX: 0,
+        scrollY: 0,
+        zoom: { value: 1 },
+        viewBackgroundColor: "#ffffff",
+      },
+      files: {},
+    };
+
+    expect(
+      hashSceneSnapshot({
+        ...base,
+        appState: {
+          ...base.appState,
+          name: "本地标签名",
+          openSidebar: { name: "library" },
+          scrollX: 240,
+          scrollY: -180,
+          zoom: { value: 0.5 },
+        },
+      }),
+    ).toBe(hashSceneSnapshot(base));
+  });
+});
 
 describe("hashDocumentSnapshot", () => {
   it("ignores MindMap viewport-only changes", () => {

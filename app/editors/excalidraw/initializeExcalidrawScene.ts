@@ -246,6 +246,7 @@ export async function verifyExcalidrawRemoteAfterCachedOpen(opts: {
   excalidrawAPI: ExcalidrawImperativeAPI;
   onPhase?: (phase: EditorOpenPhase) => void;
   bumpLocalPersistGeneration?: () => void;
+  runRemoteSceneApply: <T>(apply: () => Promise<T>) => Promise<T>;
 }): Promise<boolean> {
   const fileId = getFileIdFromHash();
   if (!fileId) {
@@ -289,12 +290,14 @@ export async function verifyExcalidrawRemoteAfterCachedOpen(opts: {
   try {
     opts.bumpLocalPersistGeneration?.();
     const serverRecord = await ServerSync.getFile(fileId);
-    const applied = await applyRemoteExcalidrawScene({
-      excalidrawAPI: opts.excalidrawAPI,
-      fileId,
-      serverFile: serverRecord,
-      preserveViewport: true,
-    });
+    const apply = () =>
+      applyRemoteExcalidrawScene({
+        excalidrawAPI: opts.excalidrawAPI,
+        fileId,
+        serverFile: serverRecord,
+        preserveViewport: true,
+      });
+    const applied = await opts.runRemoteSceneApply(apply);
     opts.onPhase?.("ready");
     return applied;
   } catch (err) {

@@ -19,6 +19,8 @@ describe("initializeExcalidrawScene remote verify source contract", () => {
     expect(source).toContain("readForkBrowserAppStateOverlay(fileIdFromHash)");
     expect(verifyBody).toContain("applyRemoteExcalidrawScene");
     expect(verifyBody).toContain("preserveViewport: true");
+    expect(verifyBody).toContain("runRemoteSceneApply");
+    expect(verifyBody).not.toContain("runRemoteSceneApply?:");
     expect(verifyBody).not.toContain("readForkBrowserAppStateOverlay");
   });
 });
