@@ -19,12 +19,26 @@ export async function createExcalidrawFile({
     kind: "excalidraw",
     data: initialScene,
   });
-  await ServerSync.saveFileImmediate(created.id, initialScene, name, thumbnail);
-  FileSyncState.setLocalCache(created.id, {
+  const saveResult = await ServerSync.saveFileImmediate(
+    created.id,
+    initialScene,
+    name,
+    thumbnail,
+    { source: "create-excalidraw" },
+  );
+  FileSyncState.setServerSyncedLocalCache(created.id, {
     elements: initialScene.elements,
     appState: initialScene.appState,
     files: initialScene.files,
     deltas: [],
+    meta: {
+      ...(saveResult.content_sha256
+        ? { serverContentSha256: saveResult.content_sha256 }
+        : {}),
+      ...(typeof saveResult.version === "number"
+        ? { serverVersion: saveResult.version }
+        : {}),
+    },
   });
   return { id: created.id };
 }
@@ -45,17 +59,26 @@ export async function importExcalidrawFile({
     kind: "excalidraw",
     data: initialScene,
   });
-  await ServerSync.saveFileImmediate(
+  const saveResult = await ServerSync.saveFileImmediate(
     created.id,
     initialScene,
     fileName,
     thumbnail,
+    { source: "import-excalidraw" },
   );
-  FileSyncState.setLocalCache(created.id, {
+  FileSyncState.setServerSyncedLocalCache(created.id, {
     elements,
     appState,
     files: sceneFiles,
     deltas: [],
+    meta: {
+      ...(saveResult.content_sha256
+        ? { serverContentSha256: saveResult.content_sha256 }
+        : {}),
+      ...(typeof saveResult.version === "number"
+        ? { serverVersion: saveResult.version }
+        : {}),
+    },
   });
   return { id: created.id };
 }

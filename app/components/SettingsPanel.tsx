@@ -19,6 +19,12 @@ import {
   updateAppSettings,
   subscribeAppSettings,
 } from "../data/appSettings";
+import {
+  getDebugCapability,
+  loadDebugCapability,
+  setDebugLoggingEnabled,
+  subscribeDebugCapability,
+} from "../data/debugCapability";
 
 import "./SettingsPanel.scss";
 
@@ -43,6 +49,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<"general" | "ai">("general");
+  const [debugCapability, setDebugCapability] = useState(getDebugCapability);
   const { mounted, active, onDrawerTransitionEnd } = useDrawerTransition(open);
 
   useEffect(() => {
@@ -76,6 +83,13 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   }, []);
 
   useEffect(() => {
+    void loadDebugCapability();
+    return subscribeDebugCapability(() => {
+      setDebugCapability(getDebugCapability());
+    });
+  }, []);
+
+  useEffect(() => {
     if (!mounted) {
       return;
     }
@@ -101,8 +115,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   }, [aiConfig]);
 
   const handleAppSettingChange = useCallback(
-    (key: keyof AppSettings, value: boolean | number) => {
-      updateAppSettings({ [key]: value });
+    <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
+      updateAppSettings({ [key]: value } as Pick<AppSettings, K>);
     },
     [],
   );
@@ -174,7 +188,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
         <div className="settings-panel__body">
           {activeTab === "general" && (
-            <div className="settings-panel__section">
+            <>
+              <div className="settings-panel__section">
               <h3>自动保存</h3>
               <div className="settings-panel__option">
                 <div className="settings-panel__option-text">
@@ -270,7 +285,31 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   ))}
                 </select>
               </div>
-            </div>
+              </div>
+              {debugCapability.allowed && (
+                <div className="settings-panel__section">
+                  <h3>调试</h3>
+                  <div className="settings-panel__option">
+                    <div className="settings-panel__option-text">
+                      <span className="settings-panel__option-label">
+                        Debug 日志
+                      </span>
+                      <span className="settings-panel__option-desc">
+                        开启后输出更详细的前端日志，并把 Web 控制台日志转发到后端统一日志
+                      </span>
+                    </div>
+                    <label className="settings-panel__toggle">
+                      <input
+                        type="checkbox"
+                        checked={appSettings.debugLoggingMode !== "off"}
+                        onChange={(e) => setDebugLoggingEnabled(e.target.checked)}
+                      />
+                      <span className="settings-panel__toggle-track" />
+                    </label>
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {activeTab === "ai" && (

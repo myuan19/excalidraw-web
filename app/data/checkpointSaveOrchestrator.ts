@@ -3,9 +3,17 @@ import {
   resolveCheckpointPolicy,
   type CheckpointPolicy,
 } from "./checkpointPolicy";
+import { getClientTabId } from "./clientRequestContext";
+import { createLogger } from "../lib/logger";
 
 import type { PutFileResult } from "./ServerSync";
 import type { SaveToServerSource } from "../hooks/types";
+
+const log = createLogger({ module: "checkpointSave" });
+
+function hash8(hash: string | null | undefined): string | null {
+  return hash ? hash.slice(0, 8) : null;
+}
 
 export type CheckpointSaveInput = {
   fileId: string;
@@ -33,6 +41,7 @@ export type CheckpointSaveOutcome = {
   skipped?: boolean;
   checkpointCreated: boolean;
   contentSha256?: string | null;
+  version?: number | null;
   updatedAt?: string | null;
 };
 
@@ -51,11 +60,30 @@ export async function executeCheckpointSave(
   const shouldCheckUnchangedLatest =
     isManualCheckpointSource(input.source) || input.source === "home";
 
+  log.info("evaluate", {
+    clientTabId: getClientTabId(),
+    fileId8: input.fileId.slice(0, 8),
+    source: input.source,
+    contentHash8: hash8(input.contentHash),
+    baselineHash8: hash8(input.baselineHash),
+    unchanged,
+    forceThumbnail: !!input.forceThumbnail,
+    forcePut: !!input.forcePut,
+    checkpointPolicy: checkpointPolicy.mode,
+    shouldCheckUnchangedLatest,
+  });
+
   if (
     unchanged &&
     checkpointPolicy.mode === "none" &&
     !shouldCheckUnchangedLatest
   ) {
+    log.info("skip put", {
+      clientTabId: getClientTabId(),
+      fileId8: input.fileId.slice(0, 8),
+      source: input.source,
+      reason: "unchanged-no-checkpoint",
+    });
     return {
       saved: false,
       checkpointCreated: false,
@@ -64,6 +92,13 @@ export async function executeCheckpointSave(
   }
 
   if (unchanged && !shouldCheckUnchangedLatest) {
+    log.info("skip put", {
+      clientTabId: getClientTabId(),
+      fileId8: input.fileId.slice(0, 8),
+      source: input.source,
+      reason: "unchanged",
+      checkpointPolicy: checkpointPolicy.mode,
+    });
     return {
       saved: false,
       checkpointCreated: false,
@@ -72,9 +107,27 @@ export async function executeCheckpointSave(
   }
 
   const fileThumbnail = await deps.resolveFileThumbnailForPut();
+  log.info("put start", {
+    clientTabId: getClientTabId(),
+    fileId8: input.fileId.slice(0, 8),
+    source: input.source,
+    hasThumbnail: typeof fileThumbnail === "string" && fileThumbnail.length > 0,
+    clearThumbnail: fileThumbnail === null,
+    checkpointPolicy: checkpointPolicy.mode,
+  });
   const result = await deps.putDocument({
     thumbnail: fileThumbnail,
     checkpointPolicy,
+  });
+
+  log.info("put done", {
+    clientTabId: getClientTabId(),
+    fileId8: input.fileId.slice(0, 8),
+    source: input.source,
+    skipped: !!result?.skipped,
+    checkpointCreated: !!result?.checkpoint?.created,
+    contentSha8: hash8(result?.content_sha256),
+    version: result?.version ?? null,
   });
 
   return {
@@ -82,6 +135,7 @@ export async function executeCheckpointSave(
     skipped: !!result?.skipped,
     checkpointCreated: !!result?.checkpoint?.created,
     contentSha256: result?.content_sha256 ?? null,
+    version: result?.version ?? null,
     updatedAt: result?.updated_at ?? null,
   };
 }

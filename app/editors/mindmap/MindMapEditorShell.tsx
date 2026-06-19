@@ -23,11 +23,8 @@ import {
 import { APP_SHELL_GO_HOME } from "../../shell/Sidebar";
 import { buildViewHash } from "../../shell/useAppView";
 import { EmbedTokenManager } from "../../components/EmbedTokenManager";
-import { LocalDraftLossConfirmDialog } from "../../components/LocalDraftLossConfirmDialog";
-import { RemoteUpdateConfirmDialog } from "../../components/RemoteUpdateConfirmDialog";
 import { SaveNewDocumentDialog } from "../../components/PromoteTempFileDialog";
 import { DEFAULT_DOCUMENT_DISPLAY_NAME } from "../../data/defaultDocumentName";
-import { useLocalDraftLossConfirm } from "../../hooks/useLocalDraftLossConfirm";
 import { useSaveNewDocumentDialog } from "../../hooks/useSaveNewDocumentDialog";
 import { bootstrapLocalDraftSession } from "../../data/bootstrapLocalDraftSession";
 import { isLegacyTempFileId, isNewDocumentHash } from "../../data/documentHash";
@@ -39,6 +36,11 @@ import {
 import { getDocumentKindFromHash } from "../../lib/appBranding";
 import { editorRegistry } from "../../editors";
 import { FileSyncState } from "../../data/FileSyncState";
+import {
+  applyServerFileSessionVersion,
+  ensureSessionVersionAfterCacheOpen,
+} from "../../data/documentSessionVersionSync";
+import { clearDocumentSessionVersion } from "../../data/documentSessionVersion";
 import { readFileListTreeCache } from "../../data/fileListSessionCache";
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
 import { LocalThumbnailCache } from "../../data/localThumbnailCache";
@@ -63,17 +65,15 @@ import {
   type EditorOpenPhase,
 } from "../../lib/editorOpenPhases";
 import { hashDocumentSnapshot } from "../../data/sceneHash";
+import { isServerSyncNotFoundError, ServerSync } from "../../data/ServerSync";
 import {
-  isServerSyncNotFoundError,
-  ServerSync,
-} from "../../data/ServerSync";
-import {
-  isSchematicMindMapThumbnailSvg,
-} from "../../data/thumbnailSvg";
-import {
-  debugMindMapBridge,
-  warnMindMapBridge,
-} from "./mindMapBridgeDebug";
+  isRemoteMutationSuppressed,
+  isRemoteUpdateTargetSatisfied,
+  runRemoteFileApply,
+  type RemoteUpdateTarget,
+} from "../../data/fileSyncOperationState";
+import { isSchematicMindMapThumbnailSvg } from "../../data/thumbnailSvg";
+import { debugMindMapBridge, warnMindMapBridge } from "./mindMapBridgeDebug";
 import {
   isNativeMindMapMessage,
   type NativeMindMapMessage,
@@ -111,10 +111,7 @@ import {
 import type { ManagedDocument } from "../../data/documentTypes";
 import type { MindMapDocumentData } from "../../data/formats/MindMapAdapter";
 
-import {
-  HOME_APP_TITLE,
-  useEditorDocumentTitle,
-} from "../../lib/appBranding";
+import { HOME_APP_TITLE, useEditorDocumentTitle } from "../../lib/appBranding";
 import { devDebug } from "../../lib/devDebug";
 import { useMindMapNativeAIConfig } from "./useMindMapNativeAIConfig";
 import {
@@ -152,18 +149,31 @@ function getClipboardTextPayload(payload: unknown): string {
 }
 
 function getCachedFileListName(fileId: string): string | null {
-  return readFileListTreeCache()?.files.find((file) => file.id === fileId)
-    ?.name ?? null;
+  return (
+    readFileListTreeCache()?.files.find((file) => file.id === fileId)?.name ??
+    null
+  );
+}
+
+function resolveInitialMindMapFileName(fileId: string | null): string {
+  if (!fileId) {
+    return DEFAULT_DOCUMENT_DISPLAY_NAME;
+  }
+  if (isLocalDraftFileId(fileId)) {
+    return (
+      LocalDraftSessions.get(fileId)?.name?.trim() ||
+      DEFAULT_DOCUMENT_DISPLAY_NAME
+    );
+  }
+  return getCachedFileListName(fileId)?.trim() || DEFAULT_DOCUMENT_DISPLAY_NAME;
 }
 
 const MISSING_FILE_REDIRECT_MS = 3000;
 
-function getClipboardImagePayload(payload: unknown):
-  | {
-      dataUrl: string;
-      type: string;
-    }
-  | null {
+function getClipboardImagePayload(payload: unknown): {
+  dataUrl: string;
+  type: string;
+} | null {
   if (!payload || typeof payload !== "object") {
     return null;
   }
@@ -312,7 +322,9 @@ const MindMapEditorShell = () => {
   );
   const [error, setError] = useState<string | null>(null);
   const displayError = error ?? bridgeError;
-  const [fileName, setFileName] = useState(DEFAULT_DOCUMENT_DISPLAY_NAME);
+  const [fileName, setFileName] = useState(() =>
+    resolveInitialMindMapFileName(fileId),
+  );
   const lastNativeThumbnailRef = useRef<string | null>(null);
   const [showAISettings, setShowAISettings] = useState(false);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
@@ -321,9 +333,9 @@ const MindMapEditorShell = () => {
   const saveResolveRef = useRef<
     ((result: MindMapNativeSaveResult | null) => void) | null
   >(null);
-  const savePromiseRef = useRef<Promise<
-    MindMapNativeSaveResult | null
-  > | null>(null);
+  const savePromiseRef = useRef<Promise<MindMapNativeSaveResult | null> | null>(
+    null,
+  );
   const saveTimeoutRef = useRef<number | null>(null);
   const saveRequestIdRef = useRef<string | null>(null);
   const missingFileRedirectTimerRef = useRef<number | null>(null);
@@ -334,8 +346,30 @@ const MindMapEditorShell = () => {
   const hydrateCoordinatorRef = useRef(createMindMapHydrateCoordinator());
   const shellStartRef = useRef(performance.now());
   const initStartRef = useRef<number | null>(null);
+  const reloadMindMapFromServerRef = useRef<
+    | ((opts?: {
+        reason?: string;
+        status?: string;
+        preserveViewport?: boolean;
+        target?: RemoteUpdateTarget;
+      }) => Promise<void>)
+    | null
+  >(null);
 
   useEditorDocumentTitle(fileId ? fileName : null);
+
+  const prevFileIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    setFileName(resolveInitialMindMapFileName(fileId));
+  }, [fileId]);
+
+  useEffect(() => {
+    const prev = prevFileIdRef.current;
+    if (prev && prev !== fileId) {
+      clearDocumentSessionVersion(prev, "navigate-away");
+    }
+    prevFileIdRef.current = fileId ?? null;
+  }, [fileId]);
 
   useEffect(() => {
     debugMindMapOpen("MindMapEditorShell mounted", {
@@ -373,9 +407,10 @@ const MindMapEditorShell = () => {
     (type: string, requestId: string | undefined, payload: unknown) => {
       postToNative(type, {
         requestId,
-        ...((payload && typeof payload === "object"
-          ? payload
-          : {}) as Record<string, unknown>),
+        ...((payload && typeof payload === "object" ? payload : {}) as Record<
+          string,
+          unknown
+        >),
       });
     },
     [postToNative],
@@ -452,8 +487,8 @@ const MindMapEditorShell = () => {
           message.type === "CLIPBOARD_READ"
             ? "CLIPBOARD_READ_ITEMS_RESULT"
             : message.type === "CLIPBOARD_READ_TEXT"
-              ? "CLIPBOARD_READ_RESULT"
-              : "CLIPBOARD_RESULT";
+            ? "CLIPBOARD_READ_RESULT"
+            : "CLIPBOARD_RESULT";
         postClipboardResult(resultType, requestId, {
           ok: false,
           error: err?.message || "剪贴板操作失败",
@@ -507,8 +542,8 @@ const MindMapEditorShell = () => {
         const hint = !isBridgeReady
           ? "mindmap 原生 iframe 未就绪（请运行 yarn build:production）"
           : !isAppReady
-            ? "mindmap 原生界面未完成初始化"
-            : "mindmap 原生界面未响应保存请求";
+          ? "mindmap 原生界面未完成初始化"
+          : "mindmap 原生界面未响应保存请求";
         setError(hint);
         resolve(null);
       }, MINDMAP_SAVE_TIMEOUT_MS);
@@ -574,10 +609,6 @@ const MindMapEditorShell = () => {
     flushDraftDebounce: () => void;
   } | null>(null);
 
-  const localDraftLoss = useLocalDraftLossConfirm({
-    getFileId: getFileIdFromHash,
-  });
-
   const saveNewDoc = useSaveNewDocumentDialog({
     getFileId: () => fileId,
     getDocumentKind: getDocumentKindFromHash,
@@ -599,16 +630,12 @@ const MindMapEditorShell = () => {
   const {
     mindMapSaving,
     mindMapSaveHint,
-    mindMapHomeNavDialogOpen,
     markDocumentChanged,
     markNativeDocumentDirty,
     persistLocalDraftToCache,
     saveCurrentFileToServer,
     saveAndArchiveCurrentVersion,
     mindMapGoHomeWithServerSave,
-    mindMapHomeConfirmSave,
-    mindMapHomeConfirmDiscard,
-    mindMapHomeDismissDialog,
     saveToServerRef,
     skipLeaveStashOnceRef,
     updateDraftHashDebouncedRef,
@@ -621,6 +648,13 @@ const MindMapEditorShell = () => {
     setStatus,
     onRequestSaveNew: ({ navigateAfter }) => {
       saveNewDoc.openSaveDialog(navigateAfter);
+    },
+    applyRemoteServerVersion: async (target) => {
+      await reloadMindMapFromServerRef.current?.({
+        reason: "save-version-conflict",
+        preserveViewport: true,
+        target,
+      });
     },
   });
 
@@ -684,15 +718,17 @@ const MindMapEditorShell = () => {
     debugMindMapPersist("native hydrate settle aligned", {
       fileId8: fileId.slice(0, 8),
       usedAnchorDocument:
-        hashDocumentSnapshot(baselineDocument) !==
-        hashDocumentSnapshot(latest),
+        hashDocumentSnapshot(baselineDocument) !== hashDocumentSnapshot(latest),
       richText: summarizeMindMapRichTextTree(baselineDocument.data),
     });
     const synced = syncFileNameToRootIfNeeded(fileName, baselineDocument.data);
     if (synced) {
-      debugMindMapOpen("reconciled root title and file display name on settle", {
-        fileName,
-      });
+      debugMindMapOpen(
+        "reconciled root title and file display name on settle",
+        {
+          fileName,
+        },
+      );
     }
   }, [fileId, fileName, setStatus, syncFileNameToRootIfNeeded]);
 
@@ -732,7 +768,12 @@ const MindMapEditorShell = () => {
         reason,
       );
     },
-    [extendNativeHydrateSettle, fileId, noteOpenHydrateSession, publishDocument],
+    [
+      extendNativeHydrateSettle,
+      fileId,
+      noteOpenHydrateSession,
+      publishDocument,
+    ],
   );
 
   useEffect(() => {
@@ -787,10 +828,7 @@ const MindMapEditorShell = () => {
           const localDraftName =
             LocalDraftSessions.get(fileId)?.name ??
             DEFAULT_DOCUMENT_DISPLAY_NAME;
-          syncFileNameToRootIfNeeded(
-            localDraftName,
-            data,
-          );
+          syncFileNameToRootIfNeeded(localDraftName, data);
           initSyncedText(data);
           latestDocumentRef.current = document;
           logMindMapOpenPhase("preparing_surface");
@@ -843,10 +881,7 @@ const MindMapEditorShell = () => {
                 serverFile.name || DEFAULT_DOCUMENT_DISPLAY_NAME,
               );
           setFileName(
-            resolveMindMapOpenDisplayName(
-              data,
-              serverFile.name || null,
-            ),
+            resolveMindMapOpenDisplayName(data, serverFile.name || null),
           );
           syncFileNameToRootIfNeeded(
             serverFile.name || DEFAULT_DOCUMENT_DISPLAY_NAME,
@@ -868,6 +903,7 @@ const MindMapEditorShell = () => {
           initSyncedText(data);
           recordMindMapPersisted(resolvedId, document, {
             serverContentSha256: serverFile.content_sha256 ?? undefined,
+            serverVersion: serverFile.version,
           });
           debugMindMapPersist("loadFromServer prepared", {
             fileId8: resolvedId.slice(0, 8),
@@ -901,6 +937,18 @@ const MindMapEditorShell = () => {
             cached.data,
           );
           latestDocumentRef.current = cached;
+          await ensureSessionVersionAfterCacheOpen(resolvedId, {
+            listFileHashes: () => ServerSync.listFileHashes(),
+            cacheVersion:
+              FileSyncState.getLocalCache(resolvedId)?.meta?.serverVersion,
+            hasUnsavedChanges,
+            cachedServerSha:
+              FileSyncState.getLocalCache(resolvedId)?.meta
+                ?.serverContentSha256 ??
+              FileSyncState.getServerHash(resolvedId) ??
+              null,
+            reason: "open-cache",
+          });
           initSyncedText(cached.data);
           debugMindMapOpen("cache payload prepared", {
             fileId8: resolvedId.slice(0, 8),
@@ -966,6 +1014,13 @@ const MindMapEditorShell = () => {
             }
             if (remoteHash) {
               FileSyncState.setServerHash(resolvedId, remoteHash);
+            }
+            if (!hasUnsavedChanges) {
+              applyServerFileSessionVersion(
+                resolvedId,
+                remoteEntry.version,
+                "verify-aligned",
+              );
             }
             logMindMapOpenPhase("ready");
             return;
@@ -1305,7 +1360,10 @@ const MindMapEditorShell = () => {
           event.data.payload &&
           typeof event.data.payload === "object" &&
           (event.data.payload as { userEdit?: unknown }).userEdit === true;
-        if (nativeHydratingRef.current && !isUserEdit) {
+        if (
+          (nativeHydratingRef.current || isRemoteMutationSuppressed(fileId)) &&
+          !isUserEdit
+        ) {
           debugMindMapOpen("mindMapDirtyState suppressed during hydrate");
           return;
         }
@@ -1319,7 +1377,7 @@ const MindMapEditorShell = () => {
       // hydrate 期间 iframe 初始化会程序化推送 config/lang，与 mindMapDirtyState
       // 同样不应标脏（否则误亮红点并武装空闲自动保存）；settle 时由 anchor 决议对齐。
       const markChangedUnlessHydrating = (type: string) => {
-        if (nativeHydratingRef.current) {
+        if (nativeHydratingRef.current || isRemoteMutationSuppressed(fileId)) {
           debugMindMapPersist("config change suppressed during hydrate", {
             type,
           });
@@ -1395,58 +1453,91 @@ const MindMapEditorShell = () => {
     updateLatestDocument,
   ]);
 
-  const reloadMindMapFromServer = useCallback(async (opts?: {
-    reason?: string;
-    status?: string;
-    preserveViewport?: boolean;
-  }) => {
-    if (!fileId) {
-      return;
-    }
-    const serverFile = await ServerSync.getFile(fileId, { force: true });
-    if (!opts?.preserveViewport) {
-      saveMindMapBrowserViewFromData(fileId, serverFile.data);
-    }
-    const data = serverFile.data
-      ? await MindMapAdapter.parse(serverFile.data)
-      : createEmptyMindMapData(
-          serverFile.name || DEFAULT_DOCUMENT_DISPLAY_NAME,
+  const reloadMindMapFromServer = useCallback(
+    async (opts?: {
+      reason?: string;
+      status?: string;
+      preserveViewport?: boolean;
+      target?: RemoteUpdateTarget;
+    }) => {
+      if (!fileId) {
+        return;
+      }
+      const serverFile = await ServerSync.getFile(fileId, { force: true });
+      if (
+        !isRemoteUpdateTargetSatisfied(opts?.target, {
+          contentSha256: serverFile.content_sha256 ?? null,
+          version: serverFile.version ?? null,
+        })
+      ) {
+        debugMindMapPersist("remote reload target stale", {
+          fileId8: fileId.slice(0, 8),
+          targetSha8: opts?.target?.contentSha256?.slice(0, 8) ?? null,
+          actualSha8: serverFile.content_sha256?.slice(0, 8) ?? null,
+          targetVersion: opts?.target?.serverVersion ?? null,
+          actualVersion: serverFile.version ?? null,
+        });
+        setError("服务器版本已再次变化，请重新处理更新");
+        throw new Error("remote update target stale");
+      }
+      if (!opts?.preserveViewport) {
+        saveMindMapBrowserViewFromData(fileId, serverFile.data);
+      }
+      await runRemoteFileApply(fileId, async () => {
+        const data = serverFile.data
+          ? await MindMapAdapter.parse(serverFile.data)
+          : createEmptyMindMapData(
+              serverFile.name || DEFAULT_DOCUMENT_DISPLAY_NAME,
+            );
+        const document = MindMapAdapter.toDocument(data);
+        latestDocumentRef.current = document;
+        publishMindMapDataToNative(
+          data,
+          opts?.reason ?? "history-restore",
+          opts,
         );
-    const document = MindMapAdapter.toDocument(data);
-    latestDocumentRef.current = document;
-    publishMindMapDataToNative(data, opts?.reason ?? "history-restore", opts);
-    recordMindMapPersisted(fileId, document, {
-      serverContentSha256: serverFile.content_sha256 ?? undefined,
-    });
-    setFileName(resolveMindMapOpenDisplayName(data, serverFile.name || null));
-    syncFileNameToRootIfNeeded(
-      serverFile.name || DEFAULT_DOCUMENT_DISPLAY_NAME,
-      data,
-    );
-    needsInitialThumbnailRef.current = await shouldRefreshMindMapServerThumbnail(
-      fileId,
-      {
-        hasThumbnail: serverFile.has_thumbnail,
-        contentSha: serverFile.content_sha256,
-      },
-    );
-    setStatus(opts?.status ?? "已恢复历史版本");
-    setError(null);
-    window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
-    window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
-  }, [fileId, publishMindMapDataToNative, syncFileNameToRootIfNeeded]);
+        recordMindMapPersisted(fileId, document, {
+          serverContentSha256: serverFile.content_sha256 ?? undefined,
+          serverVersion: serverFile.version,
+        });
+        setFileName(
+          resolveMindMapOpenDisplayName(data, serverFile.name || null),
+        );
+        syncFileNameToRootIfNeeded(
+          serverFile.name || DEFAULT_DOCUMENT_DISPLAY_NAME,
+          data,
+        );
+        needsInitialThumbnailRef.current =
+          await shouldRefreshMindMapServerThumbnail(fileId, {
+            hasThumbnail: serverFile.has_thumbnail,
+            contentSha: serverFile.content_sha256,
+          });
+        setStatus(opts?.status ?? "已恢复历史版本");
+        setError(null);
+        window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
+        window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
+      });
+    },
+    [fileId, publishMindMapDataToNative, syncFileNameToRootIfNeeded],
+  );
+
+  useEffect(() => {
+    reloadMindMapFromServerRef.current = reloadMindMapFromServer;
+  }, [reloadMindMapFromServer]);
 
   const reloadFromCrossTabSave = useCallback(
-    () =>
+    (target?: RemoteUpdateTarget) =>
       reloadMindMapFromServer({
         reason: "cross-tab-file-saved",
         status: "已同步远端更新",
         preserveViewport: true,
+        target,
       }),
     [reloadMindMapFromServer],
   );
-  const remoteRefresh = useRemoteFileRefresh({
+  useRemoteFileRefresh({
     fileId,
+    getDocumentName: () => fileName || DEFAULT_DOCUMENT_DISPLAY_NAME,
     reload: reloadFromCrossTabSave,
   });
 
@@ -1473,13 +1564,9 @@ const MindMapEditorShell = () => {
     };
     const onShellGoHome = (event: Event) => {
       const detail = (event as CustomEvent<AppShellNavigateDetail>).detail;
-      applyAppShellPendingNavigation(
-        detail,
-        skipLeaveStashOnceRef,
-        (fn) => {
-          navigateToFileListHomeRef.current = fn;
-        },
-      );
+      applyAppShellPendingNavigation(detail, skipLeaveStashOnceRef, (fn) => {
+        navigateToFileListHomeRef.current = fn;
+      });
       void mindMapGoHomeWithServerSave();
     };
     const onHostCommand = (event: Event) => {
@@ -1562,17 +1649,16 @@ const MindMapEditorShell = () => {
         fileId,
         latestDocumentRef.current,
       );
-      const hash =
-        state.modified
-          ? (state.contentHash ?? hashDocumentSnapshot(latestDocumentRef.current))
-          : (state.baselineHash ??
-            state.contentHash ??
-            hashDocumentSnapshot(latestDocumentRef.current));
+      const hash = state.modified
+        ? state.contentHash ?? hashDocumentSnapshot(latestDocumentRef.current)
+        : state.baselineHash ??
+          state.contentHash ??
+          hashDocumentSnapshot(latestDocumentRef.current);
       FileSyncState.setDraftHash(fileId, hash);
       if (state.modified) {
         // 经 toMindMapLocalCacheRecord 规范化（migrate 修复 + toDocument compact），
         // 避免把内存里的原始 config 裸写进缓存、绕过持久化边界
-        FileSyncState.setLocalCache(
+        FileSyncState.setServerBackedLocalCache(
           fileId,
           toMindMapLocalCacheRecord(latestDocumentRef.current),
         );
@@ -1687,88 +1773,6 @@ const MindMapEditorShell = () => {
           onClose={() => setShowHistoryPanel(false)}
         />
       ) : null}
-      {mindMapHomeNavDialogOpen && fileId ? (
-        <div
-          className="fork-home-dialog-overlay"
-          role="presentation"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) {
-              mindMapHomeDismissDialog();
-            }
-          }}
-        >
-          <div
-            className="fork-home-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="mindmap-home-nav-title"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <h3 id="mindmap-home-nav-title">主页</h3>
-            <p className="fork-home-dialog-desc">
-              {saveNewDoc.isLocalDraftOpen()
-                ? "这是尚未保存的临时文档，离开前是否先保存到服务器？不保存将丢失本机草稿。"
-                : "当前 mindmap 有未保存的修改，是否先保存？"}
-            </p>
-            <div className="fork-home-dialog-actions">
-              <button
-                type="button"
-                className="fork-home-btn fork-home-btn--primary"
-                disabled={mindMapSaving}
-                onClick={() => {
-                  if (saveNewDoc.isLocalDraftOpen()) {
-                    mindMapHomeDismissDialog();
-                    saveNewDoc.openSaveDialog(true);
-                    return;
-                  }
-                  void mindMapHomeConfirmSave();
-                }}
-              >
-                保存并返回
-              </button>
-              <button
-                type="button"
-                className="fork-home-btn fork-home-btn--danger"
-                disabled={mindMapSaving}
-                onClick={() => {
-                  if (saveNewDoc.isLocalDraftOpen()) {
-                    mindMapHomeDismissDialog();
-                    localDraftLoss.requestConfirm(() => {
-                      skipLeaveStashOnceRef.current = true;
-                      navigateToFileListHome();
-                    });
-                    return;
-                  }
-                  void mindMapHomeConfirmDiscard();
-                }}
-              >
-                不保存，放弃修改并返回
-              </button>
-            </div>
-            <button
-              type="button"
-              className="fork-home-dialog-cancel"
-              disabled={mindMapSaving}
-              onClick={mindMapHomeDismissDialog}
-            >
-              取消，继续编辑
-            </button>
-          </div>
-        </div>
-      ) : null}
-      <LocalDraftLossConfirmDialog
-        open={localDraftLoss.open}
-        documentName={localDraftLoss.documentName}
-        busy={mindMapSaving}
-        onConfirm={() => void localDraftLoss.confirmLoss()}
-        onCancel={localDraftLoss.dismiss}
-      />
-      <RemoteUpdateConfirmDialog
-        open={remoteRefresh.promptOpen}
-        documentName={fileName}
-        onReload={remoteRefresh.confirmReload}
-        onKeep={remoteRefresh.dismissPrompt}
-      />
       <SaveNewDocumentDialog
         open={saveNewDoc.saveOpen}
         saving={saveNewDoc.saveInFlight}

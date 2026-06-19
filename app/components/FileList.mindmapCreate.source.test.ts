@@ -18,9 +18,7 @@ describe("MindMap editor plugin host actions", () => {
     );
     expect(source).toContain("generateMindMapThumbnailAndCache");
     expect(source).not.toContain("buildAndCacheFileThumbnail");
-    expect(source).toContain(
-      "await ServerSync.saveFileImmediate(created.id, document, name, thumbnail)",
-    );
+    expect(source).toContain('source: "create-mindmap"');
   });
 
   it("imports MindMap files with the same native thumbnail path", () => {
@@ -34,8 +32,6 @@ describe("MindMap editor plugin host actions", () => {
     expect(source).toContain(
       "generateMindMapThumbnailAndCache(created.id, data)",
     );
-    expect(source).toContain(
-      "await ServerSync.saveFileImmediate(created.id, document, fileName, thumbnail)",
-    );
+    expect(source).toContain('source: "import-mindmap"');
   });
 });

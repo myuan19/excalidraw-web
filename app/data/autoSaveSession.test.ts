@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { isAutoSaveEligibleFile, isAutoSaveLabel } from "./autoSaveSession";
+import { isAutoSaveEligibleFile, isAutoSaveLabel, notifyEdit, registerAutoSaveTrigger } from "./autoSaveSession";
 import {
   isAutoSaveOnExitActive,
   isIdleAutoSaveActive,
@@ -8,12 +8,22 @@ import {
 } from "./appSettings";
 import { CHECKPOINT_LABELS, resolveCheckpointPolicy } from "./checkpointPolicy";
 
+vi.mock("./fileIdFromHash", () => ({
+  getFileIdFromHash: vi.fn(() => "a1b2c3d4-e5f6-7890-abcd-ef1234567890"),
+}));
+
+import { getFileIdFromHash } from "./fileIdFromHash";
+
 beforeEach(() => {
+  vi.useRealTimers();
   updateAppSettings({
     autoSaveEnabled: false,
     autoSaveIdleSec: 10,
     checkpointIntervalMin: 30,
   });
+  vi.mocked(getFileIdFromHash).mockReturnValue(
+    "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  );
 });
 
 describe("isAutoSaveEligibleFile", () => {
@@ -86,5 +96,43 @@ describe("idle auto-save setting", () => {
 
     updateAppSettings({ autoSaveEnabled: true, autoSaveIdleSec: 120 });
     expect(isIdleAutoSaveActive()).toBe(true);
+  });
+});
+
+describe("idle timer settings refresh", () => {
+  it("restarts the pending idle timer when autoSaveIdleSec changes", () => {
+    vi.useFakeTimers();
+    updateAppSettings({ autoSaveEnabled: true, autoSaveIdleSec: 10 });
+    const trigger = vi.fn();
+    const unregister = registerAutoSaveTrigger(trigger);
+
+    notifyEdit();
+    vi.advanceTimersByTime(5_000);
+    updateAppSettings({ autoSaveIdleSec: 60 });
+
+    vi.advanceTimersByTime(10_000);
+    expect(trigger).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(50_000);
+    expect(trigger).toHaveBeenCalledTimes(1);
+
+    unregister();
+    vi.useRealTimers();
+  });
+
+  it("clears the pending idle timer when idle auto-save is disabled", () => {
+    vi.useFakeTimers();
+    updateAppSettings({ autoSaveEnabled: true, autoSaveIdleSec: 10 });
+    const trigger = vi.fn();
+    const unregister = registerAutoSaveTrigger(trigger);
+
+    notifyEdit();
+    updateAppSettings({ autoSaveIdleSec: 0 });
+
+    vi.advanceTimersByTime(15_000);
+    expect(trigger).not.toHaveBeenCalled();
+
+    unregister();
+    vi.useRealTimers();
   });
 });

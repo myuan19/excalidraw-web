@@ -1,7 +1,7 @@
 # MindMap editor module
 
 | File / dir | Role |
-|------------|------|
+| --- | --- |
 | `MindMapEditorShell.tsx` | React host: iframe, postMessage bridge, AI/archive UI |
 | `mindMapDraftState.ts` | Draft/baseline 对齐与误报清除（纯函数） |
 | `useMindMapNativeHydrate.ts` | 打开后 iframe settle 窗口（滑动计时） |

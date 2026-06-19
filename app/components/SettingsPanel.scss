@@ -22,8 +22,8 @@
   opacity: 0;
   backdrop-filter: blur(0);
   -webkit-backdrop-filter: blur(0);
-  transition:
-    opacity var(--settings-drawer-duration) var(--settings-drawer-ease),
+  transition: opacity var(--settings-drawer-duration)
+      var(--settings-drawer-ease),
     backdrop-filter var(--settings-drawer-duration) var(--settings-drawer-ease),
     -webkit-backdrop-filter var(--settings-drawer-duration) var(--settings-drawer-ease);
 }
@@ -48,7 +48,8 @@
   border-left: var(--nb-border-width) solid var(--nb-ai-dialog-border);
   box-shadow: var(--settings-drawer-shadow);
   transform: translateX(100%);
-  transition: transform var(--settings-drawer-duration) var(--settings-drawer-ease);
+  transition: transform var(--settings-drawer-duration)
+    var(--settings-drawer-ease);
   will-change: transform;
 
   .settings-panel__header {

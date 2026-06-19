@@ -28,7 +28,7 @@ export function createLogSessionId(date = new Date()) {
   );
 }
 
-/** @param {"server" | "client"} kind */
+/** @param {"server" | "client" | "merged"} kind */
 export function sessionLogBasename(kind, sessionId) {
   return `${kind}-${sessionId}.log`;
 }

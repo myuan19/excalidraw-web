@@ -16,11 +16,24 @@ describe("EditorShell remote refresh source contract", () => {
     expect(source).toContain("preserveViewport?: boolean");
     expect(source).toContain("preserveViewport: !!opts?.preserveViewport");
     expect(source).toContain("runRemoteSceneApply");
+    expect(source).toContain("reload: (target) =>");
     expect(source).toContain(
-      "reload: () => reloadSceneFromServer({ preserveViewport: true })",
+      "reloadSceneFromServer({ preserveViewport: true, target })",
     );
     expect(source).toContain("onAfterRestore={async () => {");
     expect(source).toContain("await reloadSceneFromServer();");
+  });
+
+  it("passes host file name into Excalidraw instead of using native untitled fallback", () => {
+    const source = fs.readFileSync(
+      path.join(__dirname, "EditorShell.tsx"),
+      "utf8",
+    );
+    expect(source).toContain("const excalidrawHostFileName =");
+    expect(source).toContain("tabFileName ?? DEFAULT_DOCUMENT_DISPLAY_NAME");
+    expect(source).toContain("name={excalidrawHostFileName}");
+    expect(source).toContain("resolveCanonicalExcalidrawFileName");
+    expect(source).not.toContain("excalidrawAPI?.getAppState().name");
   });
 
   it("does not route remote scene application through local edit side effects", () => {

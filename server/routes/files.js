@@ -5,6 +5,7 @@ import { join } from "path";
 import { Router } from "express";
 
 import db, { DATA_DIR } from "../db.js";
+import { clientRequestContext } from "../lib/clientRequestContext.js";
 import { createLogger } from "../lib/logger.js";
 import {
   formatDocumentEtag,
@@ -21,7 +22,16 @@ import {
 const router = Router();
 
 const log = createLogger({ module: "files" });
+const versionLog = createLogger({ module: "docVersion" });
 const thumbAuditLog = createLogger({ module: "thumb-send" });
+
+function logFileEvent(level, event, message, fields) {
+  log.event(level, `server.files.${event}`, message, { fields });
+}
+
+function logVersionEvent(level, event, message, fields) {
+  versionLog.event(level, `doc.version.${event}`, message, { fields });
+}
 
 function fileDir(fileId) {
   return join(DATA_DIR, "files", fileId);
@@ -59,6 +69,7 @@ function hashSceneDataJson(data) {
 /** 每个文件最多保留的版本快照条数（更早的从 DB 与磁盘删除） */
 const MAX_ARCHIVES_PER_FILE = 8;
 const MAX_THUMBNAIL_SVG_CHARS = 150_000;
+const FILE_VERSION_MAX = 2_147_483_647;
 const AUTO_ARCHIVE_LABEL_PREFIX = "auto:";
 const CHECKPOINT_LABELS = {
   manual: "checkpoint:manual",
@@ -68,6 +79,19 @@ const CHECKPOINT_LABELS = {
 
 function normalizeArchiveLabel(value) {
   return typeof value === "string" ? value.trim().slice(0, 128) : "";
+}
+
+function nextFileVersion(version) {
+  const current = Number.isInteger(version) && version >= 0 ? version : 0;
+  return current >= FILE_VERSION_MAX ? 0 : current + 1;
+}
+
+function normalizeExpectedVersion(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const n = Number(value);
+  return Number.isInteger(n) && n >= 0 && n <= FILE_VERSION_MAX ? n : null;
 }
 
 function isAutoArchiveLabel(label) {
@@ -241,6 +265,7 @@ function mapFileRow(r) {
     kind: r.kind || "excalidraw",
     folder_id: r.folder_id ?? null,
     sort_index: r.sort_index ?? 0,
+    version: Number.isInteger(r.version) ? r.version : 0,
     has_thumbnail: existsSync(thumbnailPath(r.id)),
     content_sha256: r.content_sha256 ?? null,
   };
@@ -473,10 +498,17 @@ function ensureFileDir(fileId) {
 
 // ---------- files CRUD ----------
 
-router.get("/hashes", (_req, res) => {
+router.get("/hashes", (req, res) => {
   const rows = db
-    .prepare(`SELECT id, content_sha256 FROM files ORDER BY updated_at DESC`)
+    .prepare(
+      `SELECT id, content_sha256, version FROM files ORDER BY updated_at DESC`,
+    )
     .all();
+  logVersionEvent("info", "hash_list", "hash-list", {
+    action: "hash-list",
+    ...clientRequestContext(req),
+    count: rows.length,
+  });
   res.json(rows);
 });
 
@@ -492,7 +524,7 @@ router.get("/tree", (_req, res) => {
     .map(mapFolderRow);
   const files = db
     .prepare(
-      `SELECT f.id, f.name, f.created_at, f.updated_at, f.content_sha256, f.folder_id, f.sort_index,
+      `SELECT f.id, f.name, f.created_at, f.updated_at, f.content_sha256, f.version, f.folder_id, f.sort_index,
               f.kind,
               (SELECT count(*) FROM archives a WHERE a.file_id = f.id) AS archive_count
        FROM files f
@@ -660,7 +692,7 @@ router.get("/", (_req, res) => {
   log.debug("GET /api/files list");
   const rows = db
     .prepare(
-      `SELECT f.id, f.name, f.created_at, f.updated_at, f.content_sha256, f.folder_id, f.sort_index,
+      `SELECT f.id, f.name, f.created_at, f.updated_at, f.content_sha256, f.version, f.folder_id, f.sort_index,
               f.kind,
               (SELECT count(*) FROM archives a WHERE a.file_id = f.id) AS archive_count
        FROM files f ORDER BY f.updated_at DESC`,
@@ -713,12 +745,14 @@ router.post("/", (req, res) => {
     updated_at: now,
     folder_id: folderId,
     sort_index: sortIndex,
+    version: 0,
   });
 });
 
 router.get("/:id", (req, res) => {
   const startedAt = Date.now();
   const fid = req.params.id;
+  const clientCtx = clientRequestContext(req);
   const dbStartedAt = Date.now();
   const row = db.prepare("SELECT * FROM files WHERE id = ?").get(fid);
   const dbMs = Date.now() - dbStartedAt;
@@ -752,6 +786,13 @@ router.get("/:id", (req, res) => {
     row.content_sha256 &&
     ifNoneMatchSatisfied(req.get("if-none-match"), row.content_sha256)
   ) {
+    logVersionEvent("info", "remote_fetch", "remote-fetch", {
+      action: "remote-fetch",
+      fileId: fid.slice(0, 8),
+      ...clientCtx,
+      reason: "not-modified",
+      serverVersion: Number.isInteger(row.version) ? row.version : 0,
+    });
     return sendNotModified(res, row.content_sha256);
   }
 
@@ -801,6 +842,13 @@ router.get("/:id", (req, res) => {
   if (etag) {
     res.setHeader("ETag", etag);
   }
+  logVersionEvent("info", "remote_fetch", "remote-fetch", {
+    action: "remote-fetch",
+    fileId: fid.slice(0, 8),
+    ...clientCtx,
+    reason: "ok",
+    serverVersion: Number.isInteger(row.version) ? row.version : 0,
+  });
   res.setHeader("Cache-Control", "private, no-cache");
   res.json({ ...mapFileRow(row), data });
 });
@@ -822,6 +870,8 @@ router.put("/:id", (req, res) => {
   const clearThumb = req.body.thumbnail === null;
   const mutatesThumbnail = hasThumb || clearThumb;
   const hasName = !!req.body.name;
+  const forceOverwrite = req.body.forceOverwrite === true;
+  const expectedVersion = normalizeExpectedVersion(req.body.expectedVersion);
   const archiveLabel = normalizeArchiveLabel(req.body.archiveLabel);
   const checkpointPolicy = normalizeCheckpointPolicy(req.body.checkpointPolicy);
   const elementCount =
@@ -833,12 +883,26 @@ router.put("/:id", (req, res) => {
       ? Object.keys(req.body.data.files).length
       : 0;
   const sceneSummary = hasData ? summarizeScenePayload(req.body.data) : null;
-  log.info("PUT /:id (导入会走：创建 → archives 检查 → 本请求)", {
+  const incomingSha = hasData ? hashSceneDataJson(req.body.data) : null;
+  const clientCtx = clientRequestContext(req);
+  logFileEvent("info", "put.start", "PUT /:id", {
     id: id.slice(0, 8),
+    ...clientCtx,
     contentLength: req.headers["content-length"] ?? null,
     bodyKeys: Object.keys(req.body || {}),
     hasData,
     hasName,
+    forceOverwrite,
+    expectedVersion,
+    currentVersion: Number.isInteger(row.version) ? row.version : 0,
+    versionDelta:
+      expectedVersion === null
+        ? null
+        : (Number.isInteger(row.version) ? row.version : 0) - expectedVersion,
+    currentSha: row.content_sha256?.slice(0, 8) ?? null,
+    incomingSha: incomingSha?.slice(0, 8) ?? null,
+    incomingMatchesCurrent:
+      !!incomingSha && !!row.content_sha256 && incomingSha === row.content_sha256,
     name:
       req.body.name != null
         ? truncStr(String(req.body.name), 80)
@@ -857,6 +921,48 @@ router.put("/:id", (req, res) => {
     fileCount,
     sceneSummary,
   });
+
+  if (
+    hasData &&
+    !forceOverwrite &&
+    (expectedVersion === null ||
+      expectedVersion !== (Number.isInteger(row.version) ? row.version : 0))
+  ) {
+    logFileEvent("warn", "put.version_conflict", "PUT /:id → VERSION CONFLICT", {
+      id: id.slice(0, 8),
+      ...clientCtx,
+      expectedVersion,
+      currentVersion: row.version ?? 0,
+      currentSha: row.content_sha256?.slice(0, 8) ?? null,
+      incomingSha: incomingSha?.slice(0, 8) ?? null,
+      incomingMatchesCurrent:
+        !!incomingSha && !!row.content_sha256 && incomingSha === row.content_sha256,
+      versionDelta:
+        expectedVersion === null
+          ? null
+          : (Number.isInteger(row.version) ? row.version : 0) - expectedVersion,
+    });
+    logVersionEvent("warn", "server_conflict", "server-conflict", {
+      action: "server-conflict",
+      fileId: id.slice(0, 8),
+      ...clientCtx,
+      reason: forceOverwrite ? "force-overwrite-rejected" : "save",
+      expectedVersion,
+      serverVersion: Number.isInteger(row.version) ? row.version : 0,
+      forceOverwrite,
+      currentSha: row.content_sha256?.slice(0, 8) ?? null,
+      incomingSha: incomingSha?.slice(0, 8) ?? null,
+      incomingMatchesCurrent:
+        !!incomingSha && !!row.content_sha256 && incomingSha === row.content_sha256,
+    });
+    return res.status(409).json({
+      error: "version_conflict",
+      message: "file has been updated on the server",
+      version: Number.isInteger(row.version) ? row.version : 0,
+      content_sha256: row.content_sha256 ?? null,
+      updated_at: row.updated_at,
+    });
+  }
 
   /** 与磁盘上当前文件内容一致则跳过数据写入与版本记录（仍允许仅改文件名或缩略图） */
   let skipDataWrite = false;
@@ -877,26 +983,43 @@ router.put("/:id", (req, res) => {
   }
 
   if (skipDataWrite && !req.body.name && !mutatesThumbnail) {
-    const sha = hasData ? hashSceneDataJson(req.body.data) : undefined;
+    const sha = incomingSha ?? undefined;
     const checkpoint =
       hasData && sha
         ? maybeAppendCheckpoint(id, req.body.data, sha, checkpointPolicy)
         : { created: false };
-    log.info("PUT /:id → SKIPPED (unchanged)", {
+    logFileEvent("info", "put.skipped_unchanged", "PUT /:id → SKIPPED (unchanged)", {
       id: id.slice(0, 8),
+      ...clientCtx,
       sha: sha?.slice(0, 8),
       checkpointCreated: checkpoint.created,
+    });
+    logVersionEvent("info", "save_skipped", "save-skipped", {
+      action: "save-skipped",
+      fileId: id.slice(0, 8),
+      ...clientCtx,
+      reason: "unchanged-content",
+      serverVersion: Number.isInteger(row.version) ? row.version : 0,
+      expectedVersion,
+      skipped: true,
     });
     return res.json({
       ok: true,
       skipped: true,
       ...(sha !== undefined && { content_sha256: sha }),
+      version: Number.isInteger(row.version) ? row.version : 0,
       checkpoint,
       updated_at: row.updated_at,
     });
   }
 
   const now = new Date().toISOString();
+  const nextVersion =
+    hasData && !skipDataWrite
+      ? nextFileVersion(row.version)
+      : Number.isInteger(row.version)
+        ? row.version
+        : 0;
 
   let checkpoint = { created: false };
   if (req.body.data && !skipDataWrite) {
@@ -923,7 +1046,7 @@ router.put("/:id", (req, res) => {
     const src = skipDataWrite
       ? JSON.parse(readFileSync(currentPath(id), "utf-8"))
       : req.body.data;
-    contentSha256Out = hashSceneDataJson(src);
+    contentSha256Out = skipDataWrite ? hashSceneDataJson(src) : incomingSha;
     checkpoint = maybeAppendCheckpoint(
       id,
       src,
@@ -950,16 +1073,17 @@ router.put("/:id", (req, res) => {
 
   if (req.body.name) {
     db.prepare(
-      "UPDATE files SET name = ?, updated_at = ?, content_sha256 = COALESCE(?, content_sha256) WHERE id = ?",
-    ).run(req.body.name, now, contentSha256Out ?? null, id);
+      "UPDATE files SET name = ?, updated_at = ?, content_sha256 = COALESCE(?, content_sha256), version = ? WHERE id = ?",
+    ).run(req.body.name, now, contentSha256Out ?? null, nextVersion, id);
   } else {
     db.prepare(
-      "UPDATE files SET updated_at = ?, content_sha256 = COALESCE(?, content_sha256) WHERE id = ?",
-    ).run(now, contentSha256Out ?? null, id);
+      "UPDATE files SET updated_at = ?, content_sha256 = COALESCE(?, content_sha256), version = ? WHERE id = ?",
+    ).run(now, contentSha256Out ?? null, nextVersion, id);
   }
 
-  log.info("PUT /:id → SAVED", {
+  logFileEvent("info", "put.saved", "PUT /:id → SAVED", {
     id: id.slice(0, 8),
+    ...clientCtx,
     skipDataWrite,
     wroteThumb: hasThumb,
     clearedThumb: clearThumb,
@@ -969,10 +1093,34 @@ router.put("/:id", (req, res) => {
     checkpointCreated: checkpoint.created,
     checkpointLabel: checkpoint.label ?? "",
   });
+  if (hasData) {
+    logVersionEvent(
+      "info",
+      hasData && !skipDataWrite ? "server_increment" : "save_skipped",
+      hasData && !skipDataWrite ? "server-increment" : "save-skipped",
+      {
+        action: hasData && !skipDataWrite ? "server-increment" : "save-skipped",
+        fileId: id.slice(0, 8),
+        ...clientCtx,
+        reason: skipDataWrite
+          ? "unchanged-content"
+          : forceOverwrite
+            ? "force-overwrite"
+            : "save",
+        previousVersion: Number.isInteger(row.version) ? row.version : 0,
+        serverVersion: nextVersion,
+        nextVersion,
+        expectedVersion,
+        forceOverwrite,
+        skipped: skipDataWrite,
+      },
+    );
+  }
   res.json({
     ok: true,
     updated_at: now,
     ...(contentSha256Out !== undefined && { content_sha256: contentSha256Out }),
+    version: nextVersion,
     checkpoint,
   });
 });
@@ -1144,7 +1292,10 @@ router.get("/:id/archives/:archiveId", (req, res) => {
 });
 
 router.post("/:id/restore/:archiveId", (req, res) => {
-  if (!db.prepare("SELECT id FROM files WHERE id = ?").get(req.params.id)) {
+  const fileRow = db
+    .prepare("SELECT * FROM files WHERE id = ?")
+    .get(req.params.id);
+  if (!fileRow) {
     return res.status(404).json({ error: "not found" });
   }
 
@@ -1191,14 +1342,25 @@ router.post("/:id/restore/:archiveId", (req, res) => {
   writeFileSync(currentPath(req.params.id), JSON.stringify(parsed), "utf-8");
 
   const now = new Date().toISOString();
+  const restoredVersion = nextFileVersion(fileRow.version);
   db.prepare(
-    "UPDATE files SET updated_at = ?, content_sha256 = ? WHERE id = ?",
-  ).run(now, restoredSha, req.params.id);
+    "UPDATE files SET updated_at = ?, content_sha256 = ?, version = ? WHERE id = ?",
+  ).run(now, restoredSha, restoredVersion, req.params.id);
+
+  logVersionEvent("info", "server_restore", "server-restore", {
+    action: "server-restore",
+    fileId: req.params.id.slice(0, 8),
+    reason: "archive-restore",
+    previousVersion: Number.isInteger(fileRow.version) ? fileRow.version : 0,
+    serverVersion: restoredVersion,
+    nextVersion: restoredVersion,
+  });
 
   res.json({
     ok: true,
     restored_from: req.params.archiveId,
     content_sha256: restoredSha,
+    version: restoredVersion,
     backup,
   });
 });

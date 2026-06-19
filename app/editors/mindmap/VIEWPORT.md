@@ -3,7 +3,7 @@
 MindMap has **three viewport strategies**. Embed, editor, and thumbnail share the same **focused viewBox math** (`computeMindMapFocusedViewBoxFromNodeBounds`); they differ by multiplier and application layer.
 
 | Strategy | Use case | Algorithm | Config multiplier |
-|----------|----------|-----------|-------------------|
+| --- | --- | --- | --- |
 | **Embed focused** | Read-only embed iframe | Shared focused viewBox + canvas fit | `embedFocusedRootScreenRatioMultiplier` |
 | **Editor focused** | Editor with no saved `view` | Same math + canvas fit | `editorRootScreenRatioMultiplier` |
 | **Thumbnail** | File list preview SVG | Same math on exported SVG `viewBox` | `thumbnailRootScreenRatioMultiplier` |
@@ -24,7 +24,7 @@ Defaults live in `native/previewViewportConfig.json` (`thumbnailRootScreenRatioM
 ## File map
 
 | File | Role |
-|------|------|
+| --- | --- |
 | `native/previewViewportConfig.json` | Single tuning file |
 | `mindMapFocusedViewBox.js` | Shared viewBox math + ratio helpers |
 | `embed.ts` | Embed payload: strip `view`, inject focused multiplier |
@@ -67,7 +67,7 @@ Edit.vue applyEmbedFocusedViewport → embed_preview_viewport_applied → Host
 ## Tuning guide
 
 | Change | Edit |
-|--------|------|
+| --- | --- |
 | Embed zoom / root size in frame | `embedFocusedRootScreenRatioMultiplier` |
 | Editor initial zoom (no saved view) | `editorRootScreenRatioMultiplier` |
 | Thumbnail crop | `thumbnailRootScreenRatioMultiplier` |

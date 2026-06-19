@@ -1,10 +1,18 @@
 import {
   Logger,
   LEVEL_VALUE,
+  formatDebugEvent,
   type LogEntry,
   type LogLevel,
   type LogTransport,
 } from "../../lib/logger/core.js";
+import {
+  getDebugLoggingMode,
+  subscribeAppSettings,
+  type DebugLoggingMode,
+} from "../data/appSettings";
+import { getClientLoggerContext } from "../data/clientRequestContext";
+import { isDebugAllowed } from "../data/debugCapability";
 
 // ---------------------------------------------------------------------------
 // ConsoleTransport — browser devtools
@@ -13,19 +21,26 @@ import {
 class ConsoleTransport implements LogTransport {
   write(entry: LogEntry): void {
     const fn =
-      entry.level === "error"
-        ? console.error
+      entry.level === "critical" || entry.level === "error"
+        ? nativeConsole.error
         : entry.level === "warn"
-          ? console.warn
-          : console.log;
-    const prefix = `[${entry.module}]`;
-    if (entry.data) {
-      fn(prefix, entry.msg, entry.data);
-    } else {
-      fn(prefix, entry.msg);
-    }
+          ? nativeConsole.warn
+          : entry.level === "trace" || entry.level === "debug"
+            ? nativeConsole.debug
+            : nativeConsole.log;
+    fn(formatDebugEvent(entry));
   }
 }
+
+const nativeConsole = {
+  debug:
+    typeof console !== "undefined" ? console.debug.bind(console) : () => {},
+  log: typeof console !== "undefined" ? console.log.bind(console) : () => {},
+  info: typeof console !== "undefined" ? console.info.bind(console) : () => {},
+  warn: typeof console !== "undefined" ? console.warn.bind(console) : () => {},
+  error:
+    typeof console !== "undefined" ? console.error.bind(console) : () => {},
+};
 
 // ---------------------------------------------------------------------------
 // RemoteTransport — batch POST to /api/logs (all levels sent to server)
@@ -68,9 +83,18 @@ class RemoteTransport implements LogTransport {
     if (typeof window !== "undefined") {
       window.addEventListener("pagehide", () => this.flush());
     }
+    subscribeAppSettings(() => {
+      if (!isRemoteEnabled()) {
+        this.clear();
+      }
+    });
   }
 
   write(entry: LogEntry): void {
+    if (!isRemoteEnabled() || isEmbedMode) {
+      this.clear();
+      return;
+    }
     entry.sid = this.sid;
     entry.ua = navigator.userAgent.slice(0, 120);
     this.buffer.push(entry);
@@ -85,6 +109,10 @@ class RemoteTransport implements LogTransport {
   }
 
   flush(): void {
+    if (!isRemoteEnabled() || isEmbedMode) {
+      this.clear();
+      return;
+    }
     if (this.buffer.length === 0) return;
     const batch = this.buffer.splice(0, this.BATCH_SIZE);
     if (this.timer) {
@@ -92,7 +120,11 @@ class RemoteTransport implements LogTransport {
       this.timer = null;
     }
 
-    const payload = JSON.stringify({ entries: batch });
+    const payload = JSON.stringify({
+      debugMode: true,
+      sid: this.sid,
+      entries: batch,
+    });
     const url = logsEndpoint();
 
     try {
@@ -117,17 +149,39 @@ class RemoteTransport implements LogTransport {
       this.timer = setTimeout(() => this.flush(), this.FLUSH_MS);
     }
   }
+
+  clear(): void {
+    this.buffer = [];
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 
-function isDeployDebugBuild(): boolean {
-  return import.meta.env.VITE_APP_DEPLOY_DEBUG === "true";
+function getEffectiveDebugLoggingMode(): DebugLoggingMode {
+  if (!isDebugAllowed()) {
+    return "off";
+  }
+  return getDebugLoggingMode();
+}
+
+function isDebugModeEnabled(): boolean {
+  return getEffectiveDebugLoggingMode() !== "off";
+}
+
+function isAiDebugModeEnabled(): boolean {
+  return getEffectiveDebugLoggingMode() === "ai";
 }
 
 function getMinLevel(): LogLevel {
+  if (isDebugModeEnabled()) {
+    return "debug";
+  }
   try {
     const ls = localStorage.getItem("excalidraw-log-level") as LogLevel | null;
     if (ls && ls in LEVEL_VALUE) return ls;
@@ -141,7 +195,7 @@ function getMinLevel(): LogLevel {
   if (env.DEV) {
     return "info";
   }
-  return isDeployDebugBuild() ? "debug" : "error";
+  return "error";
 }
 
 function isRemoteEnabled(): boolean {
@@ -154,30 +208,83 @@ function isRemoteEnabled(): boolean {
   if (env.VITE_LOG_REMOTE === "0") {
     return false;
   }
-  if (env.PROD && !isDeployDebugBuild()) {
-    return false;
-  }
-  return true;
+  return isAiDebugModeEnabled();
 }
 
 const isEmbedMode =
   typeof window !== "undefined" &&
   window.__EXCALIDRAW_EMBED_MODE__ === true;
 
-const transports: LogTransport[] = [new ConsoleTransport()];
-if (isRemoteEnabled() && !isEmbedMode) {
-  transports.push(new RemoteTransport());
+const remoteTransport = new RemoteTransport();
+const transports: LogTransport[] = [new ConsoleTransport(), remoteTransport];
+
+function serializeConsoleArg(arg: unknown): unknown {
+  if (arg instanceof Error) {
+    return {
+      name: arg.name,
+      message: arg.message,
+      stack: arg.stack?.split("\n").slice(0, 5).join("\n"),
+    };
+  }
+  if (typeof arg === "function") {
+    return `[function ${arg.name || "anonymous"}]`;
+  }
+  return arg;
+}
+
+let consoleCaptureInstalled = false;
+
+function installDebugConsoleCapture(): void {
+  if (consoleCaptureInstalled || typeof window === "undefined") {
+    return;
+  }
+  consoleCaptureInstalled = true;
+  const methods: Array<"debug" | "log" | "info" | "warn" | "error"> = [
+    "debug",
+    "log",
+    "info",
+    "warn",
+    "error",
+  ];
+  for (const method of methods) {
+    console[method] = (...args: unknown[]) => {
+      nativeConsole[method](...args);
+      if (!isRemoteEnabled() || isEmbedMode) {
+        return;
+      }
+      const level: LogLevel =
+        method === "error" ? "error" : method === "warn" ? "warn" : "debug";
+      remoteTransport.write({
+        ts: new Date().toISOString(),
+        level,
+        source: "client",
+        module: "console",
+        msg:
+          typeof args[0] === "string"
+            ? args[0].slice(0, 400)
+            : `[console.${method}]`,
+        data:
+          args.length > 1 || typeof args[0] !== "string"
+            ? { args: args.map(serializeConsoleArg) }
+            : undefined,
+      });
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
-export function createLogger(opts: { module: string }): Logger {
+export function createLogger(opts: {
+  module: string;
+  minLevel?: LogLevel | (() => LogLevel);
+}): Logger {
   return new Logger({
     module: opts.module,
     source: "client",
-    minLevel: getMinLevel(),
+    context: getClientLoggerContext,
+    minLevel: opts.minLevel ?? (getMinLevel as unknown as LogLevel),
     transports,
   });
 }
@@ -188,6 +295,7 @@ export function createLogger(opts: { module: string }): Logger {
 export function initGlobalErrorCapture(): void {
   if (typeof window === "undefined") return;
 
+  installDebugConsoleCapture();
   const log = createLogger({ module: "global" });
 
   window.addEventListener("error", (ev) => {

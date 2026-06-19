@@ -10,6 +10,9 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import { EditorPlatformDialogHost } from "./EditorPlatformDialogHost";
+import "./AppConfirmDialog.scss";
+
 import {
   getActiveDocumentFileId,
   resolveRecentFlyoutFileRecord,
@@ -34,7 +37,10 @@ import {
   LocalDraftSessions,
   draftSessionToServerFile,
 } from "../data/localDraftSessions";
-import { readFileListTreeCache } from "../data/fileListSessionCache";
+import {
+  readFileListTreeCache,
+  writeFileListTreeCache,
+} from "../data/fileListSessionCache";
 import { RECENT_FILES_CHANGE_EVENT } from "../data/recentFiles";
 import {
   ServerSync,
@@ -49,6 +55,7 @@ import {
   editorIconForKind,
   getDocumentKindFromHash,
 } from "../lib/appBranding";
+import { createLogger } from "../lib/logger";
 import {
   APP_SHELL_PENDING_NAVIGATION_CHANGE,
   dispatchAppShellNavigate,
@@ -59,6 +66,8 @@ import type { AppView } from "../shell/useAppView";
 
 import "./EditorPlatformSidebar.scss";
 import "./FileList.scss";
+
+const logRecent = createLogger({ module: "recentFlyout" });
 
 /** 预览浮层：固定全屏、不参与文档流，避免缩略图引发布局/滚动条抖动 */
 const BRIDGE_PREVIEW_LAYER_ID = "editor-hub-bridge-preview-layer";
@@ -495,6 +504,19 @@ function clampRecentPreviewLeft(
   );
 }
 
+function recentFileId8(fileId: string | null | undefined): string | null {
+  return fileId ? fileId.slice(0, 8) : null;
+}
+
+function logRecentFlyout(
+  level: "debug" | "info" | "warn",
+  event: string,
+  message: string,
+  fields?: Record<string, unknown>,
+): void {
+  logRecent.event(level, `recent.flyout.${event}`, message, { fields });
+}
+
 function SidebarRecentList({
   anchorEdge,
   excludeFileId,
@@ -518,27 +540,78 @@ function SidebarRecentList({
     useState<FileCardThumbDisplay | null>(null);
 
   useEffect(() => {
-    const refresh = () => {
+    let cancelled = false;
+    const refresh = (reason: string) => {
       thumbSvgCacheRef.current = {};
-      setItems(
-        resolveRecentFlyoutItems({
-          limit: RECENT_PANEL_MAX,
-          excludeFileId,
-        }),
-      );
+      const nextItems = resolveRecentFlyoutItems({
+        limit: RECENT_PANEL_MAX,
+        excludeFileId,
+      });
+      logRecentFlyout("debug", "items.resolved", "recent flyout items resolved", {
+        reason,
+        fileId8: recentFileId8(excludeFileId),
+        excludeFileId8: recentFileId8(excludeFileId),
+        itemCount: nextItems.length,
+        itemIds8: nextItems.map((item) => recentFileId8(item.id)),
+      });
+      setItems(nextItems);
+      return nextItems;
     };
-    refresh();
-    window.addEventListener("hashchange", refresh);
-    window.addEventListener(RECENT_FILES_CHANGE_EVENT, refresh);
-    window.addEventListener("excalidraw-file-list-refresh", refresh);
-    window.addEventListener(LOCAL_THUMB_UPDATED_EVENT, refresh);
-    window.addEventListener("excalidraw-file-sync-state", refresh);
+    const refreshFromEvent = () => {
+      refresh("event");
+    };
+    const cachedTree = readFileListTreeCache();
+    logRecentFlyout("info", "open", "recent flyout opened", {
+      fileId8: recentFileId8(excludeFileId),
+      excludeFileId8: recentFileId8(excludeFileId),
+      cachedFileCount: cachedTree?.files.length ?? 0,
+      cachedFolderCount: cachedTree?.folders.length ?? 0,
+    });
+    refresh("open-cache");
+    logRecentFlyout("info", "live_refresh.start", "recent flyout live refresh start", {
+      fileId8: recentFileId8(excludeFileId),
+      excludeFileId8: recentFileId8(excludeFileId),
+    });
+    void ServerSync.listFileTree()
+      .then((tree) => {
+        if (cancelled) {
+          return;
+        }
+        writeFileListTreeCache(tree);
+        const nextItems = refresh("live-refresh-done");
+        logRecentFlyout("info", "live_refresh.done", "recent flyout live refresh done", {
+          fileId8: recentFileId8(excludeFileId),
+          excludeFileId8: recentFileId8(excludeFileId),
+          serverFileCount: tree.files.length,
+          serverFolderCount: tree.folders.length,
+          itemCount: nextItems.length,
+          itemIds8: nextItems.map((item) => recentFileId8(item.id)),
+        });
+      })
+      .catch((error) => {
+        logRecentFlyout(
+          "warn",
+          "live_refresh.failed",
+          "recent flyout live refresh failed",
+          {
+            fileId8: recentFileId8(excludeFileId),
+            excludeFileId8: recentFileId8(excludeFileId),
+            message: error instanceof Error ? error.message : String(error),
+          },
+        );
+      });
+    window.addEventListener("hashchange", refreshFromEvent);
+    window.addEventListener(RECENT_FILES_CHANGE_EVENT, refreshFromEvent);
+    window.addEventListener("excalidraw-file-list-refresh", refreshFromEvent);
+    window.addEventListener(LOCAL_THUMB_UPDATED_EVENT, refreshFromEvent);
+    window.addEventListener("excalidraw-file-sync-state", refreshFromEvent);
     return () => {
-      window.removeEventListener("hashchange", refresh);
-      window.removeEventListener(RECENT_FILES_CHANGE_EVENT, refresh);
-      window.removeEventListener("excalidraw-file-list-refresh", refresh);
-      window.removeEventListener(LOCAL_THUMB_UPDATED_EVENT, refresh);
-      window.removeEventListener("excalidraw-file-sync-state", refresh);
+      cancelled = true;
+      window.removeEventListener("hashchange", refreshFromEvent);
+      window.removeEventListener(RECENT_FILES_CHANGE_EVENT, refreshFromEvent);
+      window.removeEventListener("excalidraw-file-list-refresh", refreshFromEvent);
+      window.removeEventListener(LOCAL_THUMB_UPDATED_EVENT, refreshFromEvent);
+      window.removeEventListener("excalidraw-file-sync-state", refreshFromEvent);
     };
   }, [excludeFileId]);
 
@@ -1414,6 +1487,8 @@ export function EditorPlatformShell({ children }: { children: ReactNode }) {
     <div className="editor-platform-shell">
       <EditorPlatformSidebar />
       <div className="editor-platform-shell__content">{children}</div>
+      <div id="editor-platform-dialog-root" />
+      <EditorPlatformDialogHost />
     </div>
   );
 }

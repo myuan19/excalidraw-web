@@ -11,6 +11,9 @@ export const AUTO_SAVE_IDLE_SEC_OPTIONS = [
 /** checkpoint 间隔检查可选时间（分钟） */
 export const CHECKPOINT_INTERVAL_MIN_OPTIONS = [10, 20, 30, 60, 720] as const;
 
+export const DEBUG_LOGGING_MODE_OPTIONS = ["off", "basic", "ai"] as const;
+export type DebugLoggingMode = (typeof DEBUG_LOGGING_MODE_OPTIONS)[number];
+
 export interface AppSettings {
   /** 自动保存总开关：控制退出/切换时直接保存；空闲等待保存还需 autoSaveIdleSec > 0。 */
   autoSaveEnabled: boolean;
@@ -18,6 +21,10 @@ export interface AppSettings {
   autoSaveIdleSec: number;
   /** 保存到 latest 时 checkpoint 间隔检查的阈值（分钟） */
   checkpointIntervalMin: number;
+  /** Debug 日志模式：off=关闭，basic=本地详细日志，ai=远程采集/AI 调试。 */
+  debugLoggingMode: DebugLoggingMode;
+  /** @deprecated 兼容旧设置；新代码使用 debugLoggingMode。 */
+  debugModeEnabled: boolean;
 }
 
 const STORAGE_KEY = "editorhub-app-settings";
@@ -26,6 +33,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoSaveEnabled: false,
   autoSaveIdleSec: 10,
   checkpointIntervalMin: 30,
+  debugLoggingMode: "off",
+  debugModeEnabled: false,
 };
 
 let cache: AppSettings = { ...DEFAULT_SETTINGS };
@@ -65,7 +74,22 @@ function normalizeSettings(parsed: Record<string, unknown>): AppSettings {
       ? parsed.checkpointIntervalMin
       : DEFAULT_SETTINGS.checkpointIntervalMin;
 
-  return { autoSaveEnabled, autoSaveIdleSec, checkpointIntervalMin };
+  const debugLoggingMode = (
+    DEBUG_LOGGING_MODE_OPTIONS as readonly unknown[]
+  ).includes(parsed.debugLoggingMode)
+    ? (parsed.debugLoggingMode as DebugLoggingMode)
+    : typeof parsed.debugModeEnabled === "boolean" && parsed.debugModeEnabled
+      ? "ai"
+      : DEFAULT_SETTINGS.debugLoggingMode;
+  const debugModeEnabled = debugLoggingMode !== "off";
+
+  return {
+    autoSaveEnabled,
+    autoSaveIdleSec,
+    checkpointIntervalMin,
+    debugLoggingMode,
+    debugModeEnabled,
+  };
 }
 
 function load(): AppSettings {
@@ -92,6 +116,11 @@ export function getAppSettings(): AppSettings {
 export function updateAppSettings(partial: Partial<AppSettings>): AppSettings {
   const current = load();
   const next: AppSettings = { ...current, ...partial };
+  if ("debugLoggingMode" in partial) {
+    next.debugModeEnabled = next.debugLoggingMode !== "off";
+  } else if ("debugModeEnabled" in partial) {
+    next.debugLoggingMode = next.debugModeEnabled ? "ai" : "off";
+  }
   cache = next;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
@@ -105,6 +134,18 @@ export function updateAppSettings(partial: Partial<AppSettings>): AppSettings {
 export function subscribeAppSettings(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+export function getDebugLoggingMode(): DebugLoggingMode {
+  return getAppSettings().debugLoggingMode;
+}
+
+export function isDebugLoggingEnabled(): boolean {
+  return getDebugLoggingMode() !== "off";
+}
+
+export function isAiDebugLoggingEnabled(): boolean {
+  return getDebugLoggingMode() === "ai";
 }
 
 /** 离开编辑器时是否直接保存（无需确认） */

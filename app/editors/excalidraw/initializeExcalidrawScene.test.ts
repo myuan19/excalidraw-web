@@ -1,13 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getFileIdFromHash, getLocalCache, hasUnsavedChanges, listFileHashes, setFileId } =
-  vi.hoisted(() => ({
-    getFileIdFromHash: vi.fn(() => "file-1"),
-    getLocalCache: vi.fn(),
-    hasUnsavedChanges: vi.fn(() => false),
-    listFileHashes: vi.fn(),
-    setFileId: vi.fn(async () => {}),
-  }));
+const {
+  getFileIdFromHash,
+  getLocalCache,
+  hasUnsavedChanges,
+  listFileHashes,
+  setFileId,
+} = vi.hoisted(() => ({
+  getFileIdFromHash: vi.fn(() => "file-1"),
+  getLocalCache: vi.fn(),
+  hasUnsavedChanges: vi.fn(() => false),
+  listFileHashes: vi.fn(),
+  setFileId: vi.fn(async () => {}),
+}));
 
 vi.mock("../../data/fileIdFromHash", () => ({
   getFileIdFromHash,
@@ -25,6 +30,8 @@ vi.mock("../../data/FileSyncState", () => ({
     isServerChanged: vi.fn(() => false),
     alignHashes: vi.fn(),
     setLocalCache: vi.fn(),
+    setServerSyncedLocalCache: vi.fn(),
+    setLocalDraftCache: vi.fn(),
   },
 }));
 
@@ -77,7 +84,7 @@ describe("initializeExcalidrawScene", () => {
     });
 
     expect(result.deferRemoteVerify).toBe(true);
-    expect(listFileHashes).not.toHaveBeenCalled();
+    expect(listFileHashes).toHaveBeenCalled();
     expect(phases).toContain("preparing_surface");
   });
 

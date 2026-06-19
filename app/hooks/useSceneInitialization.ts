@@ -1,17 +1,12 @@
 import { useCallback, useEffect, useRef } from "react";
-import {
-  EVENT,
-  resolvablePromise,
-} from "@excalidraw/common";
+import { EVENT, resolvablePromise } from "@excalidraw/common";
 import {
   isAutoSaveEligibleForCurrentFile,
   registerAutoSaveTrigger,
 } from "../data/autoSaveSession";
 import { requestSave } from "../data/saveQueue";
 import { CaptureUpdateAction } from "@excalidraw/excalidraw";
-import {
-  parseLibraryTokensFromUrl,
-} from "@excalidraw/excalidraw/data/library";
+import { parseLibraryTokensFromUrl } from "@excalidraw/excalidraw/data/library";
 import { isInitializedImageElement } from "@excalidraw/element";
 import { type StoreDelta } from "@excalidraw/element";
 import { cleanAppStateForExport } from "@excalidraw/excalidraw/appState";
@@ -32,11 +27,11 @@ import { LocalData } from "../data/LocalData";
 import { updateStaleImageStatuses } from "../data/FileManager";
 import { persistDtoToStoreDelta } from "../data/storeDeltaPersist";
 import { revealForkCanvasAfterFit } from "../data/scrollEditorToFit";
-import { restoreSceneAppState, restoreSceneElements } from "../data/sceneRestore";
 import {
-  getFileIdFromHash,
-  getFileIdFromUrl,
-} from "../data/fileIdFromHash";
+  restoreSceneAppState,
+  restoreSceneElements,
+} from "../data/sceneRestore";
+import { getFileIdFromHash, getFileIdFromUrl } from "../data/fileIdFromHash";
 import {
   initializeExcalidrawScene,
   verifyExcalidrawRemoteAfterCachedOpen,
@@ -52,9 +47,13 @@ const logHook = createLogger({ module: "hook.sceneInit" });
 export function useSceneInitialization(opts: {
   excalidrawAPI: ExcalidrawImperativeAPI | null;
   onOpenPhase?: (phase: EditorOpenPhase) => void;
-  updateDraftHashDebouncedRef: React.MutableRefObject<{ flush: () => void; cancel: () => void } & ((...args: any[]) => void)>;
+  updateDraftHashDebouncedRef: React.MutableRefObject<
+    { flush: () => void; cancel: () => void } & ((...args: any[]) => void)
+  >;
   localPersistGenRef: React.MutableRefObject<number>;
-  saveToServerRef: React.MutableRefObject<(opts?: SaveToServerOptions) => Promise<boolean>>;
+  saveToServerRef: React.MutableRefObject<
+    (opts?: SaveToServerOptions) => Promise<boolean>
+  >;
   runRemoteSceneApply: <T>(apply: () => Promise<T>) => Promise<T>;
 }) {
   const {
@@ -158,10 +157,10 @@ export function useSceneInitialization(opts: {
     const h = hashSceneSnapshot(scene);
     const b = FileSyncState.getBaselineHash(fid);
     const d = FileSyncState.getDraftHash(fid);
-    if (!b || (b === d)) {
+    if (!b || b === d) {
       FileSyncState.alignHashes(fid, h);
       const existing = FileSyncState.getLocalCache(fid);
-      FileSyncState.setLocalCache(fid, {
+      FileSyncState.setServerBackedLocalCache(fid, {
         elements: scene.elements,
         appState: scene.appState,
         files: scene.files,
@@ -269,7 +268,9 @@ export function useSceneInitialization(opts: {
           }
         };
 
-        initializeExcalidrawScene({ onPhase: onOpenPhase }).then(finishHashOpen);
+        initializeExcalidrawScene({ onPhase: onOpenPhase }).then(
+          finishHashOpen,
+        );
       }
     };
 

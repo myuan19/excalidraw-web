@@ -12,16 +12,22 @@ function normalizeMindMapSaveDocument(
 export function toMindMapLocalCacheRecord(
   document: MindMapSaveDocument,
   serverContentSha256?: string,
+  serverVersion?: number,
 ) {
+  const meta =
+    serverContentSha256 || typeof serverVersion === "number"
+      ? {
+          ...(serverContentSha256 ? { serverContentSha256 } : {}),
+          ...(typeof serverVersion === "number" ? { serverVersion } : {}),
+        }
+      : undefined;
   return {
     document: normalizeMindMapSaveDocument(document),
     elements: undefined,
     appState: undefined,
     files: {},
     deltas: [],
-    ...(serverContentSha256
-      ? { meta: { serverContentSha256 } }
-      : {}),
+    ...(meta ? { meta } : {}),
   };
 }
 

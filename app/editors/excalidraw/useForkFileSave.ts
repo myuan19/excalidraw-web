@@ -17,20 +17,34 @@ import {
   generateExcalidrawThumbnailAndCache,
   scheduleExcalidrawThumbnailAndCache,
 } from "../../data/excalidrawThumbnail";
+import { canonicalizeExcalidrawSceneFileName } from "../../data/excalidrawFileNameAuthority";
 import { resolveSaveDisplayName } from "../../data/forkFileNaming";
-import { ServerSync } from "../../data/ServerSync";
+import { mergeAppStateWithServerFileName } from "../../data/forkFileScene";
+import {
+  getServerSyncErrorJson,
+  isServerSyncVersionConflictError,
+  ServerSync,
+  type PutFileResult,
+} from "../../data/ServerSync";
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
 import { shouldDeferLeaveWhileNewDocumentHash } from "../../data/editorLeaveHome";
 import { isLocalDraftFileId } from "../../data/localDraftFileId";
 import { notifyLocalDraftEdited } from "../../data/localDraftSessions";
 import { discardLocalDraftSession } from "../../data/discardLocalDraftSession";
+import { getLocalDraftDisplayName } from "../../data/localDraftDisplayName";
 import { clearAppShellPendingNavigation } from "../../shell/appShellNavigate";
+import {
+  promptLeaveEditorConfirm,
+  promptLocalDraftLossConfirm,
+  promptServerUpdateConfirm,
+} from "../../shell/editorLeaveConfirm";
 import { isAutoSaveOnExitActive } from "../../data/appSettings";
 import { isAutoSaveEligibleFile } from "../../data/autoSaveSession";
 import {
   CHECKPOINT_LABELS,
   type CheckpointLabel,
   isManualCheckpointSource,
+  resolveCheckpointPolicy,
 } from "../../data/checkpointPolicy";
 import { executeCheckpointSave } from "../../data/checkpointSaveOrchestrator";
 import { installExecutor, requestSaveAndWait } from "../../data/saveQueue";
@@ -38,6 +52,15 @@ import {
   clearTabFileDirty,
   markTabFileDirty,
 } from "../../data/tabFileDirtyState";
+import { applyRemoteExcalidrawScene } from "./applyRemoteExcalidrawScene";
+import { getDocumentSessionVersion } from "../../data/documentSessionVersion";
+import { logDocumentVersion } from "../../data/documentVersionLog";
+import {
+  beginRemoteUpdatePrompt,
+  endRemoteUpdatePrompt,
+  isRemoteMutationSuppressed,
+  isRemoteUpdateTargetSatisfied,
+} from "../../data/fileSyncOperationState";
 
 import type {
   SaveToServerOptions,
@@ -49,6 +72,7 @@ import type {
 type ServerSaveMeta = {
   skipped: boolean;
   contentSha256: string | null;
+  version: number | null;
 };
 
 const logHook = createLogger({ module: "hook.fileSave" });
@@ -56,12 +80,27 @@ const logStash = createLogger({ module: "stash" });
 const logHash = createLogger({ module: "hash" });
 const logSave = createLogger({ module: "save" });
 
+async function resolveSceneForServerSave(
+  fileId: string,
+  sceneData: SceneData,
+): Promise<{ nameForPut: string; sceneForPut: SceneData }> {
+  const nameForPut = await resolveSaveDisplayName(fileId);
+  return {
+    nameForPut,
+    sceneForPut: {
+      ...sceneData,
+      appState: mergeAppStateWithServerFileName(sceneData.appState, nameForPut),
+    },
+  };
+}
+
 export function useForkFileSave(opts: {
   excalidrawAPI: ExcalidrawImperativeAPI | null;
   getSceneDataRef: React.MutableRefObject<() => SceneData | null>;
   navigateToFileListHome: () => void;
   setErrorMessage: (msg: string) => void;
   onRequestSaveNew?: (opts: { navigateAfter: boolean }) => void;
+  runRemoteSceneApply?: <T>(apply: () => Promise<T>) => Promise<T>;
 }) {
   const {
     excalidrawAPI,
@@ -69,6 +108,7 @@ export function useForkFileSave(opts: {
     navigateToFileListHome,
     setErrorMessage,
     onRequestSaveNew,
+    runRemoteSceneApply,
   } = opts;
   const getSceneData = useCallback(
     () => getSceneDataRef.current(),
@@ -77,7 +117,6 @@ export function useForkFileSave(opts: {
 
   const [forkSaving, setForkSaving] = useState(false);
   const [forkSaveHint, setForkSaveHint] = useState<string | null>(null);
-  const [forkHomeNavDialogOpen, setForkHomeNavDialogOpen] = useState(false);
 
   const skipLeaveStashOnceRef = useRef(false);
   const saveToServerRef = useRef<
@@ -87,16 +126,130 @@ export function useForkFileSave(opts: {
   const localPersistGenRef = useRef(0);
   const lastServerSaveMetaRef = useRef<ServerSaveMeta | null>(null);
 
+  const resolveVersionConflict = useCallback(
+    async (args: {
+      error: unknown;
+      fileId: string;
+      sceneData: SceneData;
+      source: SaveToServerSource;
+      checkpointPolicy?: ReturnType<typeof resolveCheckpointPolicy>;
+    }): Promise<PutFileResult | "remote-applied" | "deferred" | null> => {
+      if (!isServerSyncVersionConflictError(args.error) || !excalidrawAPI) {
+        return null;
+      }
+      if (args.source === "auto" || args.source === "visibility") {
+        setForkSaveHint("服务器已有新版本，已暂停自动覆盖");
+        return "deferred";
+      }
+      const body = getServerSyncErrorJson(args.error) as {
+        version?: number;
+      } | null;
+      const target = {
+        fileId: args.fileId,
+        contentSha256: null,
+        serverVersion: body?.version ?? null,
+        source: "save-conflict" as const,
+      };
+      const token = beginRemoteUpdatePrompt(target);
+      try {
+        const conflictChoice = await promptServerUpdateConfirm({
+          serverVersion: body?.version ?? null,
+          mode: "save-conflict",
+        });
+        if (conflictChoice === "cancel") {
+          return null;
+        }
+        if (conflictChoice === "keep-local") {
+          logDocumentVersion({
+            action: "conflict-keep-local",
+            fileId: args.fileId,
+            reason: args.source,
+            sessionVersion: getDocumentSessionVersion(args.fileId),
+            serverVersion: body?.version ?? null,
+          });
+          const thumbnail = await generateExcalidrawThumbnailAndCache(
+            args.fileId,
+            args.sceneData,
+          );
+          const { nameForPut, sceneForPut } = await resolveSceneForServerSave(
+            args.fileId,
+            args.sceneData,
+          );
+          return ServerSync.saveFileImmediate(
+            args.fileId,
+            sceneForPut,
+            nameForPut,
+            thumbnail,
+            {
+              suppressSavedEvent: true,
+              checkpointPolicy:
+                args.checkpointPolicy ?? resolveCheckpointPolicy(args.source),
+              forceOverwrite: true,
+              source: args.source,
+            },
+          );
+        }
+        localPersistGenRef.current += 1;
+        const serverRecord = await ServerSync.getFile(args.fileId, {
+          force: true,
+        });
+        if (
+          !isRemoteUpdateTargetSatisfied(target, {
+            contentSha256: serverRecord.content_sha256 ?? null,
+            version: serverRecord.version ?? null,
+          })
+        ) {
+          setForkSaveHint("服务器版本已再次变化，请重新处理更新");
+          return "deferred";
+        }
+        logDocumentVersion({
+          action: "conflict-load-remote",
+          fileId: args.fileId,
+          reason: args.source,
+          sessionVersion: getDocumentSessionVersion(args.fileId),
+          serverVersion: serverRecord.version ?? body?.version ?? null,
+        });
+        const apply = () =>
+          applyRemoteExcalidrawScene({
+            excalidrawAPI,
+            fileId: args.fileId,
+            serverFile: serverRecord,
+            preserveViewport: true,
+          });
+        if (runRemoteSceneApply) {
+          await runRemoteSceneApply(apply);
+        } else {
+          await apply();
+        }
+        excalidrawAPI.setToast({ message: "已载入服务器版本" });
+        return "remote-applied";
+      } finally {
+        endRemoteUpdatePrompt(token);
+      }
+    },
+    [excalidrawAPI, runRemoteSceneApply],
+  );
+
   const updateDraftHashDebouncedRef = useRef(
     debounce((fileId: string, getScene: () => SceneData | null) => {
       if (getFileIdFromHash() !== fileId) {
+        return;
+      }
+      if (isRemoteMutationSuppressed(fileId)) {
+        logHash.info("draft hash update suppressed during remote apply", {
+          fileId8: fileId.slice(0, 8),
+        });
         return;
       }
       const sceneData = getScene();
       if (!sceneData || !fileId) {
         return;
       }
-      const h = hashSceneSnapshot(sceneData);
+      const draftSceneData = canonicalizeExcalidrawSceneFileName(
+        fileId,
+        sceneData,
+      );
+      const h = hashSceneSnapshot(draftSceneData);
       FileSyncState.setDraftHash(fileId, h);
       window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
 
@@ -110,8 +263,7 @@ export function useForkFileSave(opts: {
       markTabFileDirty(fileId);
       FileSyncState.setLocalEditTime(fileId);
       if (isLocalDraftFileId(fileId)) {
-        const displayName = sceneData.appState?.name?.trim();
-        notifyLocalDraftEdited(fileId, displayName);
+        notifyLocalDraftEdited(fileId);
       }
 
       const myGen = ++localPersistGenRef.current;
@@ -121,19 +273,29 @@ export function useForkFileSave(opts: {
           if (myGen !== localPersistGenRef.current) {
             return;
           }
+          if (isRemoteMutationSuppressed(fileId)) {
+            logHash.info("local cache write suppressed during remote apply", {
+              fileId8: fileId.slice(0, 8),
+            });
+            return;
+          }
           const latest = getScene();
           if (!latest || !fileId) {
             return;
           }
-          const h2 = hashSceneSnapshot(latest);
+          const canonicalLatest = canonicalizeExcalidrawSceneFileName(
+            fileId,
+            latest,
+          );
+          const h2 = hashSceneSnapshot(canonicalLatest);
           const b2 = FileSyncState.getBaselineHash(fileId);
           if (!b2 || h2 === b2) {
             return;
           }
-          FileSyncState.setLocalCache(fileId, {
-            elements: latest.elements,
-            appState: latest.appState,
-            files: latest.files,
+          FileSyncState.setServerBackedLocalCache(fileId, {
+            elements: canonicalLatest.elements,
+            appState: canonicalLatest.appState,
+            files: canonicalLatest.files,
             deltas,
           });
           scheduleExcalidrawThumbnailAndCache(fileId, latest);
@@ -198,9 +360,13 @@ export function useForkFileSave(opts: {
         return false;
       }
       const deltas = await DeltaStorage.getAllPersistedDtos();
-      FileSyncState.setLocalCache(fid, {
+      const canonicalSceneData = canonicalizeExcalidrawSceneFileName(
+        fid,
+        sceneData,
+      );
+      FileSyncState.setServerBackedLocalCache(fid, {
         elements: sceneData.elements,
-        appState: sceneData.appState,
+        appState: canonicalSceneData.appState,
         files: sceneData.files,
         deltas,
       });
@@ -208,7 +374,7 @@ export function useForkFileSave(opts: {
       const localAfterWriteElements = Array.isArray(localAfterWrite?.elements)
         ? localAfterWrite.elements.length
         : 0;
-      const dh = hashSceneSnapshot(sceneData);
+      const dh = hashSceneSnapshot(canonicalSceneData);
       FileSyncState.setDraftHash(fid, dh);
       logSave.debug(
         `persistLocalDraft file=${fid.slice(0, 8)}, draftHash=${dh.slice(
@@ -251,10 +417,25 @@ export function useForkFileSave(opts: {
         }
         return false;
       }
-      const h = hashSceneSnapshot(sceneData);
+      const canonicalSceneData = canonicalizeExcalidrawSceneFileName(
+        fid,
+        sceneData,
+      );
+      const h = hashSceneSnapshot(canonicalSceneData);
       const baseline = FileSyncState.getBaselineHash(fid);
       const unchanged =
         !!baseline && h === baseline && !saveOpts?.forceThumbnail;
+      logSave.info("excalidraw save evaluate", {
+        fileId8: fid.slice(0, 8),
+        source,
+        contentHash8: h.slice(0, 8),
+        baselineHash8: baseline?.slice(0, 8) ?? null,
+        unchanged,
+        forceThumbnail: !!saveOpts?.forceThumbnail,
+        navigateAfter,
+        elements: sceneData.elements.length,
+        files: Object.keys(sceneData.files || {}).length,
+      });
 
       if (unchanged) {
         clearTabFileDirty(fid);
@@ -272,44 +453,72 @@ export function useForkFileSave(opts: {
       }
 
       try {
-        const outcome = await executeCheckpointSave(
-          {
-            fileId: fid,
-            source,
-            contentHash: h,
-            baselineHash: baseline,
-            forceThumbnail: saveOpts?.forceThumbnail,
-            document: sceneData,
-          },
-          {
-            resolveFileThumbnailForPut: () =>
-              generateExcalidrawThumbnailAndCache(fid, sceneData),
-            putDocument: async ({ thumbnail, checkpointPolicy }) => {
-              const nameForPut = await resolveSaveDisplayName(
-                fid,
-                sceneData.appState,
-              );
-              logSave.debug(
-                `saveToServer file=${fid.slice(
-                  0,
-                  8,
-                )}, name=${nameForPut}, hasThumb=${!!thumbnail}, elements=${
-                  sceneData.elements.length
-                }, source=${source}`,
-              );
-              return ServerSync.saveFileImmediate(
-                fid,
-                sceneData,
-                nameForPut,
-                thumbnail,
-                {
-                  suppressSavedEvent: true,
-                  checkpointPolicy,
-                },
-              );
+        let outcome: Awaited<ReturnType<typeof executeCheckpointSave>>;
+        let savedSceneData: SceneData = canonicalSceneData;
+        try {
+          outcome = await executeCheckpointSave(
+            {
+              fileId: fid,
+              source,
+              contentHash: h,
+              baselineHash: baseline,
+              forceThumbnail: saveOpts?.forceThumbnail,
+              document: canonicalSceneData,
             },
-          },
-        );
+            {
+              resolveFileThumbnailForPut: () =>
+                generateExcalidrawThumbnailAndCache(fid, sceneData),
+              putDocument: async ({ thumbnail, checkpointPolicy }) => {
+                const { nameForPut, sceneForPut } =
+                  await resolveSceneForServerSave(fid, sceneData);
+                savedSceneData = sceneForPut;
+                logSave.debug(
+                  `saveToServer file=${fid.slice(
+                    0,
+                    8,
+                  )}, name=${nameForPut}, hasThumb=${!!thumbnail}, elements=${
+                    sceneData.elements.length
+                  }, source=${source}`,
+                );
+                return ServerSync.saveFileImmediate(
+                  fid,
+                  sceneForPut,
+                  nameForPut,
+                  thumbnail,
+                  {
+                    suppressSavedEvent: true,
+                    checkpointPolicy,
+                    source,
+                  },
+                );
+              },
+            },
+          );
+        } catch (error) {
+          const conflictResult = await resolveVersionConflict({
+            error,
+            fileId: fid,
+            sceneData,
+            source,
+          });
+          if (
+            conflictResult === "remote-applied" ||
+            conflictResult === "deferred"
+          ) {
+            return false;
+          }
+          if (!conflictResult) {
+            throw error;
+          }
+          outcome = {
+            saved: true,
+            skipped: !!conflictResult.skipped,
+            checkpointCreated: !!conflictResult.checkpoint?.created,
+            contentSha256: conflictResult.content_sha256 ?? null,
+            version: conflictResult.version ?? null,
+            updatedAt: conflictResult.updated_at ?? null,
+          };
+        }
 
         if (!outcome.saved && !outcome.checkpointCreated) {
           if (isManualCheckpointSource(source)) {
@@ -326,6 +535,7 @@ export function useForkFileSave(opts: {
           lastServerSaveMetaRef.current = {
             skipped: false,
             contentSha256: baseline,
+            version: outcome.version ?? null,
           };
           window.dispatchEvent(
             new CustomEvent("excalidraw-server-saved", {
@@ -343,13 +553,31 @@ export function useForkFileSave(opts: {
         }
 
         const result = outcome;
+        logSave.info("excalidraw save outcome", {
+          fileId8: fid.slice(0, 8),
+          source,
+          saved: outcome.saved,
+          skipped: !!outcome.skipped,
+          checkpointCreated: !!outcome.checkpointCreated,
+          contentSha8: outcome.contentSha256?.slice(0, 8) ?? null,
+          version: outcome.version ?? null,
+          unchanged,
+        });
         logSave.debug(`saveToServer file=${fid.slice(0, 8)}, result`, result);
         const deltasAfterSave = await DeltaStorage.getAllPersistedDtos();
-        FileSyncState.setLocalCache(fid, {
-          elements: sceneData.elements,
-          appState: sceneData.appState,
-          files: sceneData.files,
+        FileSyncState.setServerSyncedLocalCache(fid, {
+          elements: savedSceneData.elements,
+          appState: savedSceneData.appState,
+          files: savedSceneData.files,
           deltas: deltasAfterSave,
+          meta: {
+            ...(outcome.contentSha256
+              ? { serverContentSha256: outcome.contentSha256 }
+              : {}),
+            ...(typeof outcome.version === "number"
+              ? { serverVersion: outcome.version }
+              : {}),
+          },
         });
 
         if (outcome.contentSha256) {
@@ -360,8 +588,9 @@ export function useForkFileSave(opts: {
         lastServerSaveMetaRef.current = {
           skipped: !!outcome.skipped,
           contentSha256: outcome.contentSha256 ?? null,
+          version: outcome.version ?? null,
         };
-        const hAfter = hashSceneSnapshot(getSceneData() ?? sceneData);
+        const hAfter = hashSceneSnapshot(savedSceneData);
         FileSyncState.alignHashes(fid, hAfter);
         FileSyncState.clearLocalEditTime(fid);
         clearTabFileDirty(fid);
@@ -439,6 +668,7 @@ export function useForkFileSave(opts: {
       finishNavigateHome,
       onRequestSaveNew,
       persistLocalDraftToCache,
+      resolveVersionConflict,
       setErrorMessage,
     ],
   );
@@ -456,55 +686,117 @@ export function useForkFileSave(opts: {
         return false;
       }
       try {
-        const h = hashSceneSnapshot(sceneData);
-        const baseline = FileSyncState.getBaselineHash(fid);
-        const outcome = await executeCheckpointSave(
-          {
-            fileId: fid,
-            source: "sidebar",
-            contentHash: h,
-            baselineHash: baseline,
-            forcePut: true,
-            document: sceneData,
-            checkpointPolicyOverride: { mode: "force", label },
-          },
-          {
-            resolveFileThumbnailForPut: () =>
-              generateExcalidrawThumbnailAndCache(fid, sceneData),
-            putDocument: async ({ thumbnail, checkpointPolicy }) => {
-              const nameForPut = await resolveSaveDisplayName(
-                fid,
-                sceneData.appState,
-              );
-              return ServerSync.saveFileImmediate(
-                fid,
-                sceneData,
-                nameForPut,
-                thumbnail,
-                {
-                  suppressSavedEvent: true,
-                  checkpointPolicy,
-                },
-              );
-            },
-          },
+        const canonicalSceneData = canonicalizeExcalidrawSceneFileName(
+          fid,
+          sceneData,
         );
+        const h = hashSceneSnapshot(canonicalSceneData);
+        const baseline = FileSyncState.getBaselineHash(fid);
+        logSave.info("excalidraw archive save evaluate", {
+          fileId8: fid.slice(0, 8),
+          source: "sidebar",
+          label,
+          contentHash8: h.slice(0, 8),
+          baselineHash8: baseline?.slice(0, 8) ?? null,
+          unchanged: !!baseline && h === baseline,
+          elements: sceneData.elements.length,
+          files: Object.keys(sceneData.files || {}).length,
+        });
+        let outcome: Awaited<ReturnType<typeof executeCheckpointSave>>;
+        let savedSceneData: SceneData = canonicalSceneData;
+        const checkpointPolicyOverride = { mode: "force" as const, label };
+        try {
+          outcome = await executeCheckpointSave(
+            {
+              fileId: fid,
+              source: "sidebar",
+              contentHash: h,
+              baselineHash: baseline,
+              forcePut: true,
+              document: canonicalSceneData,
+              checkpointPolicyOverride,
+            },
+            {
+              resolveFileThumbnailForPut: () =>
+                generateExcalidrawThumbnailAndCache(fid, sceneData),
+              putDocument: async ({ thumbnail, checkpointPolicy }) => {
+                const { nameForPut, sceneForPut } =
+                  await resolveSceneForServerSave(fid, sceneData);
+                savedSceneData = sceneForPut;
+                return ServerSync.saveFileImmediate(
+                  fid,
+                  sceneForPut,
+                  nameForPut,
+                  thumbnail,
+                  {
+                    suppressSavedEvent: true,
+                    checkpointPolicy,
+                    source: "sidebar",
+                  },
+                );
+              },
+            },
+          );
+        } catch (error) {
+          const conflictResult = await resolveVersionConflict({
+            error,
+            fileId: fid,
+            sceneData,
+            source: "sidebar",
+            checkpointPolicy: checkpointPolicyOverride,
+          });
+          if (
+            conflictResult === "remote-applied" ||
+            conflictResult === "deferred"
+          ) {
+            return false;
+          }
+          if (!conflictResult) {
+            throw error;
+          }
+          outcome = {
+            saved: true,
+            skipped: !!conflictResult.skipped,
+            checkpointCreated: !!conflictResult.checkpoint?.created,
+            contentSha256: conflictResult.content_sha256 ?? null,
+            version: conflictResult.version ?? null,
+            updatedAt: conflictResult.updated_at ?? null,
+          };
+        }
         if (!outcome.saved) {
           return false;
         }
+        logSave.info("excalidraw archive save outcome", {
+          fileId8: fid.slice(0, 8),
+          source: "sidebar",
+          label,
+          saved: outcome.saved,
+          skipped: !!outcome.skipped,
+          checkpointCreated: !!outcome.checkpointCreated,
+          contentSha8: outcome.contentSha256?.slice(0, 8) ?? null,
+          version: outcome.version ?? null,
+        });
         const deltasAfterSave = await DeltaStorage.getAllPersistedDtos();
-        FileSyncState.setLocalCache(fid, {
-          elements: sceneData.elements,
-          appState: sceneData.appState,
-          files: sceneData.files,
+        FileSyncState.setServerSyncedLocalCache(fid, {
+          elements: savedSceneData.elements,
+          appState: savedSceneData.appState,
+          files: savedSceneData.files,
           deltas: deltasAfterSave,
+          meta: {
+            ...(outcome.contentSha256
+              ? { serverContentSha256: outcome.contentSha256 }
+              : {}),
+            ...(typeof outcome.version === "number"
+              ? { serverVersion: outcome.version }
+              : {}),
+          },
         });
         if (outcome.contentSha256) {
           FileSyncState.setServerHash(fid, outcome.contentSha256);
         }
         updateDraftHashDebouncedRef.current.cancel();
         localPersistGenRef.current += 1;
-        const hAfter = hashSceneSnapshot(getSceneData() ?? sceneData);
+        const hAfter = hashSceneSnapshot(savedSceneData);
         FileSyncState.alignHashes(fid, hAfter);
         FileSyncState.clearLocalEditTime(fid);
         clearTabFileDirty(fid);
@@ -521,42 +813,47 @@ export function useForkFileSave(opts: {
         return false;
       }
     },
-    [excalidrawAPI, getSceneData, setErrorMessage],
+    [excalidrawAPI, getSceneData, resolveVersionConflict, setErrorMessage],
   );
 
-  const saveAndArchiveCurrentVersion = useCallback(async (): Promise<boolean> => {
-    const fid = getFileIdFromHash();
-    if (!excalidrawAPI || !fid || isLocalDraftFileId(fid)) {
-      onRequestSaveNew?.({ navigateAfter: false });
-      return false;
-    }
-    await saveCurrentFileToServer({ source: "sidebar" });
-    return saveCurrentFileAsCheckpoint(CHECKPOINT_LABELS.manual);
-  }, [
-    excalidrawAPI,
-    onRequestSaveNew,
-    saveCurrentFileAsCheckpoint,
-    saveCurrentFileToServer,
-  ]);
+  const saveAndArchiveCurrentVersion =
+    useCallback(async (): Promise<boolean> => {
+      const fid = getFileIdFromHash();
+      if (!excalidrawAPI || !fid || isLocalDraftFileId(fid)) {
+        onRequestSaveNew?.({ navigateAfter: false });
+        return false;
+      }
+      await saveCurrentFileToServer({ source: "sidebar" });
+      return saveCurrentFileAsCheckpoint(CHECKPOINT_LABELS.manual);
+    }, [
+      excalidrawAPI,
+      onRequestSaveNew,
+      saveCurrentFileAsCheckpoint,
+      saveCurrentFileToServer,
+    ]);
 
   useEffect(() => {
     saveToServerRef.current = saveCurrentFileToServer;
   }, [saveCurrentFileToServer]);
 
   useEffect(() => {
-    return installExecutor(async (req) => {
-      lastServerSaveMetaRef.current = null;
-      const result = await saveCurrentFileToServer(req);
-      const fid = getFileIdFromHash();
-      // 断言绕过 TS 对 await 之后 ref.current 的过度窄化（保存函数内部会写入）
-      const meta = lastServerSaveMetaRef.current as ServerSaveMeta | null;
-      return {
-        saved: result,
-        fileId: fid ?? undefined,
-        skipped: meta?.skipped,
-        contentSha256: meta?.contentSha256,
-      };
-    });
+    return installExecutor(
+      async (req) => {
+        lastServerSaveMetaRef.current = null;
+        const result = await saveCurrentFileToServer(req);
+        const fid = getFileIdFromHash();
+        // 断言绕过 TS 对 await 之后 ref.current 的过度窄化（保存函数内部会写入）
+        const meta = lastServerSaveMetaRef.current as ServerSaveMeta | null;
+        return {
+          saved: result,
+          fileId: fid ?? undefined,
+          skipped: meta?.skipped,
+          contentSha256: meta?.contentSha256,
+          version: meta?.version,
+        };
+      },
+      { getCurrentFileId: getFileIdFromHash },
+    );
   }, [saveCurrentFileToServer]);
 
   const discardLocalEditsForHomeNavigation = useCallback(async () => {
@@ -600,7 +897,27 @@ export function useForkFileSave(opts: {
         navigateToFileListHome();
         return;
       }
-      setForkHomeNavDialogOpen(true);
+      const leaveChoice = await promptLeaveEditorConfirm({
+        isLocalDraft: true,
+        contentLabel: "画布",
+      });
+      if (leaveChoice === "cancel") {
+        clearAppShellPendingNavigation();
+        return;
+      }
+      if (leaveChoice === "save") {
+        onRequestSaveNew?.({ navigateAfter: true });
+        return;
+      }
+      const confirmed = await promptLocalDraftLossConfirm(
+        getLocalDraftDisplayName(fid),
+      );
+      if (!confirmed) {
+        clearAppShellPendingNavigation();
+        return;
+      }
+      await discardLocalDraftSession(fid);
+      navigateToFileListHome();
       return;
     }
     if (!state.shouldPromptOnLeave) {
@@ -611,35 +928,35 @@ export function useForkFileSave(opts: {
       await requestSaveAndWait({ source: "home", navigateAfter: true });
       return;
     }
-    setForkHomeNavDialogOpen(true);
-  }, [excalidrawAPI, finishNavigateHome, getSceneData, navigateToFileListHome]);
-
-  const forkHomeConfirmSave = useCallback(async () => {
-    setForkHomeNavDialogOpen(false);
-    await requestSaveAndWait({ source: "home", navigateAfter: true });
-  }, []);
-
-  const forkHomeConfirmDiscard = useCallback(async () => {
-    setForkHomeNavDialogOpen(false);
+    const leaveChoice = await promptLeaveEditorConfirm({
+      isLocalDraft: false,
+      contentLabel: "画布",
+    });
+    if (leaveChoice === "cancel") {
+      clearAppShellPendingNavigation();
+      return;
+    }
+    if (leaveChoice === "save") {
+      await requestSaveAndWait({ source: "home", navigateAfter: true });
+      return;
+    }
     await discardLocalEditsForHomeNavigation();
-  }, [discardLocalEditsForHomeNavigation]);
-
-  const forkHomeDismissDialog = useCallback(() => {
-    setForkHomeNavDialogOpen(false);
-    clearAppShellPendingNavigation();
-  }, []);
+  }, [
+    discardLocalEditsForHomeNavigation,
+    excalidrawAPI,
+    finishNavigateHome,
+    getSceneData,
+    navigateToFileListHome,
+    onRequestSaveNew,
+  ]);
 
   return {
     forkSaving,
     forkSaveHint,
-    forkHomeNavDialogOpen,
     saveCurrentFileToServer,
     saveAndArchiveCurrentVersion,
     persistLocalDraftToCache,
     forkGoHomeWithServerSave,
-    forkHomeConfirmSave,
-    forkHomeConfirmDiscard,
-    forkHomeDismissDialog,
     saveToServerRef,
     visibilitySaveInFlightRef,
     localPersistGenRef,

@@ -18,6 +18,18 @@ function envLogOff(val) {
   return v === "0" || v === "false" || v === "off" || v === "no";
 }
 
+function envLogOn(val) {
+  const v = (val ?? "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "on" || v === "yes";
+}
+
+export function isDebugLogAllowed() {
+  return (
+    envLogOn(process.env.EDITORHUB_DEBUG_ENABLED) ||
+    envLogOn(process.env.DEPLOY_DEBUG)
+  );
+}
+
 /** Frontend log ingest (POST /api/logs). Off if either env is explicitly disabled. */
 export function isClientLogIngestEnabled() {
   if (envLogOff(process.env.LOG_CLIENT_INGEST)) return false;

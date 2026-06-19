@@ -22,7 +22,9 @@ export async function createMindMapFile({
     created.id,
     mindMapData,
   );
-  await ServerSync.saveFileImmediate(created.id, document, name, thumbnail);
+  await ServerSync.saveFileImmediate(created.id, document, name, thumbnail, {
+    source: "create-mindmap",
+  });
   return { id: created.id };
 }
 
@@ -36,6 +38,8 @@ export async function importMindMapFile({
   const created = await ServerSync.createFile(fileName, folderId, "mindmap");
   const document = MindMapAdapter.toDocument(data);
   const thumbnail = await generateMindMapThumbnailAndCache(created.id, data);
-  await ServerSync.saveFileImmediate(created.id, document, fileName, thumbnail);
+  await ServerSync.saveFileImmediate(created.id, document, fileName, thumbnail, {
+    source: "import-mindmap",
+  });
   return { id: created.id };
 }

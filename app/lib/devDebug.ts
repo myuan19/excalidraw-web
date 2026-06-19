@@ -4,6 +4,9 @@
  * Production bundle: off unless debug-ship build (VITE_APP_DEPLOY_DEBUG) or per-channel VITE_APP_ENABLE_*_DEBUG.
  */
 
+import { createLogger } from "./logger";
+import { isDebugRuntimeEnabled } from "../data/debugCapability";
+
 export type DevDebugChannel =
   | "app"
   | "editor-bridge"
@@ -17,59 +20,35 @@ export type DevDebugChannel =
   | "file-list"
   | "thumbnail-pipeline";
 
-const CHANNEL_ENV_FLAG: Record<DevDebugChannel, string> = {
-  app: "VITE_APP_ENABLE_APP_DEBUG",
-  "editor-bridge": "VITE_APP_ENABLE_EDITOR_BRIDGE_DEBUG",
-  "editor-open": "VITE_APP_ENABLE_EDITOR_OPEN_DEBUG",
-  "mindmap-open": "VITE_APP_ENABLE_MINDMAP_DEBUG",
-  "mindmap-bridge": "VITE_APP_ENABLE_MINDMAP_DEBUG",
-  "mindmap-persist": "VITE_APP_ENABLE_MINDMAP_DEBUG",
-  "mindmap-thumbnail": "VITE_APP_ENABLE_MINDMAP_THUMBNAIL_DEBUG",
-  "ai-config": "VITE_APP_ENABLE_AI_CONFIG_DEBUG",
-  embed: "VITE_APP_ENABLE_EMBED_DEBUG",
-  "file-list": "VITE_APP_ENABLE_FILE_LIST_DEBUG",
-  "thumbnail-pipeline": "VITE_APP_ENABLE_THUMBNAIL_DEBUG",
-};
-
-const NOISY_DEV_CHANNELS = new Set<DevDebugChannel>([
-  "file-list",
-  "mindmap-thumbnail",
-  "thumbnail-pipeline",
-]);
-
-function isDeployDebugBuild(): boolean {
-  return import.meta.env.VITE_APP_DEPLOY_DEBUG === "true";
-}
-
-function isLocalStorageDebugEnabled(channel: DevDebugChannel): boolean {
-  if (typeof window === "undefined") {
-    return false;
-  }
-  if (channel === "mindmap-thumbnail") {
-    return false;
-  }
-  try {
-    return (
-      window.localStorage.getItem("excalidraw-web-debug") === "1" ||
-      window.localStorage.getItem(`excalidraw-web-debug-${channel}`) === "1"
-    );
-  } catch {
-    return false;
-  }
-}
+const channelLoggers = new Map<DevDebugChannel, ReturnType<typeof createLogger>>();
 
 export function isDevDebugChannelEnabled(channel: DevDebugChannel): boolean {
-  const flag = CHANNEL_ENV_FLAG[channel];
-  if (import.meta.env.PROD) {
-    if (isDeployDebugBuild()) {
-      return true;
-    }
-    return import.meta.env[flag] === "true" || isLocalStorageDebugEnabled(channel);
-  }
-  if (NOISY_DEV_CHANNELS.has(channel)) {
-    return import.meta.env[flag] === "true" || isLocalStorageDebugEnabled(channel);
+  if (!isDebugRuntimeEnabled()) {
+    return false;
   }
   return true;
+}
+
+function loggerForChannel(channel: DevDebugChannel): ReturnType<typeof createLogger> {
+  let logger = channelLoggers.get(channel);
+  if (!logger) {
+    logger = createLogger({
+      module: `dev.${channel}`,
+      minLevel: "debug",
+    });
+    channelLoggers.set(channel, logger);
+  }
+  return logger;
+}
+
+function labelToEvent(label: string): string {
+  const slug = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ".")
+    .replace(/^\.+|\.+$/g, "")
+    .slice(0, 80);
+  return slug || "event";
 }
 
 export function devDebug(
@@ -80,16 +59,17 @@ export function devDebug(
   if (!isDevDebugChannelEnabled(channel)) {
     return;
   }
-  const prefix = `[DEBUG] ${channel} | ${label}`;
-  if (data === undefined) {
-    console.log(prefix);
-    return;
-  }
-  try {
-    console.log(prefix, data);
-  } catch {
-    console.log(prefix);
-  }
+  loggerForChannel(channel).event(
+    "debug",
+    `dev.${channel}.${labelToEvent(label)}`,
+    label,
+    {
+      fields: {
+        channel,
+        ...(data ?? {}),
+      },
+    },
+  );
 }
 
 /** @deprecated Use isDevDebugChannelEnabled("embed") */

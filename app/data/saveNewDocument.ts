@@ -6,6 +6,7 @@ import { discardLocalDraftSession } from "./discardLocalDraftSession";
 import { buildAndCacheFileThumbnail } from "./thumbnailService";
 import { FileSyncState } from "./FileSyncState";
 import { copyForkBrowserSceneBetweenFiles } from "./forkBrowserSceneStorage";
+import { forkSceneSnapshotWithServerName } from "./forkFileScene";
 import {
   createMindMapRootText,
   isMindMapSingleRootOnly,
@@ -84,14 +85,16 @@ export async function saveNewDocument(opts: {
       persistDocument,
       finalName,
       thumbnail,
+      { source: "promote-mindmap" },
     );
-    FileSyncState.setLocalCache(
+    FileSyncState.setServerSyncedLocalCache(
       created.id,
       toMindMapLocalCacheRecord(
         persistDocument,
         saveResult.content_sha256 ??
           FileSyncState.getServerHash(created.id) ??
           undefined,
+        saveResult.version,
       ),
     );
     const hash = hashDocumentSnapshot(persistDocument);
@@ -104,28 +107,37 @@ export async function saveNewDocument(opts: {
     if (!scene) {
       throw new Error("没有可保存的画布内容");
     }
+    const sceneForSave = forkSceneSnapshotWithServerName(scene, finalName);
     const thumbnail = await buildAndCacheFileThumbnail(created.id, {
       kind: "excalidraw",
       data: {
-        elements: scene.elements ?? [],
-        appState: scene.appState ?? {},
-        files: scene.files ?? {},
+        elements: sceneForSave.elements ?? [],
+        appState: sceneForSave.appState ?? {},
+        files: sceneForSave.files ?? {},
       },
     });
-    await ServerSync.saveFileImmediate(
+    const saveResult = await ServerSync.saveFileImmediate(
       created.id,
-      scene,
+      sceneForSave,
       finalName,
       thumbnail,
-      { suppressSavedEvent: true },
+      { suppressSavedEvent: true, source: "promote-excalidraw" },
     );
-    FileSyncState.setLocalCache(created.id, {
-      elements: scene.elements,
-      appState: { ...(scene.appState ?? {}), name: finalName },
-      files: scene.files,
+    FileSyncState.setServerSyncedLocalCache(created.id, {
+      elements: sceneForSave.elements,
+      appState: sceneForSave.appState,
+      files: sceneForSave.files,
       deltas: [],
+      meta: {
+        ...(saveResult.content_sha256
+          ? { serverContentSha256: saveResult.content_sha256 }
+          : {}),
+        ...(typeof saveResult.version === "number"
+          ? { serverVersion: saveResult.version }
+          : {}),
+      },
     });
-    const hash = hashSceneSnapshot(scene);
+    const hash = hashSceneSnapshot(sceneForSave);
     FileSyncState.alignHashes(created.id, hash);
     await DeltaStorage.setFileId(created.id);
     if (draftId && isLocalDraftFileId(draftId)) {

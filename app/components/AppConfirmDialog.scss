@@ -1,0 +1,170 @@
+.editor-platform-shell
+  #editor-platform-dialog-root
+  .app-confirm-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--nb-z-fork-home, 200000);
+  background: rgba(0, 0, 0, 0.42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--nb-space-16);
+  font-family: Assistant, system-ui, -apple-system, sans-serif;
+}
+
+.editor-platform-shell #editor-platform-dialog-root .app-confirm-dialog {
+  max-width: 22rem;
+  width: 100%;
+  background: var(--nb-surface);
+  color: var(--nb-text);
+  border-radius: var(--nb-radius-lg);
+  padding: var(--nb-space-8) var(--nb-space-10);
+  box-shadow: var(--nb-shadow-modal-deep);
+  animation: appConfirmDialogIn 0.15s ease both;
+}
+
+.editor-platform-shell #editor-platform-dialog-root .app-confirm-dialog h3 {
+  margin: 0 0 var(--nb-space-3);
+  font-size: var(--nb-font-body);
+  font-weight: 600;
+  color: var(--nb-text);
+}
+
+.editor-platform-shell #editor-platform-dialog-root .app-confirm-dialog__desc {
+  margin: 0 0 var(--nb-space-7);
+  font-size: var(--nb-font-body-sm);
+  line-height: 1.5;
+  color: var(--nb-text-muted);
+  white-space: pre-line;
+}
+
+.editor-platform-shell
+  #editor-platform-dialog-root
+  .app-confirm-dialog__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nb-space-3);
+}
+
+.editor-platform-shell #editor-platform-dialog-root .app-confirm-dialog__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 2.375rem;
+  padding: var(--nb-space-3) var(--nb-space-5);
+  border-radius: var(--nb-radius-md);
+  font-size: var(--nb-font-body-sm);
+  font-weight: 500;
+  font-family: inherit;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+  box-sizing: border-box;
+}
+
+.editor-platform-shell
+  #editor-platform-dialog-root
+  .app-confirm-dialog__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.editor-platform-shell
+  #editor-platform-dialog-root
+  .app-confirm-dialog__btn--primary {
+  background: var(--nb-primary);
+  color: var(--nb-on-primary);
+  box-shadow: var(--nb-shadow-btn-primary);
+
+  &:hover:not(:disabled) {
+    background: var(--nb-primary-hover);
+    box-shadow: var(--nb-shadow-btn-primary-hover);
+  }
+}
+
+.editor-platform-shell
+  #editor-platform-dialog-root
+  .app-confirm-dialog__btn--danger {
+  background: var(--nb-surface-muted);
+  color: var(--nb-danger-foreground);
+  box-shadow: 0 0 0 var(--nb-border-width) var(--nb-danger-border);
+
+  &:hover:not(:disabled) {
+    background: var(--nb-danger-soft-bg);
+    box-shadow: 0 0 0 var(--nb-border-width) rgba(239, 68, 68, 0.25);
+  }
+}
+
+.editor-platform-shell
+  #editor-platform-dialog-root
+  .app-confirm-dialog__cancel {
+  display: block;
+  margin: var(--nb-space-5) auto 0;
+  padding: var(--nb-space-2) var(--nb-space-4);
+  background: transparent;
+  border: none;
+  font-size: var(--nb-font-caption);
+  color: var(--nb-text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  border-radius: var(--nb-radius-md);
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.editor-platform-shell
+  #editor-platform-dialog-root
+  .app-confirm-dialog__cancel:hover:not(:disabled) {
+  background: var(--nb-surface-secondary);
+  color: var(--nb-text);
+}
+
+.editor-platform-shell:has(.theme--dark)
+  #editor-platform-dialog-root
+  .app-confirm-dialog {
+  background: var(--nb-fork-home-surface);
+  color: var(--nb-fork-home-text);
+}
+
+.editor-platform-shell:has(.theme--dark)
+  #editor-platform-dialog-root
+  .app-confirm-dialog
+  h3 {
+  color: var(--nb-fork-home-text);
+}
+
+.editor-platform-shell:has(.theme--dark)
+  #editor-platform-dialog-root
+  .app-confirm-dialog__desc {
+  color: var(--nb-fork-home-muted);
+}
+
+.editor-platform-shell:has(.theme--dark)
+  #editor-platform-dialog-root
+  .app-confirm-dialog__btn--danger {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--nb-danger-soft-text-dark);
+  box-shadow: 0 0 0 var(--nb-border-width) rgba(248, 113, 113, 0.2);
+
+  &:hover:not(:disabled) {
+    background: rgba(248, 113, 113, 0.12);
+  }
+}
+
+.editor-platform-shell:has(.theme--dark)
+  #editor-platform-dialog-root
+  .app-confirm-dialog__cancel {
+  color: var(--nb-fork-home-muted);
+}
+
+@keyframes appConfirmDialogIn {
+  from {
+    opacity: 0;
+    transform: translateY(0.35rem) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}

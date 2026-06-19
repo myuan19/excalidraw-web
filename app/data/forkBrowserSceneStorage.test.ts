@@ -15,6 +15,7 @@ describe("forkBrowserSceneStorage", () => {
     const appState = {
       scrollX: 120,
       scrollY: -40,
+      name: "无标题-2026-06-19",
       openSidebar: { name: DEFAULT_SIDEBAR.name, tab: LIBRARY_SIDEBAR_TAB },
       defaultSidebarDockedPreference: true,
     } as AppState;
@@ -24,13 +25,36 @@ describe("forkBrowserSceneStorage", () => {
     const overlay = readForkBrowserAppStateOverlay("file-a");
     expect(overlay?.scrollX).toBe(120);
     expect(overlay?.scrollY).toBe(-40);
+    expect(overlay?.name).toBeUndefined();
     expect(overlay?.openSidebar).toBeUndefined();
     expect(overlay?.defaultSidebarDockedPreference).toBeUndefined();
 
     const raw = JSON.parse(
       window.localStorage.getItem("fork-browser-scene-v1-file-a") ?? "{}",
     ) as { appState?: Record<string, unknown> };
+    expect(raw.appState).not.toHaveProperty("name");
     expect(raw.appState).not.toHaveProperty("openSidebar");
     expect(raw.appState).not.toHaveProperty("defaultSidebarDockedPreference");
+  });
+
+  it("drops legacy persisted names when reading browser overlay", () => {
+    window.localStorage.setItem(
+      "fork-browser-scene-v1-file-a",
+      JSON.stringify({
+        v: 1,
+        elements: [],
+        appState: {
+          name: "无标题-2026-06-19",
+          scrollX: 120,
+          scrollY: -40,
+        },
+      }),
+    );
+
+    const overlay = readForkBrowserAppStateOverlay("file-a");
+
+    expect(overlay?.name).toBeUndefined();
+    expect(overlay?.scrollX).toBe(120);
+    expect(overlay?.scrollY).toBe(-40);
   });
 });

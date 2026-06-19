@@ -1,4 +1,6 @@
 import { FileSyncState } from "../../data/FileSyncState";
+import { getDocumentSessionVersion } from "../../data/documentSessionVersion";
+import { logDocumentVersion } from "../../data/documentVersionLog";
 import { isLocalDraftFileId } from "../../data/localDraftFileId";
 import { hashDocumentSnapshot } from "../../data/sceneHash";
 import { clearTabFileDirty } from "../../data/tabFileDirtyState";
@@ -17,7 +19,7 @@ import type { MindMapSaveDocument } from "./mindMapDraftState";
 export function recordMindMapPersisted(
   fileId: string,
   document: MindMapSaveDocument,
-  opts?: { serverContentSha256?: string },
+  opts?: { serverContentSha256?: string; serverVersion?: number },
 ): void {
   if (isLocalDraftFileId(fileId)) {
     return;
@@ -28,10 +30,22 @@ export function recordMindMapPersisted(
     opts?.serverContentSha256 ??
     existing?.meta?.serverContentSha256 ??
     undefined;
-  FileSyncState.setLocalCache(
+  const serverVersion =
+    opts?.serverVersion ?? existing?.meta?.serverVersion ?? undefined;
+  FileSyncState.setServerSyncedLocalCache(
     fileId,
-    toMindMapLocalCacheRecord(document, serverSha),
+    toMindMapLocalCacheRecord(document, serverSha, serverVersion),
   );
+  if (typeof opts?.serverVersion === "number") {
+    logDocumentVersion({
+      action: "cache-meta",
+      fileId,
+      reason: "recordMindMapPersisted",
+      cacheVersion: serverVersion,
+      serverVersion: opts.serverVersion,
+      sessionVersion: getDocumentSessionVersion(fileId),
+    });
+  }
   FileSyncState.alignHashes(fileId, hashDocumentSnapshot(document));
   if (opts?.serverContentSha256) {
     FileSyncState.setServerHash(fileId, opts.serverContentSha256);
@@ -41,6 +55,7 @@ export function recordMindMapPersisted(
   debugMindMapPersist("recordMindMapPersisted", {
     fileId8: fileId.slice(0, 8),
     serverSha8: opts?.serverContentSha256?.slice(0, 8) ?? null,
+    serverVersion: opts?.serverVersion ?? null,
     contentHash8: hashDocumentSnapshot(document).slice(0, 8),
     sampleNode: findFirstRichMindMapNodeSummary(document.data),
   });

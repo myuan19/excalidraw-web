@@ -64,6 +64,7 @@
     "build:preview": "cross-env NODE_OPTIONS=--no-deprecation yarn --cwd ./app build:preview",
     "docker:full": "docker compose -f deploy/docker-compose.full.yml up -d --build",
     "docker:full:logs": "docker compose -f deploy/docker-compose.full.yml logs -f",
+    "dlog": "node scripts/dlog.mjs",
     "start": "yarn --cwd ./app start",
     "start:production": "yarn --cwd ./app start:production",
     "start:example": "yarn build:packages && yarn --cwd ./_references/upstream/examples/with-script-in-browser start",

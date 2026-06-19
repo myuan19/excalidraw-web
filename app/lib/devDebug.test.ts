@@ -1,31 +1,42 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { devDebug, isDevDebugChannelEnabled } from "./devDebug";
+async function loadDevDebug() {
+  vi.resetModules();
+  return import("./devDebug");
+}
 
-describe("devDebug production gating", () => {
+function mockDebugRuntime(enabled: boolean): void {
+  vi.doMock("../data/debugCapability", () => ({
+    isDebugAllowed: () => enabled,
+    isDebugRuntimeEnabled: () => enabled,
+  }));
+}
+
+describe("devDebug runtime gating", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
+    vi.doUnmock("../data/debugCapability");
   });
 
-  it("is off in PROD without deploy debug or per-channel flag", () => {
-    vi.stubEnv("PROD", true);
-    vi.stubEnv("DEV", false);
-    vi.stubEnv("VITE_APP_DEPLOY_DEBUG", "");
-    vi.stubEnv("VITE_APP_ENABLE_EDITOR_OPEN_DEBUG", "");
+  it("is off when runtime debug is disabled", async () => {
+    mockDebugRuntime(false);
+    const spy = vi.spyOn(console, "debug").mockImplementation(() => {});
+
+    const { devDebug, isDevDebugChannelEnabled } = await loadDevDebug();
     expect(isDevDebugChannelEnabled("editor-open")).toBe(false);
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
     devDebug("editor-open", "test");
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it("is on in PROD when VITE_APP_DEPLOY_DEBUG=true", () => {
-    vi.stubEnv("PROD", true);
-    vi.stubEnv("DEV", false);
-    vi.stubEnv("VITE_APP_DEPLOY_DEBUG", "true");
+  it("is on when runtime debug is enabled", async () => {
+    mockDebugRuntime(true);
+    const spy = vi.spyOn(console, "debug").mockImplementation(() => {});
+
+    const { devDebug, isDevDebugChannelEnabled } = await loadDevDebug();
     expect(isDevDebugChannelEnabled("editor-open")).toBe(true);
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
     devDebug("editor-open", "test");
     expect(spy).toHaveBeenCalled();
+    expect(String(spy.mock.calls[0]?.[0])).toContain("dev.editor-open.test");
   });
 });

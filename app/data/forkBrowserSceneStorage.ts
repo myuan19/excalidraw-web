@@ -19,20 +19,22 @@ function storageKey(fileId: string): string {
   return `${STORAGE_PREFIX}${fileId}`;
 }
 
-/** Fork does not persist library sidebar open/docked UI between opens. */
+/** Fork browser snapshot stores local UI/viewport only, never document identity. */
 function clearAppStateForForkBrowserPersist(appState: AppState) {
   const cleared = clearAppStateForLocalStorage(appState);
   delete cleared.openSidebar;
   delete cleared.defaultSidebarDockedPreference;
+  delete cleared.name;
   return cleared;
 }
 
-function stripPersistedSidebarState(
+function stripPersistedBrowserOnlyState(
   overlay: Partial<AppState>,
 ): Partial<AppState> {
   const next = { ...overlay };
   delete next.openSidebar;
   delete next.defaultSidebarDockedPreference;
+  delete next.name;
   return next;
 }
 
@@ -77,7 +79,7 @@ export function readForkBrowserAppStateOverlay(fileId: string): Partial<AppState
     if (raw) {
       const p = JSON.parse(raw) as Partial<ForkBrowserScenePayloadV1>;
       if (p?.v === 1 && p.appState && typeof p.appState === "object") {
-        const overlay = stripPersistedSidebarState(
+        const overlay = stripPersistedBrowserOnlyState(
           restoreAppState(p.appState as Partial<AppState>, null) as Partial<AppState>,
         );
         return Object.keys(overlay).length > 0 ? overlay : null;

@@ -40,13 +40,13 @@ export async function bootstrapLocalDraftSession(
   if (kind === "mindmap") {
     const data = createEmptyMindMapData(displayName);
     const document = MindMapAdapter.toDocument(data);
-    FileSyncState.setLocalCache(id, toMindMapLocalCacheRecord(document));
+    FileSyncState.setLocalDraftCache(id, toMindMapLocalCacheRecord(document));
     const hash = hashDocumentSnapshot(document);
     FileSyncState.alignHashes(id, hash);
     await generateMindMapThumbnailAndCache(id, data);
   } else {
     const initialScene = createBlankExcalidrawInitialScene(displayName);
-    FileSyncState.setLocalCache(id, {
+    FileSyncState.setLocalDraftCache(id, {
       elements: initialScene.elements,
       appState: initialScene.appState,
       files: initialScene.files,

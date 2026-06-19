@@ -24,10 +24,12 @@ import polyfill from "@excalidraw/excalidraw/polyfill";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { t } from "@excalidraw/excalidraw/i18n";
 import { isElementLink } from "@excalidraw/element";
-import { newElementWith, StoreIncrement, type StoreDelta } from "@excalidraw/element";
 import {
-  useHandleLibrary,
-} from "@excalidraw/excalidraw/data/library";
+  newElementWith,
+  StoreIncrement,
+  type StoreDelta,
+} from "@excalidraw/element";
+import { useHandleLibrary } from "@excalidraw/excalidraw/data/library";
 import { fileOpen } from "@excalidraw/excalidraw/data/filesystem";
 
 import type {
@@ -76,9 +78,7 @@ import {
   evaluateCurrentFileModificationState,
   readStoredFileModificationState,
 } from "../../data/fileModificationState";
-import { LocalDraftLossConfirmDialog } from "../../components/LocalDraftLossConfirmDialog";
 import { SaveNewDocumentDialog } from "../../components/PromoteTempFileDialog";
-import { useLocalDraftLossConfirm } from "../../hooks/useLocalDraftLossConfirm";
 import { useSaveNewDocumentDialog } from "../../hooks/useSaveNewDocumentDialog";
 import { bootstrapLocalDraftSession } from "../../data/bootstrapLocalDraftSession";
 import { isLegacyTempFileId, isNewDocumentHash } from "../../data/documentHash";
@@ -99,16 +99,22 @@ import {
 import { mountLibraryAIActions } from "../../data/libraryAIMount";
 import { DeltaStorage } from "../../data/DeltaStorage";
 import { FileSyncState } from "../../data/FileSyncState";
+import { clearDocumentSessionVersion } from "../../data/documentSessionVersion";
 import { notifyEdit } from "../../data/autoSaveSession";
 import { DEFAULT_DOCUMENT_DISPLAY_NAME } from "../../data/defaultDocumentName";
+import { resolveCanonicalExcalidrawFileName } from "../../data/excalidrawFileNameAuthority";
 import { useRemoteFileRefresh } from "../../hooks/useRemoteFileRefresh";
-import { RemoteUpdateConfirmDialog } from "../../components/RemoteUpdateConfirmDialog";
 import { requestSave, requestSaveAndWait } from "../../data/saveQueue";
 import {
   formatImportErrorMessage,
   loadExcalidrawFileAsServerSceneData,
 } from "../../data/importExcalidrawScene";
 import { ServerSync } from "../../data/ServerSync";
+import {
+  isRemoteMutationSuppressed,
+  isRemoteUpdateTargetSatisfied,
+  type RemoteUpdateTarget,
+} from "../../data/fileSyncOperationState";
 import {
   getFileIdFromHash,
   getFileIdFromHashString,
@@ -182,6 +188,7 @@ if (window.self !== window.top) {
 const ExcalidrawWrapper = () => {
   const excalidrawAPI = useExcalidrawAPI();
   const forkFileId = getFileIdFromHash();
+  const prevForkFileIdRef = useRef<string | null>(null);
   const onOpenPhase = useCallback(
     (phase: EditorOpenPhase) => {
       logEditorOpenPhase(phase, {
@@ -192,23 +199,23 @@ const ExcalidrawWrapper = () => {
     [forkFileId],
   );
 
-  const [tabFileName, setTabFileName] = useState<string | null>(null);
+  const [tabFileName, setTabFileName] = useState<string | null>(() =>
+    resolveCanonicalExcalidrawFileName(getFileIdFromHash()),
+  );
 
   useEditorDocumentTitle(forkFileId ? tabFileName : null);
 
   useEffect(() => {
-    setTabFileName(null);
+    setTabFileName(resolveCanonicalExcalidrawFileName(forkFileId));
   }, [forkFileId]);
 
   useEffect(() => {
-    if (!forkFileId || !excalidrawAPI) {
-      return;
+    const prev = prevForkFileIdRef.current;
+    if (prev && prev !== forkFileId) {
+      clearDocumentSessionVersion(prev, "navigate-away");
     }
-    const name = excalidrawAPI.getAppState().name?.trim();
-    if (name) {
-      setTabFileName(name);
-    }
-  }, [forkFileId, excalidrawAPI]);
+    prevForkFileIdRef.current = forkFileId ?? null;
+  }, [forkFileId]);
 
   useEffect(() => {
     if (forkFileId && isLegacyTempFileId(forkFileId)) {
@@ -269,7 +276,9 @@ const ExcalidrawWrapper = () => {
   // File save hook
   // ---------------------------------------------------------------------------
 
-  const getSceneDataRef = useRef<() => { elements: any; appState: any; files: any } | null>(() => null);
+  const getSceneDataRef = useRef<
+    () => { elements: any; appState: any; files: any } | null
+  >(() => null);
 
   const navigateToFileListHomeRef = useRef(() => {});
   const navigateToFileListHome = useCallback(() => {
@@ -281,15 +290,10 @@ const ExcalidrawWrapper = () => {
     flushDraftDebounce: () => void;
   } | null>(null);
 
-  const localDraftLoss = useLocalDraftLossConfirm({
-    getFileId: getFileIdFromHash,
-  });
-
   const saveNewDoc = useSaveNewDocumentDialog({
     getFileId: getFileIdFromHash,
     getDocumentKind: getDocumentKindFromHash,
-    getDefaultName: () =>
-      excalidrawAPI?.getAppState().name?.trim() || "未命名",
+    getDefaultName: () => tabFileName ?? DEFAULT_DOCUMENT_DISPLAY_NAME,
     getExcalidrawScene: () => getSceneDataRef.current(),
     beforeSave: async () => {
       fileSaveRef.current?.flushDraftDebounce();
@@ -301,14 +305,10 @@ const ExcalidrawWrapper = () => {
   const {
     forkSaving,
     forkSaveHint,
-    forkHomeNavDialogOpen,
     saveCurrentFileToServer,
     saveAndArchiveCurrentVersion,
     persistLocalDraftToCache,
     forkGoHomeWithServerSave,
-    forkHomeConfirmSave,
-    forkHomeConfirmDiscard,
-    forkHomeDismissDialog,
     saveToServerRef,
     visibilitySaveInFlightRef,
     localPersistGenRef,
@@ -322,6 +322,7 @@ const ExcalidrawWrapper = () => {
     onRequestSaveNew: ({ navigateAfter }) => {
       saveNewDoc.openSaveDialog(navigateAfter);
     },
+    runRemoteSceneApply,
   });
 
   fileSaveRef.current = {
@@ -390,13 +391,9 @@ const ExcalidrawWrapper = () => {
     };
     const onShellGoHome = (event: Event) => {
       const detail = (event as CustomEvent<AppShellNavigateDetail>).detail;
-      applyAppShellPendingNavigation(
-        detail,
-        skipLeaveStashOnceRef,
-        (fn) => {
-          navigateToFileListHomeRef.current = fn;
-        },
-      );
+      applyAppShellPendingNavigation(detail, skipLeaveStashOnceRef, (fn) => {
+        navigateToFileListHomeRef.current = fn;
+      });
       void forkGoHomeWithServerSave();
     };
     const onHostCommand = (event: Event) => {
@@ -484,7 +481,9 @@ const ExcalidrawWrapper = () => {
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
-    logShell.info("ExcalidrawWrapper mounted", { forkFileId: forkFileId?.slice(0, 8) ?? "none" });
+    logShell.info("ExcalidrawWrapper mounted", {
+      forkFileId: forkFileId?.slice(0, 8) ?? "none",
+    });
     trackEvent("load", "frame", getFrame());
     setTimeout(() => {
       trackEvent("load", "version", getVersion());
@@ -552,31 +551,55 @@ const ExcalidrawWrapper = () => {
   // Reload server scene: archive restore may fit, live remote refresh preserves viewport.
   // ---------------------------------------------------------------------------
 
-  const reloadSceneFromServer = useCallback(async (opts?: {
-    preserveViewport?: boolean;
-  }) => {
-    const fid = getFileIdFromHash();
-    if (!fid || !excalidrawAPI) {
-      return;
-    }
-    localPersistGenRef.current += 1;
-    const serverFile = await ServerSync.getFile(fid, { force: true });
-    await runRemoteSceneApply(() =>
-      applyRemoteExcalidrawScene({
-        excalidrawAPI,
-        fileId: fid,
-        serverFile,
-        preserveViewport: !!opts?.preserveViewport,
-      }),
-    );
-  }, [excalidrawAPI, localPersistGenRef, runRemoteSceneApply]);
+  const reloadSceneFromServer = useCallback(
+    async (opts?: {
+      preserveViewport?: boolean;
+      target?: RemoteUpdateTarget;
+    }) => {
+      const fid = getFileIdFromHash();
+      if (!fid || !excalidrawAPI) {
+        return;
+      }
+      localPersistGenRef.current += 1;
+      const serverFile = await ServerSync.getFile(fid, { force: true });
+      if (
+        !isRemoteUpdateTargetSatisfied(opts?.target, {
+          contentSha256: serverFile.content_sha256 ?? null,
+          version: serverFile.version ?? null,
+        })
+      ) {
+        logShell.warn("remote reload target stale", {
+          fileId8: fid.slice(0, 8),
+          targetSha8: opts?.target?.contentSha256?.slice(0, 8) ?? null,
+          actualSha8: serverFile.content_sha256?.slice(0, 8) ?? null,
+          targetVersion: opts?.target?.serverVersion ?? null,
+          actualVersion: serverFile.version ?? null,
+        });
+        excalidrawAPI.setToast({
+          message: "服务器版本已再次变化，请重新处理更新",
+        });
+        throw new Error("remote update target stale");
+      }
+      await runRemoteSceneApply(() =>
+        applyRemoteExcalidrawScene({
+          excalidrawAPI,
+          fileId: fid,
+          serverFile,
+          preserveViewport: !!opts?.preserveViewport,
+        }),
+      );
+    },
+    [excalidrawAPI, localPersistGenRef, runRemoteSceneApply],
+  );
 
   const notifyRemoteReloaded = useCallback(() => {
     excalidrawAPI?.setToast({ message: "已同步远端更新" });
   }, [excalidrawAPI]);
-  const remoteRefresh = useRemoteFileRefresh({
+  useRemoteFileRefresh({
     fileId: excalidrawAPI ? forkFileId : null,
-    reload: () => reloadSceneFromServer({ preserveViewport: true }),
+    getDocumentName: () => tabFileName || DEFAULT_DOCUMENT_DISPLAY_NAME,
+    reload: (target) =>
+      reloadSceneFromServer({ preserveViewport: true, target }),
     onReloaded: notifyRemoteReloaded,
   });
 
@@ -589,46 +612,48 @@ const ExcalidrawWrapper = () => {
     appState: AppState,
     files: BinaryFiles,
   ) => {
-    const isRemoteSceneApply = remoteSceneApplyDepthRef.current > 0;
+    const fid = getFileIdFromHash();
+    const isRemoteSceneApply =
+      remoteSceneApplyDepthRef.current > 0 || isRemoteMutationSuppressed(fid);
     if (!isRemoteSceneApply && !document.hidden) {
-      LocalData.save(elements, appState, files, () => {
-        if (excalidrawAPI) {
-          let didChange = false;
-          const elements = excalidrawAPI
-            .getSceneElementsIncludingDeleted()
-            .map((element) => {
-              if (
-                LocalData.fileStorage.shouldUpdateImageElementStatus(element)
-              ) {
-                const newElement = newElementWith(element, { status: "saved" });
-                if (newElement !== element) {
-                  didChange = true;
+      LocalData.save(
+        elements,
+        appState,
+        files,
+        () => {
+          if (excalidrawAPI) {
+            let didChange = false;
+            const elements = excalidrawAPI
+              .getSceneElementsIncludingDeleted()
+              .map((element) => {
+                if (
+                  LocalData.fileStorage.shouldUpdateImageElementStatus(element)
+                ) {
+                  const newElement = newElementWith(element, {
+                    status: "saved",
+                  });
+                  if (newElement !== element) {
+                    didChange = true;
+                  }
+                  return newElement;
                 }
-                return newElement;
-              }
-              return element;
-            });
-          if (didChange) {
-            excalidrawAPI.updateScene({
-              elements,
-              captureUpdate: CaptureUpdateAction.NEVER,
-            });
+                return element;
+              });
+            if (didChange) {
+              excalidrawAPI.updateScene({
+                elements,
+                captureUpdate: CaptureUpdateAction.NEVER,
+              });
+            }
           }
-        }
-      }, getFileIdFromHash());
+        },
+        getFileIdFromHash(),
+      );
     }
 
-    const fid = getFileIdFromHash();
     if (!isRemoteSceneApply && fid && excalidrawAPI) {
       updateDraftHashDebouncedRef.current(fid, getSceneData);
       notifyEdit();
-    }
-
-    if (forkFileId) {
-      const name = appState.name?.trim();
-      if (name) {
-        setTabFileName((prev) => (prev === name ? prev : name));
-      }
     }
 
     if (debugCanvasRef.current && excalidrawAPI) {
@@ -642,8 +667,17 @@ const ExcalidrawWrapper = () => {
   };
 
   const onIncrement = useCallback((increment: any) => {
+    const fid = getFileIdFromHash();
+    if (isRemoteMutationSuppressed(fid)) {
+      logShell.info("durable delta suppressed during remote apply", {
+        fileId8: fid?.slice(0, 8) ?? null,
+      });
+      return;
+    }
     if (StoreIncrement.isDurable(increment) && increment.delta) {
-      logShell.debug("durable delta recorded", { deltaId: (increment.delta as StoreDelta).id?.slice(0, 8) });
+      logShell.debug("durable delta recorded", {
+        deltaId: (increment.delta as StoreDelta).id?.slice(0, 8),
+      });
       void DeltaStorage.recordStoreDelta(increment.delta as StoreDelta);
     }
   }, []);
@@ -662,6 +696,7 @@ const ExcalidrawWrapper = () => {
   };
 
   const localStorageQuotaExceeded = useAtomValue(localStorageQuotaExceededAtom);
+  const excalidrawHostFileName = tabFileName ?? DEFAULT_DOCUMENT_DISPLAY_NAME;
 
   const onExport: Required<ExcalidrawProps>["onExport"] = useCallback(
     async function* () {
@@ -730,11 +765,15 @@ const ExcalidrawWrapper = () => {
       }
       if (skipLeaveStashOnceRef.current) {
         skipLeaveStashOnceRef.current = false;
-        logStash.debug(`hashLeave skip ${forkFileId.slice(0, 8)}: already handled`);
+        logStash.debug(
+          `hashLeave skip ${forkFileId.slice(0, 8)}: already handled`,
+        );
         return;
       }
       logStash.debug(
-        `hashLeave auto-stash ${forkFileId.slice(0, 8)} -> ${nextFileId?.slice(0, 8) ?? "home"}`,
+        `hashLeave auto-stash ${forkFileId.slice(0, 8)} -> ${
+          nextFileId?.slice(0, 8) ?? "home"
+        }`,
       );
       void persistLocalDraftToCache(forkFileId);
     };
@@ -754,212 +793,129 @@ const ExcalidrawWrapper = () => {
       }`}
     >
       <div style={{ height: "100%" }}>
-      <Excalidraw
-        onChange={onChange}
-        onIncrement={onIncrement}
-        onExport={onExport}
-        onLibraryChange={syncLibraryItems}
-        initialData={initialDataPromise}
-        isCollaborating={false}
-        UIOptions={{
-          canvasActions: {
-            toggleTheme: true,
-          },
-        }}
-        langCode={langCode}
-        renderCustomStats={renderCustomStats}
-        detectScroll={false}
-        handleKeyboardGlobally={true}
-        autoFocus={true}
-        theme={editorTheme}
-        renderTopRightUI={renderForkTopRightUI}
-        onLinkOpen={(element, event) => {
-          if (element.link && isElementLink(element.link)) {
-            event.preventDefault();
-            excalidrawAPI?.scrollToContent(element.link, { animate: true });
-          }
-        }}
-      >
-        <AppMainMenu
-          theme={appTheme}
-          setTheme={(theme) => setAppTheme(theme)}
-          refresh={() => forceRefresh((prev) => !prev)}
-        />
-        <AppWelcomeScreen />
-        <OverwriteConfirmDialog>
-          <OverwriteConfirmDialog.Actions.ExportToImage />
-          <OverwriteConfirmDialog.Actions.SaveToDisk />
-        </OverwriteConfirmDialog>
-        <AppFooter onChange={() => excalidrawAPI?.refresh()} />
-        {excalidrawAPI && <AIComponents excalidrawAPI={excalidrawAPI} />}
-
-        <TTDDialogTrigger />
-        {localStorageQuotaExceeded && (
-          <div className="alert alert--danger">
-            {t("alerts.localStorageQuotaExceeded")}
-          </div>
-        )}
-        <AppSidebar />
-
-        {errorMessage && (
-          <ErrorDialog onClose={() => setErrorMessage("")}>
-            {errorMessage}
-          </ErrorDialog>
-        )}
-
-        <CommandPalette
-          customCommandPaletteItems={[
-            {
-              ...CommandPalette.defaultItems.toggleTheme,
-              perform: () => {
-                setAppTheme(
-                  editorTheme === THEME.DARK ? THEME.LIGHT : THEME.DARK,
-                );
-              },
+        <Excalidraw
+          onChange={onChange}
+          onIncrement={onIncrement}
+          onExport={onExport}
+          onLibraryChange={syncLibraryItems}
+          initialData={initialDataPromise}
+          name={excalidrawHostFileName}
+          isCollaborating={false}
+          UIOptions={{
+            canvasActions: {
+              toggleTheme: true,
             },
-            {
-              label: t("labels.installPWA"),
-              category: DEFAULT_CATEGORIES.app,
-              predicate: () => !!pwaEvent,
-              perform: () => {
-                if (pwaEvent) {
-                  pwaEvent.prompt();
-                  pwaEvent.userChoice.then(() => {
-                    pwaEvent = null;
-                  });
+          }}
+          langCode={langCode}
+          renderCustomStats={renderCustomStats}
+          detectScroll={false}
+          handleKeyboardGlobally={true}
+          autoFocus={true}
+          theme={editorTheme}
+          renderTopRightUI={renderForkTopRightUI}
+          onLinkOpen={(element, event) => {
+            if (element.link && isElementLink(element.link)) {
+              event.preventDefault();
+              excalidrawAPI?.scrollToContent(element.link, { animate: true });
+            }
+          }}
+        >
+          <AppMainMenu
+            theme={appTheme}
+            setTheme={(theme) => setAppTheme(theme)}
+            refresh={() => forceRefresh((prev) => !prev)}
+          />
+          <AppWelcomeScreen />
+          <OverwriteConfirmDialog>
+            <OverwriteConfirmDialog.Actions.ExportToImage />
+            <OverwriteConfirmDialog.Actions.SaveToDisk />
+          </OverwriteConfirmDialog>
+          <AppFooter onChange={() => excalidrawAPI?.refresh()} />
+          {excalidrawAPI && <AIComponents excalidrawAPI={excalidrawAPI} />}
+
+          <TTDDialogTrigger />
+          {localStorageQuotaExceeded && (
+            <div className="alert alert--danger">
+              {t("alerts.localStorageQuotaExceeded")}
+            </div>
+          )}
+          <AppSidebar />
+
+          {errorMessage && (
+            <ErrorDialog onClose={() => setErrorMessage("")}>
+              {errorMessage}
+            </ErrorDialog>
+          )}
+
+          <CommandPalette
+            customCommandPaletteItems={[
+              {
+                ...CommandPalette.defaultItems.toggleTheme,
+                perform: () => {
+                  setAppTheme(
+                    editorTheme === THEME.DARK ? THEME.LIGHT : THEME.DARK,
+                  );
+                },
+              },
+              {
+                label: t("labels.installPWA"),
+                category: DEFAULT_CATEGORIES.app,
+                predicate: () => !!pwaEvent,
+                perform: () => {
+                  if (pwaEvent) {
+                    pwaEvent.prompt();
+                    pwaEvent.userChoice.then(() => {
+                      pwaEvent = null;
+                    });
+                  }
+                },
+              },
+            ]}
+          />
+          {isVisualDebuggerEnabled() && excalidrawAPI && (
+            <DebugCanvas
+              appState={excalidrawAPI.getAppState()}
+              scale={window.devicePixelRatio}
+              ref={debugCanvasRef}
+            />
+          )}
+          {forkFileId && showHistoryPanel && (
+            <ArchivePanel
+              fileId={forkFileId}
+              saving={forkSaving}
+              onSave={() => requestSaveAndWait({ source: "sidebar" })}
+              onArchive={saveAndArchiveCurrentVersion}
+              readCurrentModificationState={() => {
+                updateDraftHashDebouncedRef.current.flush();
+                const scene = getSceneDataRef.current?.();
+                if (!scene || !forkFileId) {
+                  return readStoredFileModificationState(
+                    forkFileId,
+                    "excalidraw",
+                  );
                 }
-              },
-            },
-          ]}
-        />
-        {isVisualDebuggerEnabled() && excalidrawAPI && (
-          <DebugCanvas
-            appState={excalidrawAPI.getAppState()}
-            scale={window.devicePixelRatio}
-            ref={debugCanvasRef}
-          />
-        )}
-        {forkFileId && showHistoryPanel && (
-          <ArchivePanel
-            fileId={forkFileId}
-            saving={forkSaving}
-            onSave={() => requestSaveAndWait({ source: "sidebar" })}
-            onArchive={saveAndArchiveCurrentVersion}
-            readCurrentModificationState={() => {
-              updateDraftHashDebouncedRef.current.flush();
-              const scene = getSceneDataRef.current?.();
-              if (!scene || !forkFileId) {
-                return readStoredFileModificationState(
-                  forkFileId,
-                  "excalidraw",
-                );
-              }
-              return evaluateCurrentFileModificationState({
-                fileId: forkFileId,
-                kind: "excalidraw",
-                excalidrawScene: scene,
-              });
-            }}
-            onAfterRestore={async () => {
-              await reloadSceneFromServer();
-            }}
-            onClose={() => setShowHistoryPanel(false)}
-          />
-        )}
-      </Excalidraw>
+                return evaluateCurrentFileModificationState({
+                  fileId: forkFileId,
+                  kind: "excalidraw",
+                  excalidrawScene: scene,
+                });
+              }}
+              onAfterRestore={async () => {
+                await reloadSceneFromServer();
+              }}
+              onClose={() => setShowHistoryPanel(false)}
+            />
+          )}
+        </Excalidraw>
       </div>
       {forkFileId && (
         <EmbedTokenManager
           fileId={forkFileId}
-          fileName={
-            excalidrawAPI?.getAppState().name || "未命名"
-          }
+          fileName={tabFileName ?? DEFAULT_DOCUMENT_DISPLAY_NAME}
           open={showEmbedManager}
           onClose={() => setShowEmbedManager(false)}
         />
       )}
-      {forkHomeNavDialogOpen && forkFileId ? (
-        <div
-          className="fork-home-dialog-overlay"
-          role="presentation"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              forkHomeDismissDialog();
-            }
-          }}
-        >
-          <div
-            className="fork-home-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="fork-home-nav-title"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 id="fork-home-nav-title">主页</h3>
-            <p className="fork-home-dialog-desc">
-              {saveNewDoc.isLocalDraftOpen()
-                ? "这是尚未保存的临时文档，离开前是否先保存到服务器？不保存将丢失本机草稿。"
-                : "当前画布有未保存的修改，是否先保存？"}
-            </p>
-            <div className="fork-home-dialog-actions">
-              <button
-                type="button"
-                className="fork-home-btn fork-home-btn--primary"
-                disabled={forkSaving}
-                onClick={() => {
-                  if (saveNewDoc.isLocalDraftOpen()) {
-                    forkHomeDismissDialog();
-                    saveNewDoc.openSaveDialog(true);
-                    return;
-                  }
-                  void forkHomeConfirmSave();
-                }}
-              >
-                保存并返回
-              </button>
-              <button
-                type="button"
-                className="fork-home-btn fork-home-btn--danger"
-                disabled={forkSaving}
-                onClick={() => {
-                  if (saveNewDoc.isLocalDraftOpen()) {
-                    forkHomeDismissDialog();
-                    localDraftLoss.requestConfirm(() => {
-                      skipLeaveStashOnceRef.current = true;
-                      navigateToFileListHome();
-                    });
-                    return;
-                  }
-                  void forkHomeConfirmDiscard();
-                }}
-              >
-                不保存，放弃修改并返回
-              </button>
-            </div>
-            <button
-              type="button"
-              className="fork-home-dialog-cancel"
-              disabled={forkSaving}
-              onClick={forkHomeDismissDialog}
-            >
-              取消，继续编辑
-            </button>
-          </div>
-        </div>
-      ) : null}
-      <LocalDraftLossConfirmDialog
-        open={localDraftLoss.open}
-        documentName={localDraftLoss.documentName}
-        busy={forkSaving}
-        onConfirm={() => void localDraftLoss.confirmLoss()}
-        onCancel={localDraftLoss.dismiss}
-      />
-      <RemoteUpdateConfirmDialog
-        open={remoteRefresh.promptOpen}
-        documentName={tabFileName || DEFAULT_DOCUMENT_DISPLAY_NAME}
-        onReload={remoteRefresh.confirmReload}
-        onKeep={remoteRefresh.dismissPrompt}
-      />
       <SaveNewDocumentDialog
         open={saveNewDoc.saveOpen}
         saving={saveNewDoc.saveInFlight}

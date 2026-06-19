@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 
 import { editorRegistry } from "../editors";
+import { createLogger } from "./logger";
 
 /**
  * 品牌分层：
@@ -10,6 +11,8 @@ import { editorRegistry } from "../editors";
  */
 export const HOME_APP_TITLE = "EditorHub";
 export const MAIN_SITE_ICON = "/icons/drawing-space.svg";
+
+const logBranding = createLogger({ module: "branding" });
 
 export function getDocumentKindFromHash(hash?: string): string {
   const rawHash =
@@ -35,12 +38,25 @@ function collectFaviconLinks(): HTMLLinkElement[] {
   );
 }
 
+function currentHashForLog(): string {
+  return typeof window === "undefined" ? "" : window.location.hash;
+}
+
 /** 将当前文档的标签标题与 favicon 设为主站品牌。 */
 export function applyMainSiteDocumentBranding(): void {
+  const previousTitle = document.title;
   document.title = HOME_APP_TITLE;
   for (const link of collectFaviconLinks()) {
     link.href = MAIN_SITE_ICON;
   }
+  logBranding.event("info", "branding.title.apply", "document title applied", {
+    fields: {
+      scope: "main",
+      previousTitle,
+      nextTitle: HOME_APP_TITLE,
+      hash: currentHashForLog(),
+    },
+  });
 }
 
 /** 打开文件时的标签标题；无有效文件名时回退主站名。 */
@@ -55,10 +71,21 @@ export function resolveEditorDocumentTitle(
 export function applyEditorDocumentBranding(
   fileName: string | null | undefined,
 ): void {
-  document.title = resolveEditorDocumentTitle(fileName);
+  const previousTitle = document.title;
+  const nextTitle = resolveEditorDocumentTitle(fileName);
+  document.title = nextTitle;
   for (const link of collectFaviconLinks()) {
     link.href = MAIN_SITE_ICON;
   }
+  logBranding.event("info", "branding.title.apply", "document title applied", {
+    fields: {
+      scope: "editor",
+      fileName: fileName?.trim() || null,
+      previousTitle,
+      nextTitle,
+      hash: currentHashForLog(),
+    },
+  });
 }
 
 /**
@@ -79,6 +106,19 @@ export function useEditorDocumentTitle(
       for (const [link, href] of prevHrefs) {
         link.href = href;
       }
+      logBranding.event(
+        "info",
+        "branding.title.restore",
+        "document title restored",
+        {
+          fields: {
+            scope: "editor",
+            fileName: fileName?.trim() || null,
+            restoredTitle: prevTitle,
+            hash: currentHashForLog(),
+          },
+        },
+      );
     };
   }, [fileName]);
 }

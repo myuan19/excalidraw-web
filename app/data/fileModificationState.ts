@@ -1,9 +1,11 @@
 import { isExcalidrawDraftDirty } from "./draftDirty";
 import { DEFAULT_DOCUMENT_DISPLAY_NAME } from "./defaultDocumentName";
 import { FileSyncState } from "./FileSyncState";
+import { getClientTabId } from "./clientRequestContext";
 import { isLocalDraftFileId } from "./localDraftFileId";
 import { hashDocumentSnapshot, hashSceneSnapshot } from "./sceneHash";
 import { clearTabFileDirty, markTabFileDirty } from "./tabFileDirtyState";
+import { createLogger } from "../lib/logger";
 
 import {
   getMindMapRootText,
@@ -13,6 +15,33 @@ import {
 
 import type { ManagedDocument } from "./documentTypes";
 import type { ForkSceneSnapshot } from "./forkFileTypes";
+
+const log = createLogger({ module: "fileModification" });
+
+function hash8(hash: string | null | undefined): string | null {
+  return hash ? hash.slice(0, 8) : null;
+}
+
+function logState(
+  event: string,
+  fileId: string | null,
+  kind: string | null | undefined,
+  state: FileModificationState,
+  extra?: Record<string, unknown>,
+): void {
+  log.info(event, {
+    clientTabId: getClientTabId(),
+    fileId8: fileId ? fileId.slice(0, 8) : null,
+    kind: kind ?? null,
+    modified: state.modified,
+    draftStatus: state.draftStatus,
+    shouldPromptOnLeave: state.shouldPromptOnLeave,
+    shouldMarkLocalDraftEdited: state.shouldMarkLocalDraftEdited,
+    contentHash8: hash8(state.contentHash),
+    baselineHash8: hash8(state.baselineHash),
+    ...extra,
+  });
+}
 import type { ArchiveEntry } from "./ServerSync";
 
 export type FileModificationDraftStatus = "idle" | "draft" | "synced";
@@ -90,24 +119,30 @@ export function readStoredFileModificationState(
   kind?: string | null,
 ): FileModificationState {
   if (!fileId) {
-    return toState(null, false, null, null);
+    const state = toState(null, false, null, null);
+    logState("read-stored", null, kind, state);
+    return state;
   }
   const baselineHash = FileSyncState.getBaselineHash(fileId);
   const draftHash = FileSyncState.getDraftHash(fileId);
   if (isLocalDraftFileId(fileId)) {
-    return toState(
+    const state = toState(
       fileId,
       readStoredLocalDraftModified(fileId, kind),
       draftHash,
       baselineHash,
     );
+    logState("read-stored", fileId, kind, state, { localDraft: true });
+    return state;
   }
-  return toState(
+  const state = toState(
     fileId,
     FileSyncState.hasUnsavedChanges(fileId),
     draftHash,
     baselineHash,
   );
+  logState("read-stored", fileId, kind, state, { localDraft: false });
+  return state;
 }
 
 export function evaluateCurrentFileModificationState(opts: {
@@ -118,7 +153,9 @@ export function evaluateCurrentFileModificationState(opts: {
 }): FileModificationState {
   const { fileId, kind } = opts;
   if (!fileId) {
-    return toState(null, false, null, null);
+    const state = toState(null, false, null, null);
+    logState("evaluate-current", null, kind, state);
+    return state;
   }
 
   const baselineHash = FileSyncState.getBaselineHash(fileId);
@@ -129,7 +166,12 @@ export function evaluateCurrentFileModificationState(opts: {
       : baselineHash
       ? contentHash !== baselineHash
       : FileSyncState.hasUnsavedChanges(fileId);
-    return toState(fileId, modified, contentHash, baselineHash);
+    const state = toState(fileId, modified, contentHash, baselineHash);
+    logState("evaluate-current", fileId, kind, state, {
+      localDraft: isLocalDraftFileId(fileId),
+      hadBaseline: !!baselineHash,
+    });
+    return state;
   }
 
   if (kind === "excalidraw" && opts.excalidrawScene) {
@@ -139,10 +181,17 @@ export function evaluateCurrentFileModificationState(opts: {
       : baselineHash
       ? contentHash !== baselineHash
       : FileSyncState.hasUnsavedChanges(fileId);
-    return toState(fileId, modified, contentHash, baselineHash);
+    const state = toState(fileId, modified, contentHash, baselineHash);
+    logState("evaluate-current", fileId, kind, state, {
+      localDraft: isLocalDraftFileId(fileId),
+      hadBaseline: !!baselineHash,
+    });
+    return state;
   }
 
-  return readStoredFileModificationState(fileId, kind);
+  const state = readStoredFileModificationState(fileId, kind);
+  logState("evaluate-current:fallback-stored", fileId, kind, state);
+  return state;
 }
 
 /** 与本地/服务器同步判定相同：同类型内容指纹一致即视为同一版本。 */
@@ -217,6 +266,9 @@ export function applyFileModificationState(
   state: FileModificationState,
   opts: ApplyFileModificationStateOptions = {},
 ): void {
+  logState("apply", fileId, null, state, {
+    clearLocalCacheWhenSynced: !!opts.clearLocalCacheWhenSynced,
+  });
   if (state.modified) {
     if (state.contentHash) {
       FileSyncState.setDraftHash(fileId, state.contentHash);

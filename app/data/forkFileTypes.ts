@@ -27,6 +27,8 @@ export interface ForkSceneSnapshot {
 export type ForkLocalCacheMeta = {
   /** 与服务器 files.content_sha256 对齐，用于重开时校验 cache 正文是否过期 */
   serverContentSha256?: string;
+  /** 最近一次保存/拉取到的服务器整数版本，仅用于页面打开时恢复会话基线。 */
+  serverVersion?: number;
 };
 
 export interface ForkLocalCacheRecord extends ForkSceneSnapshot {
@@ -72,9 +74,18 @@ export function parseForkLocalCache(raw: unknown): ForkLocalCacheRecord | null {
   const metaRaw = body.meta;
   const meta =
     isRecord(metaRaw) &&
-    typeof metaRaw.serverContentSha256 === "string" &&
-    metaRaw.serverContentSha256
-      ? { serverContentSha256: metaRaw.serverContentSha256 }
+    ((typeof metaRaw.serverContentSha256 === "string" &&
+      metaRaw.serverContentSha256) ||
+      typeof metaRaw.serverVersion === "number")
+      ? {
+          ...(typeof metaRaw.serverContentSha256 === "string" &&
+          metaRaw.serverContentSha256
+            ? { serverContentSha256: metaRaw.serverContentSha256 }
+            : {}),
+          ...(typeof metaRaw.serverVersion === "number"
+            ? { serverVersion: metaRaw.serverVersion }
+            : {}),
+        }
       : undefined;
 
   return {

@@ -9,7 +9,11 @@
 
 import { createLogger } from "../lib/logger";
 
-import { getAppSettings, isIdleAutoSaveActive } from "./appSettings";
+import {
+  getAppSettings,
+  isIdleAutoSaveActive,
+  subscribeAppSettings,
+} from "./appSettings";
 import { getFileIdFromHash } from "./fileIdFromHash";
 import { isLocalDraftFileId } from "./localDraftFileId";
 export { broadcastFileSaved, onCrossTabFileSaved } from "./crossTabFileSync";
@@ -50,9 +54,18 @@ function clearIdleTimer() {
   }
 }
 
+function refreshIdleTimerForSettingsChange() {
+  if (!isIdleAutoSaveActive()) {
+    clearIdleTimer();
+    return;
+  }
+  if (idleTimer != null && isAutoSaveEligibleForCurrentFile()) {
+    startIdleTimer();
+  }
+}
+
 function startIdleTimer() {
   clearIdleTimer();
-  const settings = getAppSettings();
   if (!isIdleAutoSaveActive()) {
     return;
   }
@@ -66,8 +79,10 @@ function startIdleTimer() {
     }
     log.info("idle auto-save triggered");
     triggerFn?.();
-  }, settings.autoSaveIdleSec * 1000);
+  }, getAppSettings().autoSaveIdleSec * 1000);
 }
+
+subscribeAppSettings(refreshIdleTimerForSettingsChange);
 
 /**
  * 编辑器每次检测到编辑变更时调用此方法。

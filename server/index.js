@@ -24,9 +24,11 @@ import {
 import { createLogger } from "./lib/logger.js";
 import {
   isClientLogIngestEnabled,
+  isDebugLogAllowed,
   isHttpTraceEnabled,
   truncStr,
 } from "./logger.js";
+import { clientRequestContext } from "./lib/clientRequestContext.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -45,6 +47,7 @@ app.use("/api", (req, res, next) => {
     httpLog.info(`${req.method} ${req.originalUrl}`, {
       contentLength: cl ?? "(chunked/unknown)",
       ip: req.ip,
+      ...clientRequestContext(req),
     });
   }
   const t0 = Date.now();
@@ -60,6 +63,7 @@ app.use("/api", (req, res, next) => {
       const ms = Date.now() - t0;
       const meta = {
         ms,
+        ...clientRequestContext(req),
         ...(traceAll && {
           ip: req.ip,
           ua: truncStr(req.headers["user-agent"] ?? "", 160),
@@ -87,6 +91,15 @@ app.use("/api", (req, res, next) => {
 });
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
+
+app.get("/api/debug/capability", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    debug: {
+      allowed: isDebugLogAllowed(),
+    },
+  });
+});
 
 app.use("/api/logs", logsRouter);
 
@@ -266,6 +279,7 @@ app.listen(PORT, HOST, () => {
   bootLog.info(`listening on http://${HOST}:${PORT}`);
   bootLog.info("config", {
     LOG_LEVEL: process.env.LOG_LEVEL || "info",
+    DEBUG_ALLOWED: isDebugLogAllowed(),
     HTTP_TRACE: isHttpTraceEnabled(),
     CLIENT_INGEST: isClientLogIngestEnabled(),
   });

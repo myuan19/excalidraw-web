@@ -81,7 +81,7 @@ export function patchFileListTreeCacheSavedFile(
     Partial<
       Pick<
         ServerFile,
-        "content_sha256" | "has_thumbnail" | "kind" | "updated_at"
+        "content_sha256" | "has_thumbnail" | "kind" | "updated_at" | "version"
       >
     >,
 ): void {
@@ -101,6 +101,7 @@ export function patchFileListTreeCacheSavedFile(
     kind: patch.kind ?? file.kind,
     has_thumbnail: patch.has_thumbnail ?? file.has_thumbnail,
     content_sha256: patch.content_sha256 ?? file.content_sha256 ?? null,
+    version: patch.version ?? file.version,
     updated_at: patch.updated_at ?? file.updated_at,
   };
   writeFileListTreeCache({ folders: tree.folders, files: nextFiles });

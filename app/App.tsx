@@ -5,6 +5,7 @@ import {
   appJotaiStore,
 } from "./app-jotai";
 import { TopErrorBoundary } from "./components/TopErrorBoundary";
+import { DebugModeTrigger } from "./components/DebugModeTrigger";
 import { FileList } from "./components/FileList";
 import { EditorPlatformShell } from "./components/EditorPlatformSidebar";
 import { recordRecentFileAccess } from "./data/recentFiles";
@@ -14,6 +15,7 @@ import { isEmbedMode } from "./embed/embedMode";
 import { editorRegistry } from "./editors";
 import { getLazyEditorShell } from "./editors/lazyViews";
 import { hashNeedsEditorRoute } from "./data/documentHash";
+import { getFileIdFromHash } from "./data/fileIdFromHash";
 import { getDocumentKindFromHash } from "./lib/appBranding";
 import { EditorShellChunkFallback } from "./components/EditorShellChunkFallback";
 import { logEditorOpenPhase } from "./lib/editorOpenPhases";
@@ -159,9 +161,11 @@ const ForkRoot = () => {
   if (!LazyEditor) {
     return <UnsupportedDocumentFallback kind={documentKind} />;
   }
+  const documentFileId = getFileIdFromHash();
+  const editorSessionKey = `${documentKind}:${documentFileId ?? "new"}`;
 
   return (
-    <EditorPlatformShell>
+    <EditorPlatformShell key={editorSessionKey}>
       <Suspense fallback={<EditorShellChunkFallback editorKind={documentKind} />}>
         <LazyEditor />
       </Suspense>
@@ -194,6 +198,7 @@ const ExcalidrawApp = () => {
     <TopErrorBoundary>
       <Provider store={appJotaiStore}>
         <ForkRoot />
+        <DebugModeTrigger />
       </Provider>
     </TopErrorBoundary>
   );

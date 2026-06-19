@@ -7,6 +7,10 @@ import {
   type SaveResult,
 } from "./saveQueue";
 import { updateAppSettings } from "./appSettings";
+import {
+  beginRemoteUpdatePrompt,
+  endRemoteUpdatePrompt,
+} from "./fileSyncOperationState";
 
 vi.mock("./crossTabFileSync", () => ({
   broadcastFileSaved: vi.fn(),
@@ -220,5 +224,57 @@ describe("saveQueue automatic source guards", () => {
     );
 
     expect(executor).not.toHaveBeenCalled();
+  });
+
+  it("blocks passive saves while a remote update prompt is active", async () => {
+    updateAppSettings({ autoSaveEnabled: true });
+    const executor = vi.fn(async () => ({
+      saved: true,
+      fileId: "file-remote-op",
+    }));
+    cleanup = installExecutor(executor, {
+      getCurrentFileId: () => "file-remote-op",
+    });
+    const token = beginRemoteUpdatePrompt({
+      fileId: "file-remote-op",
+      contentSha256: "server-sha",
+      serverVersion: 12,
+      source: "cross-tab",
+    });
+
+    try {
+      requestSave({ source: "auto" });
+      requestSave({ source: "thumbnail", forceThumbnail: true });
+      await flushMicrotasks();
+    } finally {
+      endRemoteUpdatePrompt(token);
+    }
+
+    expect(executor).not.toHaveBeenCalled();
+  });
+
+  it("does not block manual saves while a remote update prompt is active", async () => {
+    const executor = vi.fn(async () => ({
+      saved: true,
+      fileId: "file-remote-op",
+    }));
+    cleanup = installExecutor(executor, {
+      getCurrentFileId: () => "file-remote-op",
+    });
+    const token = beginRemoteUpdatePrompt({
+      fileId: "file-remote-op",
+      contentSha256: "server-sha",
+      serverVersion: 12,
+      source: "cross-tab",
+    });
+
+    try {
+      requestSave({ source: "toolbar" });
+      await flushMicrotasks();
+    } finally {
+      endRemoteUpdatePrompt(token);
+    }
+
+    expect(executor).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { debounce } from "@excalidraw/common";
 
+import { createLogger } from "../../lib/logger";
 import { FileSyncState } from "../../data/FileSyncState";
 import { MindMapAdapter } from "../../data/formats/registry";
 import { saveMindMapBrowserViewFromData } from "../../data/mindMapBrowserViewStorage";
 import { hashDocumentSnapshot } from "../../data/sceneHash";
-import { ServerSync } from "../../data/ServerSync";
+import {
+  getServerSyncErrorJson,
+  isServerSyncVersionConflictError,
+  ServerSync,
+  type PutFileResult,
+} from "../../data/ServerSync";
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
 import {
   shouldDeferLeaveWhileNewDocumentHash,
@@ -20,11 +26,18 @@ import { isLocalDraftFileId } from "../../data/localDraftFileId";
 import { notifyLocalDraftEdited } from "../../data/localDraftSessions";
 import { discardLocalDraftSession } from "../../data/discardLocalDraftSession";
 import { clearAppShellPendingNavigation } from "../../shell/appShellNavigate";
+import {
+  promptLeaveEditorConfirm,
+  promptLocalDraftLossConfirm,
+  promptServerUpdateConfirm,
+} from "../../shell/editorLeaveConfirm";
+import { getLocalDraftDisplayName } from "../../data/localDraftDisplayName";
 import { isAutoSaveEligibleFile, notifyEdit } from "../../data/autoSaveSession";
 import {
   CHECKPOINT_LABELS,
   type CheckpointLabel,
   isManualCheckpointSource,
+  resolveCheckpointPolicy,
 } from "../../data/checkpointPolicy";
 import { executeCheckpointSave } from "../../data/checkpointSaveOrchestrator";
 import { isAutoSaveOnExitActive } from "../../data/appSettings";
@@ -52,6 +65,13 @@ import {
   toMindMapLocalCacheRecord,
 } from "./mindMapLocalCacheRecord";
 import { resolveMindMapSaveDisplayName } from "./mindMapRootNamePolicy";
+import { getDocumentSessionVersion } from "../../data/documentSessionVersion";
+import { logDocumentVersion } from "../../data/documentVersionLog";
+import {
+  beginRemoteUpdatePrompt,
+  endRemoteUpdatePrompt,
+  type RemoteUpdateTarget,
+} from "../../data/fileSyncOperationState";
 
 import type { ManagedDocument } from "../../data/documentTypes";
 import type { MindMapDocumentData } from "../../data/formats/MindMapAdapter";
@@ -61,6 +81,8 @@ import type {
 } from "../../hooks/types";
 
 export { getCachedMindMapServerSha, toMindMapLocalCacheRecord };
+
+const logSave = createLogger({ module: "save" });
 
 type MindMapSaveDocument = ManagedDocument<MindMapDocumentData>;
 
@@ -75,6 +97,7 @@ type RequestNativeMindMapData = () => Promise<MindMapNativeSaveResult | null>;
 type ServerSaveMeta = {
   skipped: boolean;
   contentSha256: string | null;
+  version: number | null;
 };
 
 const MINDMAP_SAVE_TIMEOUT_MS = 8000;
@@ -111,9 +134,10 @@ export function getCachedMindMapDocument(
       localCache.document as MindMapSaveDocument,
     );
     const cachedServerSha = localCache.meta?.serverContentSha256;
-    FileSyncState.setLocalCache(
+    const cachedServerVersion = localCache.meta?.serverVersion;
+    FileSyncState.setServerSyncedLocalCache(
       fileId,
-      toMindMapLocalCacheRecord(document, cachedServerSha),
+      toMindMapLocalCacheRecord(document, cachedServerSha, cachedServerVersion),
     );
     return document;
   }
@@ -130,7 +154,10 @@ export function getCachedMindMapDocument(
     const document = MindMapAdapter.toDocument(
       MindMapAdapter.migrate(parsed, 1),
     );
-    FileSyncState.setLocalCache(fileId, toMindMapLocalCacheRecord(document));
+    FileSyncState.setServerBackedLocalCache(
+      fileId,
+      toMindMapLocalCacheRecord(document),
+    );
     localStorage.removeItem(legacyMindMapCacheKey(fileId));
     return document;
   } catch {
@@ -146,6 +173,7 @@ export function useMindMapFileSave(opts: {
   setErrorMessage: (msg: string | null) => void;
   setStatus: (msg: string) => void;
   onRequestSaveNew?: (opts: { navigateAfter: boolean }) => void;
+  applyRemoteServerVersion?: (target?: RemoteUpdateTarget) => Promise<void>;
 }) {
   const {
     getCurrentDocument,
@@ -155,12 +183,11 @@ export function useMindMapFileSave(opts: {
     setErrorMessage,
     setStatus,
     onRequestSaveNew,
+    applyRemoteServerVersion,
   } = opts;
 
   const [mindMapSaving, setMindMapSaving] = useState(false);
   const [mindMapSaveHint, setMindMapSaveHint] = useState<string | null>(null);
-  const [mindMapHomeNavDialogOpen, setMindMapHomeNavDialogOpen] =
-    useState(false);
 
   const skipLeaveStashOnceRef = useRef(false);
   const visibilitySaveInFlightRef = useRef(false);
@@ -168,6 +195,83 @@ export function useMindMapFileSave(opts: {
     (saveOpts?: SaveToServerOptions) => Promise<boolean>
   >(() => Promise.resolve(false));
   const lastServerSaveMetaRef = useRef<ServerSaveMeta | null>(null);
+
+  const resolveVersionConflict = useCallback(
+    async (args: {
+      error: unknown;
+      fileId: string;
+      document: MindMapSaveDocument;
+      displayName: string;
+      thumbnail?: string | null;
+      source: SaveToServerSource;
+      checkpointPolicy?: ReturnType<typeof resolveCheckpointPolicy>;
+    }): Promise<PutFileResult | "remote-applied" | "deferred" | null> => {
+      if (!isServerSyncVersionConflictError(args.error)) {
+        return null;
+      }
+      if (isSilentSaveSource(args.source)) {
+        setMindMapSaveHint("服务器已有新版本，已暂停自动覆盖");
+        return "deferred";
+      }
+      const body = getServerSyncErrorJson(args.error) as {
+        version?: number;
+      } | null;
+      const target = {
+        fileId: args.fileId,
+        contentSha256: null,
+        serverVersion: body?.version ?? null,
+        source: "save-conflict" as const,
+      };
+      const token = beginRemoteUpdatePrompt(target);
+      try {
+        const conflictChoice = await promptServerUpdateConfirm({
+          documentName: args.displayName,
+          serverVersion: body?.version ?? null,
+          mode: "save-conflict",
+        });
+        if (conflictChoice === "cancel") {
+          return null;
+        }
+        if (conflictChoice === "keep-local") {
+          logDocumentVersion({
+            action: "conflict-keep-local",
+            fileId: args.fileId,
+            reason: args.source,
+            sessionVersion: getDocumentSessionVersion(args.fileId),
+            serverVersion: body?.version ?? null,
+          });
+          return ServerSync.saveFileImmediate(
+            args.fileId,
+            args.document,
+            args.displayName,
+            args.thumbnail,
+            {
+              suppressSavedEvent: true,
+              checkpointPolicy:
+                args.checkpointPolicy ?? resolveCheckpointPolicy(args.source),
+              forceOverwrite: true,
+              source: args.source,
+            },
+          );
+        }
+        logDocumentVersion({
+          action: "conflict-load-remote",
+          fileId: args.fileId,
+          reason: args.source,
+          sessionVersion: getDocumentSessionVersion(args.fileId),
+          serverVersion: body?.version ?? null,
+        });
+        if (applyRemoteServerVersion) {
+          await applyRemoteServerVersion(target);
+        }
+        setStatus("已载入服务器版本");
+        return "remote-applied";
+      } finally {
+        endRemoteUpdatePrompt(token);
+      }
+    },
+    [applyRemoteServerVersion, setStatus],
+  );
 
   const updateDraftHashDebouncedRef = useRef(
     debounce(
@@ -206,7 +310,7 @@ export function useMindMapFileSave(opts: {
           sampleNode: findFirstRichMindMapNodeSummary(document.data),
         });
         if (state.modified) {
-          FileSyncState.setLocalCache(
+          FileSyncState.setServerBackedLocalCache(
             fileId,
             toMindMapLocalCacheRecord(document),
           );
@@ -343,7 +447,10 @@ export function useMindMapFileSave(opts: {
       if (!document || !FileSyncState.hasUnsavedChanges(fileId)) {
         return false;
       }
-      FileSyncState.setLocalCache(fileId, toMindMapLocalCacheRecord(document));
+      FileSyncState.setServerBackedLocalCache(
+        fileId,
+        toMindMapLocalCacheRecord(document),
+      );
       FileSyncState.setDraftHash(fileId, hashDocumentSnapshot(document));
       debugMindMapPersist("persistLocalDraftToCache wrote cache", {
         fileId8: fileId.slice(0, 8),
@@ -393,6 +500,17 @@ export function useMindMapFileSave(opts: {
       const hash = hashDocumentSnapshot(document);
       const baseline = FileSyncState.getBaselineHash(fileId);
       const unchanged = !!baseline && hash === baseline && !forceThumbnail;
+      logSave.info("mindmap save evaluate", {
+        fileId8: fileId.slice(0, 8),
+        source,
+        contentHash8: hash.slice(0, 8),
+        baselineHash8: baseline?.slice(0, 8) ?? null,
+        unchanged,
+        forceThumbnail,
+        navigateAfter,
+        hasThumbnail: typeof thumbnail === "string" && thumbnail.length > 0,
+        sampleNode: findFirstRichMindMapNodeSummary(document.data),
+      });
 
       if (
         shouldSkipMindMapThumbnailServerSave({
@@ -407,7 +525,7 @@ export function useMindMapFileSave(opts: {
           mindMapDocument: document,
         });
         if (state.modified) {
-          FileSyncState.setLocalCache(
+          FileSyncState.setServerBackedLocalCache(
             fileId,
             toMindMapLocalCacheRecord(document),
           );
@@ -416,6 +534,15 @@ export function useMindMapFileSave(opts: {
             LocalThumbnailCache.set(fileId, thumbnail);
           }
         }
+        logSave.info("mindmap thumbnail save skipped", {
+          fileId8: fileId.slice(0, 8),
+          source,
+          contentHash8: hash.slice(0, 8),
+          baselineHash8: baseline?.slice(0, 8) ?? null,
+          modified: state.modified,
+          stateContentHash8: state.contentHash?.slice(0, 8) ?? null,
+          stateBaselineHash8: state.baselineHash?.slice(0, 8) ?? null,
+        });
         debugMindMapPersist("thumbnail save skipped for dirty document", {
           fileId8: fileId.slice(0, 8),
           contentHash8: hash.slice(0, 8),
@@ -447,30 +574,63 @@ export function useMindMapFileSave(opts: {
       }
 
       try {
-        const outcome = await executeCheckpointSave(
-          {
+        let outcome: Awaited<ReturnType<typeof executeCheckpointSave>>;
+        try {
+          outcome = await executeCheckpointSave(
+            {
+              fileId,
+              source,
+              contentHash: hash,
+              baselineHash: baseline,
+              forceThumbnail,
+              document,
+            },
+            {
+              resolveFileThumbnailForPut: async () => thumbnail ?? undefined,
+              putDocument: async ({
+                thumbnail: thumbForPut,
+                checkpointPolicy,
+              }) =>
+                ServerSync.saveFileImmediate(
+                  fileId,
+                  document,
+                  displayName,
+                  thumbForPut,
+                  {
+                    suppressSavedEvent: true,
+                    checkpointPolicy,
+                    source,
+                  },
+                ),
+            },
+          );
+        } catch (error) {
+          const conflictResult = await resolveVersionConflict({
+            error,
             fileId,
-            source,
-            contentHash: hash,
-            baselineHash: baseline,
-            forceThumbnail,
             document,
-          },
-          {
-            resolveFileThumbnailForPut: async () => thumbnail ?? undefined,
-            putDocument: async ({ thumbnail: thumbForPut, checkpointPolicy }) =>
-              ServerSync.saveFileImmediate(
-                fileId,
-                document,
-                displayName,
-                thumbForPut,
-                {
-                  suppressSavedEvent: true,
-                  checkpointPolicy,
-                },
-              ),
-          },
-        );
+            displayName,
+            thumbnail,
+            source,
+          });
+          if (
+            conflictResult === "remote-applied" ||
+            conflictResult === "deferred"
+          ) {
+            return false;
+          }
+          if (!conflictResult) {
+            throw error;
+          }
+          outcome = {
+            saved: true,
+            skipped: !!conflictResult.skipped,
+            checkpointCreated: !!conflictResult.checkpoint?.created,
+            contentSha256: conflictResult.content_sha256 ?? null,
+            version: conflictResult.version ?? null,
+            updatedAt: conflictResult.updated_at ?? null,
+          };
+        }
 
         if (!outcome.saved && !outcome.checkpointCreated) {
           if (isManualCheckpointSource(source)) {
@@ -488,6 +648,7 @@ export function useMindMapFileSave(opts: {
           lastServerSaveMetaRef.current = {
             skipped: false,
             contentSha256: baseline,
+            version: outcome.version ?? null,
           };
           window.dispatchEvent(
             new CustomEvent("excalidraw-server-saved", {
@@ -506,12 +667,24 @@ export function useMindMapFileSave(opts: {
         }
 
         updateDraftHashDebouncedRef.current.cancel();
+        logSave.info("mindmap save outcome", {
+          fileId8: fileId.slice(0, 8),
+          source,
+          saved: outcome.saved,
+          skipped: !!outcome.skipped,
+          checkpointCreated: !!outcome.checkpointCreated,
+          contentSha8: outcome.contentSha256?.slice(0, 8) ?? null,
+          version: outcome.version ?? null,
+          unchanged,
+        });
         lastServerSaveMetaRef.current = {
           skipped: !!outcome.skipped,
           contentSha256: outcome.contentSha256 ?? null,
+          version: outcome.version ?? null,
         };
         recordMindMapPersisted(fileId, document, {
           serverContentSha256: outcome.contentSha256 ?? undefined,
+          serverVersion: outcome.version ?? undefined,
         });
         if (thumbnail && outcome.contentSha256) {
           LocalThumbnailCache.set(fileId, thumbnail, {
@@ -523,6 +696,7 @@ export function useMindMapFileSave(opts: {
           kind: "mindmap",
           has_thumbnail: thumbnail ? true : undefined,
           content_sha256: outcome.contentSha256 ?? undefined,
+          version: outcome.version ?? undefined,
           updated_at: outcome.updatedAt ?? undefined,
         });
         debugMindMapPersist("saveCurrentFileToServer success", {
@@ -588,6 +762,7 @@ export function useMindMapFileSave(opts: {
       onRequestSaveNew,
       persistLocalDraftToCache,
       requestNativeMindMapData,
+      resolveVersionConflict,
       setErrorMessage,
       setStatus,
     ],
@@ -615,38 +790,94 @@ export function useMindMapFileSave(opts: {
       );
       const hash = hashDocumentSnapshot(document);
       const baseline = FileSyncState.getBaselineHash(fileId);
+      logSave.info("mindmap archive save evaluate", {
+        fileId8: fileId.slice(0, 8),
+        source: "sidebar",
+        label,
+        contentHash8: hash.slice(0, 8),
+        baselineHash8: baseline?.slice(0, 8) ?? null,
+        unchanged: !!baseline && hash === baseline,
+        hasThumbnail: typeof thumbnail === "string" && thumbnail.length > 0,
+        sampleNode: findFirstRichMindMapNodeSummary(document.data),
+      });
       try {
-        const outcome = await executeCheckpointSave(
-          {
+        let outcome: Awaited<ReturnType<typeof executeCheckpointSave>>;
+        const checkpointPolicyOverride = { mode: "force" as const, label };
+        try {
+          outcome = await executeCheckpointSave(
+            {
+              fileId,
+              source: "sidebar",
+              contentHash: hash,
+              baselineHash: baseline,
+              forcePut: true,
+              document,
+              checkpointPolicyOverride,
+            },
+            {
+              resolveFileThumbnailForPut: async () => thumbnail ?? undefined,
+              putDocument: async ({
+                thumbnail: thumbForPut,
+                checkpointPolicy,
+              }) =>
+                ServerSync.saveFileImmediate(
+                  fileId,
+                  document,
+                  displayName,
+                  thumbForPut,
+                  {
+                    suppressSavedEvent: true,
+                    checkpointPolicy,
+                    source: "sidebar",
+                  },
+                ),
+            },
+          );
+        } catch (error) {
+          const conflictResult = await resolveVersionConflict({
+            error,
             fileId,
-            source: "sidebar",
-            contentHash: hash,
-            baselineHash: baseline,
-            forcePut: true,
             document,
-            checkpointPolicyOverride: { mode: "force", label },
-          },
-          {
-            resolveFileThumbnailForPut: async () => thumbnail ?? undefined,
-            putDocument: async ({ thumbnail: thumbForPut, checkpointPolicy }) =>
-              ServerSync.saveFileImmediate(
-                fileId,
-                document,
-                displayName,
-                thumbForPut,
-                {
-                  suppressSavedEvent: true,
-                  checkpointPolicy,
-                },
-              ),
-          },
-        );
+            displayName,
+            thumbnail,
+            source: "sidebar",
+            checkpointPolicy: checkpointPolicyOverride,
+          });
+          if (
+            conflictResult === "remote-applied" ||
+            conflictResult === "deferred"
+          ) {
+            return false;
+          }
+          if (!conflictResult) {
+            throw error;
+          }
+          outcome = {
+            saved: true,
+            skipped: !!conflictResult.skipped,
+            checkpointCreated: !!conflictResult.checkpoint?.created,
+            contentSha256: conflictResult.content_sha256 ?? null,
+            version: conflictResult.version ?? null,
+            updatedAt: conflictResult.updated_at ?? null,
+          };
+        }
         if (!outcome.saved) {
           return false;
         }
+        logSave.info("mindmap archive save outcome", {
+          fileId8: fileId.slice(0, 8),
+          source: "sidebar",
+          label,
+          saved: outcome.saved,
+          skipped: !!outcome.skipped,
+          checkpointCreated: !!outcome.checkpointCreated,
+          contentSha8: outcome.contentSha256?.slice(0, 8) ?? null,
+          version: outcome.version ?? null,
+        });
         updateDraftHashDebouncedRef.current.cancel();
         recordMindMapPersisted(fileId, document, {
           serverContentSha256: outcome.contentSha256 ?? undefined,
+          serverVersion: outcome.version ?? undefined,
         });
         if (thumbnail && outcome.contentSha256) {
           LocalThumbnailCache.set(fileId, thumbnail, {
@@ -658,6 +889,7 @@ export function useMindMapFileSave(opts: {
           kind: "mindmap",
           has_thumbnail: thumbnail ? true : undefined,
           content_sha256: outcome.contentSha256 ?? undefined,
+          version: outcome.version ?? undefined,
           updated_at: outcome.updatedAt ?? undefined,
         });
         localStorage.removeItem(legacyMindMapCacheKey(fileId));
@@ -676,41 +908,52 @@ export function useMindMapFileSave(opts: {
         return false;
       }
     },
-    [getFileName, requestNativeMindMapData, setErrorMessage, setStatus],
+    [
+      getFileName,
+      requestNativeMindMapData,
+      resolveVersionConflict,
+      setErrorMessage,
+      setStatus,
+    ],
   );
 
-  const saveAndArchiveCurrentVersion = useCallback(async (): Promise<boolean> => {
-    const fileId = getFileIdFromHash();
-    if (!fileId || isLocalDraftFileId(fileId)) {
-      onRequestSaveNew?.({ navigateAfter: false });
-      return false;
-    }
-    await saveCurrentFileToServer({ source: "sidebar" });
-    return saveCurrentFileAsCheckpoint(CHECKPOINT_LABELS.manual);
-  }, [
-    onRequestSaveNew,
-    saveCurrentFileAsCheckpoint,
-    saveCurrentFileToServer,
-  ]);
+  const saveAndArchiveCurrentVersion =
+    useCallback(async (): Promise<boolean> => {
+      const fileId = getFileIdFromHash();
+      if (!fileId || isLocalDraftFileId(fileId)) {
+        onRequestSaveNew?.({ navigateAfter: false });
+        return false;
+      }
+      await saveCurrentFileToServer({ source: "sidebar" });
+      return saveCurrentFileAsCheckpoint(CHECKPOINT_LABELS.manual);
+    }, [
+      onRequestSaveNew,
+      saveCurrentFileAsCheckpoint,
+      saveCurrentFileToServer,
+    ]);
 
   useEffect(() => {
     saveToServerRef.current = saveCurrentFileToServer;
   }, [saveCurrentFileToServer]);
 
   useEffect(() => {
-    return installExecutor(async (req) => {
-      lastServerSaveMetaRef.current = null;
-      const result = await saveCurrentFileToServer(req);
-      const fid = getFileIdFromHash();
-      // 断言绕过 TS 对 await 之后 ref.current 的过度窄化（保存函数内部会写入）
-      const meta = lastServerSaveMetaRef.current as ServerSaveMeta | null;
-      return {
-        saved: result,
-        fileId: fid ?? undefined,
-        skipped: meta?.skipped,
-        contentSha256: meta?.contentSha256,
-      };
-    });
+    return installExecutor(
+      async (req) => {
+        lastServerSaveMetaRef.current = null;
+        const result = await saveCurrentFileToServer(req);
+        const fid = getFileIdFromHash();
+        // 断言绕过 TS 对 await 之后 ref.current 的过度窄化（保存函数内部会写入）
+        const meta = lastServerSaveMetaRef.current as ServerSaveMeta | null;
+        return {
+          saved: result,
+          fileId: fid ?? undefined,
+          skipped: meta?.skipped,
+          contentSha256: meta?.contentSha256,
+          version: meta?.version,
+        };
+      },
+      { getCurrentFileId: getFileIdFromHash },
+    );
   }, [saveCurrentFileToServer]);
 
   const syncCurrentMindMapDraftForLeave = useCallback(
@@ -749,13 +992,36 @@ export function useMindMapFileSave(opts: {
       if (!state.modified) {
         return;
       }
-      FileSyncState.setLocalCache(fileId, toMindMapLocalCacheRecord(document));
+      FileSyncState.setServerBackedLocalCache(
+        fileId,
+        toMindMapLocalCacheRecord(document),
+      );
       if (isLocalDraftFileId(fileId)) {
         notifyLocalDraftEdited(fileId);
       }
     },
     [requestNativeMindMapData],
   );
+
+  const discardMindMapEditsForHomeNavigation = useCallback(async () => {
+    const fileId = getFileIdFromHash();
+    updateDraftHashDebouncedRef.current.flush();
+    if (fileId) {
+      FileSyncState.clearLocalCache(fileId);
+      const baseline = FileSyncState.getBaselineHash(fileId);
+      if (baseline) {
+        FileSyncState.setDraftHash(fileId, baseline);
+      } else {
+        FileSyncState.clearDraftHash(fileId);
+        FileSyncState.clearBaselineHash(fileId);
+      }
+      FileSyncState.clearLocalEditTime(fileId);
+      localStorage.removeItem(legacyMindMapCacheKey(fileId));
+      window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
+      window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
+    }
+    finishNavigateHome();
+  }, [finishNavigateHome]);
 
   const mindMapGoHomeWithServerSave = useCallback(async () => {
     const fileId = getFileIdFromHash();
@@ -773,7 +1039,27 @@ export function useMindMapFileSave(opts: {
         navigateToFileListHome();
         return;
       }
-      setMindMapHomeNavDialogOpen(true);
+      const leaveChoice = await promptLeaveEditorConfirm({
+        isLocalDraft: true,
+        contentLabel: "mindmap",
+      });
+      if (leaveChoice === "cancel") {
+        clearAppShellPendingNavigation();
+        return;
+      }
+      if (leaveChoice === "save") {
+        onRequestSaveNew?.({ navigateAfter: true });
+        return;
+      }
+      const confirmed = await promptLocalDraftLossConfirm(
+        getLocalDraftDisplayName(fileId),
+      );
+      if (!confirmed) {
+        clearAppShellPendingNavigation();
+        return;
+      }
+      await discardLocalDraftSession(fileId);
+      navigateToFileListHome();
       return;
     }
     if (canSkipMindMapNativeSyncOnLeave(fileId)) {
@@ -805,57 +1091,36 @@ export function useMindMapFileSave(opts: {
       await requestSaveAndWait({ source: "home", navigateAfter: true });
       return;
     }
-    setMindMapHomeNavDialogOpen(true);
+    const leaveChoice = await promptLeaveEditorConfirm({
+      isLocalDraft: false,
+      contentLabel: "mindmap",
+    });
+    if (leaveChoice === "cancel") {
+      clearAppShellPendingNavigation();
+      return;
+    }
+    if (leaveChoice === "save") {
+      await requestSaveAndWait({ source: "home", navigateAfter: true });
+      return;
+    }
+    await discardMindMapEditsForHomeNavigation();
   }, [
+    discardMindMapEditsForHomeNavigation,
     finishNavigateHome,
     navigateToFileListHome,
+    onRequestSaveNew,
     syncCurrentMindMapDraftForLeave,
   ]);
-
-  const mindMapHomeConfirmSave = useCallback(async () => {
-    setMindMapHomeNavDialogOpen(false);
-    await requestSaveAndWait({ source: "home", navigateAfter: true });
-  }, []);
-
-  const mindMapHomeConfirmDiscard = useCallback(async () => {
-    const fileId = getFileIdFromHash();
-    setMindMapHomeNavDialogOpen(false);
-    updateDraftHashDebouncedRef.current.flush();
-    if (fileId) {
-      FileSyncState.clearLocalCache(fileId);
-      const baseline = FileSyncState.getBaselineHash(fileId);
-      if (baseline) {
-        FileSyncState.setDraftHash(fileId, baseline);
-      } else {
-        FileSyncState.clearDraftHash(fileId);
-        FileSyncState.clearBaselineHash(fileId);
-      }
-      FileSyncState.clearLocalEditTime(fileId);
-      localStorage.removeItem(legacyMindMapCacheKey(fileId));
-      window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
-      window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
-    }
-    finishNavigateHome();
-  }, [finishNavigateHome]);
-
-  const mindMapHomeDismissDialog = useCallback(() => {
-    setMindMapHomeNavDialogOpen(false);
-    clearAppShellPendingNavigation();
-  }, []);
 
   return {
     mindMapSaving,
     mindMapSaveHint,
-    mindMapHomeNavDialogOpen,
     markDocumentChanged,
     markNativeDocumentDirty,
     persistLocalDraftToCache,
     saveCurrentFileToServer,
     saveAndArchiveCurrentVersion,
     mindMapGoHomeWithServerSave,
-    mindMapHomeConfirmSave,
-    mindMapHomeConfirmDiscard,
-    mindMapHomeDismissDialog,
     saveToServerRef,
     visibilitySaveInFlightRef,
     updateDraftHashDebouncedRef,
