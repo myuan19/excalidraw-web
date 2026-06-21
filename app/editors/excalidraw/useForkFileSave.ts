@@ -50,7 +50,6 @@ import { executeCheckpointSave } from "../../data/checkpointSaveOrchestrator";
 import { installExecutor, requestSaveAndWait } from "../../data/saveQueue";
 import {
   clearTabFileDirty,
-  markTabFileDirty,
 } from "../../data/tabFileDirtyState";
 import { applyRemoteExcalidrawScene } from "./applyRemoteExcalidrawScene";
 import { getDocumentSessionVersion } from "../../data/documentSessionVersion";
@@ -249,19 +248,20 @@ export function useForkFileSave(opts: {
         fileId,
         sceneData,
       );
-      const h = hashSceneSnapshot(draftSceneData);
-      FileSyncState.setDraftHash(fileId, h);
+      const state = evaluateCurrentFileModificationState({
+        fileId,
+        kind: "excalidraw",
+        excalidrawScene: draftSceneData,
+      });
+
+      applyFileModificationState(fileId, state);
       window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
 
-      const baseline = FileSyncState.getBaselineHash(fileId);
-      if (!baseline || h === baseline) {
-        clearTabFileDirty(fileId);
+      if (!state.modified) {
         localPersistGenRef.current += 1;
         return;
       }
 
-      markTabFileDirty(fileId);
-      FileSyncState.setLocalEditTime(fileId);
       if (isLocalDraftFileId(fileId)) {
         notifyLocalDraftEdited(fileId);
       }
@@ -287,9 +287,12 @@ export function useForkFileSave(opts: {
             fileId,
             latest,
           );
-          const h2 = hashSceneSnapshot(canonicalLatest);
-          const b2 = FileSyncState.getBaselineHash(fileId);
-          if (!b2 || h2 === b2) {
+          const latestState = evaluateCurrentFileModificationState({
+            fileId,
+            kind: "excalidraw",
+            excalidrawScene: canonicalLatest,
+          });
+          if (!latestState.modified) {
             return;
           }
           FileSyncState.setServerBackedLocalCache(fileId, {

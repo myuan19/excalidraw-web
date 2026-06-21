@@ -176,8 +176,17 @@ export function evaluateCurrentFileModificationState(opts: {
 
   if (kind === "excalidraw" && opts.excalidrawScene) {
     const contentHash = hashSceneSnapshot(opts.excalidrawScene);
+    if (!isExcalidrawDraftDirty(opts.excalidrawScene)) {
+      const state = toState(fileId, false, contentHash, baselineHash);
+      logState("evaluate-current", fileId, kind, state, {
+        localDraft: isLocalDraftFileId(fileId),
+        hadBaseline: !!baselineHash,
+        templateScene: true,
+      });
+      return state;
+    }
     const modified = isLocalDraftFileId(fileId)
-      ? isExcalidrawDraftDirty(opts.excalidrawScene)
+      ? true
       : baselineHash
       ? contentHash !== baselineHash
       : FileSyncState.hasUnsavedChanges(fileId);

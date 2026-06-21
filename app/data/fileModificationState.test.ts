@@ -8,13 +8,76 @@ import {
   evaluateManualArchiveGate,
   readStoredFileModificationState,
 } from "./fileModificationState";
+import { createBlankExcalidrawInitialScene } from "./forkFileScene";
 import { MindMapAdapter } from "./formats/MindMapAdapter";
-import { hashDocumentSnapshot } from "./sceneHash";
+import { hashDocumentSnapshot, hashSceneSnapshot } from "./sceneHash";
 import { clearTabFileDirty, isTabFileDirty } from "./tabFileDirtyState";
 
 describe("fileModificationState", () => {
   afterEach(() => {
     localStorage.clear();
+  });
+
+  it("treats excalidraw local-draft with empty canvas as unmodified template", () => {
+    const fileId = `local-draft:${crypto.randomUUID()}`;
+    const scene = createBlankExcalidrawInitialScene("未命名");
+
+    FileSyncState.alignHashes(fileId, "stale-baseline");
+    FileSyncState.setDraftHash(fileId, "stale-draft");
+
+    expect(
+      evaluateCurrentFileModificationState({
+        fileId,
+        kind: "excalidraw",
+        excalidrawScene: scene,
+      }).modified,
+    ).toBe(false);
+    expect(readStoredFileModificationState(fileId, "excalidraw").draftStatus).toBe(
+      "draft",
+    );
+
+    applyFileModificationState(
+      fileId,
+      evaluateCurrentFileModificationState({
+        fileId,
+        kind: "excalidraw",
+        excalidrawScene: scene,
+      }),
+    );
+
+    expect(readStoredFileModificationState(fileId, "excalidraw").draftStatus).toBe(
+      "synced",
+    );
+  });
+
+  it("treats excalidraw server file with runtime appState noise as unmodified template", () => {
+    const fileId = `server-file-${crypto.randomUUID()}`;
+    const savedScene = createBlankExcalidrawInitialScene("未命名");
+    const runtimeScene = {
+      ...savedScene,
+      appState: {
+        ...savedScene.appState,
+        viewBackgroundColor: "#ffffff",
+        currentItemStrokeColor: "#1e1e1e",
+      },
+    };
+    const baselineHash = hashSceneSnapshot(savedScene);
+    const runtimeHash = hashSceneSnapshot(runtimeScene);
+
+    FileSyncState.setBaselineHash(fileId, baselineHash);
+    FileSyncState.setDraftHash(fileId, runtimeHash);
+
+    const state = evaluateCurrentFileModificationState({
+      fileId,
+      kind: "excalidraw",
+      excalidrawScene: runtimeScene,
+    });
+    applyFileModificationState(fileId, state);
+
+    expect(runtimeHash).not.toBe(baselineHash);
+    expect(state.modified).toBe(false);
+    expect(FileSyncState.hasUnsavedChanges(fileId)).toBe(false);
+    expect(FileSyncState.getDraftHash(fileId)).toBe(runtimeHash);
   });
 
   it("treats mindmap local-draft with default root node as unmodified template", () => {
