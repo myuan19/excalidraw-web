@@ -2,10 +2,11 @@
 @import "./styles/notionUiTokens.scss";
 
 .excalidraw {
-  --color-primary-contrast-offset: var(--nb-primary-chubb-offset);
+  /* 编辑器内部保持 Excalidraw 紫色对比色，不跟随外壳天蓝 token */
+  --color-primary-contrast-offset: #625ee0;
 
   &.theme--dark {
-    --color-primary-contrast-offset: var(--nb-primary-chubb-offset-dark);
+    --color-primary-contrast-offset: #726dff;
   }
 
   .footer-center {

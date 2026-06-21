@@ -51,6 +51,7 @@ import {
   useFileDraftStatus,
   type FileDraftStatus,
 } from "../hooks/useFileDraftStatus";
+import { useShellTheme } from "../hooks/useShellTheme";
 import {
   editorIconForKind,
   getDocumentKindFromHash,
@@ -1483,8 +1484,10 @@ export function EditorPlatformSidebar() {
 }
 
 export function EditorPlatformShell({ children }: { children: ReactNode }) {
+  const { shellTheme } = useShellTheme();
+
   return (
-    <div className="editor-platform-shell">
+    <div className={`editor-platform-shell theme--${shellTheme}`}>
       <EditorPlatformSidebar />
       <div className="editor-platform-shell__content">{children}</div>
       <div id="editor-platform-dialog-root" />

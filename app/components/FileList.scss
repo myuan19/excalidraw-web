@@ -181,9 +181,8 @@
   cursor: pointer;
   white-space: nowrap;
   font-family: inherit;
-  transition: background-color var(--nb-dur-hover) var(--nb-ease-ui),
-    box-shadow var(--nb-dur-hover) var(--nb-ease-ui),
-    transform 0.1s var(--nb-ease-ui);
+  /* 主题切换时 CSS 变量立即生效，不在基态过渡 background/border */
+  transition: transform 0.1s var(--nb-ease-ui);
 
   &:active {
     transform: scale(0.97);
@@ -196,6 +195,9 @@
   box-shadow: var(--nb-shadow-btn-primary);
 
   &:hover {
+    transition: background-color var(--nb-dur-hover) var(--nb-ease-ui),
+      box-shadow var(--nb-dur-hover) var(--nb-ease-ui),
+      transform 0.1s var(--nb-ease-ui);
     background: var(--fl-primary-hover);
     box-shadow: var(--nb-shadow-btn-primary-hover);
   }
@@ -216,6 +218,10 @@
   }
 
   &:hover:not(:disabled):not(.filelist__import-scene-btn--busy) {
+    transition: background-color var(--nb-dur-hover) var(--nb-ease-ui),
+      border-color var(--nb-dur-hover) var(--nb-ease-ui),
+      box-shadow var(--nb-dur-hover) var(--nb-ease-ui),
+      transform 0.1s var(--nb-ease-ui);
     background: var(--nb-surface-high);
     border-color: var(--fl-border-strong);
   }
@@ -317,8 +323,6 @@
     color: var(--nb-text);
     font-family: inherit;
     cursor: pointer;
-    transition: border-color var(--nb-dur-hover) var(--nb-ease-ui),
-      background-color var(--nb-dur-hover) var(--nb-ease-ui);
 
     &:hover {
       background-color: var(--nb-surface-muted);
@@ -531,9 +535,10 @@
   font-weight: var(--nb-nav-font-weight-label);
   cursor: pointer;
   text-align: left;
-  transition: background-color var(--nb-dur-hover) var(--nb-ease-ui);
 
   &:hover {
+    transition: background-color var(--nb-dur-hover) var(--nb-ease-ui),
+      color var(--nb-dur-hover) var(--nb-ease-ui);
     background: var(--fl-nav-surface-hover);
     color: var(--nb-nav-text-primary);
   }
@@ -1475,7 +1480,7 @@
 
 .filelist__detail-overlay {
   z-index: var(--nb-z-filelist-detail);
-  background: var(--nb-filelist-overlay-weak);
+  background: var(--nb-shell-overlay, var(--nb-filelist-overlay-weak));
   backdrop-filter: blur(var(--nb-space-8));
   display: flex;
   align-items: center;

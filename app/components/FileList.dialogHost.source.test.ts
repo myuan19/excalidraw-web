@@ -24,7 +24,11 @@ describe("FileList dialog host source contract", () => {
     expect(hostScss).toContain(".filelist-dialog-host");
     expect(hostScss).toContain("filelist-design-tokens");
     expect(saveDialog).toContain('import "./fileListDialogHost.scss"');
-    expect(saveDialog).toContain("filelist-dialog-host filelist__detail-overlay");
-    expect(kindDialog).toContain("filelist-dialog-host filelist__detail-overlay");
+    expect(saveDialog).toContain("shellThemeClassName");
+    expect(saveDialog).toContain("filelist-dialog-host");
+    expect(saveDialog).toContain("filelist__detail-overlay");
+    expect(kindDialog).toContain("shellThemeClassName");
+    expect(kindDialog).toContain("filelist-dialog-host");
+    expect(kindDialog).toContain("filelist__detail-overlay");
   });
 });

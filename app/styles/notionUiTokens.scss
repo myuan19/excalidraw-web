@@ -73,25 +73,25 @@
   --nb-fill-hover-strong: rgba(27, 27, 31, 0.11);
   --nb-border: rgba(27, 27, 31, 0.09);
   --nb-border-input: rgba(27, 27, 31, 0.18);
-  --nb-primary: #6965db;
-  --nb-primary-hover: #5b57d1;
-  --nb-primary-soft: rgba(105, 101, 219, 0.12);
-  --nb-primary-focus: #5753d0;
-  --nb-blue: #6965db;
-  --nb-blue-hover: #5b57d1;
-  --nb-blue-soft: rgba(105, 101, 219, 0.12);
-  --nb-blue-focus: #5753d0;
+  --nb-primary: #0ea5e9;
+  --nb-primary-hover: #0284c7;
+  --nb-primary-soft: rgba(14, 165, 233, 0.14);
+  --nb-primary-focus: #0284c7;
+  --nb-blue: #0ea5e9;
+  --nb-blue-hover: #0284c7;
+  --nb-blue-soft: rgba(14, 165, 233, 0.14);
+  --nb-blue-focus: #0284c7;
   --nb-on-primary: #ffffff;
   --nb-on-primary-dark-contrast: #000000;
   /* 极淡冷调底色：卡片/弹层保持纯白，自然浮起，营造层次与舒适感 */
-  --nb-page-bg: #fafafb;
+  --nb-page-bg: #f8fcff;
   --nb-surface: #ffffff;
-  --nb-surface-high: #f2f2f5;
-  --nb-surface-muted: #f6f6f8;
-  --nb-surface-sidebar-top: #f8f9fa;
-  --nb-surface-sidebar-bottom: #f1f3f5;
-  --nb-surface-secondary: #f7f7f9;
-  --nb-surface-row-hover: #ecebfb;
+  --nb-surface-high: #f0f9ff;
+  --nb-surface-muted: #e0f2fe;
+  --nb-surface-sidebar-top: #f8fcff;
+  --nb-surface-sidebar-bottom: #f0f9ff;
+  --nb-surface-secondary: #f8fcff;
+  --nb-surface-row-hover: #e0f2fe;
   --nb-danger: #b91c1c;
   --nb-danger-foreground: #dc2626;
   --nb-danger-soft-text-dark: #f87171;
@@ -116,19 +116,22 @@
   --nb-amber-badge-border: rgba(251, 191, 36, 0.3);
   --nb-neutral-dot: #9ca3af;
   --nb-highlight-search: #fef08a;
-  --nb-shimmer-from: #f1f0ff;
-  --nb-shimmer-mid: #e8e7f8;
-  --nb-shimmer-line-from: #ececf4;
-  --nb-shimmer-line-mid: #e0dfee;
+  --nb-shimmer-from: #f0f9ff;
+  --nb-shimmer-mid: #e0f2fe;
+  --nb-shimmer-line-from: #e8f6fc;
+  --nb-shimmer-line-mid: #dbeafe;
   --nb-collab-green-bg: #ecfdf5;
   --nb-collab-green-text: #064e3c;
   --nb-collab-green-bg-dark: #064e3c;
   --nb-collab-green-text-dark: #ecfdf5;
   --nb-primary-chubb-offset: #625ee0;
   --nb-primary-chubb-offset-dark: #726dff;
-  --nb-spinner-track: rgba(55, 53, 47, 0.12);
-  --nb-muted-icon-tint: rgba(105, 101, 219, 0.25);
-  --nb-drop-line: rgba(105, 101, 219, 0.35);
+  --nb-spinner-track: rgba(14, 165, 233, 0.12);
+  --nb-muted-icon-tint: rgba(14, 165, 233, 0.28);
+  --nb-drop-line: rgba(14, 165, 233, 0.4);
+  --nb-info: #0284c7;
+  --nb-info-soft-bg: rgba(14, 165, 233, 0.12);
+  --nb-shell-overlay: rgba(15, 23, 42, 0.32);
   --nb-font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica,
     "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol";
 
@@ -142,10 +145,10 @@
   --nb-shadow-ink: rgba(0, 0, 0, 0.03);
   --nb-shadow-ink-md: rgba(0, 0, 0, 0.05);
   --nb-shadow-ink-strong: rgba(0, 0, 0, 0.08);
-  --nb-shadow-primary-weak: rgba(105, 101, 219, 0.22);
-  --nb-shadow-primary: rgba(105, 101, 219, 0.25);
-  --nb-shadow-primary-strong: rgba(105, 101, 219, 0.28);
-  --nb-shadow-primary-medium: rgba(105, 101, 219, 0.3);
+  --nb-shadow-primary-weak: rgba(14, 165, 233, 0.22);
+  --nb-shadow-primary: rgba(14, 165, 233, 0.25);
+  --nb-shadow-primary-strong: rgba(14, 165, 233, 0.28);
+  --nb-shadow-primary-medium: rgba(14, 165, 233, 0.3);
   --nb-shadow-card: 0 var(--nb-space-1) var(--nb-space-4) var(--nb-shadow-ink),
     0 0 0 var(--nb-border-width) rgba(27, 27, 31, 0.06);
   --nb-shadow-card-hover: 0 var(--nb-space-4) var(--nb-space-16)
@@ -223,7 +226,7 @@
   --nb-filelist-border: rgba(27, 27, 31, 0.08);
   --nb-filelist-border-strong: rgba(27, 27, 31, 0.15);
   --nb-filelist-muted: rgba(27, 27, 31, 0.03);
-  --nb-filelist-primary-soft: rgba(105, 101, 219, 0.1);
+  --nb-filelist-primary-soft: rgba(14, 165, 233, 0.1);
   --nb-filelist-header-bg: rgba(255, 255, 255, 0.88);
   --nb-filelist-header-line: var(--nb-shadow-surface-weak);
   --nb-filelist-blur-header: var(--nb-space-10);
@@ -233,7 +236,7 @@
   --nb-filelist-thumb-bg: #f4f4f7;
   --nb-filelist-inset-drop: inset 0 0 0 var(--nb-border-width-thick)
     var(--nb-drop-line);
-  --nb-filelist-hint-border: rgba(105, 101, 219, 0.15);
+  --nb-filelist-hint-border: rgba(14, 165, 233, 0.2);
   --nb-shimmer-bg-size: 50rem;
   --nb-bp-lg: 51.25rem;
   --nb-bp-md: 31.25rem;
@@ -249,8 +252,8 @@
   --nb-filelist-import-block-bg: rgba(255, 255, 255, 0.6);
   --nb-filelist-overlay-weak: rgba(15, 23, 42, 0.35);
   --nb-filelist-sheet-backdrop: rgba(15, 23, 42, 0.3);
-  --nb-filelist-move-active-bg: rgba(105, 101, 219, 0.14);
-  --nb-filelist-empty-icon-tint: rgba(105, 101, 219, 0.25);
+  --nb-filelist-move-active-bg: rgba(14, 165, 233, 0.12);
+  --nb-filelist-empty-icon-tint: rgba(14, 165, 233, 0.28);
 
   /* file list sidebar nav (react-stack semantic layer → --nb-*) */
   --nb-nav-surface: var(--nb-surface-secondary);
@@ -367,8 +370,8 @@
     --nb-ai-input-bg: #121218;
     --nb-ai-input-border: rgba(255, 255, 255, 0.14);
     --nb-ai-placeholder: rgba(236, 236, 241, 0.35);
-    --nb-ai-focus-border: #a5a3ff;
-    --nb-ai-focus-ring: rgba(168, 165, 255, 0.2);
+    --nb-ai-focus-border: #38bdf8;
+    --nb-ai-focus-ring: rgba(56, 189, 248, 0.2);
     --nb-ai-secondary-bg: rgba(255, 255, 255, 0.06);
     --nb-ai-secondary-border: rgba(255, 255, 255, 0.12);
     --nb-ai-secondary-hover: rgba(255, 255, 255, 0.1);

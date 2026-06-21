@@ -27,12 +27,10 @@
   --fl-shell-focus-border: var(--nb-shell-focus-border, var(--nb-border-input));
   --fl-shell-focus-ring: var(--nb-shell-focus-ring, var(--nb-primary-soft));
   --fl-shell-accent: var(--nb-shell-accent-color, var(--nb-primary));
-  /* 搜索框聚焦：L1 紫圈，与 Notion L2 主色解耦 */
   --fl-input-border: var(--fl-border);
   --fl-input-bg: var(--fl-surface-high);
-  --fl-input-focus-border: #6965db;
-  --fl-input-focus-ring: 0 0 0 var(--nb-border-width-ring)
-    rgba(105, 101, 219, 0.12);
+  --fl-input-focus-border: var(--nb-primary-focus);
+  --fl-input-focus-ring: var(--nb-shadow-focus-primary);
   --fl-input-focus-bg: var(--nb-page-bg);
   /* 须在 .filelist 上定义，避免 :root 预计算渐变导致暗色侧栏仍为亮色 */
   --fl-sidebar-gradient: linear-gradient(

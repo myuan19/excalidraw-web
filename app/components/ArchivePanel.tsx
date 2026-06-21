@@ -14,6 +14,7 @@ import {
   useFileDraftStatus,
   type FileDraftStatus,
 } from "../hooks/useFileDraftStatus";
+import { useShellTheme } from "../hooks/useShellTheme";
 
 import {
   ArchivePanelPrompt,
@@ -21,7 +22,7 @@ import {
   type ArchivePanelPromptMode,
 } from "./ArchivePanelPrompt";
 
-import "./ExcalToolbar.scss";
+import "./ArchivePanel.scss";
 
 interface ArchivePanelProps {
   fileId: string;
@@ -92,6 +93,7 @@ export const ArchivePanel: React.FC<ArchivePanelProps> = ({
     null,
   );
   const { status: draftStatus, unsaved } = useFileDraftStatus(fileId);
+  const { shellTheme } = useShellTheme();
   const currentStatusLabel = getCurrentVersionStatusLabel(draftStatus);
   const currentStatusHint = getCurrentVersionStatusHint(draftStatus);
   const actionsDisabled = saving || panelBusy || actionLabel !== null;
@@ -321,7 +323,7 @@ export const ArchivePanel: React.FC<ArchivePanelProps> = ({
   };
 
   return (
-    <>
+    <div className={`shell-dialog-host theme--${shellTheme}`}>
       <div
         className="nb-history-overlay"
         role="presentation"
@@ -457,6 +459,6 @@ export const ArchivePanel: React.FC<ArchivePanelProps> = ({
         busy={panelBusy || actionLabel !== null}
         onChoice={(choice) => void handlePromptChoice(choice)}
       />
-    </>
+    </div>
   );
 };

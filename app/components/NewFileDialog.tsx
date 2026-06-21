@@ -8,6 +8,7 @@ import {
 
 import { editorRegistry } from "../editors";
 import type { EditorPlugin } from "../editors/types";
+import { shellThemeClassName } from "../hooks/useShellTheme";
 
 import "./fileListDialogHost.scss";
 
@@ -82,7 +83,7 @@ export const EditorKindDialog = memo(function EditorKindDialog({
 
   return (
     <div
-      className="filelist-dialog-host filelist__detail-overlay"
+      className={`filelist-dialog-host ${shellThemeClassName()} filelist__detail-overlay`}
       role="dialog"
       aria-modal
       {...overlayDismiss}

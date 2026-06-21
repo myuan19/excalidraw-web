@@ -5,7 +5,7 @@ const SHELL_THEME_STORAGE_KEY = "editorhub-shell-theme";
 
 export type ShellTheme = "light" | "dark";
 
-function readShellTheme(): ShellTheme {
+export function readShellTheme(): ShellTheme {
   try {
     const raw = localStorage.getItem(SHELL_THEME_STORAGE_KEY);
     return raw === "dark" ? "dark" : "light";
@@ -14,7 +14,11 @@ function readShellTheme(): ShellTheme {
   }
 }
 
-/** 仅作用于文件列表首页与相关弹窗，不影响编辑器画布主题 */
+export function shellThemeClassName(theme?: ShellTheme): `theme--${ShellTheme}` {
+  return `theme--${theme ?? readShellTheme()}`;
+}
+
+/** 外壳亮/暗主题（首页、悬浮球、弹窗），与编辑器画布主题独立存储 */
 export function useShellTheme() {
   const [shellTheme, setShellTheme] = useState<ShellTheme>(readShellTheme);
 

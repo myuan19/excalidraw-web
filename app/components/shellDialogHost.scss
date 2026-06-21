@@ -1,0 +1,11 @@
+@import "./filelist-design-tokens";
+
+/**
+ * 编辑器外弹层宿主：在 .filelist 之外仍注入 L2/L3 shell token（与首页一致）。
+ */
+.shell-dialog-host {
+  @include filelist-design-tokens;
+  font-family: var(--nb-font-ui), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: var(--nb-text);
+}

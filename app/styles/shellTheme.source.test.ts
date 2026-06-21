@@ -21,10 +21,11 @@ describe("file list shell theme layering", () => {
     expect(globalTokens).not.toContain("--nb-filelist-sidebar-gradient");
     expect(globalTokens).not.toContain(".excalidraw-app.theme--dark .filelist");
 
-    expect(shellTheme).toContain("@mixin filelist-shell-theme-light");
-    expect(shellTheme).toContain("@mixin filelist-shell-theme-dark");
+    expect(shellTheme).toContain("@mixin shell-theme-light");
+    expect(shellTheme).toContain("@mixin shell-theme-dark");
     expect(shellTheme).toContain(".filelist.theme--light");
     expect(shellTheme).toContain(".filelist.theme--dark");
+    expect(shellTheme).toContain(".editor-platform-shell.theme--light");
     expect(shellTheme).toContain("--nb-filelist-card-fade-bottom");
   });
 

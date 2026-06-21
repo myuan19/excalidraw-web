@@ -9,6 +9,7 @@ import {
 import { FolderPathPicker } from "./FolderPathPicker";
 
 import type { OverlayDismissHandlers } from "./NewFileDialog";
+import { shellThemeClassName } from "../hooks/useShellTheme";
 
 import "./fileListDialogHost.scss";
 
@@ -68,7 +69,7 @@ export const SaveNewDocumentDialog = memo(function SaveNewDocumentDialog({
 
   return (
     <div
-      className="filelist-dialog-host filelist__detail-overlay"
+      className={`filelist-dialog-host ${shellThemeClassName()} filelist__detail-overlay`}
       role="dialog"
       aria-modal
       {...overlayDismiss}

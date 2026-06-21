@@ -1,0 +1,110 @@
+/**
+ * 外壳弹窗共享视觉（遮罩 + 卡片 + 入场动画）。
+ * 供存档、确认框、文件信息等编辑器外弹层复用。
+ */
+
+@mixin shell-modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--nb-space-8);
+  box-sizing: border-box;
+  background: var(--nb-shell-overlay, var(--nb-filelist-overlay-weak));
+  backdrop-filter: blur(var(--nb-space-8));
+  -webkit-backdrop-filter: blur(var(--nb-space-8));
+}
+
+@mixin shell-modal-card {
+  background: var(--nb-surface);
+  color: var(--nb-text);
+  border: var(--nb-border-width) solid var(--nb-border);
+  border-radius: var(--nb-radius-xl);
+  box-shadow: var(--nb-shadow-modal-deep);
+  font-family: var(--nb-font-ui), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  animation: shellModalIn 0.2s var(--nb-ease-ui) both;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+@mixin shell-modal-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--nb-space-4);
+  padding: var(--nb-space-7) var(--nb-space-8) var(--nb-space-5);
+  font-size: var(--nb-font-body);
+  font-weight: 600;
+  color: var(--nb-text);
+  border-bottom: var(--nb-border-width) solid var(--nb-border);
+}
+
+@mixin shell-modal-close-btn {
+  width: var(--nb-space-12);
+  height: var(--nb-space-12);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: var(--nb-radius-md);
+  background: transparent;
+  color: var(--nb-text-muted);
+  font-size: var(--nb-font-title-sm);
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color var(--nb-dur-hover) var(--nb-ease-ui),
+    color var(--nb-dur-hover) var(--nb-ease-ui);
+
+  &:hover {
+    background: var(--nb-fill-hover);
+    color: var(--nb-text);
+  }
+}
+
+@mixin shell-modal-action-btn {
+  padding: var(--nb-space-2) var(--nb-space-4);
+  font-size: var(--nb-font-caption);
+  font-weight: 500;
+  font-family: inherit;
+  line-height: 1.2;
+  white-space: nowrap;
+  border: none;
+  border-radius: var(--nb-radius-md);
+  background: var(--nb-surface-muted);
+  color: var(--nb-text);
+  cursor: pointer;
+  transition: background-color var(--nb-dur-hover) var(--nb-ease-ui);
+
+  &:hover {
+    background: var(--nb-fill-hover-strong);
+  }
+}
+
+@mixin shell-modal-primary-btn {
+  @include shell-modal-action-btn;
+
+  background: var(--nb-primary);
+  color: var(--nb-on-primary);
+  box-shadow: var(--nb-shadow-btn-primary);
+
+  &:hover {
+    background: var(--nb-primary-hover);
+    box-shadow: var(--nb-shadow-btn-primary-hover);
+  }
+}
+
+@keyframes shellModalIn {
+  from {
+    opacity: 0;
+    transform: translateY(var(--nb-space-4)) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
