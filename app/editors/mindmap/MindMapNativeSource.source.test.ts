@@ -435,6 +435,8 @@ describe("MindMap native source contract", () => {
     );
     expect(richTextFactorySource).toContain("cloneNode(true)");
     expect(richTextFactorySource).toContain("measureRichtextNodeTextSizeEl");
+    expect(richTextFactorySource).toContain("void measuredEl.offsetHeight");
+    expect(richTextFactorySource).toContain("width <= 1");
     expect(nodeInvalidateSource).toContain("INVALIDATE.TREE_STRUCTURE");
     expect(nodeInvalidateSource).toContain("resolveNodeRefreshPlan");
     expect(renderSource).toContain("markTreeStructureDirty");

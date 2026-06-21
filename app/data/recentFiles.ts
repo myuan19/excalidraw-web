@@ -47,6 +47,26 @@ function writeEntries(entries: RecentFileEntry[]) {
   }
 }
 
+/**
+ * 草稿入库后：用正式 fileId 替换最近列表中的草稿条目，避免 discard 与 re-add 竞态双卡。
+ */
+export function promoteRecentCatalogFile(
+  draftId: string,
+  serverFileId: string,
+): void {
+  if (!draftId || !serverFileId) {
+    return;
+  }
+  const now = new Date().toISOString();
+  const next = [
+    { id: serverFileId, accessedAt: now },
+    ...readEntries().filter(
+      (entry) => entry.id !== draftId && entry.id !== serverFileId,
+    ),
+  ];
+  writeEntries(next);
+}
+
 /** 打开或编辑文件时调用：更新访问时间并置顶。 */
 export function recordRecentFileAccess(fileId: string): void {
   if (!fileId) {

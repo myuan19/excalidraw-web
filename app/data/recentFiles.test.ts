@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   getRecentFileEntries,
   pickRecentEntriesExcluding,
+  promoteRecentCatalogFile,
   recordRecentFileAccess,
   RECENT_FILES_KEY,
 } from "./recentFiles";
@@ -49,5 +50,17 @@ describe("recentFiles", () => {
     const ids = getRecentFileEntries().map((entry) => entry.id);
     expect(ids[0]).toBe("fresh");
     expect(ids).not.toContain("stale");
+  });
+
+  it("promoteRecentCatalogFile replaces draft entry with server file id", () => {
+    recordRecentFileAccess("other-doc");
+    recordRecentFileAccess("local-draft:abc");
+
+    promoteRecentCatalogFile("local-draft:abc", "server-file-1");
+
+    expect(getRecentFileEntries().map((entry) => entry.id)).toEqual([
+      "server-file-1",
+      "other-doc",
+    ]);
   });
 });

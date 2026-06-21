@@ -380,43 +380,66 @@
           return null
         }
       }
+      const waitForNodeTreeRenderEnd = () => {
+        return new Promise(resolve => {
+          if (window.$bus && typeof window.$bus.$once === 'function') {
+            window.$bus.$once('node_tree_render_end', () => resolve())
+            return
+          }
+          window.setTimeout(resolve, 0)
+        })
+      }
+      const exportMindMapThumbnailSnapshot = async (revisionAtExport, reason) => {
+        if (!nativeMindMap) {
+          debugMindMapOpen('draft thumbnail export skipped (no mind map)', {
+            revision: revisionAtExport,
+            reason
+          })
+          return null
+        }
+        await syncPendingTextEditForSnapshot(reason || 'draft-thumbnail')
+        if (
+          nativeMindMap.renderer &&
+          typeof nativeMindMap.renderer.forceLoadNode === 'function'
+        ) {
+          renderEnded = false
+          nativeMindMap.renderer.forceLoadNode()
+          await waitForNodeTreeRenderEnd()
+        } else if (!renderEnded) {
+          debugMindMapOpen('draft thumbnail export waiting for render end', {
+            revision: revisionAtExport,
+            reason
+          })
+          await waitForNodeTreeRenderEnd()
+        }
+        const exportStart = performance.now()
+        const thumbnail = await getMindMapThumbnail()
+        debugMindMapOpen('draft thumbnail export done', {
+          revision: revisionAtExport,
+          reason,
+          elapsed: Math.round(performance.now() - exportStart),
+          hasThumbnail: !!thumbnail,
+          thumbnailLength: thumbnail ? thumbnail.length : 0
+        })
+        if (!thumbnail) {
+          return null
+        }
+        postToHost('saveMindMapThumbnail', {
+          revision: revisionAtExport,
+          thumbnail
+        })
+        return thumbnail
+      }
       const scheduleDraftThumbnailExport = revision => {
         draftThumbExportRevision = revision
         window.clearTimeout(draftThumbExportTimer)
         draftThumbExportTimer = window.setTimeout(() => {
           draftThumbExportTimer = null
           const revisionAtExport = draftThumbExportRevision
-          const runExport = async () => {
-            if (!nativeMindMap || !renderEnded) {
-              debugMindMapOpen('draft thumbnail export deferred (not rendered)', {
-                revision: revisionAtExport,
-                hasNativeMindMap: !!nativeMindMap,
-                renderEnded
-              })
-              if (window.$bus && typeof window.$bus.$once === 'function') {
-                window.$bus.$once('node_tree_render_end', () => {
-                  if (draftThumbExportRevision === revisionAtExport) {
-                    void runExport()
-                  }
-                })
-              }
-              return
-            }
-            const exportStart = performance.now()
-            const thumbnail = await getMindMapThumbnail()
-            debugMindMapOpen('draft thumbnail export done', {
-              revision: revisionAtExport,
-              elapsed: Math.round(performance.now() - exportStart),
-              hasThumbnail: !!thumbnail,
-              thumbnailLength: thumbnail ? thumbnail.length : 0
-            })
-            if (!thumbnail) return
-            postToHost('saveMindMapThumbnail', {
-              revision: revisionAtExport,
-              thumbnail
-            })
-          }
-          void runExport()
+          void exportMindMapThumbnailSnapshot(
+            revisionAtExport,
+            'schedule-draft-thumbnail'
+          )
         }, DRAFT_THUMB_EXPORT_DEBOUNCE_MS)
       }
       const postMindMapDataToHost = async (data, requestId) => {
@@ -431,7 +454,10 @@
                 ? data.root.children.length
                 : 0
           })
-          const thumbnail = await getMindMapThumbnail()
+          const thumbnail = await exportMindMapThumbnailSnapshot(
+            revision,
+            'request-save'
+          )
           debugMindMapOpen('postMindMapDataToHost after thumbnail export', {
             requestId,
             revision,

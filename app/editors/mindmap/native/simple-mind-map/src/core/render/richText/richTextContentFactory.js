@@ -57,9 +57,12 @@ export function measureRichTextContent({
   } else {
     measuredEl.style.width = ''
   }
+  // 隐藏 iframe / 离屏测量时 layout 可能尚未刷新，强制同步后再量尺寸。
+  void div.offsetHeight
+  void measuredEl.offsetHeight
   let { width, height } = measuredEl.getBoundingClientRect()
   const plainTextLength = (measuredEl.textContent || '').trim().length
-  if (width <= 0 && plainTextLength > 0) {
+  if (width <= 1 && plainTextLength > 0) {
     // 测量容器瞬时不可见（如祖先 display:none / 布局未刷新）时返回 0 宽，
     // 若直接使用会让 foreignObject 以 1px 宽渲染、节点文本不可见，
     // 直到下一次重渲染才恢复。以字号估算宽度兜底，并留日志定位根因。

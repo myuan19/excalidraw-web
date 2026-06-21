@@ -17,11 +17,14 @@ const mocks = vi.hoisted(() => ({
     getServerHash: vi.fn(() => "saved-sha"),
     setLocalCache: vi.fn(),
     setServerHash: vi.fn(),
+    setServerSyncedLocalCache: vi.fn(),
   },
   hashDocumentSnapshot: vi.fn(() => "document-hash"),
   hashSceneSnapshot: vi.fn(() => "scene-hash"),
   localThumbnailSet: vi.fn(),
   recordRecentFileAccess: vi.fn(),
+  promoteRecentCatalogFile: vi.fn(),
+  removeRecentFileEntry: vi.fn(),
   saveFileImmediate: vi.fn(async (..._args: unknown[]) => ({
     content_sha256: "saved-sha",
   })),
@@ -68,6 +71,8 @@ vi.mock("./localThumbnailCache", () => ({
 
 vi.mock("./recentFiles", () => ({
   recordRecentFileAccess: mocks.recordRecentFileAccess,
+  promoteRecentCatalogFile: mocks.promoteRecentCatalogFile,
+  removeRecentFileEntry: mocks.removeRecentFileEntry,
 }));
 
 vi.mock("./sceneHash", () => ({
@@ -126,12 +131,19 @@ describe("saveNewDocument", () => {
 
     expect(readMindMapBrowserView(draftId)).toBe(null);
     expect(readMindMapBrowserView("server-file")).toEqual(view);
+    expect(mocks.removeRecentFileEntry).toHaveBeenCalledWith(draftId);
+    expect(mocks.promoteRecentCatalogFile).toHaveBeenCalledWith(
+      draftId,
+      "server-file",
+    );
     expect(mocks.discardLocalDraftSession).toHaveBeenCalledWith(draftId);
     expect(mocks.toMindMapLocalCacheRecord).toHaveBeenCalledWith(
       expect.objectContaining({
+        kind: "mindmap",
         data: expect.not.objectContaining({ view: expect.anything() }),
       }),
       "saved-sha",
+      undefined,
     );
 
     const savedDocument = mocks.saveFileImmediate.mock.calls[0]?.[1] as

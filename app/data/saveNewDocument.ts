@@ -19,7 +19,11 @@ import {
   moveMindMapBrowserViewBetweenFiles,
   saveMindMapBrowserViewFromData,
 } from "./mindMapBrowserViewStorage";
-import { recordRecentFileAccess } from "./recentFiles";
+import {
+  promoteRecentCatalogFile,
+  recordRecentFileAccess,
+  removeRecentFileEntry,
+} from "./recentFiles";
 import { hashDocumentSnapshot, hashSceneSnapshot } from "./sceneHash";
 import { ServerSync } from "./ServerSync";
 
@@ -40,6 +44,9 @@ export async function saveNewDocument(opts: {
   const finalName = opts.name.trim() || DEFAULT_DOCUMENT_DISPLAY_NAME;
   const kind = opts.kind;
   const draftId = opts.draftId ?? null;
+  if (draftId && isLocalDraftFileId(draftId)) {
+    removeRecentFileEntry(draftId);
+  }
   const created = await ServerSync.createFile(finalName, opts.folderId, kind);
 
   if (kind === "mindmap") {
@@ -160,7 +167,11 @@ export async function saveNewDocument(opts: {
     FileSyncState.setServerHash(created.id, savedContentSha);
   }
 
-  recordRecentFileAccess(created.id);
+  if (draftId && isLocalDraftFileId(draftId)) {
+    promoteRecentCatalogFile(draftId, created.id);
+  } else {
+    recordRecentFileAccess(created.id);
+  }
   window.dispatchEvent(
     new CustomEvent("excalidraw-server-saved", {
       detail: {

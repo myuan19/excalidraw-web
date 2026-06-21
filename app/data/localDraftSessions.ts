@@ -128,6 +128,10 @@ export function notifyLocalDraftEdited(fileId: string, name?: string): void {
   if (!isLocalDraftFileId(fileId)) {
     return;
   }
+  const existing = LocalDraftSessions.get(fileId);
+  if (!existing) {
+    return;
+  }
   LocalDraftSessions.touch(fileId, name);
   recordRecentFileAccess(fileId);
 }

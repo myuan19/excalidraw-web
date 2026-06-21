@@ -17,7 +17,7 @@ describe("MindMap bridge source contract", () => {
     (relativePath) => {
       const source = readBridgeShell(relativePath);
       const dataChangeBlock = source.slice(
-        source.indexOf("const notifyDirty = () =>"),
+        source.indexOf("const notifyDirty = "),
         source.indexOf("window.$bus.$on('view_data_change'"),
       );
       const viewChangeBlock = source.slice(
@@ -38,8 +38,24 @@ describe("MindMap bridge source contract", () => {
       expect(source).not.toContain("mindMapScaleState");
       expect(source).toContain("saveMindMapThumbnail");
       expect(source).toContain("scheduleDraftThumbnailExport");
+      expect(source).toContain("exportMindMapThumbnailSnapshot");
+      expect(source).toContain("forceLoadNode");
     },
   );
+
+  it("exports draft thumbnails after force rendering the full node tree", () => {
+    const source = readBridgeShell(
+      "editors/mindmap/native/web/src/bridge/takeoverShell.js",
+    );
+    const exportBlock = source.slice(
+      source.indexOf("const exportMindMapThumbnailSnapshot"),
+      source.indexOf("const scheduleDraftThumbnailExport"),
+    );
+    expect(exportBlock).toContain("forceLoadNode");
+    expect(exportBlock).toContain("waitForNodeTreeRenderEnd");
+    expect(exportBlock).toContain("syncPendingTextEditForSnapshot");
+    expect(source).toContain("exportMindMapThumbnailSnapshot(");
+  });
 
   it("syncs active text edits before collecting save data and thumbnail", () => {
     const source = readBridgeShell(
