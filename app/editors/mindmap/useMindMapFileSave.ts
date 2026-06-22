@@ -1084,10 +1084,39 @@ export function useMindMapFileSave(opts: {
       finishNavigateHome();
       return;
     }
-    await syncCurrentMindMapDraftForLeave(fileId);
-    const promptNeeded = shouldPromptEditorHomeNavDialog(fileId);
     const autoSaveExit =
       isAutoSaveOnExitActive() && isAutoSaveEligibleFile(fileId);
+    const promptAlreadyNeeded = shouldPromptEditorHomeNavDialog(fileId);
+    if (promptAlreadyNeeded) {
+      debugMindMapPersist("goHome decision: prompt without native sync", {
+        fileId8: fileId.slice(0, 8),
+        autoSaveExit,
+        draftHash16: FileSyncState.getDraftHash(fileId)?.slice(0, 16) ?? null,
+        baselineHash8:
+          FileSyncState.getBaselineHash(fileId)?.slice(0, 8) ?? null,
+      });
+      if (autoSaveExit) {
+        await requestSaveAndWait({ source: "home", navigateAfter: true });
+        return;
+      }
+      const leaveChoice = await promptLeaveEditorConfirm({
+        isLocalDraft: false,
+        contentLabel: "mindmap",
+      });
+      if (leaveChoice === "cancel") {
+        clearAppShellPendingNavigation();
+        return;
+      }
+      if (leaveChoice === "save") {
+        await requestSaveAndWait({ source: "home", navigateAfter: true });
+        return;
+      }
+      await discardMindMapEditsForHomeNavigation();
+      return;
+    }
+
+    await syncCurrentMindMapDraftForLeave(fileId);
+    const promptNeeded = shouldPromptEditorHomeNavDialog(fileId);
     debugMindMapPersist("goHome decision", {
       fileId8: fileId.slice(0, 8),
       promptNeeded,
