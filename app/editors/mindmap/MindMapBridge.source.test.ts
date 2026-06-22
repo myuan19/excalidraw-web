@@ -27,7 +27,13 @@ describe("MindMap bridge source contract", () => {
 
       expect(dataChangeBlock).toContain("postToHost('mindMapDirtyState'");
       expect(dataChangeBlock).toContain(
-        "window.$bus.$on('data_change', notifyDirty)",
+        "window.$bus.$on('data_change', data =>",
+      );
+      expect(dataChangeBlock).toContain(
+        "debugMindMapOpen('bus data_change received'",
+      );
+      expect(dataChangeBlock).toContain(
+        "source: 'bus:data_change'",
       );
       expect(viewChangeBlock).toContain("postToHost('mindMapViewState'");
       expect(viewChangeBlock).toContain("viewData =>");
@@ -123,6 +129,27 @@ describe("MindMap bridge source contract", () => {
     );
     expect(source).toContain("postMindMapDataToHost draft push suppressed");
     expect(source).toContain("if (!dirtyNotifyEnabled)");
+  });
+
+  it("treats node expand/collapse as a user edit command", () => {
+    const source = readBridgeShell(
+      "editors/mindmap/native/web/src/bridge/takeoverShell.js",
+    );
+    const commandBlock = source.slice(
+      source.indexOf("const userEditCommandNames = new Set(["),
+      source.indexOf("const notifyDirty = "),
+    );
+    const afterCommandBlock = source.slice(
+      source.indexOf("nativeMindMap.on('afterExecCommand'"),
+      source.indexOf("window.$bus.$on('node_tree_render_end'"),
+    );
+
+    expect(commandBlock).toContain("'SET_NODE_EXPAND'");
+    expect(afterCommandBlock).toContain(
+      "if (!userEditCommandNames.has(commandName))",
+    );
+    expect(afterCommandBlock).toContain("userEdit: true");
+    expect(afterCommandBlock).toContain("reason: `command:${commandName}`");
   });
 
   it("skips host data pushes whose content matches the canvas", () => {

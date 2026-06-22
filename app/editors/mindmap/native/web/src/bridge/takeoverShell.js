@@ -852,6 +852,7 @@
           'INSERT_MULTI_CHILD_NODE',
           'REMOVE_NODE',
           'REMOVE_CURRENT_NODE',
+          'SET_NODE_EXPAND',
           'MOVE_UP_ONE_LEVEL',
           'MOVE_NODE_TO',
           'MOVE_NODE_BY_DROP_TARGET',
@@ -863,22 +864,41 @@
           if (!dirtyNotifyEnabled && !forceUserEdit) {
             debugMindMapOpen(
               'dirty notify suppressed',
-              describeDirtyNotifyWindow()
+              {
+                ...describeDirtyNotifyWindow(),
+                reason: opts.reason || null,
+                source: opts.source || null,
+                userEdit: forceUserEdit
+              }
             )
             return
           }
           debugMindMapOpen('dirty notify emit', {
             phase: forceUserEdit ? 'text-edit' : 'data-change',
             forced: forceUserEdit && !dirtyNotifyEnabled,
-            reason: opts.reason || null
+            reason: opts.reason || null,
+            source: opts.source || null,
+            integrity: opts.integrity || null
           })
           postToHost('mindMapDirtyState', {
             dirty: true,
             userEdit: forceUserEdit,
-            reason: opts.reason || null
+            reason: opts.reason || null,
+            source: opts.source || null
           })
         }
-        window.$bus.$on('data_change', notifyDirty)
+        window.$bus.$on('data_change', data => {
+          const integrity = summarizeMindMapPayloadIntegrity(data)
+          debugMindMapOpen('bus data_change received', {
+            dirtyNotifyEnabled,
+            integrity
+          })
+          notifyDirty({
+            reason: 'bus:data_change',
+            source: 'bus:data_change',
+            integrity
+          })
+        })
         window.$bus.$on('hide_text_edit', () => {
           if (textEditDirtyTimer) {
             clearTimeout(textEditDirtyTimer)
@@ -886,6 +906,14 @@
           }
         })
         window.$bus.$on('view_data_change', viewData => {
+          debugMindMapOpen('bus view_data_change received', {
+            hasViewData: !!viewData,
+            keys:
+              viewData && typeof viewData === 'object'
+                ? Object.keys(viewData).slice(0, 8)
+                : [],
+            dirtyNotifyEnabled
+          })
           if (viewData) {
             postToHost('mindMapViewState', viewData)
           }
@@ -961,10 +989,17 @@
             }, 150)
           })
           nativeMindMap.on('afterExecCommand', commandName => {
-            if (!userEditCommandNames.has(commandName)) return
+            if (!userEditCommandNames.has(commandName)) {
+              debugMindMapOpen('afterExecCommand ignored for dirty', {
+                commandName,
+                dirtyNotifyEnabled
+              })
+              return
+            }
             notifyDirty({
               userEdit: true,
-              reason: `command:${commandName}`
+              reason: `command:${commandName}`,
+              source: 'afterExecCommand'
             })
           })
         })

@@ -20,6 +20,20 @@ describe("MindMapEditorShell hydrate source contract", () => {
     expect(source).toContain(
       'debugMindMapPersist("native hydrate settle kept user dirty state"',
     );
+    expect(source).not.toContain("deferredAutoSaveDuringHydrateRef");
+    expect(source).toContain("rearmDeferredAutoSave()");
+    expect(source).toContain("clearDeferredAutoSave()");
+    expect(source).toContain(
+      'debugMindMapPersist("auto save rearmed after hydrate"',
+    );
+    expect(source).toContain('return "deferred"');
+    expect(source).toContain(
+      "config change skipped while native dirty pending",
+    );
+    expect(source).toContain(
+      "config change skipped while file has unsaved changes",
+    );
+    expect(source).toContain("isMindMapNativeDirtyPending(fileId) &&");
     expect(source).toContain('debugMindMapPersist("hydrate draft rejected"');
     expect(source).not.toContain("forwardMindMapHostDebug(\"mindmap-bridge\"");
     expect(source).not.toContain("explainHydrateDraftDecision");

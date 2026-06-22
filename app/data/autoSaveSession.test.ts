@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { isAutoSaveEligibleFile, isAutoSaveLabel, notifyEdit, registerAutoSaveTrigger } from "./autoSaveSession";
+import {
+  clearDeferredAutoSave,
+  isAutoSaveEligibleFile,
+  isAutoSaveLabel,
+  notifyEdit,
+  rearmDeferredAutoSave,
+  registerAutoSaveTrigger,
+} from "./autoSaveSession";
 import {
   isAutoSaveOnExitActive,
   isIdleAutoSaveActive,
@@ -131,6 +138,48 @@ describe("idle timer settings refresh", () => {
 
     vi.advanceTimersByTime(15_000);
     expect(trigger).not.toHaveBeenCalled();
+
+    unregister();
+    vi.useRealTimers();
+  });
+
+  it("rearms deferred auto-save through the idle timer", () => {
+    vi.useFakeTimers();
+    updateAppSettings({ autoSaveEnabled: true, autoSaveIdleSec: 10 });
+    let shouldDefer = true;
+    const trigger = vi.fn(() => {
+      if (shouldDefer) {
+        shouldDefer = false;
+        return "deferred" as const;
+      }
+      return undefined;
+    });
+    const unregister = registerAutoSaveTrigger(trigger);
+
+    notifyEdit();
+    vi.advanceTimersByTime(10_000);
+    expect(trigger).toHaveBeenCalledTimes(1);
+
+    expect(rearmDeferredAutoSave()).toBe(true);
+    vi.advanceTimersByTime(9_999);
+    expect(trigger).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    expect(trigger).toHaveBeenCalledTimes(2);
+
+    unregister();
+    vi.useRealTimers();
+  });
+
+  it("can clear a deferred auto-save without rearming it", () => {
+    vi.useFakeTimers();
+    updateAppSettings({ autoSaveEnabled: true, autoSaveIdleSec: 10 });
+    const unregister = registerAutoSaveTrigger(() => "deferred");
+
+    notifyEdit();
+    vi.advanceTimersByTime(10_000);
+    clearDeferredAutoSave();
+
+    expect(rearmDeferredAutoSave()).toBe(false);
 
     unregister();
     vi.useRealTimers();

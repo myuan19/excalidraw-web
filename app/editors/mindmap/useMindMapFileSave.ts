@@ -54,6 +54,7 @@ import { LocalThumbnailCache } from "../../data/localThumbnailCache";
 
 import {
   clearMindMapDraftIfUnchanged,
+  isMindMapNativeDirtyPending,
   markMindMapNativeDirtyPending,
 } from "./mindMapDraftState";
 import { canSkipMindMapNativeSyncOnLeave } from "./mindMapLeaveState";
@@ -102,6 +103,12 @@ type ServerSaveMeta = {
   skipped: boolean;
   contentSha256: string | null;
   version: number | null;
+};
+
+type NativeDirtyDebugMeta = {
+  reason?: string | null;
+  source?: string | null;
+  userEdit?: boolean;
 };
 
 const MINDMAP_SAVE_TIMEOUT_MS = 15_000;
@@ -359,7 +366,10 @@ export function useMindMapFileSave(opts: {
       if (!fileId) {
         return;
       }
-      if (matchesMindMapPersistedSnapshot(fileId, document)) {
+      if (
+        !isMindMapNativeDirtyPending(fileId) &&
+        matchesMindMapPersistedSnapshot(fileId, document)
+      ) {
         debugMindMapPersist(
           "markDocumentChanged branch: matches-persisted-snapshot",
           {
@@ -404,9 +414,14 @@ export function useMindMapFileSave(opts: {
     [setStatus],
   );
 
-  const markNativeDocumentDirty = useCallback(() => {
+  const markNativeDocumentDirty = useCallback((meta?: NativeDirtyDebugMeta) => {
     const fileId = getFileIdFromHash();
     if (!fileId) {
+      debugMindMapPersist("markNativeDocumentDirty without fileId", {
+        reason: meta?.reason ?? null,
+        source: meta?.source ?? null,
+        userEdit: meta?.userEdit ?? null,
+      });
       setStatus("有未保存更改");
       notifyEdit();
       return;
@@ -415,6 +430,9 @@ export function useMindMapFileSave(opts: {
     const marked = markMindMapNativeDirtyPending(fileId);
     debugMindMapPersist("markNativeDocumentDirty", {
       fileId8: fileId.slice(0, 8),
+      reason: meta?.reason ?? null,
+      source: meta?.source ?? null,
+      userEdit: meta?.userEdit ?? null,
       markedPending: marked,
       draftHash8: FileSyncState.getDraftHash(fileId)?.slice(0, 16) ?? null,
       baselineHash8: FileSyncState.getBaselineHash(fileId)?.slice(0, 8) ?? null,

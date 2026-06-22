@@ -42,10 +42,12 @@ export function isAutoSaveLabel(label: string): boolean {
 // 空闲检测计时器
 // ---------------------------------------------------------------------------
 
-type AutoSaveTrigger = () => void;
+export type AutoSaveTriggerResult = void | "deferred";
+type AutoSaveTrigger = () => AutoSaveTriggerResult;
 
 let idleTimer: number | null = null;
 let triggerFn: AutoSaveTrigger | null = null;
+let deferredAutoSave = false;
 
 function clearIdleTimer() {
   if (idleTimer != null) {
@@ -56,6 +58,7 @@ function clearIdleTimer() {
 
 function refreshIdleTimerForSettingsChange() {
   if (!isIdleAutoSaveActive()) {
+    deferredAutoSave = false;
     clearIdleTimer();
     return;
   }
@@ -75,10 +78,15 @@ function startIdleTimer() {
       return;
     }
     if (!isAutoSaveEligibleForCurrentFile()) {
+      deferredAutoSave = false;
       return;
     }
     log.info("idle auto-save triggered");
-    triggerFn?.();
+    const result = triggerFn?.();
+    deferredAutoSave = result === "deferred";
+    if (deferredAutoSave) {
+      log.info("idle auto-save deferred");
+    }
   }, getAppSettings().autoSaveIdleSec * 1000);
 }
 
@@ -89,6 +97,7 @@ subscribeAppSettings(refreshIdleTimerForSettingsChange);
  * 它会重置空闲计时器——只有持续无编辑 N 秒后才触发自动保存。
  */
 export function notifyEdit(): void {
+  deferredAutoSave = false;
   if (!isIdleAutoSaveActive()) {
     clearIdleTimer();
     return;
@@ -101,15 +110,43 @@ export function notifyEdit(): void {
 }
 
 /**
+ * 编辑器曾因短暂不可保存状态（如 hydrate）延后 auto-save。
+ * 状态解除后由编辑器调用，重新回到统一 idle 计时器，而不是绕过保存队列。
+ */
+export function rearmDeferredAutoSave(): boolean {
+  if (!deferredAutoSave) {
+    return false;
+  }
+  deferredAutoSave = false;
+  if (!isIdleAutoSaveActive()) {
+    clearIdleTimer();
+    return false;
+  }
+  if (!isAutoSaveEligibleForCurrentFile()) {
+    clearIdleTimer();
+    return false;
+  }
+  log.info("deferred idle auto-save rearmed");
+  startIdleTimer();
+  return true;
+}
+
+export function clearDeferredAutoSave(): void {
+  deferredAutoSave = false;
+}
+
+/**
  * 注册自动保存回调（保存到服务器的函数）。
  * 返回取消注册函数。
  */
 export function registerAutoSaveTrigger(fn: AutoSaveTrigger): () => void {
+  deferredAutoSave = false;
   triggerFn = fn;
   return () => {
     if (triggerFn === fn) {
       triggerFn = null;
     }
+    deferredAutoSave = false;
     clearIdleTimer();
   };
 }

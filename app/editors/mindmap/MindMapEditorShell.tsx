@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  clearDeferredAutoSave,
   isAutoSaveEligibleForCurrentFile,
+  rearmDeferredAutoSave,
   registerAutoSaveTrigger,
 } from "../../data/autoSaveSession";
 import { useRemoteFileRefresh } from "../../hooks/useRemoteFileRefresh";
@@ -721,8 +723,15 @@ const MindMapEditorShell = () => {
         contentHash8: hashDocumentSnapshot(latest).slice(0, 8),
         richText: summarizeMindMapRichTextTree(latest.data),
       });
+      if (rearmDeferredAutoSave()) {
+        debugMindMapPersist("auto save rearmed after hydrate", {
+          fileId8: fileId.slice(0, 8),
+          source: "auto",
+        });
+      }
       return;
     }
+    clearDeferredAutoSave();
     const baselineDocument = hydrateCoordinatorRef.current.settle(latest);
     latestDocumentRef.current = baselineDocument;
     adoptMindMapNativeBaseline(fileId, baselineDocument);
@@ -1353,7 +1362,12 @@ const MindMapEditorShell = () => {
                   nativeDirtyPending: hasUserDirtyPending,
                 });
               }
-            } else if (draftResult.shouldMarkChanged) {
+            } else if (
+              draftResult.shouldMarkChanged ||
+              (fileId &&
+                isMindMapNativeDirtyPending(fileId) &&
+                !isCurrentSaveResponse)
+            ) {
               markDocumentChanged(document);
             }
             syncRootTextToFileName(document.data);
@@ -1414,18 +1428,46 @@ const MindMapEditorShell = () => {
         return;
       }
       if (event.data.type === "mindMapDirtyState") {
-        const isUserEdit =
-          event.data.payload &&
-          typeof event.data.payload === "object" &&
-          (event.data.payload as { userEdit?: unknown }).userEdit === true;
+        const payload =
+          event.data.payload && typeof event.data.payload === "object"
+            ? (event.data.payload as {
+                reason?: unknown;
+                source?: unknown;
+                userEdit?: unknown;
+              })
+            : null;
+        const isUserEdit = payload?.userEdit === true;
+        const reason =
+          typeof payload?.reason === "string" ? payload.reason : null;
+        const source =
+          typeof payload?.source === "string" ? payload.source : null;
+        const remoteSuppressed = isRemoteMutationSuppressed(fileId);
+        debugMindMapOpen("mindMapDirtyState received", {
+          fileId8: fileId.slice(0, 8),
+          reason,
+          source,
+          userEdit: !!isUserEdit,
+          nativeHydrating: nativeHydratingRef.current,
+          remoteSuppressed,
+        });
         if (
-          (nativeHydratingRef.current || isRemoteMutationSuppressed(fileId)) &&
+          (nativeHydratingRef.current || remoteSuppressed) &&
           !isUserEdit
         ) {
-          debugMindMapOpen("mindMapDirtyState suppressed during hydrate");
+          debugMindMapOpen("mindMapDirtyState suppressed during hydrate", {
+            fileId8: fileId.slice(0, 8),
+            reason,
+            source,
+            nativeHydrating: nativeHydratingRef.current,
+            remoteSuppressed,
+          });
           return;
         }
-        markNativeDocumentDirty();
+        markNativeDocumentDirty({
+          reason,
+          source,
+          userEdit: !!isUserEdit,
+        });
         return;
       }
       const current = latestDocumentRef.current;
@@ -1441,14 +1483,36 @@ const MindMapEditorShell = () => {
           });
           return;
         }
+        if (fileId && isMindMapNativeDirtyPending(fileId)) {
+          debugMindMapPersist(
+            "config change skipped while native dirty pending",
+            {
+              type,
+              fileId8: fileId.slice(0, 8),
+            },
+          );
+          return;
+        }
+        if (fileId && FileSyncState.hasUnsavedChanges(fileId)) {
+          debugMindMapPersist(
+            "config change skipped while file has unsaved changes",
+            {
+              type,
+              fileId8: fileId.slice(0, 8),
+            },
+          );
+          return;
+        }
         markDocumentChanged(latestDocumentRef.current!);
       };
       if (event.data.type === "saveMindMapConfig") {
         // iframe 回传的是运行时 config（含宿主注入的媒体限制等键），入口处即
         // compact：内存文档只保留用户显式且非默认的值。若不在此清理，运行时键
         // 会先被 toDocument 剥掉、破坏 migrate 修复遗留 0 所依赖的污染指纹。
+        const latestData =
+          latestDocumentRef.current?.data ?? current.data;
         updateLatestDocument({
-          ...current.data,
+          ...latestData,
           config: compactMindMapPersistedConfig(
             event.data.payload &&
               typeof event.data.payload === "object" &&
@@ -1461,8 +1525,10 @@ const MindMapEditorShell = () => {
         return;
       }
       if (event.data.type === "saveLocalConfig") {
+        const latestData =
+          latestDocumentRef.current?.data ?? current.data;
         updateLatestDocument({
-          ...current.data,
+          ...latestData,
           localConfig:
             event.data.payload &&
             typeof event.data.payload === "object" &&
@@ -1475,8 +1541,10 @@ const MindMapEditorShell = () => {
       }
       if (event.data.type === "saveLanguage") {
         try {
+          const latestData =
+            latestDocumentRef.current?.data ?? current.data;
           updateLatestDocument({
-            ...current.data,
+            ...latestData,
             lang:
               typeof event.data.payload === "string"
                 ? event.data.payload
@@ -1742,9 +1810,10 @@ const MindMapEditorShell = () => {
         debugMindMapPersist("auto save suppressed during hydrate", {
           source: "auto",
         });
-        return;
+        return "deferred";
       }
       requestSave({ source: "auto" });
+      return undefined;
     };
 
     const unregisterAutoSave = registerAutoSaveTrigger(() => {
