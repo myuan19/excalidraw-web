@@ -64,7 +64,7 @@ export async function fetchThumbnailSvgForCard(
     r = await attempt(alt, "B");
   }
   if (!r.ok) {
-    logPipe.debug("GET thumb final fail", {
+    logPipe.debug("GET thumbnail failed", {
       id8,
       status: r.status,
       errPreview: r.body.slice(0, 220),
@@ -77,7 +77,7 @@ export async function fetchThumbnailSvgForCard(
   }
   const t = r.body.trim();
   if (!t) {
-    logPipe.debug("GET thumb final empty SVG after retries", {
+    logPipe.debug("GET thumbnail empty body", {
       id8,
       status: r.status,
     });

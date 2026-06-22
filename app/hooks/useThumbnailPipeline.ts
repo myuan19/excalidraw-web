@@ -11,6 +11,7 @@ import {
   shouldFetchServerThumbnail,
 } from "../data/thumbnailServerFetchMiss";
 import { ensureLocalDraftThumbnailFromCache } from "../data/localDraftThumbnailRecovery";
+import { shouldAwaitSessionThumbnailBeforeServerFetch } from "../data/resolveFileCardThumbnail";
 import type { ServerFile } from "../data/ServerSync";
 
 const logPipe = createLogger({ module: "thumbPipeline" });
@@ -90,6 +91,7 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
     const skipped = {
       notInAllowSet: 0,
       localDraftThumb: 0,
+      draftSessionThumbPending: 0,
       localDraftRecoverQueued: 0,
       serverNoThumbFlag: 0,
       serverThumbMiss: 0,
@@ -121,6 +123,22 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
           localDraftThumbLen: localDraftThumb.length,
         });
         skipped.localDraftThumb++;
+        continue;
+      }
+      if (
+        shouldAwaitSessionThumbnailBeforeServerFetch(
+          f,
+          syncState,
+          localDraftThumb,
+        )
+      ) {
+        debugThumbnailPipeline("skip draft session thumb pending", {
+          id: f.id,
+          id8: f.id.slice(0, 8),
+          syncState,
+          kind: f.kind,
+        });
+        skipped.draftSessionThumbPending++;
         continue;
       }
       if (isLocalDraftFileId(f.id)) {

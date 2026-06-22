@@ -43,6 +43,7 @@ export type CheckpointSaveOutcome = {
   contentSha256?: string | null;
   version?: number | null;
   updatedAt?: string | null;
+  fileThumbnail?: string | null;
 };
 
 export async function executeCheckpointSave(
@@ -137,5 +138,9 @@ export async function executeCheckpointSave(
     contentSha256: result?.content_sha256 ?? null,
     version: result?.version ?? null,
     updatedAt: result?.updated_at ?? null,
+    fileThumbnail:
+      typeof fileThumbnail === "string" && fileThumbnail.length > 0
+        ? fileThumbnail
+        : null,
   };
 }

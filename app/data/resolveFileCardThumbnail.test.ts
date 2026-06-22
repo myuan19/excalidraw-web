@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { FileSyncState } from "./FileSyncState";
 import { ensureLocalDraftThumbnailFromCache } from "./localDraftThumbnailRecovery";
 import { LocalThumbnailCache } from "./localThumbnailCache";
 import {
   chooseFileCardThumbnailForFile,
   fileCardThumbnailCanPreview,
   resolveFileCardThumbnailSvg,
+  shouldAwaitSessionThumbnailBeforeServerFetch,
 } from "./resolveFileCardThumbnail";
 
 import type { ServerFile } from "./ServerSync";
@@ -36,10 +38,11 @@ describe("resolveFileCardThumbnail", () => {
 
   it("prefers fetched thumb for synced server files like the file list", () => {
     LocalThumbnailCache.set("file-1", "<svg id='local'></svg>");
-    const choice = chooseFileCardThumbnailForFile(
+    const { choice } = chooseFileCardThumbnailForFile(
       "file-1",
       mockFile(),
       "<svg id='server'></svg>",
+      "sha-1",
     );
     expect(choice.finalSource).toBe("fetchedThumb");
     expect(choice.thumbSvg).toContain("server");
@@ -50,16 +53,16 @@ describe("resolveFileCardThumbnail", () => {
       contentSha: "sha-1",
     });
     const matching = chooseFileCardThumbnailForFile("file-1", mockFile(), null);
-    expect(matching.finalSource).toBe("localThumb");
-    expect(matching.thumbSvg).toContain("local");
+    expect(matching.choice.finalSource).toBe("localThumb");
+    expect(matching.choice.thumbSvg).toContain("local");
 
     const stale = chooseFileCardThumbnailForFile(
       "file-1",
       mockFile({ content_sha256: "sha-2" }),
       null,
     );
-    expect(stale.finalSource).toBe("none");
-    expect(stale.thumbSvg).toBeNull();
+    expect(stale.choice.finalSource).toBe("none");
+    expect(stale.choice.thumbSvg).toBeNull();
 
     LocalThumbnailCache.clear("file-1");
     LocalThumbnailCache.set("file-1", "<svg id='draft'></svg>");
@@ -68,13 +71,18 @@ describe("resolveFileCardThumbnail", () => {
       mockFile(),
       null,
     );
-    expect(unbound.finalSource).toBe("none");
-    expect(unbound.thumbSvg).toBeNull();
+    expect(unbound.choice.finalSource).toBe("none");
+    expect(unbound.choice.thumbSvg).toBeNull();
   });
 
   it("prefers local thumb for browser drafts like the file list", () => {
-    LocalThumbnailCache.set("local-draft:abc", "<svg id='draft'></svg>");
-    const choice = chooseFileCardThumbnailForFile(
+    FileSyncState.setDraftHash("local-draft:abc", "draft-hash");
+    LocalThumbnailCache.setDraftPreview(
+      "local-draft:abc",
+      "<svg id='draft'></svg>",
+      "draft-hash",
+    );
+    const { choice } = chooseFileCardThumbnailForFile(
       "local-draft:abc",
       mockFile({ id: "local-draft:abc", has_thumbnail: false }),
       "<svg id='server'></svg>",
@@ -97,6 +105,75 @@ describe("resolveFileCardThumbnail", () => {
         null,
       ),
     ).toBe(false);
+  });
+
+  it("bindToContentSha makes unbound local thumb visible for synced files", () => {
+    LocalThumbnailCache.set("file-1", "<svg id='local'></svg>");
+    expect(
+      chooseFileCardThumbnailForFile("file-1", mockFile(), null).choice
+        .finalSource,
+    ).toBe("none");
+
+    LocalThumbnailCache.bindToContentSha("file-1", "sha-1");
+    const { choice } = chooseFileCardThumbnailForFile("file-1", mockFile(), null);
+    expect(choice.finalSource).toBe("localThumb");
+    expect(choice.thumbSvg).toContain("local");
+  });
+
+  it("skips server fetch for draft excalidraw while session preview is pending", () => {
+    expect(
+      shouldAwaitSessionThumbnailBeforeServerFetch(
+        mockFile(),
+        "draft",
+        null,
+      ),
+    ).toBe(true);
+    expect(
+      shouldAwaitSessionThumbnailBeforeServerFetch(
+        mockFile(),
+        "draft",
+        "<svg/>",
+      ),
+    ).toBe(false);
+    expect(
+      shouldAwaitSessionThumbnailBeforeServerFetch(
+        mockFile(),
+        "synced",
+        null,
+      ),
+    ).toBe(false);
+  });
+
+  it("ignores draft session thumbs whose scene hash is stale", () => {
+    FileSyncState.setDraftHash("file-1", "draft-new");
+    FileSyncState.setBaselineHash("file-1", "baseline");
+    LocalThumbnailCache.setDraftPreview(
+      "file-1",
+      "<svg id='stale'></svg>",
+      "draft-old",
+    );
+    const { choice } = chooseFileCardThumbnailForFile("file-1", mockFile(), null);
+    expect(choice.thumbSvg).toBeNull();
+    expect(choice.finalSource).toBe("none");
+  });
+
+  it("uses memoized draft slot without re-reading session storage", () => {
+    LocalThumbnailCache.set("file-1", "<svg id='stale-session'></svg>");
+    FileSyncState.setDraftHash("file-1", "draft-hash");
+    FileSyncState.setBaselineHash("file-1", "baseline-hash");
+    const { choice } = chooseFileCardThumbnailForFile(
+      "file-1",
+      mockFile(),
+      "<svg id='server'></svg>",
+      "sha-1",
+      {
+        syncState: "draft",
+        preferLocalThumb: true,
+        localDraftThumb: null,
+      },
+    );
+    expect(choice.thumbSvg).toBeNull();
+    expect(choice.finalSource).toBe("none");
   });
 
   it("recovers local draft thumbnail from persisted mindmap cache", async () => {

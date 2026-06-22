@@ -47,6 +47,7 @@ import {
   markTabFileDirty,
 } from "../../data/tabFileDirtyState";
 import { patchFileListTreeCacheSavedFile } from "../../data/fileListSessionCache";
+import { bindSavedFileThumbnailToContentSha, cacheDraftFileThumbnail } from "../../data/sessionFileThumbnail";
 import { LocalThumbnailCache } from "../../data/localThumbnailCache";
 
 import {
@@ -84,23 +85,6 @@ import type {
 export { getCachedMindMapServerSha, toMindMapLocalCacheRecord };
 
 const logSave = createLogger({ module: "save" });
-
-function bindSavedMindMapThumbnailToContentSha(
-  fileId: string,
-  thumbnail: string | null | undefined,
-  contentSha256: string | null | undefined,
-): string | null {
-  const resolved =
-    (typeof thumbnail === "string" && thumbnail.length > 0
-      ? thumbnail
-      : null) ?? LocalThumbnailCache.get(fileId);
-  if (resolved && contentSha256) {
-    LocalThumbnailCache.set(fileId, resolved, {
-      contentSha: contentSha256,
-    });
-  }
-  return resolved;
-}
 
 type MindMapSaveDocument = ManagedDocument<MindMapDocumentData>;
 
@@ -556,7 +540,7 @@ export function useMindMapFileSave(opts: {
           );
           applyFileModificationState(fileId, state);
           if (thumbnail) {
-            LocalThumbnailCache.set(fileId, thumbnail);
+            cacheDraftFileThumbnail(fileId, thumbnail, hash);
           }
         }
         logSave.info("mindmap thumbnail save skipped", {
@@ -713,10 +697,10 @@ export function useMindMapFileSave(opts: {
           serverContentSha256: outcome.contentSha256 ?? undefined,
           serverVersion: outcome.version ?? undefined,
         });
-        const savedThumbnail = bindSavedMindMapThumbnailToContentSha(
+        const savedThumbnail = bindSavedFileThumbnailToContentSha(
           fileId,
-          thumbnail,
           outcome.contentSha256,
+          thumbnail ?? outcome.fileThumbnail,
         );
         patchFileListTreeCacheSavedFile(fileId, {
           name: displayName,
@@ -907,10 +891,10 @@ export function useMindMapFileSave(opts: {
           serverContentSha256: outcome.contentSha256 ?? undefined,
           serverVersion: outcome.version ?? undefined,
         });
-        const savedThumbnail = bindSavedMindMapThumbnailToContentSha(
+        const savedThumbnail = bindSavedFileThumbnailToContentSha(
           fileId,
-          thumbnail,
           outcome.contentSha256,
+          thumbnail ?? outcome.fileThumbnail,
         );
         patchFileListTreeCacheSavedFile(fileId, {
           name: displayName,

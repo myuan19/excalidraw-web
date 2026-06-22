@@ -29,6 +29,7 @@ import {
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
 import { shouldDeferLeaveWhileNewDocumentHash } from "../../data/editorLeaveHome";
 import { isLocalDraftFileId } from "../../data/localDraftFileId";
+import { bindSavedFileThumbnailToContentSha } from "../../data/sessionFileThumbnail";
 import { notifyLocalDraftEdited } from "../../data/localDraftSessions";
 import { discardLocalDraftSession } from "../../data/discardLocalDraftSession";
 import { getLocalDraftDisplayName } from "../../data/localDraftDisplayName";
@@ -611,6 +612,11 @@ export function useForkFileSave(opts: {
           source,
           hash: hAfter.slice(0, 8),
         });
+        bindSavedFileThumbnailToContentSha(
+          fid,
+          outcome.contentSha256,
+          outcome.fileThumbnail,
+        );
         window.dispatchEvent(
           new CustomEvent("excalidraw-server-saved", {
             detail: { id: fid, hash: hAfter },
@@ -803,6 +809,11 @@ export function useForkFileSave(opts: {
         FileSyncState.alignHashes(fid, hAfter);
         FileSyncState.clearLocalEditTime(fid);
         clearTabFileDirty(fid);
+        bindSavedFileThumbnailToContentSha(
+          fid,
+          outcome.contentSha256,
+          outcome.fileThumbnail,
+        );
         window.dispatchEvent(
           new CustomEvent("excalidraw-server-saved", {
             detail: { id: fid, hash: hAfter },

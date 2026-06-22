@@ -32,10 +32,17 @@ describe("generateExcalidrawThumbnailAndCache", () => {
 
     const svg = await generateExcalidrawThumbnailAndCache("file-id-123", scene);
 
-    expect(buildAndCacheFileThumbnailMock).toHaveBeenCalledWith("file-id-123", {
-      kind: "excalidraw",
-      data: scene,
-    });
+    expect(buildAndCacheFileThumbnailMock).toHaveBeenCalledWith(
+      "file-id-123",
+      {
+        kind: "excalidraw",
+        data: scene,
+      },
+      expect.objectContaining({
+        sceneHash: expect.any(String),
+        contentSha: null,
+      }),
+    );
     expect(svg).toBe("<svg></svg>");
     expect(LocalThumbnailCache.set).not.toHaveBeenCalled();
   });

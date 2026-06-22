@@ -15,12 +15,37 @@ const META_PREFIX = "excalidraw-web-local-thumb-meta-";
 /** ~150KB max per SVG string in sessionStorage */
 const MAX_CHARS = 150_000;
 
-type LocalThumbnailMeta = {
+export type LocalThumbnailMeta = {
   contentSha?: string | null;
+  /** Draft preview fingerprint; must match FileSyncState draft hash to display. */
+  sceneHash?: string | null;
 };
 
 function looksLikeCompleteSvg(value: string): boolean {
   return value.includes("<svg") && value.includes("</svg>");
+}
+
+function readMeta(fileId: string): LocalThumbnailMeta {
+  try {
+    const raw = sessionStorage.getItem(LocalThumbnailCache.metaKey(fileId));
+    if (!raw) {
+      return {};
+    }
+    return JSON.parse(raw) as LocalThumbnailMeta;
+  } catch {
+    return {};
+  }
+}
+
+function writeMeta(fileId: string, meta: LocalThumbnailMeta): void {
+  try {
+    sessionStorage.setItem(
+      LocalThumbnailCache.metaKey(fileId),
+      JSON.stringify(meta),
+    );
+  } catch {
+    // quota / private mode
+  }
 }
 
 export const LocalThumbnailCache = {
@@ -35,7 +60,7 @@ export const LocalThumbnailCache = {
   set(
     fileId: string,
     svg: string | undefined,
-    opts?: LocalThumbnailMeta,
+    opts?: Partial<LocalThumbnailMeta>,
   ): void {
     if (!svg) {
       logThumb.debug(`localThumb set skip ${fileId.slice(0, 8)}: empty`);
@@ -57,14 +82,22 @@ export const LocalThumbnailCache = {
     }
     try {
       sessionStorage.setItem(this.key(fileId), svg);
-      if (opts && "contentSha" in opts) {
-        sessionStorage.setItem(
-          this.metaKey(fileId),
-          JSON.stringify({ contentSha: opts.contentSha ?? null }),
-        );
+      if (opts) {
+        const next = { ...readMeta(fileId) };
+        if ("contentSha" in opts) {
+          next.contentSha = opts.contentSha ?? null;
+          if (opts.contentSha) {
+            next.sceneHash = null;
+          }
+        }
+        if ("sceneHash" in opts) {
+          next.sceneHash = opts.sceneHash ?? null;
+          if (opts.sceneHash) {
+            next.contentSha = null;
+          }
+        }
+        writeMeta(fileId, next);
       }
-      // Omitting opts preserves existing contentSha meta so async draft
-      // thumbnail updates do not invalidate synced file-list lookups.
       logThumb.debug(
         `localThumb set ${fileId.slice(0, 8)} len=${
           svg.length
@@ -107,6 +140,29 @@ export const LocalThumbnailCache = {
     }
   },
 
+  getBoundContentSha(fileId: string): string | null {
+    return readMeta(fileId).contentSha ?? null;
+  },
+
+  getBoundSceneHash(fileId: string): string | null {
+    return readMeta(fileId).sceneHash ?? null;
+  },
+
+  /** Draft / local-draft cards: only show preview matching current draft hash. */
+  getForDraft(
+    fileId: string,
+    draftHash: string | null | undefined,
+  ): string | null {
+    if (!draftHash) {
+      return null;
+    }
+    const boundSceneHash = this.getBoundSceneHash(fileId);
+    if (!boundSceneHash || boundSceneHash !== draftHash) {
+      return null;
+    }
+    return this.get(fileId);
+  },
+
   getForContent(
     fileId: string,
     contentSha: string | null | undefined,
@@ -114,19 +170,53 @@ export const LocalThumbnailCache = {
     if (!contentSha) {
       return null;
     }
-    try {
-      const raw = sessionStorage.getItem(this.metaKey(fileId));
-      if (!raw) {
-        return null;
-      }
-      const meta = JSON.parse(raw) as LocalThumbnailMeta;
-      if (meta.contentSha !== contentSha) {
-        return null;
-      }
-      return this.get(fileId);
-    } catch {
+    const boundSha = this.getBoundContentSha(fileId);
+    if (!boundSha || boundSha !== contentSha) {
       return null;
     }
+    return this.get(fileId);
+  },
+
+  /** Unified lookup for file-list cards (draft slot vs synced contentSha). */
+  getForFileListSlot(
+    fileId: string,
+    opts: {
+      preferLocalThumb: boolean;
+      draftHash?: string | null;
+      contentSha?: string | null;
+    },
+  ): string | null {
+    return opts.preferLocalThumb
+      ? this.getForDraft(fileId, opts.draftHash)
+      : this.getForContent(fileId, opts.contentSha);
+  },
+
+  /** Cache a draft-session preview; clears synced contentSha binding. */
+  setDraftPreview(
+    fileId: string,
+    svg: string,
+    sceneHash: string | null | undefined,
+  ): void {
+    this.set(fileId, svg, { sceneHash: sceneHash ?? null, contentSha: null });
+  },
+
+  /** After save, bind session thumb to server contentSha so synced cards can use it. */
+  bindToContentSha(
+    fileId: string,
+    contentSha: string | null | undefined,
+    svg?: string | null,
+  ): string | null {
+    if (!contentSha) {
+      return null;
+    }
+    const resolved =
+      (typeof svg === "string" && svg.length > 0 ? svg : null) ??
+      this.get(fileId);
+    if (!resolved) {
+      return null;
+    }
+    this.set(fileId, resolved, { contentSha, sceneHash: null });
+    return resolved;
   },
 
   clear(fileId: string): void {

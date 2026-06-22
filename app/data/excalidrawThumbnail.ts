@@ -1,6 +1,7 @@
 import { createLogger } from "../lib/logger";
 
 import { buildAndCacheFileThumbnail } from "./thumbnailService";
+import { hashSceneSnapshot } from "./sceneHash";
 
 const logThumb = createLogger({ module: "thumbnail" });
 
@@ -31,10 +32,14 @@ export async function generateExcalidrawThumbnailAndCache(
   scene: ExcalidrawThumbnailScene,
 ): Promise<string | undefined> {
   try {
-    const thumbnail = await buildAndCacheFileThumbnail(fileId, {
-      kind: "excalidraw",
-      data: scene,
-    });
+    const thumbnail = await buildAndCacheFileThumbnail(
+      fileId,
+      {
+        kind: "excalidraw",
+        data: scene,
+      },
+      { sceneHash: hashSceneSnapshot(scene), contentSha: null },
+    );
     logThumb.debug(
       `generateExcalidrawThumb ${fileId.slice(0, 8)}, svgLen=${
         thumbnail?.length ?? 0

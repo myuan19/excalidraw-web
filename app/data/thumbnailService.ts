@@ -12,6 +12,7 @@ import {
 } from "./thumbnailSvg";
 
 import type { MindMapDocumentData } from "./formats/MindMapAdapter";
+import type { LocalThumbnailMeta } from "./localThumbnailCache";
 
 export type ThumbnailBuildOpts = {
   kind?: string | null;
@@ -84,11 +85,12 @@ export async function buildThumbnail(
 export async function buildAndCacheFileThumbnail(
   fileId: string,
   opts: ThumbnailBuildOpts,
+  cacheMeta?: Partial<LocalThumbnailMeta>,
 ): Promise<string | undefined> {
   const { thumbnailSvg } = await buildThumbnail(opts);
   if (!thumbnailSvg) {
     return undefined;
   }
-  LocalThumbnailCache.set(fileId, thumbnailSvg);
+  LocalThumbnailCache.set(fileId, thumbnailSvg, cacheMeta);
   return thumbnailSvg;
 }

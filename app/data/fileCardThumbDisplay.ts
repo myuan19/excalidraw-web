@@ -2,13 +2,15 @@ import { editorRegistry } from "../editors/registry";
 
 import { isLocalDraftFileId } from "./localDraftFileId";
 import {
-  buildFileCardThumbnailSlot,
   chooseFileCardThumbnailForFile,
+  fileKindUsesSessionThumbnail,
+  type FileCardThumbDraftSlot,
 } from "./resolveFileCardThumbnail";
 import { isThumbnailServerMiss } from "./thumbnailServerFetchMiss";
 import { toCardSvg } from "./thumbnailService";
 import { extractThumbBg } from "./thumbnailSvg";
 
+import type { FileCardThumbnailChoice } from "./fileCardThumbnail";
 import type { ServerFile } from "./ServerSync";
 
 export type FileCardThumbBadge = "temp" | "draft" | null;
@@ -21,31 +23,34 @@ export type FileCardThumbDisplay = {
   thumbBg: string | undefined;
 };
 
-/** 与文件列表 `renderFileCard` 缩略图区域展示逻辑一致 */
-export function resolveFileCardThumbDisplay(
+export type FileCardThumbState = {
+  choice: FileCardThumbnailChoice;
+  display: FileCardThumbDisplay;
+};
+
+function buildFileCardThumbDisplay(
   fileId: string,
   file: ServerFile,
-  fetchedThumb?: string | null,
+  choice: FileCardThumbnailChoice,
+  syncState: "synced" | "draft",
 ): FileCardThumbDisplay {
   const isBrowserDraft = isLocalDraftFileId(fileId);
-  const slot = buildFileCardThumbnailSlot(fileId);
-  const thumbnailChoice = chooseFileCardThumbnailForFile(
-    fileId,
-    file,
-    fetchedThumb,
-  );
-  const thumbSvg = thumbnailChoice.thumbSvg;
+  const thumbSvg = choice.thumbSvg;
   const cardThumbSvg = toCardSvg(thumbSvg);
+  const usesSessionThumbnail = fileKindUsesSessionThumbnail(file.kind);
   const thumbLoading =
     !thumbSvg &&
-    !!file.has_thumbnail &&
-    !isBrowserDraft &&
-    !isThumbnailServerMiss(fileId, file.content_sha256);
+    !isThumbnailServerMiss(fileId, file.content_sha256) &&
+    (usesSessionThumbnail
+      ? syncState === "draft" ||
+        isBrowserDraft ||
+        !!file.has_thumbnail
+      : !!file.has_thumbnail && !isBrowserDraft);
   const badge: FileCardThumbBadge = isBrowserDraft
     ? "temp"
-    : slot.syncState === "draft"
-    ? "draft"
-    : null;
+    : syncState === "draft"
+      ? "draft"
+      : null;
 
   return {
     kind: editorRegistry.resolveKind(file.kind),
@@ -54,6 +59,44 @@ export function resolveFileCardThumbDisplay(
     thumbLoading,
     thumbBg: cardThumbSvg ? extractThumbBg(thumbSvg!) : undefined,
   };
+}
+
+/** 文件列表卡片：一次解析 choice + display，可传入 memoized draftSlot 避免重复读缓存 */
+export function resolveFileCardThumbState(
+  fileId: string,
+  file: ServerFile,
+  fetchedThumb?: string | null,
+  fetchedThumbContentSha?: string | null,
+  draftSlot?: FileCardThumbDraftSlot,
+): FileCardThumbState {
+  const { choice, syncState } = chooseFileCardThumbnailForFile(
+    fileId,
+    file,
+    fetchedThumb,
+    fetchedThumbContentSha,
+    draftSlot,
+  );
+  return {
+    choice,
+    display: buildFileCardThumbDisplay(fileId, file, choice, syncState),
+  };
+}
+
+/** 与文件列表 `renderFileCard` 缩略图区域展示逻辑一致 */
+export function resolveFileCardThumbDisplay(
+  fileId: string,
+  file: ServerFile,
+  fetchedThumb?: string | null,
+  fetchedThumbContentSha?: string | null,
+  draftSlot?: FileCardThumbDraftSlot,
+): FileCardThumbDisplay {
+  return resolveFileCardThumbState(
+    fileId,
+    file,
+    fetchedThumb,
+    fetchedThumbContentSha,
+    draftSlot,
+  ).display;
 }
 
 /** 悬停预览：缩略图可走缓存，角标/加载态始终按当前文件状态重算 */

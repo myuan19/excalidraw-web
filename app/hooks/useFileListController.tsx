@@ -31,8 +31,7 @@ import {
 } from "../data/fileListSessionCache";
 import { FileSyncState } from "../data/FileSyncState";
 import { onCrossTabFileSaved } from "../data/crossTabFileSync";
-import { resolveFileCardThumbDisplay } from "../data/fileCardThumbDisplay";
-import { chooseFileCardThumbnail } from "../data/fileCardThumbnail";
+import { resolveFileCardThumbState } from "../data/fileCardThumbDisplay";
 import {
   formatImportErrorMessage,
 } from "../data/importExcalidrawScene";
@@ -939,10 +938,12 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         syncState,
         baseHash: FileSyncState.getBaselineHash(fileId),
         draftHash: FileSyncState.getDraftHash(fileId),
-        localDraftThumb: preferLocalThumb
-          ? LocalThumbnailCache.get(fileId)
-          : LocalThumbnailCache.getForContent(fileId, file.content_sha256) ??
-            LocalThumbnailCache.get(fileId),
+        draftHash: FileSyncState.getDraftHash(fileId),
+        localDraftThumb: LocalThumbnailCache.getForFileListSlot(fileId, {
+          preferLocalThumb,
+          draftHash: FileSyncState.getDraftHash(fileId),
+          contentSha: file.content_sha256,
+        }),
       };
     };
     const byId: Record<
@@ -2584,26 +2585,23 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     const state = draftStateById[f.id];
     const syncState = state?.syncState ?? "synced";
     const preferLocalThumb = isBrowserDraft || syncState === "draft";
-    const localDraftThumb =
-      state?.localDraftThumb ??
-      (preferLocalThumb
-        ? LocalThumbnailCache.get(f.id)
-        : LocalThumbnailCache.getForContent(f.id, f.content_sha256));
-    const localThumb = localDraftThumb;
-    const shouldUseDraftPreview = preferLocalThumb;
-    const thumbnailChoice = chooseFileCardThumbnail({
-      syncState,
-      preferLocalThumb,
-      localThumb,
-      fetchedThumb: fetchedThumbs[f.id] ?? null,
-    });
-    const thumbSvg = thumbnailChoice.thumbSvg;
     const kind = editorRegistry.resolveKind(f.kind);
-    const thumbDisplay = resolveFileCardThumbDisplay(
-      f.id,
-      f,
-      fetchedThumbs[f.id] ?? null,
-    );
+    const { display: thumbDisplay, choice: thumbnailChoice } =
+      resolveFileCardThumbState(
+        f.id,
+        f,
+        fetchedThumbs[f.id] ?? null,
+        fetchedThumbHashByIdRef.current[f.id] ?? null,
+        state
+          ? {
+              syncState,
+              preferLocalThumb,
+              draftHash: state.draftHash ?? null,
+              localDraftThumb: state.localDraftThumb ?? null,
+            }
+          : undefined,
+      );
+    const thumbSvg = thumbnailChoice.thumbSvg;
     const cardThumbSvg = thumbDisplay.cardThumbSvg;
     if (syncState === "draft" || !thumbSvg) {
       debugFileListThumbnail("thumbnail choice", {
@@ -2612,11 +2610,10 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         name: f.name,
         kind,
         syncState,
-        shouldUseDraftPreview,
+        shouldUseDraftPreview: preferLocalThumb,
         hasServerThumbnailFlag: !!f.has_thumbnail,
         contentSha: f.content_sha256 ?? null,
-        localThumbLen: localThumb?.length ?? 0,
-        cachedDraftThumbLen: localDraftThumb?.length ?? 0,
+        localThumbLen: state?.localDraftThumb?.length ?? 0,
         fetchedThumbLen: fetchedThumbs[f.id]?.length ?? 0,
         finalSource: thumbnailChoice.finalSource,
       });

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
+import { FileSyncState } from "./FileSyncState";
 import { LocalThumbnailCache } from "./localThumbnailCache";
 import { resolveFileCardThumbDisplay } from "./fileCardThumbDisplay";
 import { FileSyncState } from "./FileSyncState";
@@ -43,8 +44,35 @@ describe("resolveFileCardThumbDisplay", () => {
     expect(display.badge).toBe("draft");
   });
 
+  it("shows loading for draft excalidraw while session thumbnail is pending", () => {
+    FileSyncState.setDraftHash("file-1", "draft-hash");
+    FileSyncState.setBaselineHash("file-1", "baseline-hash");
+    const display = resolveFileCardThumbDisplay(
+      "file-1",
+      mockFile(),
+      "<svg id='server'></svg>",
+      "sha-1",
+    );
+    expect(display.cardThumbSvg).toBeNull();
+    expect(display.thumbLoading).toBe(true);
+  });
+
+  it("shows loading for local mindmap drafts before thumbnail generation", () => {
+    const display = resolveFileCardThumbDisplay(
+      "local-draft:mm-1",
+      mockFile({ id: "local-draft:mm-1", kind: "mindmap", has_thumbnail: false }),
+    );
+    expect(display.cardThumbSvg).toBeNull();
+    expect(display.thumbLoading).toBe(true);
+  });
+
   it("uses local thumb for browser drafts when cached", () => {
-    LocalThumbnailCache.set("local-draft:abc", "<svg></svg>");
+    FileSyncState.setDraftHash("local-draft:abc", "draft-hash");
+    LocalThumbnailCache.setDraftPreview(
+      "local-draft:abc",
+      '<svg width="120" height="80" viewBox="0 0 120 80"><circle cx="60" cy="40" r="20"/></svg>',
+      "draft-hash",
+    );
     const display = resolveFileCardThumbDisplay(
       "local-draft:abc",
       mockFile({ id: "local-draft:abc", has_thumbnail: false }),
