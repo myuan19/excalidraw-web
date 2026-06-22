@@ -302,7 +302,7 @@ export function useForkFileSave(opts: {
             files: canonicalLatest.files,
             deltas,
           });
-          scheduleExcalidrawThumbnailAndCache(fileId, latest);
+          scheduleExcalidrawThumbnailAndCache(fileId, canonicalLatest);
         } catch {
           // quota / idb
         }

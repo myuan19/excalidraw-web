@@ -1,8 +1,13 @@
 import { editorRegistry } from "../editors/registry";
 
+import { buildExcalidrawSceneThumbnailSvg } from "./excalidrawSceneThumbnail";
 import { normalizeDocument } from "./documentTypes";
 import { LocalThumbnailCache } from "./localThumbnailCache";
-import { buildSceneThumbnailSvg } from "./thumbnailSvg";
+import {
+  sanitizeThumbnailSvg,
+  viewBackgroundFromSceneAppState,
+  withFileListThumbnailAttrs,
+} from "./thumbnailSvg";
 
 export type DocumentThumbnailResult = {
   kind: string;
@@ -27,12 +32,29 @@ export async function buildDocumentThumbnailSvg(opts: {
       appState?: unknown;
       files?: unknown;
     };
-    const svg = await buildSceneThumbnailSvg({
+    if (!Array.isArray(scene.elements) || scene.elements.length === 0) {
+      const bg = viewBackgroundFromSceneAppState(scene.appState);
+      return {
+        kind,
+        thumbnailSvg: withFileListThumbnailAttrs(
+          `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><rect width="16" height="16" fill="${bg.replace(/"/g, "&quot;")}"/></svg>`,
+          bg,
+        ),
+      };
+    }
+    const rawSvg = await buildExcalidrawSceneThumbnailSvg({
       elements: scene.elements,
       appState: scene.appState,
       files: scene.files,
     });
-    return { kind, thumbnailSvg: svg };
+    const bg = viewBackgroundFromSceneAppState(scene.appState);
+    return {
+      kind,
+      thumbnailSvg: withFileListThumbnailAttrs(
+        sanitizeThumbnailSvg(rawSvg),
+        bg,
+      ),
+    };
   }
 
   return { kind, thumbnailSvg: null };

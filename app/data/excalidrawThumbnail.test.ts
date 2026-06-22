@@ -1,62 +1,55 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { LocalThumbnailCache } from "./localThumbnailCache";
 import { generateExcalidrawThumbnailAndCache } from "./excalidrawThumbnail";
 
-const { buildAndCacheFileThumbnailMock } = vi.hoisted(() => ({
-  buildAndCacheFileThumbnailMock: vi.fn(async () => "<svg></svg>"),
+const { buildExcalidrawSceneThumbnailSvgMock } = vi.hoisted(() => ({
+  buildExcalidrawSceneThumbnailSvgMock: vi.fn(async () =>
+    '<svg xmlns="http://www.w3.org/2000/svg" data-excal-filelist-thumb="1" viewBox="0 0 100 60"><rect width="100" height="60" fill="#fff"/><path d="M0 0L10 10"/></svg>',
+  ),
 }));
 
-vi.mock("./thumbnailService", () => ({
-  buildAndCacheFileThumbnail: buildAndCacheFileThumbnailMock,
-}));
-
-vi.mock("./localThumbnailCache", () => ({
-  LocalThumbnailCache: {
-    set: vi.fn(),
-  },
-}));
+vi.mock("./excalidrawSceneThumbnail", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./excalidrawSceneThumbnail")>();
+  return {
+    ...actual,
+    buildExcalidrawSceneThumbnailSvg: buildExcalidrawSceneThumbnailSvgMock,
+  };
+});
 
 describe("generateExcalidrawThumbnailAndCache", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    buildAndCacheFileThumbnailMock.mockResolvedValue("<svg></svg>");
+    sessionStorage.clear();
+    buildExcalidrawSceneThumbnailSvgMock.mockResolvedValue(
+      '<svg xmlns="http://www.w3.org/2000/svg" data-excal-filelist-thumb="1" viewBox="0 0 100 60"><rect width="100" height="60" fill="#fff"/><path d="M0 0L10 10"/></svg>',
+    );
   });
 
-  it("builds svg and writes session cache", async () => {
+  it("exports svg and writes session cache with scene hash", async () => {
     const scene = {
-      elements: [{ id: "a" }],
-      appState: { viewBackgroundColor: "#fff" },
+      elements: [{ id: "a", type: "rectangle", x: 0, y: 0, width: 10, height: 10 }],
+      appState: { viewBackgroundColor: "#ffffff" },
       files: {},
     };
 
     const svg = await generateExcalidrawThumbnailAndCache("file-id-123", scene);
 
-    expect(buildAndCacheFileThumbnailMock).toHaveBeenCalledWith(
-      "file-id-123",
-      {
-        kind: "excalidraw",
-        data: scene,
-      },
-      expect.objectContaining({
-        sceneHash: expect.any(String),
-        contentSha: null,
-      }),
+    expect(buildExcalidrawSceneThumbnailSvgMock).toHaveBeenCalled();
+    expect(svg).toContain("<svg");
+    expect(sessionStorage.getItem("excalidraw-web-local-thumb-file-id-123")).toContain(
+      "<svg",
     );
-    expect(svg).toBe("<svg></svg>");
-    expect(LocalThumbnailCache.set).not.toHaveBeenCalled();
   });
 
-  it("returns undefined when build fails", async () => {
-    buildAndCacheFileThumbnailMock.mockRejectedValueOnce(new Error("boom"));
+  it("returns undefined when export fails", async () => {
+    buildExcalidrawSceneThumbnailSvgMock.mockRejectedValueOnce(new Error("boom"));
 
     const svg = await generateExcalidrawThumbnailAndCache("file-id-123", {
-      elements: [],
+      elements: [{ id: "a", type: "rectangle", x: 0, y: 0, width: 10, height: 10 }],
       appState: {},
       files: {},
     });
 
     expect(svg).toBeUndefined();
-    expect(LocalThumbnailCache.set).not.toHaveBeenCalled();
   });
 });

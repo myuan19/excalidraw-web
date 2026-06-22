@@ -604,7 +604,7 @@ export function isSchematicMindMapThumbnailSvg(svgMarkup: string): boolean {
   );
 }
 
-function withFileListThumbnailAttrs(
+export function withFileListThumbnailAttrs(
   svgMarkup: string,
   background: string,
 ): string {
@@ -619,7 +619,7 @@ function withFileListThumbnailAttrs(
   );
 }
 
-function viewBackgroundFromSceneAppState(appState: unknown): string {
+export function viewBackgroundFromSceneAppState(appState: unknown): string {
   if (!appState || typeof appState !== "object") {
     return "#ffffff";
   }

@@ -1,29 +1,65 @@
 import { createLogger } from "../lib/logger";
 
-import { buildAndCacheFileThumbnail } from "./thumbnailService";
-import { hashSceneSnapshot } from "./sceneHash";
+import {
+  buildExcalidrawSceneThumbnailSvg,
+  cancelScheduledExcalidrawSceneThumbnailGeneration,
+  resolveExcalidrawSceneForThumbnail,
+  scheduleExcalidrawSceneThumbnailGeneration,
+} from "./excalidrawSceneThumbnail";
+import { cacheDraftFileThumbnail } from "./sessionFileThumbnail";
+import { isVisibleThumbnail } from "./thumbnailService";
+import {
+  sanitizeThumbnailSvg,
+  viewBackgroundFromSceneAppState,
+  withFileListThumbnailAttrs,
+} from "./thumbnailSvg";
 
 const logThumb = createLogger({ module: "thumbnail" });
 
-export type ExcalidrawThumbnailScene = {
-  elements: unknown;
-  appState: unknown;
-  files: unknown;
-};
+import type { ExcalidrawThumbnailScene } from "./excalidrawSceneThumbnail";
 
-/** 空闲时再生成缩略图，避免与首屏渲染争抢字体 subset worker。 */
+export type { ExcalidrawThumbnailScene };
+
+function finalizeExcalidrawThumbnailSvg(
+  scene: ExcalidrawThumbnailScene,
+  rawSvg: string,
+): string {
+  const bg = viewBackgroundFromSceneAppState(scene.appState);
+  return withFileListThumbnailAttrs(sanitizeThumbnailSvg(rawSvg), bg);
+}
+
+async function cacheExcalidrawSceneThumbnail(
+  fileId: string,
+  scene: ExcalidrawThumbnailScene,
+  sceneHash: string,
+): Promise<string | undefined> {
+  try {
+    const rawSvg = await buildExcalidrawSceneThumbnailSvg(scene);
+    const thumbnailSvg = finalizeExcalidrawThumbnailSvg(scene, rawSvg);
+    if (!isVisibleThumbnail(thumbnailSvg)) {
+      return undefined;
+    }
+    cacheDraftFileThumbnail(fileId, thumbnailSvg, sceneHash);
+    logThumb.debug(
+      `generateExcalidrawThumb ${fileId.slice(0, 8)}, svgLen=${
+        thumbnailSvg.length
+      }`,
+    );
+    return thumbnailSvg;
+  } catch (err) {
+    logThumb.debug(`generateExcalidrawThumb ${fileId.slice(0, 8)} FAILED`, err);
+    return undefined;
+  }
+}
+
+/** Draft edits: debounced native export, same fidelity model as MindMap iframe export. */
 export function scheduleExcalidrawThumbnailAndCache(
   fileId: string,
   scene: ExcalidrawThumbnailScene,
 ): void {
-  const run = () => {
-    void generateExcalidrawThumbnailAndCache(fileId, scene);
-  };
-  if (typeof requestIdleCallback === "function") {
-    requestIdleCallback(run, { timeout: 4000 });
-  } else {
-    window.setTimeout(run, 200);
-  }
+  scheduleExcalidrawSceneThumbnailGeneration(fileId, scene, ({ scene, sceneHash }) => {
+    void cacheExcalidrawSceneThumbnail(fileId, scene, sceneHash);
+  });
 }
 
 /** 生成 Excalidraw 列表缩略图并写入 sessionStorage；失败时返回 undefined。 */
@@ -31,23 +67,10 @@ export async function generateExcalidrawThumbnailAndCache(
   fileId: string,
   scene: ExcalidrawThumbnailScene,
 ): Promise<string | undefined> {
-  try {
-    const thumbnail = await buildAndCacheFileThumbnail(
-      fileId,
-      {
-        kind: "excalidraw",
-        data: scene,
-      },
-      { sceneHash: hashSceneSnapshot(scene), contentSha: null },
-    );
-    logThumb.debug(
-      `generateExcalidrawThumb ${fileId.slice(0, 8)}, svgLen=${
-        thumbnail?.length ?? 0
-      }`,
-    );
-    return thumbnail;
-  } catch (err) {
-    logThumb.debug(`generateExcalidrawThumb ${fileId.slice(0, 8)} FAILED`, err);
-    return undefined;
-  }
+  cancelScheduledExcalidrawSceneThumbnailGeneration(fileId);
+  const { scene: canonicalScene, sceneHash } = resolveExcalidrawSceneForThumbnail(
+    fileId,
+    scene,
+  );
+  return cacheExcalidrawSceneThumbnail(fileId, canonicalScene, sceneHash);
 }
