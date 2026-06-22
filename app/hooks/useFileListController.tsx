@@ -32,6 +32,7 @@ import {
 import { FileSyncState } from "../data/FileSyncState";
 import { onCrossTabFileSaved } from "../data/crossTabFileSync";
 import { resolveFileCardThumbState } from "../data/fileCardThumbDisplay";
+import { buildThumbnailDraftSlot } from "../data/thumbnailLifecycle";
 import {
   formatImportErrorMessage,
 } from "../data/importExcalidrawScene";
@@ -126,9 +127,10 @@ function applyImportedThumbnailState(
     let changed = false;
     const next = { ...prev };
     for (const record of records) {
-      const cached =
-        LocalThumbnailCache.getForContent(record.id, record.content_sha256) ??
-        LocalThumbnailCache.get(record.id);
+      const cached = LocalThumbnailCache.getForContent(
+        record.id,
+        record.content_sha256,
+      );
       if (!cached) {
         continue;
       }
@@ -929,41 +931,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   );
 
   const draftStateById = useMemo(() => {
-    const isLocalEditNewerThanServer = (file: ServerFile): boolean => {
-      const localEditTime = FileSyncState.getLocalEditTime(file.id);
-      if (!localEditTime) {
-        return false;
-      }
-      const localTime = Date.parse(localEditTime);
-      const serverTime = Date.parse(file.updated_at);
-      return (
-        Number.isFinite(localTime) &&
-        Number.isFinite(serverTime) &&
-        localTime > serverTime
-      );
-    };
-
-    const slotFor = (file: ServerFile) => {
-      const fileId = file.id;
-      const storedSyncState = FileSyncState.getSyncState(fileId);
-      const syncState =
-        storedSyncState === "draft" || isLocalEditNewerThanServer(file)
-          ? "draft"
-          : "synced";
-      const preferLocalThumb =
-        isLocalDraftFileId(fileId) || syncState === "draft";
-      const draftHash = FileSyncState.getDraftHash(fileId);
-      return {
-        syncState,
-        baseHash: FileSyncState.getBaselineHash(fileId),
-        draftHash,
-        localDraftThumb: LocalThumbnailCache.getForFileListSlot(fileId, {
-          preferLocalThumb,
-          draftHash,
-          contentSha: file.content_sha256,
-        }),
-      };
-    };
+    const slotFor = (file: ServerFile) => buildThumbnailDraftSlot(file);
     const byId: Record<
       string,
       ReturnType<typeof slotFor>
@@ -2610,14 +2578,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         f,
         fetchedThumbs[f.id] ?? null,
         fetchedThumbHashByIdRef.current[f.id] ?? null,
-        state
-          ? {
-              syncState,
-              preferLocalThumb,
-              draftHash: state.draftHash ?? null,
-              localDraftThumb: state.localDraftThumb ?? null,
-            }
-          : undefined,
+        state,
       );
     const thumbSvg = thumbnailChoice.thumbSvg;
     const cardThumbSvg = thumbDisplay.cardThumbSvg;

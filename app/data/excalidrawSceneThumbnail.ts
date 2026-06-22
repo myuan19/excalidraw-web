@@ -43,7 +43,9 @@ function resolveExportAppState(appState: unknown) {
     appState && typeof appState === "object" && !Array.isArray(appState)
       ? { ...getDefaultAppState(), ...(appState as Record<string, unknown>) }
       : getDefaultAppState();
-  return appStateForThumbnailExport(base);
+  return appStateForThumbnailExport(
+    base as Parameters<typeof appStateForThumbnailExport>[0],
+  );
 }
 
 function resolveExportFiles(files: unknown): BinaryFiles {
@@ -83,7 +85,7 @@ export async function buildExcalidrawSceneThumbnailSvg(
 
 const debouncedGenerateByFile = new Map<
   string,
-  ReturnType<typeof debounce<(scene: ExcalidrawThumbnailScene) => void>>
+  ReturnType<typeof debounce<[ExcalidrawThumbnailScene]>>
 >();
 
 /** Debounced draft preview generation — aligned with MindMap export cadence. */

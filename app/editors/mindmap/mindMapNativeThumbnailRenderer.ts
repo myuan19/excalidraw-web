@@ -1,7 +1,7 @@
 import { createEmptyMindMapData } from "../../data/formats/MindMapAdapter";
 import { createLogger } from "../../lib/logger";
 import { hashDocumentSnapshot } from "../../data/sceneHash";
-import { cacheDraftFileThumbnail } from "../../data/sessionFileThumbnail";
+import { cacheDraftThumbnailIfVisible } from "../../data/thumbnailLifecycle";
 import {
   markMindMapThumbnailSource,
   normalizeMindMapThumbnailSvg,
@@ -560,12 +560,14 @@ export async function generateMindMapThumbnailAndCache(
   if (!thumbnail) {
     return undefined;
   }
-  cacheDraftFileThumbnail(
-    fileId,
-    thumbnail,
-    hashDocumentSnapshot({ kind: "mindmap", data }),
+  return (
+    cacheDraftThumbnailIfVisible(
+      fileId,
+      "mindmap",
+      thumbnail,
+      hashDocumentSnapshot({ kind: "mindmap", data }),
+    ) ?? undefined
   );
-  return thumbnail;
 }
 
 /** @internal Test-only reset. */

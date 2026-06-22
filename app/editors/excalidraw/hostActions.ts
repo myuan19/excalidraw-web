@@ -2,8 +2,8 @@ import { FileSyncState } from "../../data/FileSyncState";
 import { createBlankExcalidrawInitialScene } from "../../data/forkFileScene";
 import { buildAndCacheFileThumbnail } from "../../data/thumbnailService";
 import { loadExcalidrawFileAsServerSceneData } from "../../data/importExcalidrawScene";
-import { LocalThumbnailCache } from "../../data/localThumbnailCache";
 import { ServerSync } from "../../data/ServerSync";
+import { finalizeSavedThumbnail } from "../../data/thumbnailLifecycle";
 
 import type {
   EditorCreateFileContext,
@@ -28,6 +28,15 @@ export async function createExcalidrawFile({
     thumbnail,
     { source: "create-excalidraw" },
   );
+  finalizeSavedThumbnail({
+    fileId: created.id,
+    kind: "excalidraw",
+    name,
+    contentSha: saveResult.content_sha256,
+    version: saveResult.version,
+    updatedAt: saveResult.updated_at,
+    thumbnail,
+  });
   FileSyncState.setServerSyncedLocalCache(created.id, {
     elements: initialScene.elements,
     appState: initialScene.appState,
@@ -68,11 +77,15 @@ export async function importExcalidrawFile({
     thumbnail,
     { source: "import-excalidraw" },
   );
-  if (thumbnail && saveResult.content_sha256) {
-    LocalThumbnailCache.set(created.id, thumbnail, {
-      contentSha: saveResult.content_sha256,
-    });
-  }
+  finalizeSavedThumbnail({
+    fileId: created.id,
+    kind: "excalidraw",
+    name: fileName,
+    contentSha: saveResult.content_sha256,
+    version: saveResult.version,
+    updatedAt: saveResult.updated_at,
+    thumbnail,
+  });
   FileSyncState.setServerSyncedLocalCache(created.id, {
     elements,
     appState,

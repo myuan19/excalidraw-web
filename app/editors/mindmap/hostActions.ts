@@ -4,8 +4,8 @@ import {
 } from "../../data/formats/MindMapAdapter";
 import { parseImportFileJson } from "../../data/importFileReadCache";
 import { generateMindMapThumbnailAndCache } from "../../data/mindMapThumbnail";
-import { LocalThumbnailCache } from "../../data/localThumbnailCache";
 import { ServerSync } from "../../data/ServerSync";
+import { finalizeSavedThumbnail } from "../../data/thumbnailLifecycle";
 
 import type {
   EditorCreateFileContext,
@@ -24,8 +24,23 @@ export async function createMindMapFile({
     created.id,
     mindMapData,
   );
-  await ServerSync.saveFileImmediate(created.id, document, name, thumbnail, {
-    source: "create-mindmap",
+  const saveResult = await ServerSync.saveFileImmediate(
+    created.id,
+    document,
+    name,
+    thumbnail,
+    {
+      source: "create-mindmap",
+    },
+  );
+  finalizeSavedThumbnail({
+    fileId: created.id,
+    kind: "mindmap",
+    name,
+    contentSha: saveResult.content_sha256,
+    version: saveResult.version,
+    updatedAt: saveResult.updated_at,
+    thumbnail,
   });
   return { id: created.id };
 }
@@ -49,11 +64,15 @@ export async function importMindMapFile({
       source: "import-mindmap",
     },
   );
-  if (thumbnail && saveResult.content_sha256) {
-    LocalThumbnailCache.set(created.id, thumbnail, {
-      contentSha: saveResult.content_sha256,
-    });
-  }
+  finalizeSavedThumbnail({
+    fileId: created.id,
+    kind: "mindmap",
+    name: fileName,
+    contentSha: saveResult.content_sha256,
+    version: saveResult.version,
+    updatedAt: saveResult.updated_at,
+    thumbnail,
+  });
   return {
     id: created.id,
     name: fileName,

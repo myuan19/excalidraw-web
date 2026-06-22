@@ -24,6 +24,7 @@ import {
   type FileCardThumbDisplay,
 } from "../data/fileCardThumbDisplay";
 import { resolveFileCardThumbnailSvg } from "../data/resolveFileCardThumbnail";
+import { buildThumbnailDraftSlot } from "../data/thumbnailLifecycle";
 import { shouldFetchServerThumbnail } from "../data/thumbnailServerFetchMiss";
 import { extractThumbBg } from "../data/thumbnailSvg";
 import { FileCardThumb } from "./FileCardThumb";
@@ -69,6 +70,16 @@ import "./EditorPlatformSidebar.scss";
 import "./FileList.scss";
 
 const logRecent = createLogger({ module: "recentFlyout" });
+
+function getRecentThumbCacheKey(file: ServerFile): string {
+  const draftSlot = buildThumbnailDraftSlot(file);
+  const hash = draftSlot.preferLocalThumb
+    ? draftSlot.draftHash
+    : file.content_sha256;
+  return `${file.id}:${draftSlot.preferLocalThumb ? "draft" : "synced"}:${
+    hash ?? "none"
+  }`;
+}
 
 /** 预览浮层：固定全屏、不参与文档流，避免缩略图引发布局/滚动条抖动 */
 const BRIDGE_PREVIEW_LAYER_ID = "editor-hub-bridge-preview-layer";
@@ -640,7 +651,8 @@ function SidebarRecentList({
         return;
       }
 
-      const cachedSvg = thumbSvgCacheRef.current[item.id];
+      const thumbCacheKey = getRecentThumbCacheKey(file);
+      const cachedSvg = thumbSvgCacheRef.current[thumbCacheKey];
       const display = mergeFileCardThumbDisplay(item.id, file, cachedSvg);
       setPreviewDisplay(display);
 
@@ -654,11 +666,19 @@ function SidebarRecentList({
         if (hoverFileIdRef.current !== item.id) {
           return;
         }
+        const latestFile = resolveRecentFlyoutFileRecord(item.id);
+        if (!latestFile || getRecentThumbCacheKey(latestFile) !== thumbCacheKey) {
+          return;
+        }
         if (cardThumbSvg) {
-          thumbSvgCacheRef.current[item.id] = cardThumbSvg;
+          thumbSvgCacheRef.current[thumbCacheKey] = cardThumbSvg;
         }
         setPreviewDisplay(
-          mergeFileCardThumbDisplay(item.id, file, cardThumbSvg ?? undefined),
+          mergeFileCardThumbDisplay(
+            item.id,
+            latestFile,
+            cardThumbSvg ?? undefined,
+          ),
         );
       });
     },

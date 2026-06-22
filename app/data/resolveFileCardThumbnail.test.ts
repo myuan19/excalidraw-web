@@ -169,6 +169,8 @@ describe("resolveFileCardThumbnail", () => {
       {
         syncState: "draft",
         preferLocalThumb: true,
+        baseHash: "baseline-hash",
+        draftHash: "draft-hash",
         localDraftThumb: null,
       },
     );

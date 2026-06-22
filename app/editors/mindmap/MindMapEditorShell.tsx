@@ -44,7 +44,7 @@ import { clearDocumentSessionVersion } from "../../data/documentSessionVersion";
 import { readFileListTreeCache } from "../../data/fileListSessionCache";
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
 import { LocalThumbnailCache } from "../../data/localThumbnailCache";
-import { cacheDraftFileThumbnail } from "../../data/sessionFileThumbnail";
+import { cacheDraftThumbnailIfVisible } from "../../data/thumbnailLifecycle";
 import { removeRecentFileEntry } from "../../data/recentFiles";
 import {
   createEmptyMindMapData,
@@ -1309,10 +1309,11 @@ const MindMapEditorShell = () => {
               ),
             });
             if (savePayload.thumbnail) {
-              cacheDraftFileThumbnail(
+              cacheDraftThumbnailIfVisible(
                 fileId,
+                "mindmap",
                 savePayload.thumbnail,
-                FileSyncState.getDraftHash(fileId),
+                hashDocumentSnapshot(document),
               );
             }
             if (isCurrentSaveResponse && saveResolveRef.current) {
@@ -1397,11 +1398,13 @@ const MindMapEditorShell = () => {
         const thumbnail = decodeNativeMindMapThumbnail(
           (payload as { thumbnail?: unknown }).thumbnail,
         );
-        if (thumbnail && fileId) {
-          cacheDraftFileThumbnail(
+        const currentDocument = latestDocumentRef.current;
+        if (thumbnail && fileId && currentDocument) {
+          cacheDraftThumbnailIfVisible(
             fileId,
+            "mindmap",
             thumbnail,
-            FileSyncState.getDraftHash(fileId),
+            hashDocumentSnapshot(currentDocument),
           );
         }
         return;

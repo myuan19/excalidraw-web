@@ -244,8 +244,9 @@
       let nativeMindMap = null
       let bridgeRequestSeq = 0
       let mindMapDataRevision = 0
-      const DRAFT_THUMB_EXPORT_DEBOUNCE_MS = 450
-      let draftThumbExportTimer = null
+      let draftThumbExportQueued = false
+      let draftThumbExportInFlight = false
+      let draftThumbExportRequestedDuringFlight = false
       let draftThumbExportRevision = 0
       let dirtyNotifyEnabled = false
       let dirtyNotifyEnableTimer = null
@@ -537,15 +538,37 @@
       }
       const scheduleDraftThumbnailExport = revision => {
         draftThumbExportRevision = revision
-        window.clearTimeout(draftThumbExportTimer)
-        draftThumbExportTimer = window.setTimeout(() => {
-          draftThumbExportTimer = null
+        if (draftThumbExportInFlight) {
+          draftThumbExportRequestedDuringFlight = true
+          return
+        }
+        if (draftThumbExportQueued) {
+          return
+        }
+        draftThumbExportQueued = true
+        const runWhenReady = async () => {
+          draftThumbExportQueued = false
+          draftThumbExportInFlight = true
           const revisionAtExport = draftThumbExportRevision
-          void exportMindMapThumbnailSnapshot(
-            revisionAtExport,
-            'schedule-draft-thumbnail'
-          )
-        }, DRAFT_THUMB_EXPORT_DEBOUNCE_MS)
+          try {
+            await exportMindMapThumbnailSnapshot(
+              revisionAtExport,
+              'schedule-draft-thumbnail'
+            )
+          } finally {
+            draftThumbExportInFlight = false
+            if (
+              draftThumbExportRequestedDuringFlight &&
+              draftThumbExportRevision !== revisionAtExport
+            ) {
+              draftThumbExportRequestedDuringFlight = false
+              scheduleDraftThumbnailExport(draftThumbExportRevision)
+            } else {
+              draftThumbExportRequestedDuringFlight = false
+            }
+          }
+        }
+        void waitForNextFrame().then(runWhenReady)
       }
       const postMindMapDataToHost = async (data, requestId, thumbnail = null) => {
         const revision = ++mindMapDataRevision

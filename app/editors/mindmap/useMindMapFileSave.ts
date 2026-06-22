@@ -46,8 +46,10 @@ import {
   clearTabFileDirty,
   markTabFileDirty,
 } from "../../data/tabFileDirtyState";
-import { patchFileListTreeCacheSavedFile } from "../../data/fileListSessionCache";
-import { bindSavedFileThumbnailToContentSha, cacheDraftFileThumbnail } from "../../data/sessionFileThumbnail";
+import {
+  cacheDraftThumbnailIfVisible,
+  finalizeSavedThumbnail,
+} from "../../data/thumbnailLifecycle";
 import { LocalThumbnailCache } from "../../data/localThumbnailCache";
 
 import {
@@ -539,9 +541,7 @@ export function useMindMapFileSave(opts: {
             toMindMapLocalCacheRecord(document),
           );
           applyFileModificationState(fileId, state);
-          if (thumbnail) {
-            cacheDraftFileThumbnail(fileId, thumbnail, hash);
-          }
+          cacheDraftThumbnailIfVisible(fileId, "mindmap", thumbnail, hash);
         }
         logSave.info("mindmap thumbnail save skipped", {
           fileId8: fileId.slice(0, 8),
@@ -597,7 +597,9 @@ export function useMindMapFileSave(opts: {
             },
             {
               resolveFileThumbnailForPut: async () =>
-                thumbnail ?? LocalThumbnailCache.get(fileId) ?? undefined,
+                thumbnail ??
+                LocalThumbnailCache.getForDraft(fileId, hash) ??
+                undefined,
               putDocument: async ({
                 thumbnail: thumbForPut,
                 checkpointPolicy,
@@ -697,18 +699,14 @@ export function useMindMapFileSave(opts: {
           serverContentSha256: outcome.contentSha256 ?? undefined,
           serverVersion: outcome.version ?? undefined,
         });
-        const savedThumbnail = bindSavedFileThumbnailToContentSha(
+        finalizeSavedThumbnail({
           fileId,
-          outcome.contentSha256,
-          thumbnail ?? outcome.fileThumbnail,
-        );
-        patchFileListTreeCacheSavedFile(fileId, {
           name: displayName,
           kind: "mindmap",
-          has_thumbnail: savedThumbnail ? true : undefined,
-          content_sha256: outcome.contentSha256 ?? undefined,
-          version: outcome.version ?? undefined,
-          updated_at: outcome.updatedAt ?? undefined,
+          contentSha: outcome.contentSha256,
+          version: outcome.version,
+          updatedAt: outcome.updatedAt,
+          thumbnail: thumbnail ?? outcome.fileThumbnail,
         });
         debugMindMapPersist("saveCurrentFileToServer success", {
           fileId8: fileId.slice(0, 8),
@@ -827,7 +825,9 @@ export function useMindMapFileSave(opts: {
             },
             {
               resolveFileThumbnailForPut: async () =>
-                thumbnail ?? LocalThumbnailCache.get(fileId) ?? undefined,
+                thumbnail ??
+                LocalThumbnailCache.getForDraft(fileId, hash) ??
+                undefined,
               putDocument: async ({
                 thumbnail: thumbForPut,
                 checkpointPolicy,
@@ -891,18 +891,14 @@ export function useMindMapFileSave(opts: {
           serverContentSha256: outcome.contentSha256 ?? undefined,
           serverVersion: outcome.version ?? undefined,
         });
-        const savedThumbnail = bindSavedFileThumbnailToContentSha(
+        finalizeSavedThumbnail({
           fileId,
-          outcome.contentSha256,
-          thumbnail ?? outcome.fileThumbnail,
-        );
-        patchFileListTreeCacheSavedFile(fileId, {
           name: displayName,
           kind: "mindmap",
-          has_thumbnail: savedThumbnail ? true : undefined,
-          content_sha256: outcome.contentSha256 ?? undefined,
-          version: outcome.version ?? undefined,
-          updated_at: outcome.updatedAt ?? undefined,
+          contentSha: outcome.contentSha256,
+          version: outcome.version,
+          updatedAt: outcome.updatedAt,
+          thumbnail: thumbnail ?? outcome.fileThumbnail,
         });
         localStorage.removeItem(legacyMindMapCacheKey(fileId));
         window.dispatchEvent(

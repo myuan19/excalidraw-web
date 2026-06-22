@@ -6,8 +6,7 @@ import {
   resolveExcalidrawSceneForThumbnail,
   scheduleExcalidrawSceneThumbnailGeneration,
 } from "./excalidrawSceneThumbnail";
-import { cacheDraftFileThumbnail } from "./sessionFileThumbnail";
-import { isVisibleThumbnail } from "./thumbnailService";
+import { cacheDraftThumbnailIfVisible } from "./thumbnailLifecycle";
 import {
   sanitizeThumbnailSvg,
   viewBackgroundFromSceneAppState,
@@ -36,16 +35,21 @@ async function cacheExcalidrawSceneThumbnail(
   try {
     const rawSvg = await buildExcalidrawSceneThumbnailSvg(scene);
     const thumbnailSvg = finalizeExcalidrawThumbnailSvg(scene, rawSvg);
-    if (!isVisibleThumbnail(thumbnailSvg)) {
+    const cached = cacheDraftThumbnailIfVisible(
+      fileId,
+      "excalidraw",
+      thumbnailSvg,
+      sceneHash,
+    );
+    if (!cached) {
       return undefined;
     }
-    cacheDraftFileThumbnail(fileId, thumbnailSvg, sceneHash);
     logThumb.debug(
       `generateExcalidrawThumb ${fileId.slice(0, 8)}, svgLen=${
         thumbnailSvg.length
       }`,
     );
-    return thumbnailSvg;
+    return cached;
   } catch (err) {
     logThumb.debug(`generateExcalidrawThumb ${fileId.slice(0, 8)} FAILED`, err);
     return undefined;

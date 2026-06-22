@@ -3,9 +3,9 @@ import { editorRegistry } from "../editors/registry";
 import { isLocalDraftFileId } from "./localDraftFileId";
 import {
   chooseFileCardThumbnailForFile,
-  fileKindUsesSessionThumbnail,
   type FileCardThumbDraftSlot,
 } from "./resolveFileCardThumbnail";
+import { editorUsesSessionThumbnail } from "./thumbnailLifecycle";
 import { isThumbnailServerMiss } from "./thumbnailServerFetchMiss";
 import { toCardSvg } from "./thumbnailService";
 import { extractThumbBg } from "./thumbnailSvg";
@@ -37,7 +37,7 @@ function buildFileCardThumbDisplay(
   const isBrowserDraft = isLocalDraftFileId(fileId);
   const thumbSvg = choice.thumbSvg;
   const cardThumbSvg = toCardSvg(thumbSvg);
-  const usesSessionThumbnail = fileKindUsesSessionThumbnail(file.kind);
+  const usesSessionThumbnail = editorUsesSessionThumbnail(file.kind);
   const thumbLoading =
     !thumbSvg &&
     !isThumbnailServerMiss(fileId, file.content_sha256) &&
@@ -107,6 +107,9 @@ export function mergeFileCardThumbDisplay(
 ): FileCardThumbDisplay {
   const fresh = resolveFileCardThumbDisplay(fileId, file);
   if (!cachedCardThumbSvg) {
+    return fresh;
+  }
+  if (fresh.thumbLoading || fresh.cardThumbSvg) {
     return fresh;
   }
   return {

@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import { FileSyncState } from "./FileSyncState";
 import { LocalThumbnailCache } from "./localThumbnailCache";
 import { resolveFileCardThumbDisplay } from "./fileCardThumbDisplay";
-import { FileSyncState } from "./FileSyncState";
 import {
   clearThumbnailServerMiss,
   markThumbnailServerMiss,

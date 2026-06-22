@@ -64,6 +64,21 @@ describe("MindMap bridge source contract", () => {
     expect(source).toContain("exportMindMapThumbnailSnapshot(");
   });
 
+  it("schedules draft thumbnails by readiness instead of a fixed debounce", () => {
+    const source = readBridgeShell(
+      "editors/mindmap/native/web/src/bridge/takeoverShell.js",
+    );
+    const scheduleBlock = source.slice(
+      source.indexOf("const scheduleDraftThumbnailExport"),
+      source.indexOf("const postMindMapDataToHost"),
+    );
+
+    expect(source).not.toContain("DRAFT_THUMB_EXPORT_DEBOUNCE_MS");
+    expect(scheduleBlock).toContain("waitForNextFrame().then(runWhenReady)");
+    expect(scheduleBlock).toContain("draftThumbExportInFlight");
+    expect(scheduleBlock).not.toContain("setTimeout");
+  });
+
   it("syncs active text edits before collecting save data and thumbnail", () => {
     const source = readBridgeShell(
       "editors/mindmap/native/web/src/bridge/takeoverShell.js",

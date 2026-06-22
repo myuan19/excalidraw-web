@@ -1,11 +1,14 @@
 import { chooseFileCardThumbnail } from "./fileCardThumbnail";
 import { fetchThumbnailSvgForCard } from "./fetchThumbnailSvgForCard";
 import { patchFileListTreeCacheThumbnailMissing } from "./fileListSessionCache";
-import { editorRegistry } from "../editors/registry";
-import { FileSyncState } from "./FileSyncState";
 import { isLocalDraftFileId } from "./localDraftFileId";
 import { LocalThumbnailCache } from "./localThumbnailCache";
 import { ensureLocalDraftThumbnailFromCache } from "./localDraftThumbnailRecovery";
+import {
+  buildThumbnailDraftSlot,
+  editorUsesSessionThumbnail,
+  type ThumbnailDraftSlot,
+} from "./thumbnailLifecycle";
 import {
   markThumbnailServerMiss,
   shouldFetchServerThumbnail,
@@ -14,33 +17,15 @@ import { toCardSvg } from "./thumbnailService";
 
 import type { ServerFile } from "./ServerSync";
 
-export function fileKindUsesSessionThumbnail(
-  kind: string | null | undefined,
-): boolean {
-  const resolved = editorRegistry.resolveKind(kind);
-  return resolved === "excalidraw" || resolved === "mindmap";
-}
-
 /** Precomputed slot from `draftStateById` — avoids duplicate sessionStorage reads on render. */
-export type FileCardThumbDraftSlot = {
-  syncState: "synced" | "draft";
-  preferLocalThumb: boolean;
-  draftHash?: string | null;
-  localDraftThumb?: string | null;
-};
+export type FileCardThumbDraftSlot = ThumbnailDraftSlot;
 
 /** 与文件列表卡片 `draftStateById` 单槽逻辑一致 */
-export function buildFileCardThumbnailSlot(fileId: string) {
-  const syncState = FileSyncState.getSyncState(fileId);
-  const preferLocalThumb = isLocalDraftFileId(fileId) || syncState === "draft";
-  const draftHash = FileSyncState.getDraftHash(fileId);
+export function buildFileCardThumbnailSlot(file: ServerFile) {
+  const slot = buildThumbnailDraftSlot(file);
   return {
-    syncState,
-    preferLocalThumb,
-    draftHash,
-    localThumb: preferLocalThumb
-      ? LocalThumbnailCache.getForDraft(fileId, draftHash)
-      : null,
+    ...slot,
+    localThumb: slot.localDraftThumb,
   };
 }
 
@@ -52,7 +37,7 @@ export function shouldAwaitSessionThumbnailBeforeServerFetch(
 ): boolean {
   return (
     syncState === "draft" &&
-    fileKindUsesSessionThumbnail(file.kind) &&
+    editorUsesSessionThumbnail(file.kind) &&
     !localDraftThumb
   );
 }
@@ -76,7 +61,7 @@ export function chooseFileCardThumbnailForFile(
       ? (draftSlot.localDraftThumb ?? null)
       : LocalThumbnailCache.getForContent(fileId, file.content_sha256);
   } else {
-    const slot = buildFileCardThumbnailSlot(fileId);
+    const slot = buildFileCardThumbnailSlot(file);
     syncState = slot.syncState;
     preferLocalThumb = slot.preferLocalThumb;
     localThumb = preferLocalThumb
@@ -89,7 +74,7 @@ export function chooseFileCardThumbnailForFile(
       syncState,
       preferLocalThumb,
       blockStaleFetchedFallback:
-        preferLocalThumb && fileKindUsesSessionThumbnail(file.kind),
+        preferLocalThumb && editorUsesSessionThumbnail(file.kind),
       localThumb,
       fetchedThumb: fetchedThumb ?? null,
       fetchedThumbContentSha,
@@ -97,6 +82,7 @@ export function chooseFileCardThumbnailForFile(
     }),
     syncState,
     preferLocalThumb,
+    localThumb,
   };
 }
 
@@ -124,7 +110,11 @@ export async function resolveFileCardThumbnailSvg(
   file: ServerFile,
   fetchedThumb?: string | null,
 ): Promise<string | null> {
-  const { choice } = chooseFileCardThumbnailForFile(fileId, file, fetchedThumb);
+  const { choice, syncState, localThumb } = chooseFileCardThumbnailForFile(
+    fileId,
+    file,
+    fetchedThumb,
+  );
   if (choice.thumbSvg) {
     return toCardSvg(choice.thumbSvg);
   }
@@ -134,6 +124,9 @@ export async function resolveFileCardThumbnailSvg(
       file.kind,
     );
     return recovered ? toCardSvg(recovered) : null;
+  }
+  if (shouldAwaitSessionThumbnailBeforeServerFetch(file, syncState, localThumb)) {
+    return null;
   }
   if (!shouldFetchServerThumbnail(fileId, file)) {
     return null;

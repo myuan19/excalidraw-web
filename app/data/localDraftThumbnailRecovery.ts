@@ -23,7 +23,10 @@ export async function ensureLocalDraftThumbnailFromCache(
   if (!isLocalDraftFileId(fileId)) {
     return null;
   }
-  const existing = LocalThumbnailCache.get(fileId);
+  const existing = LocalThumbnailCache.getForDraft(
+    fileId,
+    FileSyncState.getDraftHash(fileId),
+  );
   if (existing) {
     return existing;
   }

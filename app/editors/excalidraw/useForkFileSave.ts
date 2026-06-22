@@ -29,8 +29,7 @@ import {
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
 import { shouldDeferLeaveWhileNewDocumentHash } from "../../data/editorLeaveHome";
 import { isLocalDraftFileId } from "../../data/localDraftFileId";
-import { bindSavedFileThumbnailToContentSha } from "../../data/sessionFileThumbnail";
-import { patchFileListTreeCacheSavedFile } from "../../data/fileListSessionCache";
+import { finalizeSavedThumbnail } from "../../data/thumbnailLifecycle";
 import { notifyLocalDraftEdited } from "../../data/localDraftSessions";
 import { discardLocalDraftSession } from "../../data/discardLocalDraftSession";
 import { getLocalDraftDisplayName } from "../../data/localDraftDisplayName";
@@ -88,22 +87,6 @@ function getSavedSceneDisplayName(sceneData: SceneData): string {
     return typeof name === "string" ? name : "";
   }
   return "";
-}
-
-function patchExcalidrawFileListCacheAfterSave(
-  fileId: string,
-  sceneData: SceneData,
-  outcome: Awaited<ReturnType<typeof executeCheckpointSave>>,
-  savedThumbnail: string | null,
-): void {
-  patchFileListTreeCacheSavedFile(fileId, {
-    name: getSavedSceneDisplayName(sceneData),
-    kind: "excalidraw",
-    has_thumbnail: savedThumbnail ? true : undefined,
-    content_sha256: outcome.contentSha256 ?? undefined,
-    version: outcome.version ?? undefined,
-    updated_at: outcome.updatedAt ?? undefined,
-  });
 }
 
 async function resolveSceneForServerSave(
@@ -638,17 +621,15 @@ export function useForkFileSave(opts: {
           source,
           hash: hAfter.slice(0, 8),
         });
-        const savedThumbnail = bindSavedFileThumbnailToContentSha(
-          fid,
-          outcome.contentSha256,
-          outcome.fileThumbnail,
-        );
-        patchExcalidrawFileListCacheAfterSave(
-          fid,
-          savedSceneData,
-          outcome,
-          savedThumbnail,
-        );
+        finalizeSavedThumbnail({
+          fileId: fid,
+          kind: "excalidraw",
+          name: getSavedSceneDisplayName(savedSceneData),
+          contentSha: outcome.contentSha256,
+          version: outcome.version,
+          updatedAt: outcome.updatedAt,
+          thumbnail: outcome.fileThumbnail,
+        });
         window.dispatchEvent(
           new CustomEvent("excalidraw-server-saved", {
             detail: { id: fid, hash: hAfter },
@@ -841,17 +822,15 @@ export function useForkFileSave(opts: {
         FileSyncState.alignHashes(fid, hAfter);
         FileSyncState.clearLocalEditTime(fid);
         clearTabFileDirty(fid);
-        const savedThumbnail = bindSavedFileThumbnailToContentSha(
-          fid,
-          outcome.contentSha256,
-          outcome.fileThumbnail,
-        );
-        patchExcalidrawFileListCacheAfterSave(
-          fid,
-          savedSceneData,
-          outcome,
-          savedThumbnail,
-        );
+        finalizeSavedThumbnail({
+          fileId: fid,
+          kind: "excalidraw",
+          name: getSavedSceneDisplayName(savedSceneData),
+          contentSha: outcome.contentSha256,
+          version: outcome.version,
+          updatedAt: outcome.updatedAt,
+          thumbnail: outcome.fileThumbnail,
+        });
         window.dispatchEvent(
           new CustomEvent("excalidraw-server-saved", {
             detail: { id: fid, hash: hAfter },
