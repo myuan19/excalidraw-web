@@ -929,19 +929,37 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   );
 
   const draftStateById = useMemo(() => {
+    const isLocalEditNewerThanServer = (file: ServerFile): boolean => {
+      const localEditTime = FileSyncState.getLocalEditTime(file.id);
+      if (!localEditTime) {
+        return false;
+      }
+      const localTime = Date.parse(localEditTime);
+      const serverTime = Date.parse(file.updated_at);
+      return (
+        Number.isFinite(localTime) &&
+        Number.isFinite(serverTime) &&
+        localTime > serverTime
+      );
+    };
+
     const slotFor = (file: ServerFile) => {
       const fileId = file.id;
-      const syncState = FileSyncState.getSyncState(fileId);
+      const storedSyncState = FileSyncState.getSyncState(fileId);
+      const syncState =
+        storedSyncState === "draft" || isLocalEditNewerThanServer(file)
+          ? "draft"
+          : "synced";
       const preferLocalThumb =
         isLocalDraftFileId(fileId) || syncState === "draft";
+      const draftHash = FileSyncState.getDraftHash(fileId);
       return {
         syncState,
         baseHash: FileSyncState.getBaselineHash(fileId),
-        draftHash: FileSyncState.getDraftHash(fileId),
-        draftHash: FileSyncState.getDraftHash(fileId),
+        draftHash,
         localDraftThumb: LocalThumbnailCache.getForFileListSlot(fileId, {
           preferLocalThumb,
-          draftHash: FileSyncState.getDraftHash(fileId),
+          draftHash,
           contentSha: file.content_sha256,
         }),
       };
