@@ -208,6 +208,10 @@ function isRemoteEnabled(): boolean {
   if (env.VITE_LOG_REMOTE === "0") {
     return false;
   }
+  // Debug deploy: ingest client logs to /api/logs without requiring AI debug mode.
+  if (isDebugAllowed()) {
+    return true;
+  }
   return isAiDebugModeEnabled();
 }
 

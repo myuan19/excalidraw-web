@@ -85,14 +85,20 @@ import {
 } from "./mindMapBridgeOrigins";
 import { useMindMapHostBridge } from "./useMindMapHostBridge";
 import { toNativeMindMapBridgePayload } from "./mindMapBridgePayload";
-import { decodeNativeMindMapThumbnail } from "./mindMapNativeThumbnailRenderer";
+import {
+  decodeNativeMindMapThumbnail,
+  setMindMapEditorHostActive,
+} from "./mindMapNativeThumbnailRenderer";
 import { recordMindMapPersisted } from "./mindMapPersistCoordinator";
 import { explainRefreshCacheOnOpen } from "./mindMapOpenSyncPolicy";
 import { createMindMapHydrateCoordinator } from "./mindMapHydrateCoordinator";
 import {
+  compareMindMapTreeIntegrityRegression,
   debugMindMapPersist,
   findFirstRichMindMapNodeSummary,
   summarizeMindMapRichTextTree,
+  summarizeMindMapTreeIntegrity,
+  warnMindMapPersist,
 } from "./mindMapPersistDebug";
 import {
   clearMindMapHostDebugForward,
@@ -377,6 +383,11 @@ const MindMapEditorShell = () => {
       sinceShellStart: Math.round(performance.now() - shellStartRef.current),
     });
   }, [fileId]);
+
+  useEffect(() => {
+    setMindMapEditorHostActive(true);
+    return () => setMindMapEditorHostActive(false);
+  }, []);
 
   useEffect(() => {
     if (fileId && isLegacyTempFileId(fileId)) {
@@ -1241,8 +1252,33 @@ const MindMapEditorShell = () => {
               latestNativeRevisionRef.current = savePayload.revision;
             }
             const parsedDocument = MindMapAdapter.toDocument(parsedData);
+            const incomingIntegrity = summarizeMindMapTreeIntegrity(parsedData);
+            const previousIntegrity = previousDocument
+              ? summarizeMindMapTreeIntegrity(previousDocument.data)
+              : null;
+            let snapshotRejected = false;
+            if (isCurrentSaveResponse && previousIntegrity) {
+              const regression = compareMindMapTreeIntegrityRegression(
+                previousIntegrity,
+                incomingIntegrity,
+              );
+              if (regression.regressed) {
+                snapshotRejected = true;
+                warnMindMapPersist("save snapshot regression rejected", {
+                  requestId: savePayload.requestId ?? null,
+                  fileId8: fileId?.slice(0, 8) ?? null,
+                  reasons: regression.reasons,
+                  previous: previousIntegrity,
+                  incoming: incomingIntegrity,
+                });
+              }
+            }
+            const documentForSave =
+              snapshotRejected && previousDocument
+                ? previousDocument
+                : parsedDocument;
             const draftResult = hydrateCoordinatorRef.current.handleDraftPush(
-              parsedDocument,
+              documentForSave,
               latestDocumentRef.current,
               {
                 isSaveResponse: isCurrentSaveResponse,
@@ -1253,13 +1289,23 @@ const MindMapEditorShell = () => {
             latestDocumentRef.current = document;
             debugMindMapPersist("saveMindMapData parsed", {
               isCurrentSaveResponse,
+              snapshotRejected,
               revision: savePayload.revision ?? null,
               fileId8: fileId?.slice(0, 8) ?? null,
               hydrateDecision: hydrateDecision.reason,
               adoptBaseline: hydrateDecision.adoptBaseline,
               updateHostDocument: hydrateDecision.updateHostDocument,
-              richText: summarizeMindMapRichTextTree(parsedData),
-              sampleNode: findFirstRichMindMapNodeSummary(parsedData),
+              richText: summarizeMindMapRichTextTree(
+                snapshotRejected ? document.data : parsedData,
+              ),
+              integrity: snapshotRejected
+                ? previousIntegrity
+                : incomingIntegrity,
+              previousIntegrity,
+              rejectedIntegrity: snapshotRejected ? incomingIntegrity : null,
+              sampleNode: findFirstRichMindMapNodeSummary(
+                snapshotRejected ? document.data : parsedData,
+              ),
             });
             if (savePayload.thumbnail) {
               LocalThumbnailCache.set(fileId, savePayload.thumbnail);

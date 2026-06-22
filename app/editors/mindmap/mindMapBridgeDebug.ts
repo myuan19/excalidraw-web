@@ -1,4 +1,7 @@
 import { devDebug, isDevDebugChannelEnabled } from "../../lib/devDebug";
+import { createLogger } from "../../lib/logger";
+
+const logBridge = createLogger({ module: "mindmap-bridge" });
 
 const NOISY_BRIDGE_LABEL_PREFIXES = [
   "onMessage mindMapViewState",
@@ -57,11 +60,14 @@ export function debugMindMapBridge(
   devDebug("mindmap-bridge", label, data);
 }
 
-/** Always logged — bridge/save hard failures. */
+/** Always logged — bridge/save hard failures (console + debug log ingest). */
 export function warnMindMapBridge(
   label: string,
   data: Record<string, unknown> = {},
 ): void {
+  logBridge.event("warn", "mindmap-bridge.warn", label, {
+    fields: { ...data, elapsedMs: Math.round(performance.now()) },
+  });
   console.warn(`[mindmap-bridge] ${label}`, {
     t: Math.round(performance.now()),
     ...data,

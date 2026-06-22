@@ -107,6 +107,23 @@ export function patchFileListTreeCacheSavedFile(
   writeFileListTreeCache({ folders: tree.folders, files: nextFiles });
 }
 
+/** 导入完成后乐观写入列表缓存，避免 refresh 竞态导致新文件不可见。 */
+export function upsertFileListTreeCacheFiles(entries: ServerFile[]): void {
+  if (entries.length === 0) {
+    return;
+  }
+  const tree = readFileListTreeCache() ?? { folders: [], files: [] };
+  const byId = new Map(tree.files.map((file) => [file.id, file]));
+  for (const entry of entries) {
+    const { data: _data, ...rest } = entry;
+    byId.set(entry.id, { ...byId.get(entry.id), ...rest });
+  }
+  writeFileListTreeCache({
+    folders: tree.folders,
+    files: [...byId.values()],
+  });
+}
+
 /**
  * 缩略图 404 后修正本 tab 的列表缓存，避免首页再次用旧 has_thumbnail
  * 乐观拉取同一版本的缺失缩略图。

@@ -33,6 +33,7 @@ const MAX_EVENT_LEN = 120;
 const MAX_CONTEXT_VALUE_LEN = 120;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_BATCHES = 60;
+const RATE_LIMIT_MAX_BATCHES_DEBUG = 300;
 
 const rateBuckets = new Map();
 
@@ -40,7 +41,10 @@ function rateLimitKey(req) {
   return req.ip || req.headers["x-forwarded-for"] || "unknown";
 }
 
-function isRateLimited(req) {
+function isRateLimited(req, debugMode) {
+  const maxBatches = debugMode
+    ? RATE_LIMIT_MAX_BATCHES_DEBUG
+    : RATE_LIMIT_MAX_BATCHES;
   const now = Date.now();
   const key = rateLimitKey(req);
   const current = rateBuckets.get(key);
@@ -49,7 +53,7 @@ function isRateLimited(req) {
     return false;
   }
   current.count += 1;
-  return current.count > RATE_LIMIT_MAX_BATCHES;
+  return current.count > maxBatches;
 }
 
 function sanitizeData(data) {
@@ -83,7 +87,7 @@ router.post("/", (req, res) => {
   if (!isDebugLogAllowed() || !debugMode || !isClientLogIngestEnabled()) {
     return res.status(204).send();
   }
-  if (isRateLimited(req)) {
+  if (isRateLimited(req, debugMode)) {
     logCollectorEvent("warn", "rate_limited", "batch rate limited", {
       ip: req.ip,
       debugMode,

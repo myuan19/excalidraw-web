@@ -190,6 +190,20 @@ function showExpandBtnNow() {
 function handleExpandBtnZoneClick(e) {
   const { notShowExpandBtn } = this.mindMap.opt
   if (notShowExpandBtn) return
+  const textEdit =
+    this.mindMap.renderer &&
+    this.mindMap.renderer.textEdit
+  if (textEdit && typeof textEdit.hideEditTextBox === 'function') {
+    textEdit.hideEditTextBox()
+  }
+  try {
+    const selection = window.getSelection && window.getSelection()
+    if (selection && selection.removeAllRanges) {
+      selection.removeAllRanges()
+    }
+  } catch (_error) {
+    // ignore
+  }
   this.showExpandBtnNow()
   this.mindMap.execCommand('SET_NODE_EXPAND', this, !this.getData('expand'))
   this.mindMap.emit('expand_btn_click', this)

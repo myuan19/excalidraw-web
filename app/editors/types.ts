@@ -15,6 +15,19 @@ export interface EditorImportFileContext {
   folderId: string | null;
 }
 
+/** Result returned after a successful import for file-list reconciliation. */
+export interface EditorImportFileResult {
+  id: string;
+  name: string;
+  kind: string;
+  folder_id: string | null;
+  content_sha256?: string | null;
+  has_thumbnail?: boolean;
+  created_at?: string;
+  updated_at?: string;
+  version?: number;
+}
+
 /**
  * Host-facing plugin contract for a document editor.
  *
@@ -30,6 +43,8 @@ export interface EditorPlugin {
   isDefault?: boolean;
   /** Warm the editor chunk after the file list finishes its first load. */
   prefetchOnFileListReady?: boolean;
+  /** Optional: warm hidden runtimes (e.g. MindMap thumbnail iframe pool). */
+  warmFileListAssets?: () => void;
   /** Omit `kind` in `#file=` hashes when opening this editor. */
   omitKindInHash?: boolean;
 
@@ -45,7 +60,7 @@ export interface EditorPlugin {
   createFile?: (ctx: EditorCreateFileContext) => Promise<{ id: string }>;
 
   /** Import an uploaded file (required for drag/drop import of this kind). */
-  importFile?: (ctx: EditorImportFileContext) => Promise<{ id: string }>;
+  importFile?: (ctx: EditorImportFileContext) => Promise<EditorImportFileResult>;
 
   /** Normalize stored/raw payload before handing to the embed viewer. */
   prepareEmbedData?: (raw: unknown) => unknown;

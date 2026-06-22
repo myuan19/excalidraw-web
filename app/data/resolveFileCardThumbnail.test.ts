@@ -61,14 +61,15 @@ describe("resolveFileCardThumbnail", () => {
     expect(stale.finalSource).toBe("none");
     expect(stale.thumbSvg).toBeNull();
 
+    LocalThumbnailCache.clear("file-1");
     LocalThumbnailCache.set("file-1", "<svg id='draft'></svg>");
-    const overwritten = chooseFileCardThumbnailForFile(
+    const unbound = chooseFileCardThumbnailForFile(
       "file-1",
       mockFile(),
       null,
     );
-    expect(overwritten.finalSource).toBe("none");
-    expect(overwritten.thumbSvg).toBeNull();
+    expect(unbound.finalSource).toBe("none");
+    expect(unbound.thumbSvg).toBeNull();
   });
 
   it("prefers local thumb for browser drafts like the file list", () => {

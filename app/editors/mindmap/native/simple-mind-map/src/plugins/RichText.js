@@ -514,6 +514,14 @@ class RichText {
       }
       this.setIsShowTextEdit(false)
       this.mindMap.emit('rich_text_selection_change', false)
+      try {
+        const selection = window.getSelection && window.getSelection()
+        if (selection && selection.removeAllRanges) {
+          selection.removeAllRanges()
+        }
+      } catch (_error) {
+        // ignore
+      }
       this.range = null
       this.lastRange = null
       this.pasteUseRange = null
@@ -531,6 +539,14 @@ class RichText {
     this.textEditNode.innerHTML = ''
     this.setIsShowTextEdit(false)
     this.mindMap.emit('rich_text_selection_change', false)
+    try {
+      const selection = window.getSelection && window.getSelection()
+      if (selection && selection.removeAllRanges) {
+        selection.removeAllRanges()
+      }
+    } catch (_error) {
+      // ignore
+    }
     this.range = null
     this.lastRange = null
     this.pasteUseRange = null

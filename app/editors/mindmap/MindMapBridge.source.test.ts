@@ -48,12 +48,19 @@ describe("MindMap bridge source contract", () => {
       "editors/mindmap/native/web/src/bridge/takeoverShell.js",
     );
     const exportBlock = source.slice(
+      source.indexOf("const exportThumbnailForSnapshot"),
+      source.indexOf("const exportMindMapThumbnailSnapshot"),
+    );
+    const draftExportBlock = source.slice(
       source.indexOf("const exportMindMapThumbnailSnapshot"),
       source.indexOf("const scheduleDraftThumbnailExport"),
     );
     expect(exportBlock).toContain("forceLoadNode");
     expect(exportBlock).toContain("waitForNodeTreeRenderEnd");
-    expect(exportBlock).toContain("syncPendingTextEditForSnapshot");
+    expect(exportBlock).toContain("ensureCanvasMatchesSnapshot");
+    expect(draftExportBlock).toContain("syncPendingTextEditForSnapshot");
+    expect(draftExportBlock).toContain("usePersistCopy: true");
+    expect(draftExportBlock).toContain("exportThumbnailForSnapshot");
     expect(source).toContain("exportMindMapThumbnailSnapshot(");
   });
 
@@ -65,17 +72,34 @@ describe("MindMap bridge source contract", () => {
       source.indexOf("if (message.type === 'requestMindMapSave')"),
       source.indexOf("if (message.type === 'updateRootText'"),
     );
+    const postDataBlock = source.slice(
+      source.indexOf("const postMindMapDataToHost = async (data, requestId, thumbnail"),
+      source.indexOf("const resolveHostRequest = message =>"),
+    );
 
+    const collectBlock = source.slice(
+      source.indexOf("const collectMindMapSaveSnapshot"),
+      source.indexOf("const ensureCanvasMatchesSnapshot"),
+    );
+    const thumbnailExportBlock = source.slice(
+      source.indexOf("const exportThumbnailForSnapshot"),
+      source.indexOf("const exportMindMapThumbnailSnapshot"),
+    );
     expect(source).toContain("syncPendingTextEditForSnapshot");
-    expect(saveRequestBlock).toContain(
-      "await syncPendingTextEditForSnapshot('request-save')",
-    );
+    expect(collectBlock).toContain("usePersistCopy: true");
+    expect(collectBlock).not.toContain("forceLoadNode");
+    expect(thumbnailExportBlock).toContain("ensureCanvasMatchesSnapshot");
+    expect(thumbnailExportBlock).toContain("forceLoadNode");
+    expect(saveRequestBlock).toContain("collectMindMapSaveSnapshot");
+    expect(saveRequestBlock).toContain("exportThumbnailForSnapshot");
     expect(
-      saveRequestBlock.indexOf("syncPendingTextEditForSnapshot"),
-    ).toBeLessThan(saveRequestBlock.indexOf("nativeMindMap.getData(true)"));
-    expect(saveRequestBlock.indexOf("nativeMindMap.getData(true)")).toBeLessThan(
-      saveRequestBlock.indexOf("postMindMapDataToHost"),
-    );
+      saveRequestBlock.indexOf("collectMindMapSaveSnapshot"),
+    ).toBeLessThan(saveRequestBlock.indexOf("exportThumbnailForSnapshot"));
+    expect(
+      saveRequestBlock.indexOf("exportThumbnailForSnapshot"),
+    ).toBeLessThan(saveRequestBlock.indexOf("postMindMapDataToHost"));
+    expect(postDataBlock).toContain("if (!thumbnail)");
+    expect(postDataBlock).toContain("scheduleDraftThumbnailExport(revision)");
   });
 
   it("suppresses draft pushes to host while hydrate dirty notify is disabled", () => {

@@ -62,9 +62,9 @@ export const LocalThumbnailCache = {
           this.metaKey(fileId),
           JSON.stringify({ contentSha: opts.contentSha ?? null }),
         );
-      } else {
-        sessionStorage.removeItem(this.metaKey(fileId));
       }
+      // Omitting opts preserves existing contentSha meta so async draft
+      // thumbnail updates do not invalidate synced file-list lookups.
       logThumb.debug(
         `localThumb set ${fileId.slice(0, 8)} len=${
           svg.length

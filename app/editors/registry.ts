@@ -142,6 +142,7 @@ export function createEditorRegistry(plugins: EditorPlugin[]) {
         if (plugin.prefetchOnFileListReady) {
           plugin.loadEditorShell().catch(() => {});
         }
+        plugin.warmFileListAssets?.();
       }
     },
   };

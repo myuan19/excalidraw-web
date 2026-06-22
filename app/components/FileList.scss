@@ -66,8 +66,7 @@
   border-bottom: var(--nb-border-width) solid var(--fl-border);
   position: sticky;
   top: 0;
-  /* 高于 .filelist__import-blocking，导入中仍可在顶栏拖放/点击 */
-  z-index: calc(var(--nb-z-filelist-import) + 1);
+  z-index: 1;
   gap: var(--nb-space-6);
   flex-wrap: wrap;
   backdrop-filter: blur(var(--nb-filelist-blur-header)) saturate(1.35);
@@ -371,7 +370,7 @@
   background: var(--nb-filelist-header-bg);
   backdrop-filter: blur(var(--nb-filelist-blur-header)) saturate(1.35);
   box-shadow: 0 var(--nb-border-width) 0 var(--nb-filelist-header-line);
-  z-index: calc(var(--nb-z-filelist-import) + 1);
+  z-index: 1;
   flex-wrap: wrap;
 }
 
@@ -970,7 +969,7 @@
 .filelist__error,
 .filelist__notice {
   position: relative;
-  z-index: calc(var(--nb-z-filelist-import) + 1);
+  z-index: 1;
   margin: var(--nb-space-4) var(--nb-space-8) 0;
   flex-shrink: 0;
   padding: var(--nb-space-3) var(--nb-space-7);
@@ -979,16 +978,46 @@
   line-height: 1.5;
 }
 
+.filelist__error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--nb-space-4);
+  background: var(--nb-danger-surface);
+  color: var(--nb-danger-foreground);
+  border: var(--nb-border-width) solid var(--nb-danger-border);
+}
+
+.filelist__error-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.filelist__error-dismiss {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--nb-space-12);
+  height: var(--nb-space-12);
+  margin: calc(var(--nb-space-1) * -1) calc(var(--nb-space-2) * -1) 0 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--nb-radius-xs);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.72;
+
+  &:hover {
+    opacity: 1;
+    background: color-mix(in srgb, currentColor 12%, transparent);
+  }
+}
+
 .filelist__hint {
   background: var(--fl-primary-soft);
   color: var(--fl-primary);
   border: var(--nb-border-width) solid var(--nb-filelist-hint-border);
-}
-
-.filelist__error {
-  background: var(--nb-danger-surface);
-  color: var(--nb-danger-foreground);
-  border: var(--nb-border-width) solid var(--nb-danger-border);
 }
 
 /* 导入成功等：非错误提示（与 .filelist__error 区分） */
@@ -1428,13 +1457,14 @@
 }
 
 .filelist__import-blocking {
-  z-index: var(--nb-z-filelist-import);
+  z-index: calc(var(--nb-z-filelist-import) + 2);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: var(--nb-space-8);
   background: color-mix(in srgb, var(--fl-bg) 62%, transparent);
   backdrop-filter: blur(calc(var(--nb-blur-sheet) * 0.45)) saturate(1.08);
+  pointer-events: none;
 }
 
 .filelist__import-card {
@@ -1449,11 +1479,23 @@
   box-shadow: var(--nb-shadow-lg);
   color: var(--nb-text);
   animation: modalSlideUp var(--nb-dur-enter) var(--nb-ease-ui);
+  pointer-events: none;
+}
+
+.filelist__import-spinner,
+.filelist__import-icon {
+  width: var(--nb-space-10);
+  height: var(--nb-space-10);
+}
+
+.filelist__import-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fl-primary);
 }
 
 .filelist__import-spinner {
-  width: var(--nb-space-10);
-  height: var(--nb-space-10);
   border-radius: 999px;
   border: 2px solid var(--fl-border);
   border-top-color: var(--fl-primary);

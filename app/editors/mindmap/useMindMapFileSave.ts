@@ -59,6 +59,7 @@ import { recordMindMapPersisted } from "./mindMapPersistCoordinator";
 import {
   debugMindMapPersist,
   findFirstRichMindMapNodeSummary,
+  summarizeMindMapTreeIntegrity,
 } from "./mindMapPersistDebug";
 import {
   getCachedMindMapServerSha,
@@ -84,6 +85,23 @@ export { getCachedMindMapServerSha, toMindMapLocalCacheRecord };
 
 const logSave = createLogger({ module: "save" });
 
+function bindSavedMindMapThumbnailToContentSha(
+  fileId: string,
+  thumbnail: string | null | undefined,
+  contentSha256: string | null | undefined,
+): string | null {
+  const resolved =
+    (typeof thumbnail === "string" && thumbnail.length > 0
+      ? thumbnail
+      : null) ?? LocalThumbnailCache.get(fileId);
+  if (resolved && contentSha256) {
+    LocalThumbnailCache.set(fileId, resolved, {
+      contentSha: contentSha256,
+    });
+  }
+  return resolved;
+}
+
 type MindMapSaveDocument = ManagedDocument<MindMapDocumentData>;
 
 export type MindMapNativeSaveResult = {
@@ -100,7 +118,7 @@ type ServerSaveMeta = {
   version: number | null;
 };
 
-const MINDMAP_SAVE_TIMEOUT_MS = 8000;
+const MINDMAP_SAVE_TIMEOUT_MS = 15_000;
 
 function isSilentSaveSource(source: SaveToServerSource): boolean {
   return source === "auto" || source === "visibility" || source === "thumbnail";
@@ -486,6 +504,13 @@ export function useMindMapFileSave(opts: {
 
       const nativeSave = await requestNativeMindMapData();
       if (!nativeSave) {
+        logSave.event("warn", "mindmap.save.native-empty", "native save returned null", {
+          fields: {
+            fileId8: fileId.slice(0, 8),
+            source,
+            navigateAfter,
+          },
+        });
         if (navigateAfter) {
           finishNavigateHome();
         }
@@ -557,6 +582,7 @@ export function useMindMapFileSave(opts: {
         source,
         contentHash8: hash.slice(0, 8),
         baselineHash8: baseline?.slice(0, 8) ?? null,
+        integrity: summarizeMindMapTreeIntegrity(document.data),
         sampleNode: findFirstRichMindMapNodeSummary(document.data),
       });
 
@@ -586,7 +612,8 @@ export function useMindMapFileSave(opts: {
               document,
             },
             {
-              resolveFileThumbnailForPut: async () => thumbnail ?? undefined,
+              resolveFileThumbnailForPut: async () =>
+                thumbnail ?? LocalThumbnailCache.get(fileId) ?? undefined,
               putDocument: async ({
                 thumbnail: thumbForPut,
                 checkpointPolicy,
@@ -686,15 +713,15 @@ export function useMindMapFileSave(opts: {
           serverContentSha256: outcome.contentSha256 ?? undefined,
           serverVersion: outcome.version ?? undefined,
         });
-        if (thumbnail && outcome.contentSha256) {
-          LocalThumbnailCache.set(fileId, thumbnail, {
-            contentSha: outcome.contentSha256,
-          });
-        }
+        const savedThumbnail = bindSavedMindMapThumbnailToContentSha(
+          fileId,
+          thumbnail,
+          outcome.contentSha256,
+        );
         patchFileListTreeCacheSavedFile(fileId, {
           name: displayName,
           kind: "mindmap",
-          has_thumbnail: thumbnail ? true : undefined,
+          has_thumbnail: savedThumbnail ? true : undefined,
           content_sha256: outcome.contentSha256 ?? undefined,
           version: outcome.version ?? undefined,
           updated_at: outcome.updatedAt ?? undefined,
@@ -815,7 +842,8 @@ export function useMindMapFileSave(opts: {
               checkpointPolicyOverride,
             },
             {
-              resolveFileThumbnailForPut: async () => thumbnail ?? undefined,
+              resolveFileThumbnailForPut: async () =>
+                thumbnail ?? LocalThumbnailCache.get(fileId) ?? undefined,
               putDocument: async ({
                 thumbnail: thumbForPut,
                 checkpointPolicy,
@@ -879,15 +907,15 @@ export function useMindMapFileSave(opts: {
           serverContentSha256: outcome.contentSha256 ?? undefined,
           serverVersion: outcome.version ?? undefined,
         });
-        if (thumbnail && outcome.contentSha256) {
-          LocalThumbnailCache.set(fileId, thumbnail, {
-            contentSha: outcome.contentSha256,
-          });
-        }
+        const savedThumbnail = bindSavedMindMapThumbnailToContentSha(
+          fileId,
+          thumbnail,
+          outcome.contentSha256,
+        );
         patchFileListTreeCacheSavedFile(fileId, {
           name: displayName,
           kind: "mindmap",
-          has_thumbnail: thumbnail ? true : undefined,
+          has_thumbnail: savedThumbnail ? true : undefined,
           content_sha256: outcome.contentSha256 ?? undefined,
           version: outcome.version ?? undefined,
           updated_at: outcome.updatedAt ?? undefined,

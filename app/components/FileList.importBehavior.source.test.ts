@@ -19,8 +19,11 @@ describe("FileList import behavior source contract", () => {
 
     expect(importBranch).not.toContain("lastImportedMindMapId");
     expect(importBranch).not.toContain("onOpenFile({");
-    expect(importBranch).toContain(
-      "await refresh({ silent: true, noErrorOnFailure: true })",
-    );
+    expect(importBranch).toContain("mustApply: true");
+    expect(importBranch).toContain("importTargetFolderIdRef");
+    expect(importBranch).toContain('setSidebarView("all")');
+    expect(importBranch).toContain("setCurrentFolderId(targetFolderId)");
+    expect(importBranch).toContain("upsertFileListTreeCacheFiles");
+    expect(importBranch).toContain("mergeImportedServerFiles");
   });
 });

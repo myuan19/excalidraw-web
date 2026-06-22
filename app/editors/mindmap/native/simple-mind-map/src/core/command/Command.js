@@ -4,7 +4,8 @@ import {
   throttle,
   isSameObject,
   transformTreeDataToObject,
-  sanitizeRenderTreeSnapshot
+  sanitizeRenderTreeSnapshot,
+  getRenderTreeFromHistorySnapshot
 } from '../../utils'
 import { ERROR_TYPES } from '../../constants/constant'
 import pkg from '../../../package.json'
@@ -233,6 +234,26 @@ class Command {
     }
   }
 
+  countSnapshotTreeNodes(snapshot) {
+    if (!snapshot) {
+      return 0
+    }
+    const root = getRenderTreeFromHistorySnapshot(snapshot)
+    if (!root) {
+      return 0
+    }
+    let count = 0
+    const walk = node => {
+      if (!node || !node.data) {
+        return
+      }
+      count += 1
+      ;(node.children || []).forEach(walk)
+    }
+    walk(root)
+    return count
+  }
+
   //  获取渲染树数据副本
   getCopyData() {
     if (!this.mindMap.renderer.renderTree) return null
@@ -247,6 +268,38 @@ class Command {
       this.mindMap.getConfig('rainbowLinesConfig') || {}
     )
     return sanitizeRenderTreeSnapshot(res)
+  }
+
+  /** Persist path: if render tree snapshot is incomplete, fall back to history. */
+  getPersistCopyData() {
+    const fresh = this.getCopyData()
+    if (!fresh || this.history.length <= 0) {
+      return fresh
+    }
+    let historic = null
+    try {
+      historic = JSON.parse(this.history[this.activeHistoryIndex])
+    } catch (error) {
+      return fresh
+    }
+    if (!historic) {
+      return fresh
+    }
+    const freshCount = this.countSnapshotTreeNodes(fresh)
+    const historicCount = this.countSnapshotTreeNodes(historic)
+    if (historicCount > freshCount) {
+      return {
+        ...historic,
+        theme: fresh.theme,
+        themeConfig: fresh.themeConfig,
+        layout: fresh.layout,
+        outerFramePaddingX: fresh.outerFramePaddingX,
+        outerFramePaddingY: fresh.outerFramePaddingY,
+        rainbowLinesConfig: fresh.rainbowLinesConfig,
+        smmVersion: fresh.smmVersion
+      }
+    }
+    return fresh
   }
 
   // 移除节点数据中的uid

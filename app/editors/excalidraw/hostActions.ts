@@ -2,11 +2,13 @@ import { FileSyncState } from "../../data/FileSyncState";
 import { createBlankExcalidrawInitialScene } from "../../data/forkFileScene";
 import { buildAndCacheFileThumbnail } from "../../data/thumbnailService";
 import { loadExcalidrawFileAsServerSceneData } from "../../data/importExcalidrawScene";
+import { LocalThumbnailCache } from "../../data/localThumbnailCache";
 import { ServerSync } from "../../data/ServerSync";
 
 import type {
   EditorCreateFileContext,
   EditorImportFileContext,
+  EditorImportFileResult,
 } from "../types";
 
 export async function createExcalidrawFile({
@@ -47,7 +49,7 @@ export async function importExcalidrawFile({
   file,
   fileName,
   folderId,
-}: EditorImportFileContext): Promise<{ id: string }> {
+}: EditorImportFileContext): Promise<EditorImportFileResult> {
   const {
     elements,
     appState,
@@ -66,6 +68,11 @@ export async function importExcalidrawFile({
     thumbnail,
     { source: "import-excalidraw" },
   );
+  if (thumbnail && saveResult.content_sha256) {
+    LocalThumbnailCache.set(created.id, thumbnail, {
+      contentSha: saveResult.content_sha256,
+    });
+  }
   FileSyncState.setServerSyncedLocalCache(created.id, {
     elements,
     appState,
@@ -80,5 +87,15 @@ export async function importExcalidrawFile({
         : {}),
     },
   });
-  return { id: created.id };
+  return {
+    id: created.id,
+    name: fileName,
+    kind: "excalidraw",
+    folder_id: folderId ?? null,
+    content_sha256: saveResult.content_sha256 ?? null,
+    has_thumbnail: !!thumbnail,
+    created_at: created.created_at,
+    updated_at: saveResult.updated_at ?? created.updated_at,
+    version: saveResult.version,
+  };
 }

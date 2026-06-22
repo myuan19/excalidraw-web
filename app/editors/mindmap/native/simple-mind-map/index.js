@@ -525,11 +525,15 @@ class MindMap {
   }
 
   //  获取思维导图数据，节点树、主题、布局等
-  getData(withConfig) {
-    if (this.renderer && this.renderer.textEdit) {
+  getData(withConfig, options = {}) {
+    const skipTextSync = options && options.skipTextSync === true
+    const usePersistCopy = options && options.usePersistCopy === true
+    if (!skipTextSync && this.renderer && this.renderer.textEdit) {
       this.renderer.textEdit.syncEditingTextToNode()
     }
-    const historyData = this.command.getCopyData()
+    const historyData = usePersistCopy
+      ? this.command.getPersistCopyData()
+      : this.command.getCopyData()
     let nodeData = getRenderTreeFromHistorySnapshot(historyData)
     let data = {}
     if (withConfig) {

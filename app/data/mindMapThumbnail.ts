@@ -10,19 +10,24 @@ export async function generateMindMapThumbnailAndCache(
   fileId: string,
   data: MindMapDocumentData,
 ): Promise<string | undefined> {
+  const fileId8 = fileId.slice(0, 8);
   try {
     const thumbnail = await generateNativeMindMapThumbnailAndCache(
       fileId,
       data,
     );
-    logThumb.debug(
-      `generateMindMapThumb ${fileId.slice(0, 8)}, svgLen=${
-        thumbnail?.length ?? 0
-      }`,
-    );
+    if (!thumbnail) {
+      logThumb.event("warn", "generateMindMapThumb FAILED", fileId8, {
+        fields: { fileId8, svgLen: 0 },
+      });
+      return undefined;
+    }
+    logThumb.debug(`generateMindMapThumb ${fileId8}, svgLen=${thumbnail.length}`);
     return thumbnail;
   } catch (err) {
-    logThumb.debug(`generateMindMapThumb ${fileId.slice(0, 8)} FAILED`, err);
+    logThumb.event("warn", "generateMindMapThumb FAILED", fileId8, {
+      fields: { fileId8, error: String(err) },
+    });
     return undefined;
   }
 }

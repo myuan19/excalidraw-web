@@ -51,6 +51,41 @@
             })
         )
       }
+      const summarizeMindMapPayloadIntegrity = data => {
+        const plainFromHtml = value => {
+          return String(value || '')
+            .replace(/<br\s*\/?>/gi, '\n')
+            .replace(/<\/p\s*>/gi, '\n')
+            .replace(/<[^>]*>/g, '')
+            .replace(/\u00a0/g, ' ')
+            .trim()
+        }
+        const totals = {
+          nodeCount: 0,
+          emptyTextCount: 0,
+          rootChildren: 0,
+          collapsedWithChildrenCount: 0,
+          maxDepth: 0
+        }
+        const walk = (node, depth) => {
+          if (!node || !node.data) return
+          totals.nodeCount += 1
+          totals.maxDepth = Math.max(totals.maxDepth, depth)
+          if (!plainFromHtml(node.data.text)) {
+            totals.emptyTextCount += 1
+          }
+          const children = node.children || []
+          if (node.data.expand === false && children.length > 0) {
+            totals.collapsedWithChildrenCount += 1
+          }
+          children.forEach(child => walk(child, depth + 1))
+        }
+        if (data && data.root) {
+          totals.rootChildren = (data.root.children || []).length
+          walk(data.root, 1)
+        }
+        return totals
+      }
       const summarizeMindMapPayloadRichText = payload => {
         let sample = ''
         const root =
@@ -359,8 +394,11 @@
           if (synced && typeof synced.then === 'function') {
             await synced
           }
-          await waitForNextFrame()
-          debugMindMapOpen('synced text edit before snapshot', { reason })
+          await waitForNodeTreeRenderEnd()
+          debugMindMapOpen('synced text edit before snapshot', {
+            reason,
+            synced: !!synced
+          })
           return !!synced
         } catch (error) {
           console.warn('Failed to sync MindMap text edit before snapshot', error)
@@ -389,6 +427,85 @@
           window.setTimeout(resolve, 0)
         })
       }
+      const countSnapshotNodes = data =>
+        summarizeMindMapPayloadIntegrity(data).nodeCount
+      const collectMindMapSaveSnapshot = async (requestId, reason) => {
+        if (!nativeMindMap || typeof nativeMindMap.getData !== 'function') {
+          return null
+        }
+        await syncPendingTextEditForSnapshot(reason || 'request-save')
+        if (!renderEnded) {
+          await waitForNodeTreeRenderEnd()
+        }
+        const data = nativeMindMap.getData(true, {
+          skipTextSync: true,
+          usePersistCopy: true
+        })
+        if (isMindMapDebugEnabled()) {
+          debugMindMapOpen('request-save snapshot collected', {
+            requestId: requestId || null,
+            ...summarizeMindMapPayloadIntegrity(data)
+          })
+        }
+        return data
+      }
+      const ensureCanvasMatchesSnapshot = async snapshotData => {
+        if (
+          !nativeMindMap ||
+          !snapshotData ||
+          typeof nativeMindMap.getData !== 'function' ||
+          typeof nativeMindMap.setFullData !== 'function'
+        ) {
+          return false
+        }
+        const liveData = nativeMindMap.getData(true, { skipTextSync: true })
+        const snapCount = countSnapshotNodes(snapshotData)
+        const liveCount = countSnapshotNodes(liveData)
+        if (snapCount === liveCount) {
+          return false
+        }
+        debugMindMapOpen('snapshot thumbnail canvas resync', {
+          snapCount,
+          liveCount
+        })
+        nativeMindMap.setFullData(snapshotData)
+        renderEnded = false
+        await waitForNodeTreeRenderEnd()
+        return true
+      }
+      const exportThumbnailForSnapshot = async (snapshotData, reason) => {
+        if (!nativeMindMap) {
+          return null
+        }
+        await ensureCanvasMatchesSnapshot(snapshotData)
+        const needsForceLoad =
+          (nativeMindMap.opt && nativeMindMap.opt.openPerformance) ||
+          !renderEnded
+        if (
+          needsForceLoad &&
+          nativeMindMap.renderer &&
+          typeof nativeMindMap.renderer.forceLoadNode === 'function'
+        ) {
+          renderEnded = false
+          nativeMindMap.renderer.forceLoadNode()
+          await waitForNodeTreeRenderEnd()
+        } else if (!renderEnded) {
+          debugMindMapOpen('snapshot thumbnail export waiting for render end', {
+            reason
+          })
+          await waitForNodeTreeRenderEnd()
+        }
+        const exportStart = performance.now()
+        const thumbnail = await getMindMapThumbnail()
+        debugMindMapOpen('snapshot thumbnail export done', {
+          reason,
+          elapsed: Math.round(performance.now() - exportStart),
+          hasThumbnail: !!thumbnail,
+          thumbnailLength: thumbnail ? thumbnail.length : 0,
+          snapshotNodeCount: countSnapshotNodes(snapshotData)
+        })
+        return thumbnail
+      }
       const exportMindMapThumbnailSnapshot = async (revisionAtExport, reason) => {
         if (!nativeMindMap) {
           debugMindMapOpen('draft thumbnail export skipped (no mind map)', {
@@ -398,29 +515,17 @@
           return null
         }
         await syncPendingTextEditForSnapshot(reason || 'draft-thumbnail')
-        if (
-          nativeMindMap.renderer &&
-          typeof nativeMindMap.renderer.forceLoadNode === 'function'
-        ) {
-          renderEnded = false
-          nativeMindMap.renderer.forceLoadNode()
-          await waitForNodeTreeRenderEnd()
-        } else if (!renderEnded) {
-          debugMindMapOpen('draft thumbnail export waiting for render end', {
-            revision: revisionAtExport,
-            reason
-          })
-          await waitForNodeTreeRenderEnd()
-        }
-        const exportStart = performance.now()
-        const thumbnail = await getMindMapThumbnail()
-        debugMindMapOpen('draft thumbnail export done', {
-          revision: revisionAtExport,
-          reason,
-          elapsed: Math.round(performance.now() - exportStart),
-          hasThumbnail: !!thumbnail,
-          thumbnailLength: thumbnail ? thumbnail.length : 0
-        })
+        const snapshotData =
+          typeof nativeMindMap.getData === 'function'
+            ? nativeMindMap.getData(true, {
+                skipTextSync: true,
+                usePersistCopy: true
+              })
+            : null
+        const thumbnail = await exportThumbnailForSnapshot(
+          snapshotData,
+          reason || 'draft-thumbnail'
+        )
         if (!thumbnail) {
           return null
         }
@@ -442,35 +547,27 @@
           )
         }, DRAFT_THUMB_EXPORT_DEBOUNCE_MS)
       }
-      const postMindMapDataToHost = async (data, requestId) => {
+      const postMindMapDataToHost = async (data, requestId, thumbnail = null) => {
         const revision = ++mindMapDataRevision
         if (requestId) {
-          const exportStart = performance.now()
-          debugMindMapOpen('postMindMapDataToHost before thumbnail export', {
+          debugMindMapOpen('postMindMapDataToHost request-save', {
             requestId,
             revision,
             rootChildren:
               data && data.root && data.root.children
                 ? data.root.children.length
-                : 0
-          })
-          const thumbnail = await exportMindMapThumbnailSnapshot(
-            revision,
-            'request-save'
-          )
-          debugMindMapOpen('postMindMapDataToHost after thumbnail export', {
-            requestId,
-            revision,
-            elapsed: Math.round(performance.now() - exportStart),
-            hasThumbnail: !!thumbnail,
-            thumbnailLength: thumbnail ? thumbnail.length : 0
+                : 0,
+            hasThumbnail: !!thumbnail
           })
           postToHost('saveMindMapData', {
             requestId,
             revision,
             data,
-            thumbnail
+            thumbnail: thumbnail || null
           })
+          if (!thumbnail) {
+            scheduleDraftThumbnailExport(revision)
+          }
           return
         }
         if (!dirtyNotifyEnabled) {
@@ -992,11 +1089,23 @@
             )
             return
           }
-          if (nativeMindMap && typeof nativeMindMap.getData === 'function') {
-            await syncPendingTextEditForSnapshot('request-save')
-            bridgeState.mindMapData = nativeMindMap.getData(true)
+          bridgeState.mindMapData =
+            (await collectMindMapSaveSnapshot(requestId, 'request-save')) ||
+            bridgeState.mindMapData
+          let thumbnail = null
+          try {
+            thumbnail = await exportThumbnailForSnapshot(
+              bridgeState.mindMapData,
+              'request-save'
+            )
+          } catch (error) {
+            console.warn('Failed to export MindMap save thumbnail', error)
           }
-          postMindMapDataToHost(bridgeState.mindMapData, requestId)
+          postMindMapDataToHost(
+            bridgeState.mindMapData,
+            requestId,
+            thumbnail
+          )
         }
         if (message.type === 'updateRootText') {
           const newText = message.payload && message.payload.text

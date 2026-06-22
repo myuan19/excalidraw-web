@@ -26,6 +26,7 @@ import {
 } from "../lib/devDebug";
 import {
   readFileListTreeCache,
+  upsertFileListTreeCacheFiles,
   writeFileListTreeCache,
 } from "../data/fileListSessionCache";
 import { FileSyncState } from "../data/FileSyncState";
@@ -57,7 +58,7 @@ import {
   recordRecentFileAccess,
 } from "../data/recentFiles";
 import { editorRegistry } from "../editors";
-import type { EditorPlugin } from "../editors/types";
+import type { EditorImportFileResult, EditorPlugin } from "../editors/types";
 import {
   ServerSync,
   type FileOrderItem,
@@ -73,10 +74,80 @@ import { computeThumbFetchAllowIds } from "../data/thumbCoverage";
 import { EmbedTokenManager } from "../components/EmbedTokenManager";
 import { SettingsPanel } from "../components/SettingsPanel";
 
-import { pruneThumbnailServerMisses } from "../data/thumbnailServerFetchMiss";
+import {
+  clearThumbnailServerMiss,
+  pruneThumbnailServerMisses,
+} from "../data/thumbnailServerFetchMiss";
 import { useThumbnailPipeline } from "./useThumbnailPipeline";
 
 import "../components/FileList.scss";
+
+function toImportedServerFile(record: EditorImportFileResult): ServerFile {
+  const now = new Date().toISOString();
+  return {
+    id: record.id,
+    name: record.name,
+    kind: record.kind,
+    folder_id: record.folder_id ?? null,
+    content_sha256: record.content_sha256 ?? null,
+    has_thumbnail: record.has_thumbnail ?? false,
+    created_at: record.created_at ?? now,
+    updated_at: record.updated_at ?? now,
+    version: record.version,
+  };
+}
+
+function mergeImportedServerFiles(
+  prev: ServerFile[],
+  records: ServerFile[],
+): ServerFile[] {
+  if (records.length === 0) {
+    return prev;
+  }
+  const byId = new Map(prev.map((file) => [file.id, file]));
+  for (const record of records) {
+    byId.set(record.id, { ...byId.get(record.id), ...record });
+  }
+  return [...byId.values()];
+}
+
+function applyImportedThumbnailState(
+  records: ServerFile[],
+  fetchedThumbHashByIdRef: React.MutableRefObject<Record<string, string | null>>,
+  setFetchedThumbs: React.Dispatch<React.SetStateAction<Record<string, string>>>,
+  setVisibleThumbIds: React.Dispatch<React.SetStateAction<Set<string>>>,
+): void {
+  if (records.length === 0) {
+    return;
+  }
+  for (const record of records) {
+    clearThumbnailServerMiss(record.id);
+  }
+  setFetchedThumbs((prev) => {
+    let changed = false;
+    const next = { ...prev };
+    for (const record of records) {
+      const cached =
+        LocalThumbnailCache.getForContent(record.id, record.content_sha256) ??
+        LocalThumbnailCache.get(record.id);
+      if (!cached) {
+        continue;
+      }
+      next[record.id] = cached;
+      fetchedThumbHashByIdRef.current[record.id] =
+        record.content_sha256 ?? null;
+      changed = true;
+    }
+    return changed ? next : prev;
+  });
+  setVisibleThumbIds((prev) => {
+    const next = new Set(prev);
+    for (const record of records) {
+      next.add(record.id);
+    }
+    return next;
+  });
+}
 
 const logList = createLogger({ module: "fileList" });
 const logThumb = createLogger({ module: "thumbnail" });
@@ -310,7 +381,8 @@ function iconPath(
     | "embed"
     | "settings"
     | "sun"
-    | "moon",
+    | "moon"
+    | "close",
 ) {
   const paths = {
     folder:
@@ -346,6 +418,8 @@ function iconPath(
       "M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 00-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z",
     sun: "M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.79 1.42-1.41zM4 10.5H1v2h3v-2zm9-9.95h-2V3.5h2V.55zm7.45 3.91l-1.41-1.41-1.79 1.79 1.41 1.41 1.79-1.79zm-3.21 13.7l1.79 1.8 1.41-1.41-1.8-1.79-1.4 1.4zM20 10.5v2h3v-2h-3zm-8-5c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm-1 16.95h2V19.5h-2v2.95zm-7.45-3.91l1.41 1.41 1.79-1.8-1.41-1.41-1.79 1.8z",
     moon: "M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 0 1-4.4 2.26 5.403 5.403 0 0 1-3.14-9.8c-.44-.06-.9-.1-1.36-.1z",
+    close:
+      "M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z",
   };
   return paths[type];
 }
@@ -522,6 +596,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const [error, setError] = useState<string | null>(null);
   const [importNotice, setImportNotice] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [importDragActive, setImportDragActive] = useState(false);
   const [fetchedThumbs, setFetchedThumbs] = useState<Record<string, string>>({});
   const [, setThumbnailMissRevision] = useState(0);
   const fetchedThumbsRef = useRef(fetchedThumbs);
@@ -576,6 +651,9 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   );
   const importQueueRef = useRef<File[]>([]);
   const pendingImportFileRef = useRef<File | null>(null);
+  const importTargetFolderIdRef = useRef<string | null>(null);
+  const importCreatedRecordsRef = useRef<ServerFile[]>([]);
+  const importInFlightRef = useRef(false);
 
   const [moveDialogFile, setMoveDialogFile] = useState<ServerFile | null>(null);
   const [moveTargetFolderId, setMoveTargetFolderId] = useState<string | null>(null);
@@ -737,7 +815,11 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   }, [folders]);
 
   const refresh = useCallback(
-    async (options?: { silent?: boolean; noErrorOnFailure?: boolean }) => {
+    async (options?: {
+      silent?: boolean;
+      noErrorOnFailure?: boolean;
+      mustApply?: boolean;
+    }) => {
       if (inflightRef.current) {
         inflightRef.current.abort();
       }
@@ -751,6 +833,9 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         logList.debug("refresh start");
         const tree = await ServerSync.listFileTree({ signal: ac.signal });
         if (ac.signal.aborted || seq !== refreshSeqRef.current) {
+          if (options?.mustApply) {
+            throw new Error("file-list refresh superseded");
+          }
           return;
         }
         setFolders(tree.folders);
@@ -795,6 +880,9 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         onReady?.();
       } catch (e: any) {
         if (ac.signal.aborted || seq !== refreshSeqRef.current) {
+          if (options?.mustApply) {
+            throw new Error("file-list refresh superseded");
+          }
           return;
         }
         logList.debug("refresh error", e);
@@ -821,6 +909,9 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
 
   useEffect(() => {
     const onListRefresh = () => {
+      if (importInFlightRef.current) {
+        return;
+      }
       logList.debug("excalidraw-file-list-refresh -> refresh(silent)");
       void refresh({ silent: true });
     };
@@ -850,7 +941,8 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         draftHash: FileSyncState.getDraftHash(fileId),
         localDraftThumb: preferLocalThumb
           ? LocalThumbnailCache.get(fileId)
-          : LocalThumbnailCache.getForContent(fileId, file.content_sha256),
+          : LocalThumbnailCache.getForContent(fileId, file.content_sha256) ??
+            LocalThumbnailCache.get(fileId),
       };
     };
     const byId: Record<
@@ -947,7 +1039,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
           return false;
         }
         const fid = f.folder_id ?? null;
-        return fid === currentFolderId || descendantFolderIds.has(fid as string);
+        return fid === currentFolderId;
       });
     }
     const sorted = [...list];
@@ -970,7 +1062,6 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     return sorted;
   }, [
     currentFolderId,
-    descendantFolderIds,
     effectiveUpdatedAt,
     files,
     recentDisplayFiles,
@@ -978,6 +1069,10 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     sidebarView,
     sortKey,
   ]);
+
+  useEffect(() => {
+    setVisibleThumbIds(new Set());
+  }, [currentFolderId, sidebarView]);
 
   const collectLayoutDebugData = useCallback(
     (data: Record<string, unknown> = {}) => {
@@ -1252,32 +1347,93 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         kind,
         folderId: importTargetFolderId,
       });
-      const { id } = await plugin.importFile({
+      const imported = await plugin.importFile({
         file,
         fileName: sanitizeFileBaseName(file.name),
         folderId: importTargetFolderId,
       });
-      importCreatedIdsRef.current.push(id);
+      const record = toImportedServerFile(imported);
+      importCreatedIdsRef.current.push(record.id);
+      importCreatedRecordsRef.current.push(record);
     },
     [importTargetFolderId],
   );
 
   const finishImportBatch = useCallback(async () => {
-    const createdIds = importCreatedIdsRef.current;
+    const createdIds = [...importCreatedIdsRef.current];
+    const importedRecords = [...importCreatedRecordsRef.current];
     importCreatedIdsRef.current = [];
-    setImporting(false);
+    importCreatedRecordsRef.current = [];
+    const targetFolderId = importTargetFolderIdRef.current;
+    importTargetFolderIdRef.current = null;
     if (createdIds.length === 0) {
+      importInFlightRef.current = false;
+      setImporting(false);
       return;
     }
+    currentFolderIdRef.current = targetFolderId;
+    setSidebarView("all");
+    setCurrentFolderId(targetFolderId);
+    setMobileTreeOpen(false);
+    if (targetFolderId) {
+      setExpandedFolders((prev) => {
+        const next = { ...prev };
+        for (const folder of buildFolderPath(targetFolderId, foldersById)) {
+          next[folder.id] = true;
+        }
+        return next;
+      });
+    }
+    setFiles((prev) => mergeImportedServerFiles(prev, importedRecords));
+    upsertFileListTreeCacheFiles(importedRecords);
+    applyImportedThumbnailState(
+      importedRecords,
+      fetchedThumbHashByIdRef,
+      setFetchedThumbsWithLayoutDebug,
+      setVisibleThumbIds,
+    );
     try {
-      await refresh({ silent: true, noErrorOnFailure: true });
+      let refreshed = false;
+      for (let attempt = 0; attempt < 2 && !refreshed; attempt += 1) {
+        try {
+          await refresh({
+            silent: true,
+            noErrorOnFailure: true,
+            mustApply: true,
+          });
+          refreshed = true;
+        } catch (err) {
+          if (attempt === 1) {
+            throw err;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 180));
+        }
+      }
+      applyImportedThumbnailState(
+        importedRecords,
+        fetchedThumbHashByIdRef,
+        setFetchedThumbsWithLayoutDebug,
+        setVisibleThumbIds,
+      );
+      for (const id of createdIds) {
+        recordRecentFileAccess(id);
+      }
       setImportNotice(null);
     } catch {
       setImportNotice(
         `已导入 ${createdIds.length} 个文件，但列表未能自动更新。请刷新本页以查看最新文件。`,
       );
+    } finally {
+      importInFlightRef.current = false;
+      setImporting(false);
     }
-  }, [refresh]);
+  }, [
+    foldersById,
+    refresh,
+    setCurrentFolderId,
+    setFetchedThumbsWithLayoutDebug,
+    setSidebarView,
+  ]);
 
   const processImportQueue = useCallback(async function processImportQueue() {
     try {
@@ -1341,6 +1497,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       const createdIds = [...importCreatedIdsRef.current];
       const failedDeletes = await rollbackCreatedImportFiles(createdIds);
       importCreatedIdsRef.current = [];
+      importCreatedRecordsRef.current = [];
       importQueueRef.current = [];
       let msg = formatImportErrorMessage(e);
       if (failedDeletes.length > 0) {
@@ -1348,6 +1505,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       }
       setImportNotice(null);
       setError(msg);
+      importInFlightRef.current = false;
       setImporting(false);
     }
   }, [finishImportBatch, importOneFileWithKind]);
@@ -1357,14 +1515,17 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       if (fileList.length === 0) {
         return;
       }
+      importInFlightRef.current = true;
+      importTargetFolderIdRef.current = importTargetFolderId;
       setImporting(true);
       setError(null);
       setImportNotice(null);
       importCreatedIdsRef.current = [];
+      importCreatedRecordsRef.current = [];
       importQueueRef.current = [...fileList];
       await processImportQueue();
     },
-    [processImportQueue],
+    [importTargetFolderId, processImportQueue],
   );
 
   const commitImportKindPick = useCallback(
@@ -1388,6 +1549,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         const createdIds = [...importCreatedIdsRef.current];
         const failedDeletes = await rollbackCreatedImportFiles(createdIds);
         importCreatedIdsRef.current = [];
+        importCreatedRecordsRef.current = [];
         importQueueRef.current = [];
         let msg = formatImportErrorMessage(e);
         if (failedDeletes.length > 0) {
@@ -1395,6 +1557,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         }
         setImportNotice(null);
         setError(msg);
+        importInFlightRef.current = false;
         setImporting(false);
       }
     },
@@ -1412,6 +1575,8 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         await rollbackCreatedImportFiles(createdIds);
         importCreatedIdsRef.current = [];
       }
+      importCreatedRecordsRef.current = [];
+      importInFlightRef.current = false;
       setImporting(false);
     })();
   }, []);
@@ -1432,26 +1597,63 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     void importDocumentFiles(picked);
   };
 
-  /** 覆盖左侧树 + 右侧主区；与文件夹内拖移区分 */
+  const resetImportDragState = useCallback(() => {
+    setImportDragActive(false);
+  }, []);
+
+  const canAcceptFileImportDrag = useCallback(
+    (e: React.DragEvent) => {
+      if (importing || draggingFolderId) {
+        return false;
+      }
+      if (e.dataTransfer.types?.includes(FOLDER_DND_MIME)) {
+        return false;
+      }
+      return e.dataTransfer.types?.includes("Files");
+    },
+    [importing, draggingFolderId],
+  );
+
+  /** 覆盖侧栏 + 主区；与文件夹内拖移区分 */
+  const onFileListImportDragEnter = useCallback(
+    (e: React.DragEvent) => {
+      if (!canAcceptFileImportDrag(e)) {
+        return;
+      }
+      e.preventDefault();
+      setImportDragActive(true);
+    },
+    [canAcceptFileImportDrag],
+  );
+
+  const onFileListImportDragLeave = useCallback(
+    (e: React.DragEvent) => {
+      if (!importDragActive) {
+        return;
+      }
+      const related = e.relatedTarget as Node | null;
+      if (related && e.currentTarget.contains(related)) {
+        return;
+      }
+      resetImportDragState();
+    },
+    [importDragActive, resetImportDragState],
+  );
+
   const onFileListImportDragOver = useCallback(
     (e: React.DragEvent) => {
-      if (importing) {
-        return;
-      }
-      if (draggingFolderId || e.dataTransfer.types?.includes(FOLDER_DND_MIME)) {
-        return;
-      }
-      if (!e.dataTransfer.types?.includes("Files")) {
+      if (!canAcceptFileImportDrag(e)) {
         return;
       }
       e.preventDefault();
       e.dataTransfer.dropEffect = "copy";
     },
-    [importing, draggingFolderId],
+    [canAcceptFileImportDrag],
   );
 
   const onFileListImportDrop = useCallback(
     (e: React.DragEvent) => {
+      resetImportDragState();
       if (importing) {
         return;
       }
@@ -1472,7 +1674,12 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       }
       void importDocumentFiles(next);
     },
-    [importing, draggingFolderId, importDocumentFiles],
+    [
+      draggingFolderId,
+      importDocumentFiles,
+      importing,
+      resetImportDragState,
+    ],
   );
 
   const handleDelete = async (
@@ -2640,7 +2847,28 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     : false;
 
   return (
-    <div className={`filelist theme--${shellTheme}`}>
+    <div
+      className={`filelist theme--${shellTheme}`}
+      onDragEnter={onFileListImportDragEnter}
+      onDragLeave={onFileListImportDragLeave}
+      onDragOver={onFileListImportDragOver}
+      onDrop={onFileListImportDrop}
+      onDragEnd={resetImportDragState}
+    >
+      {importDragActive && !importing && (
+        <div className="filelist__import-blocking" aria-hidden>
+          <div className="filelist__import-card" role="status">
+            <span className="filelist__import-icon" aria-hidden>
+              <Icon type="upload" size={24} />
+            </span>
+            <span className="filelist__import-title">松手导入</span>
+            <span className="filelist__import-desc">
+              松开鼠标即可开始导入文件
+            </span>
+          </div>
+        </div>
+      )}
+
       {importing && (
         <div className="filelist__import-blocking" aria-busy>
           <div className="filelist__import-card" role="status">
@@ -2655,17 +2883,25 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
 
       {renderSidebar()}
 
-      <div
-        className="filelist__workspace"
-        onDragOver={onFileListImportDragOver}
-        onDrop={onFileListImportDrop}
-      >
+      <div className="filelist__workspace">
         {importNotice && (
           <div className="filelist__notice" role="status">
             {importNotice}
           </div>
         )}
-        {error && <div className="filelist__error">{error}</div>}
+        {error && (
+          <div className="filelist__error" role="alert">
+            <span className="filelist__error-text">{error}</span>
+            <button
+              type="button"
+              className="filelist__error-dismiss"
+              onClick={() => setError(null)}
+              aria-label="关闭错误提示"
+            >
+              <Icon type="close" size={16} />
+            </button>
+          </div>
+        )}
 
         <header className="filelist__topbar">
           <button

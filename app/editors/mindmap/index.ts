@@ -7,6 +7,7 @@ import {
   createMindMapFile,
   importMindMapFile,
 } from "./hostActions";
+import { scheduleMindMapThumbnailIframeWarm } from "./mindMapNativeThumbnailRenderer";
 
 import type { EditorPlugin } from "../types";
 
@@ -15,6 +16,9 @@ export const mindMapPlugin: EditorPlugin = {
   displayName: "MindMap",
   icon: "/icons/mindmap.ico",
   prefetchOnFileListReady: true,
+  warmFileListAssets: () => {
+    scheduleMindMapThumbnailIframeWarm();
+  },
   downloadExtension: "smm",
   adapter: MindMapAdapter,
   loadEditorShell: () => import("./MindMapEditorShell"),
