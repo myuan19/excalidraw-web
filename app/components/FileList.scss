@@ -397,7 +397,8 @@
   scrollbar-gutter: stable;
 }
 
-.filelist-dialog-host .filelist__folder-path-picker {
+/* 侧栏内嵌文件夹选择器（弹层宿主样式见 fileListDialogHost.scss） */
+.filelist .filelist__folder-path-picker {
   .filelist__tree-root,
   .filelist__tree-row {
     cursor: pointer;

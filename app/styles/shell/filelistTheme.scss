@@ -25,12 +25,14 @@
   --nb-primary: #0ea5e9;
   --nb-primary-hover: #0284c7;
   --nb-primary-soft: rgba(14, 165, 233, 0.07);
-  --nb-primary-soft-hover: rgba(14, 165, 233, 0.11);
+  --nb-primary-soft-hover: rgba(14, 165, 233, 0.13);
   --nb-primary-focus: #0284c7;
+  --nb-primary-border-hover: rgba(14, 165, 233, 0.42);
   --nb-blue: #0ea5e9;
   --nb-blue-hover: #0284c7;
   --nb-blue-soft: rgba(14, 165, 233, 0.07);
-  --nb-blue-soft-hover: rgba(14, 165, 233, 0.11);
+  --nb-blue-soft-hover: rgba(14, 165, 233, 0.13);
+  --nb-blue-border-hover: rgba(14, 165, 233, 0.42);
   --nb-blue-focus: #0284c7;
 
   --nb-page-bg: #f8fcff;
@@ -111,12 +113,14 @@
   --nb-primary: #38bdf8;
   --nb-primary-hover: #7dd3fc;
   --nb-primary-soft: rgba(56, 189, 248, 0.12);
-  --nb-primary-soft-hover: rgba(56, 189, 248, 0.18);
+  --nb-primary-soft-hover: rgba(56, 189, 248, 0.2);
   --nb-primary-focus: #7dd3fc;
+  --nb-primary-border-hover: rgba(56, 189, 248, 0.48);
   --nb-blue: #38bdf8;
   --nb-blue-hover: #7dd3fc;
   --nb-blue-soft: rgba(56, 189, 248, 0.12);
-  --nb-blue-soft-hover: rgba(56, 189, 248, 0.18);
+  --nb-blue-soft-hover: rgba(56, 189, 248, 0.2);
+  --nb-blue-border-hover: rgba(56, 189, 248, 0.48);
   --nb-blue-focus: #7dd3fc;
 
   --nb-page-bg: #0f172a;

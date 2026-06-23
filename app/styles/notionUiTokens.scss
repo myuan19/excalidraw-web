@@ -77,12 +77,14 @@
   --nb-primary: #0ea5e9;
   --nb-primary-hover: #0284c7;
   --nb-primary-soft: rgba(14, 165, 233, 0.07);
-  --nb-primary-soft-hover: rgba(14, 165, 233, 0.11);
+  --nb-primary-soft-hover: rgba(14, 165, 233, 0.13);
   --nb-primary-focus: #0284c7;
+  --nb-primary-border-hover: rgba(14, 165, 233, 0.42);
   --nb-blue: #0ea5e9;
   --nb-blue-hover: #0284c7;
   --nb-blue-soft: rgba(14, 165, 233, 0.07);
-  --nb-blue-soft-hover: rgba(14, 165, 233, 0.11);
+  --nb-blue-soft-hover: rgba(14, 165, 233, 0.13);
+  --nb-blue-border-hover: rgba(14, 165, 233, 0.42);
   --nb-blue-focus: #0284c7;
   --nb-on-primary: #ffffff;
   --nb-on-primary-dark-contrast: #000000;
@@ -101,7 +103,8 @@
   --nb-danger-surface: #fef2f2;
   --nb-danger-border: #fecaca;
   --nb-danger-soft-bg: rgba(239, 68, 68, 0.12);
-  --nb-danger-soft-bg-hover: rgba(239, 68, 68, 0.2);
+  --nb-danger-soft-bg-hover: rgba(239, 68, 68, 0.15);
+  --nb-danger-border-hover: rgba(239, 68, 68, 0.38);
   --nb-danger-ui-bg: rgba(220, 38, 38, 0.08);
   --nb-danger-ui-border: rgba(220, 38, 38, 0.2);
   --nb-success: #16a34a;

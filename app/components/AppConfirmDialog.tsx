@@ -16,6 +16,7 @@ export type AppConfirmDialogProps = {
   cancelAction?: AppConfirmDialogAction;
   onOverlayDismiss?: () => void;
   dialogId?: string;
+  overlayClassName?: string;
 };
 
 /** 编辑器平台级确认弹窗（挂载在 EditorPlatformShell，高于编辑器内容）。 */
@@ -28,6 +29,7 @@ export function AppConfirmDialog({
   cancelAction,
   onOverlayDismiss,
   dialogId = "app-confirm-dialog",
+  overlayClassName,
 }: AppConfirmDialogProps) {
   if (!open) {
     return null;
@@ -37,7 +39,12 @@ export function AppConfirmDialog({
 
   return (
     <div
-      className="app-confirm-dialog-overlay"
+      className={[
+        "app-confirm-dialog-overlay",
+        overlayClassName,
+      ]
+        .filter(Boolean)
+        .join(" ")}
       role="presentation"
       onClick={(event) => {
         if (event.target === event.currentTarget) {
@@ -55,6 +62,14 @@ export function AppConfirmDialog({
         <h3 id={titleId}>{title}</h3>
         <p className="app-confirm-dialog__desc">{message}</p>
         <div className="app-confirm-dialog__actions">
+          <button
+            type="button"
+            className={`app-confirm-dialog__btn app-confirm-dialog__btn--${primaryAction.variant ?? "primary"}`}
+            disabled={primaryAction.disabled}
+            onClick={primaryAction.onClick}
+          >
+            {primaryAction.label}
+          </button>
           {secondaryAction ? (
             <button
               type="button"
@@ -65,25 +80,17 @@ export function AppConfirmDialog({
               {secondaryAction.label}
             </button>
           ) : null}
-          <button
-            type="button"
-            className={`app-confirm-dialog__btn app-confirm-dialog__btn--${primaryAction.variant ?? "primary"}`}
-            disabled={primaryAction.disabled}
-            onClick={primaryAction.onClick}
-          >
-            {primaryAction.label}
-          </button>
+          {cancelAction ? (
+            <button
+              type="button"
+              className="app-confirm-dialog__cancel"
+              disabled={cancelAction.disabled}
+              onClick={cancelAction.onClick}
+            >
+              {cancelAction.label}
+            </button>
+          ) : null}
         </div>
-        {cancelAction ? (
-          <button
-            type="button"
-            className="app-confirm-dialog__cancel"
-            disabled={cancelAction.disabled}
-            onClick={cancelAction.onClick}
-          >
-            {cancelAction.label}
-          </button>
-        ) : null}
       </div>
     </div>
   );

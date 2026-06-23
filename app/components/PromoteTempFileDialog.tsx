@@ -12,6 +12,7 @@ import type { OverlayDismissHandlers } from "./NewFileDialog";
 import { shellThemeClassName } from "../hooks/useShellTheme";
 
 import "./fileListDialogHost.scss";
+import "./FileList.scss";
 
 type SaveNewDocumentDialogProps = {
   open: boolean;
@@ -75,7 +76,7 @@ export const SaveNewDocumentDialog = memo(function SaveNewDocumentDialog({
       {...overlayDismiss}
     >
       <div
-        className="filelist__detail-card filelist__move-dialog"
+        className="filelist__detail-card filelist__save-dialog"
         onPointerDown={(e: PointerEvent) => e.stopPropagation()}
       >
         <h2 className="filelist__detail-title">{title}</h2>
@@ -85,29 +86,31 @@ export const SaveNewDocumentDialog = memo(function SaveNewDocumentDialog({
               ? "为文件命名后保存到当前文件夹。"
               : "为文件命名并选择保存位置，保存后将出现在所有文件中。")}
         </p>
-        <input
-          className="filelist__folder-input filelist__new-file-input"
-          value={name}
-          autoFocus
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              handleSave();
-            }
-            if (e.key === "Escape") {
-              onClose();
-            }
-          }}
-        />
-        <FolderPathPicker
-          selectedFolderId={targetFolderId}
-          onSelectFolder={setTargetFolderId}
-          hidePicker={folderLocked}
-        />
-        <div className="filelist__detail-actions">
+        <div className="filelist__save-dialog-body">
+          <input
+            className="filelist__folder-input"
+            value={name}
+            autoFocus
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                handleSave();
+              }
+              if (e.key === "Escape") {
+                onClose();
+              }
+            }}
+          />
+          <FolderPathPicker
+            selectedFolderId={targetFolderId}
+            onSelectFolder={setTargetFolderId}
+            hidePicker={folderLocked}
+          />
+        </div>
+        <div className="filelist__save-dialog-actions">
           <button
             type="button"
-            className="filelist__new-btn"
+            className="filelist__save-dialog-btn filelist__save-dialog-btn--primary"
             disabled={saving}
             onClick={handleSave}
           >
@@ -115,7 +118,7 @@ export const SaveNewDocumentDialog = memo(function SaveNewDocumentDialog({
           </button>
           <button
             type="button"
-            className="filelist__import-scene-btn"
+            className="filelist__save-dialog-btn filelist__save-dialog-btn--ghost"
             disabled={saving}
             onClick={onClose}
           >

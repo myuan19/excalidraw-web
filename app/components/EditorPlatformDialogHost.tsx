@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import {
@@ -24,23 +24,39 @@ export function EditorPlatformDialogHost() {
   const [request, setRequest] = useState<EditorPlatformConfirmRequest | null>(
     () => peekEditorPlatformConfirmRequest(),
   );
+  const closeTimerRef = useRef<number | null>(null);
+
+  const clearCloseTimer = useCallback(() => {
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     return subscribeEditorPlatformConfirmOpen((next) => {
+      clearCloseTimer();
       setRequest(next);
     });
-  }, []);
+  }, [clearCloseTimer]);
 
   useEffect(() => {
     return subscribeEditorPlatformConfirmClose(() => {
-      setRequest(null);
+      clearCloseTimer();
+      closeTimerRef.current = window.setTimeout(() => {
+        closeTimerRef.current = null;
+        if (!peekEditorPlatformConfirmRequest()) {
+          setRequest(null);
+        }
+      }, 0);
     });
-  }, []);
+  }, [clearCloseTimer]);
+
+  useEffect(() => clearCloseTimer, [clearCloseTimer]);
 
   const finish = useCallback(
     (action: "primary" | "secondary" | "cancel") => {
       completeEditorPlatformConfirm(action);
-      setRequest(null);
     },
     [],
   );

@@ -22,6 +22,7 @@ import {
   type ArchivePanelPromptMode,
 } from "./ArchivePanelPrompt";
 
+import "./AppConfirmDialog.scss";
 import "./ArchivePanel.scss";
 
 interface ArchivePanelProps {

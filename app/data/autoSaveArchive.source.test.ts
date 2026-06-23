@@ -126,7 +126,8 @@ describe("checkpoint archive source contract", () => {
     expect(archivePanelSource).toContain("evaluateManualArchiveGate");
     expect(archivePanelSource).toContain("readCurrentModificationState");
     expect(archivePanelSource).not.toContain("存档前需要保存，是否继续？");
-    expect(promptSource).toContain("nb-history-overlay--prompt");
+    expect(promptSource).toContain("AppConfirmDialog");
+    expect(promptSource).toContain("app-confirm-dialog-overlay--stacked");
     expect(promptSource).toContain("当前版本没有存档吗？是否需要先存档？");
     expect(promptSource).toContain("若不存档，切换会丢失该版本");
     expect(promptSource).toContain("存档前需要保存，是否继续？");

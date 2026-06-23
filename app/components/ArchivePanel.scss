@@ -77,7 +77,13 @@
   }
 
   .nb-history-overlay .nb-history-archive {
+    @include shell-modal-action-btn;
     @include shell-modal-soft-primary-btn;
+  }
+
+  .nb-history-overlay .nb-history-delete {
+    @include shell-modal-action-btn;
+    @include shell-modal-soft-danger-btn;
   }
 
   .nb-history-overlay .nb-history-badge {
@@ -135,32 +141,6 @@
     color: var(--nb-text-muted);
   }
 
-  .nb-history-overlay--prompt {
-    z-index: calc(var(--nb-z-fork-home, 200000) + 1);
-  }
-
-  .nb-history-overlay .nb-history-panel--prompt {
-    width: min(22rem, calc(100vw - var(--nb-space-24)));
-    max-height: none;
-  }
-
-  .nb-history-overlay .nb-history-prompt-body {
-    margin: 0;
-    padding: var(--nb-space-5) var(--nb-space-8);
-    font-size: var(--nb-font-body-sm);
-    line-height: 1.5;
-    color: var(--nb-text);
-  }
-
-  .nb-history-overlay .nb-history-prompt-actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: var(--nb-space-2);
-    padding: var(--nb-space-4) var(--nb-space-8) var(--nb-space-6);
-    border-top: var(--nb-border-width) solid var(--nb-border);
-  }
-
   .nb-history-overlay .nb-history-actions {
     flex-shrink: 0;
     display: flex;
@@ -172,14 +152,6 @@
 
   .nb-history-overlay .nb-history-action {
     @include shell-modal-action-btn;
-  }
-
-  .nb-history-overlay .nb-history-delete {
-    color: var(--nb-danger-foreground);
-
-    &:hover {
-      background: var(--nb-danger-soft-bg);
-    }
   }
 
   .nb-history-overlay .nb-history-sub {

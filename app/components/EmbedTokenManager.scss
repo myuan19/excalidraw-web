@@ -1,38 +1,22 @@
-/* 嵌入管理弹窗：复用全站设计 token（--nb-*），与设置/AI 弹窗同一套视觉语言，
- * 支持暗色（prefers-color-scheme 经 --nb-ai-* token 自动生效）。 */
+/* 嵌入管理弹窗：复用 shell-modal 共享 mixin，与平台确认框同一套视觉语言。 */
+@import "../styles/shell/shellModal.scss";
+
 .embed-mgr__overlay {
-  position: fixed;
-  inset: 0;
+  @include shell-modal-overlay;
   z-index: var(--nb-z-modal);
-  background: var(--nb-shell-overlay, var(--nb-overlay-scrim));
-  backdrop-filter: blur(var(--nb-blur-overlay));
-  -webkit-backdrop-filter: blur(var(--nb-blur-overlay));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--nb-space-8);
   font-family: var(--nb-font-ui), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  animation: shellOverlayIn 0.12s var(--nb-ease-ui) both;
 }
 
 .embed-mgr__card {
-  background: var(--nb-ai-dialog-bg);
-  color: var(--nb-ai-dialog-text);
-  border: var(--nb-border-width) solid var(--nb-ai-dialog-border);
-  border-radius: var(--nb-radius-2xl);
+  @include shell-modal-card;
   width: min(35rem, 100%);
   max-height: 85vh;
   display: flex;
   flex-direction: column;
-  box-shadow: var(--nb-ai-dialog-shadow);
-  animation: embedSlideUp 0.2s var(--nb-ease-ui) both;
-}
-
-@keyframes embedSlideUp {
-  from {
-    opacity: 0;
-    transform: translateY(var(--nb-space-6));
-  }
+  animation: none;
+  overflow: hidden;
 }
 
 .embed-mgr__header {
@@ -205,16 +189,7 @@
 }
 
 .embed-mgr__btn--primary {
-  background: var(--nb-primary);
-  border-color: var(--nb-primary);
-  color: var(--nb-on-primary);
-  box-shadow: var(--nb-shadow-btn-primary);
-
-  &:hover:not(:disabled) {
-    background: var(--nb-primary-hover);
-    border-color: var(--nb-primary-hover);
-    box-shadow: var(--nb-shadow-btn-primary-hover);
-  }
+  @include shell-modal-soft-primary-btn;
 }
 
 .embed-mgr__btn--copy,
@@ -224,25 +199,11 @@
 }
 
 .embed-mgr__btn--preview {
-  background: var(--nb-primary-soft);
-  border-color: transparent;
-  color: var(--nb-primary);
-
-  &:hover:not(:disabled) {
-    background: var(--nb-primary-soft);
-    border-color: var(--nb-primary);
-  }
+  @include shell-modal-soft-primary-btn;
 }
 
 .embed-mgr__btn--danger {
-  color: var(--nb-danger-foreground);
-  border-color: var(--nb-danger-border);
-  background: transparent;
-
-  &:hover:not(:disabled) {
-    background: var(--nb-danger-surface);
-    border-color: var(--nb-danger-border);
-  }
+  @include shell-modal-soft-danger-btn;
 }
 
 /* ── Create form ── */

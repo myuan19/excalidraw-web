@@ -1,3 +1,5 @@
+import { AppConfirmDialog } from "./AppConfirmDialog";
+
 export type ArchivePanelPromptChoice = "yes" | "no" | "cancel";
 
 export type ArchivePanelPromptMode =
@@ -12,7 +14,7 @@ type ArchivePanelPromptProps = {
   onChoice: (choice: ArchivePanelPromptChoice) => void;
 };
 
-/** 存档面板内嵌确认层（与 nb-history 面板样式一致） */
+/** 存档面板确认层 — 复用 AppConfirmDialog，与离开编辑器等平台确认框同一套样式。 */
 export function ArchivePanelPrompt({
   mode,
   busy = false,
@@ -27,9 +29,7 @@ export function ArchivePanelPrompt({
       ? "恢复存档"
       : mode.type === "delete"
         ? "删除存档"
-        : mode.type === "archive-duplicate"
-          ? "存档"
-          : "存档";
+        : "存档";
 
   const message =
     mode.type === "restore"
@@ -40,73 +40,44 @@ export function ArchivePanelPrompt({
           ? "当前版本已存在，是否继续存档？"
           : "存档前需要保存，是否继续？";
 
-  const confirmLabel =
-    mode.type === "delete" ? (busy ? "删除中…" : "确认删除") : busy ? "处理中…" : "是";
-
-  const confirmClassName =
-    mode.type === "delete"
-      ? "nb-history-action nb-history-delete"
-      : "nb-history-action nb-history-archive";
+  const isDelete = mode.type === "delete";
+  const primaryLabel = isDelete
+    ? busy
+      ? "删除中…"
+      : "确认删除"
+    : busy
+      ? "处理中…"
+      : "是";
 
   return (
-    <div
-      className="nb-history-overlay nb-history-overlay--prompt"
-      role="presentation"
-      onClick={(event) => {
-        if (event.target === event.currentTarget && !busy) {
-          onChoice("cancel");
-        }
+    <AppConfirmDialog
+      open
+      title={title}
+      message={message}
+      overlayClassName="app-confirm-dialog-overlay--stacked"
+      primaryAction={{
+        label: primaryLabel,
+        variant: isDelete ? "danger" : "primary",
+        disabled: busy,
+        onClick: () => onChoice("yes"),
       }}
-    >
-      <div
-        className="nb-history-panel nb-history-panel--prompt"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="nb-history-prompt-title"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="nb-history-header">
-          <span id="nb-history-prompt-title">{title}</span>
-          <button
-            type="button"
-            className="nb-history-close"
-            disabled={busy}
-            onClick={() => onChoice("cancel")}
-            aria-label="关闭"
-          >
-            ×
-          </button>
-        </div>
-        <p className="nb-history-prompt-body">{message}</p>
-        <div className="nb-history-prompt-actions">
-          <button
-            type="button"
-            className="nb-history-action"
-            disabled={busy}
-            onClick={() => onChoice("cancel")}
-          >
-            取消
-          </button>
-          {mode.type === "restore" ? (
-            <button
-              type="button"
-              className="nb-history-action"
-              disabled={busy}
-              onClick={() => onChoice("no")}
-            >
-              否
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className={confirmClassName}
-            disabled={busy}
-            onClick={() => onChoice("yes")}
-          >
-            {confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
+      secondaryAction={
+        mode.type === "restore"
+          ? {
+              label: "否",
+              variant: "danger",
+              disabled: busy,
+              onClick: () => onChoice("no"),
+            }
+          : undefined
+      }
+      cancelAction={{
+        label: "取消",
+        disabled: busy,
+        onClick: () => onChoice("cancel"),
+      }}
+      onOverlayDismiss={busy ? undefined : () => onChoice("cancel")}
+      dialogId="nb-history-prompt"
+    />
   );
 }

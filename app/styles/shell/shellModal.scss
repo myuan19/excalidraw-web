@@ -24,7 +24,7 @@
   box-shadow: var(--nb-shadow-modal-deep);
   font-family: var(--nb-font-ui), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
-  animation: shellModalIn 0.2s var(--nb-ease-ui) both;
+  animation: shellModalIn 0.16s var(--nb-ease-ui) both;
   overflow: hidden;
   box-sizing: border-box;
 }
@@ -107,19 +107,161 @@
 
   &:hover:not(:disabled) {
     background: var(--nb-primary-soft-hover, var(--nb-blue-soft-hover));
-    border-color: var(--nb-primary);
+    border-color: var(--nb-primary-border-hover, var(--nb-blue-border-hover));
     box-shadow: none;
+  }
+}
+
+@mixin shell-modal-soft-danger-btn {
+  background: var(--nb-danger-soft-bg);
+  color: var(--nb-danger-foreground);
+  border: var(--nb-border-width) solid var(--nb-danger-border);
+  box-shadow: none;
+  transition: background-color var(--nb-dur-hover) var(--nb-ease-ui),
+    border-color var(--nb-dur-hover) var(--nb-ease-ui);
+
+  &:hover:not(:disabled) {
+    background: var(--nb-danger-soft-bg-hover);
+    border-color: var(--nb-danger-border-hover, var(--nb-danger-ui-border));
+    box-shadow: none;
+  }
+}
+
+@mixin shell-app-confirm-dialog($host) {
+  #{$host} .app-confirm-dialog-overlay {
+    @include shell-modal-overlay;
+    z-index: var(--nb-z-fork-home, 200000);
+    font-family: var(--nb-font-ui), system-ui, sans-serif;
+    animation: shellOverlayIn 0.12s var(--nb-ease-ui) both;
+  }
+
+  #{$host} .app-confirm-dialog-overlay.app-confirm-dialog-overlay--stacked {
+    z-index: calc(var(--nb-z-fork-home, 200000) + 1);
+  }
+
+  #{$host} .app-confirm-dialog-overlay .app-confirm-dialog {
+    animation: none;
+  }
+
+  #{$host} .app-confirm-dialog {
+    @include shell-modal-card;
+    max-width: 22rem;
+    width: 100%;
+    padding: var(--nb-space-8) var(--nb-space-10);
+  }
+
+  #{$host} .app-confirm-dialog h3 {
+    margin: 0 0 var(--nb-space-3);
+    font-size: var(--nb-font-body);
+    font-weight: 600;
+    color: var(--nb-text);
+  }
+
+  #{$host} .app-confirm-dialog__desc {
+    margin: 0 0 var(--nb-space-7);
+    font-size: var(--nb-font-body-sm);
+    line-height: 1.5;
+    color: var(--nb-text-muted);
+    white-space: pre-line;
+  }
+
+  #{$host} .app-confirm-dialog__actions {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--nb-space-3);
+  }
+
+  #{$host} .app-confirm-dialog__btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 2.375rem;
+    padding: var(--nb-space-3) var(--nb-space-5);
+    border-radius: var(--nb-radius-dialog, var(--nb-radius-sm));
+    font-size: var(--nb-font-body-sm);
+    font-weight: 500;
+    font-family: inherit;
+    line-height: 1.35;
+    text-align: center;
+    border: var(--nb-border-width) solid transparent;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease,
+      opacity 0.15s ease;
+    box-sizing: border-box;
+  }
+
+  #{$host} .app-confirm-dialog__btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  #{$host} .app-confirm-dialog__btn--primary {
+    @include shell-modal-soft-primary-btn;
+  }
+
+  #{$host} .app-confirm-dialog__btn--danger {
+    @include shell-modal-soft-danger-btn;
+  }
+
+  #{$host} .app-confirm-dialog__cancel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 2.375rem;
+    margin: var(--nb-space-2) 0 0;
+    padding: var(--nb-space-2) var(--nb-space-4);
+    background: transparent;
+    border: none;
+    font-size: var(--nb-font-caption);
+    font-weight: 500;
+    line-height: 1.35;
+    text-align: center;
+    color: var(--nb-text-muted);
+    cursor: pointer;
+    font-family: inherit;
+    border-radius: var(--nb-radius-dialog, var(--nb-radius-sm));
+    transition: color 0.15s ease, background-color 0.15s ease;
+  }
+
+  #{$host} .app-confirm-dialog__cancel:hover:not(:disabled) {
+    background: var(--nb-fill-hover);
+    color: var(--nb-text);
+  }
+
+  #{$host}.theme--dark .app-confirm-dialog__btn--danger,
+  .theme--dark #{$host} .app-confirm-dialog__btn--danger {
+    background: rgba(248, 113, 113, 0.1);
+    color: var(--nb-danger-soft-text-dark);
+    border-color: rgba(248, 113, 113, 0.28);
+
+    &:hover:not(:disabled) {
+      background: rgba(248, 113, 113, 0.13);
+      border-color: rgba(248, 113, 113, 0.34);
+    }
   }
 }
 
 @keyframes shellModalIn {
   from {
     opacity: 0;
-    transform: translateY(var(--nb-space-4)) scale(0.98);
+    transform: translateY(var(--nb-space-2));
   }
 
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
+  }
+}
+
+@keyframes shellOverlayIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
   }
 }

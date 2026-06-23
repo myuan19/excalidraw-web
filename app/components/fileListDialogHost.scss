@@ -1,4 +1,5 @@
 @import "./filelist-design-tokens";
+@import "../styles/shell/shellModal.scss";
 
 /**
  * 编辑器内打开的保存/新建/导入类型弹层不在 .filelist 内，须自带 --fl-* token，
@@ -10,12 +11,159 @@
   -webkit-font-smoothing: antialiased;
   color: var(--nb-text);
 
-  .filelist__kind-option {
-    appearance: none;
+  &.filelist__detail-overlay {
+    @include shell-modal-overlay;
+    z-index: var(--nb-z-filelist-detail);
+    animation: shellOverlayIn 0.12s var(--nb-ease-ui) both;
   }
 
-  .filelist__new-btn,
-  .filelist__import-scene-btn {
+  .filelist__detail-card {
+    @include shell-modal-card;
+    width: min(var(--nb-filelist-move-max-w), 100%);
+    max-height: min(80vh, 40rem);
+    display: flex;
+    flex-direction: column;
+    padding: var(--nb-space-8) var(--nb-space-10);
+    animation: none;
+    overflow: hidden;
+  }
+
+  .filelist__detail-title {
+    margin: 0 0 var(--nb-space-3);
+    font-size: var(--nb-font-body);
+    font-weight: 600;
+    color: var(--nb-text);
+  }
+
+  .filelist__new-file-hint {
+    margin: 0 0 var(--nb-space-7);
+    font-size: var(--nb-font-body-sm);
+    line-height: 1.5;
+    color: var(--nb-text-muted);
+  }
+
+  .filelist__save-dialog-body {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--nb-space-3);
+    width: 100%;
+    min-width: 0;
+  }
+
+  .filelist__detail-card.filelist__save-dialog {
+    min-height: 0;
+
+    .filelist__save-dialog-body {
+      flex: 1;
+      min-height: 0;
+    }
+  }
+
+  .filelist__folder-input {
+    box-sizing: border-box;
+    display: block;
+    width: 100%;
+    margin: 0;
+    flex-shrink: 0;
+    border: var(--nb-border-width) solid var(--fl-border);
+    border-radius: var(--nb-radius-dialog, var(--nb-radius-sm));
+    padding: var(--nb-space-3) var(--nb-space-5);
+    font-size: var(--nb-font-body-sm);
+    font-weight: 500;
+    font-family: inherit;
+    color: var(--nb-text);
+    background: var(--nb-surface);
+    outline: none;
+    box-shadow: none;
+
+    &:focus {
+      border-color: var(--fl-border-strong);
+      box-shadow: none;
+    }
+  }
+
+  .filelist__folder-path-picker {
+    box-sizing: border-box;
+    width: 100%;
+    margin: 0;
+    flex: 1 1 auto;
+    min-height: 6rem;
+    max-height: min(20rem, 40vh);
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    border: var(--nb-border-width) solid var(--fl-border);
+    border-radius: var(--nb-radius-dialog, var(--nb-radius-sm));
+    background: var(--fl-panel-solid);
+    padding: var(--nb-space-2);
+    scrollbar-gutter: stable;
+
+    .filelist__tree-root,
+    .filelist__tree-row {
+      cursor: pointer;
+    }
+
+    .filelist__tree-root {
+      border-radius: var(--nb-radius-dialog, var(--nb-radius-sm));
+    }
+
+    .filelist__tree-row--active .filelist__tree-name,
+    .filelist__tree-root--active {
+      color: var(--fl-primary);
+      font-weight: 600;
+    }
+  }
+
+  .filelist__save-dialog-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--nb-space-3);
+    margin-top: var(--nb-space-7);
+  }
+
+  .filelist__save-dialog-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 2.375rem;
+    padding: var(--nb-space-3) var(--nb-space-5);
+    border-radius: var(--nb-radius-dialog, var(--nb-radius-sm));
+    font-size: var(--nb-font-body-sm);
+    font-weight: 500;
+    font-family: inherit;
+    line-height: 1.35;
+    text-align: center;
+    border: var(--nb-border-width) solid transparent;
+    cursor: pointer;
+    box-sizing: border-box;
+    transition: background-color 0.15s ease, border-color 0.15s ease,
+      opacity 0.15s ease;
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+
+  .filelist__save-dialog-btn--primary {
+    @include shell-modal-soft-primary-btn;
+  }
+
+  .filelist__save-dialog-btn--ghost {
+    background: transparent;
+    border: none;
+    color: var(--nb-text-muted);
+
+    &:hover:not(:disabled) {
+      background: var(--nb-fill-hover);
+      color: var(--nb-text);
+    }
+  }
+
+  .filelist__kind-option {
     appearance: none;
   }
 }
