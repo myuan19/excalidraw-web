@@ -81,6 +81,11 @@ describe("FileList layout source contract", () => {
     expect(source).toContain("excalidraw-filelist-layout-debug");
     expect(source).toContain('devDebug("file-list", `layout ${label}`, data)');
     expect(source).toContain("before selectFolder setState");
+    expect(source).toContain("after selectFolder topbar layout");
+    expect(source).toContain("topbar navigation state commit");
+    expect(source).toContain("topbar height changed");
+    expect(source).toContain("collectTopbarLayoutDebug");
+    expect(source).toContain("topbarRef");
     expect(source).toContain("before thumbnail state update");
     expect(source).toContain("thumbnail committed layout");
     expect(source).toContain("thumbnail next frame layout");
@@ -145,14 +150,30 @@ describe("FileList layout source contract", () => {
     expect(styles).toContain("pointer-events: none;");
   });
 
-  it("remounts the file grid only when view context changes so refresh does not replay animations", () => {
+  it("replays list enter animation when folder or view context changes", () => {
     const source = fs.readFileSync(controllerPath, "utf8");
 
-    expect(source).toContain(
-      'key={`${sidebarView}:${currentFolderId ?? "root"}:${sortKey}:${searchQuery.trim()}`}',
-    );
+    expect(source).toContain("gridListKey");
+    expect(source).toContain("filelist__grid--animate-children");
+    expect(source).toContain("currentFolderId ?? \"root\"");
+    expect(source).toContain("GRID_ENTER_ANIM_MS");
     expect(source).not.toContain("listAnimationEpoch");
     expect(source).not.toContain("setListAnimationEpoch");
+  });
+
+  it("locks desktop topbar height and breadcrumb row metrics", () => {
+    const styles = fs.readFileSync(path.join(__dirname, "FileList.scss"), "utf8");
+    const tokens = fs.readFileSync(
+      path.join(__dirname, "_filelist-design-tokens.scss"),
+      "utf8",
+    );
+    const breadcrumbRule = styles.match(/^\.filelist__breadcrumbs \{([\s\S]*?)\n\}/m);
+
+    expect(tokens).toContain("--fl-topbar-h:");
+    expect(styles).toContain("height: var(--fl-topbar-h);");
+    expect(styles).toContain("max-height: var(--fl-topbar-h);");
+    expect(breadcrumbRule?.[1]).toContain("height: var(--fl-topbar-control-h);");
+    expect(breadcrumbRule?.[1]).not.toMatch(/&:last-child[\s\S]*font-weight: 600/);
   });
 
   it("delegates rendering through FileList wrapper", () => {

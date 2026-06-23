@@ -256,6 +256,78 @@ function computedLayoutInfo(el: Element | null): Record<string, unknown> | null 
   };
 }
 
+function topbarElementLayoutInfo(el: Element | null): Record<string, unknown> | null {
+  if (!el) {
+    return null;
+  }
+  const style = window.getComputedStyle(el);
+  const base = layoutRect(el);
+  if (!base) {
+    return null;
+  }
+  return {
+    ...base,
+    cssHeight: style.height,
+    cssMinHeight: style.minHeight,
+    lineHeight: style.lineHeight,
+    flexWrap: style.flexWrap,
+    alignItems: style.alignItems,
+    alignSelf: style.alignSelf,
+    flexShrink: style.flexShrink,
+    flexGrow: style.flexGrow,
+    gap: style.gap,
+    paddingTop: style.paddingTop,
+    paddingBottom: style.paddingBottom,
+    borderBottomWidth: style.borderBottomWidth,
+    boxSizing: style.boxSizing,
+    overflowX: style.overflowX,
+    overflowY: style.overflowY,
+  };
+}
+
+function collectTopbarLayoutDebug(topbar: HTMLElement | null): Record<string, unknown> | null {
+  if (!topbar) {
+    return null;
+  }
+  const pick = (selector: string) =>
+    topbarElementLayoutInfo(topbar.querySelector(selector));
+  const breadcrumbs = topbar.querySelector(".filelist__breadcrumbs");
+  const breadcrumbStyle = breadcrumbs
+    ? window.getComputedStyle(breadcrumbs)
+    : null;
+
+  return {
+    topbar: topbarElementLayoutInfo(topbar),
+    pathbar: pick(".filelist__pathbar"),
+    breadcrumbs: breadcrumbs
+      ? {
+          ...topbarElementLayoutInfo(breadcrumbs),
+          segmentCount: breadcrumbs.querySelectorAll("button").length,
+          textContentLength: breadcrumbs.textContent?.trim().length ?? 0,
+          hasHorizontalOverflow:
+            breadcrumbs.scrollWidth > breadcrumbs.clientWidth + 1,
+          scrollWidth: breadcrumbs.scrollWidth,
+          clientWidth: breadcrumbs.clientWidth,
+          lineHeight: breadcrumbStyle?.lineHeight,
+        }
+      : null,
+    pathbarLabel: pick(".filelist__pathbar-label"),
+    topbarActions: pick(".filelist__topbar-actions"),
+    viewModeToggle: pick(".filelist__view-mode-toggle"),
+    searchWrap: pick(".filelist__search-wrap"),
+    searchInput: pick(".filelist__search"),
+    sort: pick(".filelist__sort"),
+    sortSelect: pick(".filelist__sort select"),
+    topbarImport: pick(".filelist__topbar-import"),
+    flTopbarControlH: window
+      .getComputedStyle(topbar)
+      .getPropertyValue("--fl-topbar-control-h")
+      .trim(),
+    viewportWidth: roundedNumber(window.innerWidth),
+    viewportHeight: roundedNumber(window.innerHeight),
+  };
+}
+
 function findThumbNode(root: HTMLElement | null, fileId: string | null): HTMLElement | null {
   if (!root || !fileId) {
     return null;
@@ -638,8 +710,10 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const thumbObserverRef = useRef<IntersectionObserver | null>(null);
   const thumbNodeMap = useRef<Map<string, HTMLElement>>(new Map());
   const sidebarRef = useRef<HTMLElement | null>(null);
+  const topbarRef = useRef<HTMLElement | null>(null);
   const mainRef = useRef<HTMLDivElement | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
+  const topbarHeightRef = useRef<number | null>(null);
   const pendingLayoutDebugRef = useRef<{
     label: string;
     data: Record<string, unknown>;
@@ -844,6 +918,10 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   filesRef.current = files;
   const currentFolderIdRef = useRef(currentFolderId);
   currentFolderIdRef.current = currentFolderId;
+  const sidebarViewRef = useRef(sidebarView);
+  sidebarViewRef.current = sidebarView;
+  const flatFolderViewRef = useRef(flatFolderView);
+  flatFolderViewRef.current = flatFolderView;
 
   const invalidateInflightRefresh = useCallback(() => {
     refreshSeqRef.current += 1;
@@ -1107,6 +1185,23 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     sortKey,
   ]);
 
+  const gridListKey = useMemo(
+    () =>
+      `${sidebarView}:${currentFolderId ?? "root"}:${sortKey}:${searchQuery.trim()}:${flatFolderView ? "flat" : "nested"}`,
+    [currentFolderId, flatFolderView, searchQuery, sidebarView, sortKey],
+  );
+
+  const GRID_ENTER_ANIM_MS = 280;
+  const [gridEnterAnimate, setGridEnterAnimate] = useState(true);
+  useLayoutEffect(() => {
+    setGridEnterAnimate(true);
+    const timer = window.setTimeout(
+      () => setGridEnterAnimate(false),
+      GRID_ENTER_ANIM_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [gridListKey]);
+
   useEffect(() => {
     setVisibleThumbIds(new Set());
   }, [currentFolderId, flatFolderView, sidebarView]);
@@ -1131,9 +1226,12 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         currentFolderName: currentFolderIdRef.current
           ? foldersById.get(currentFolderIdRef.current)?.name ?? null
           : "所有文件",
+        sidebarView: sidebarViewRef.current,
+        flatFolderView: flatFolderViewRef.current,
         files: files.length,
         filteredFiles: filteredFiles.length,
         fetchedThumbs: Object.keys(fetchedThumbsRef.current).length,
+        topbarLayout: collectTopbarLayoutDebug(topbarRef.current),
         sidebar: computedLayoutInfo(sidebar),
         main: computedLayoutInfo(main),
         grid: computedLayoutInfo(grid),
@@ -1190,6 +1288,91 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     });
     return () => window.cancelAnimationFrame(raf);
   }, [collectLayoutDebugData, fetchedThumbs]);
+
+  const queueTopbarLayoutDebug = useCallback(
+    (label: string, data: Record<string, unknown> = {}) => {
+      if (!isFileListLayoutDebugEnabled()) {
+        return;
+      }
+      pendingLayoutDebugRef.current = { label, data };
+    },
+    [],
+  );
+
+  useLayoutEffect(() => {
+    if (!isFileListLayoutDebugEnabled()) {
+      return;
+    }
+    const data = {
+      trigger: "navigation-state",
+      sidebarView,
+      currentFolderId: currentFolderId ?? "__ROOT__",
+      breadcrumbSegments: currentPath.length,
+      breadcrumbLabels: currentPath.map((folder) => folder.name),
+      flatFolderView,
+      hasError: Boolean(error),
+      hasImportNotice: Boolean(importNotice),
+    };
+    debugFileListLayout(
+      "topbar navigation state commit",
+      collectLayoutDebugData(data),
+    );
+    const raf = window.requestAnimationFrame(() => {
+      debugFileListLayout(
+        "topbar navigation state next frame",
+        collectLayoutDebugData(data),
+      );
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [
+    collectLayoutDebugData,
+    currentFolderId,
+    currentPath,
+    error,
+    flatFolderView,
+    importNotice,
+    sidebarView,
+  ]);
+
+  useLayoutEffect(() => {
+    if (!isFileListLayoutDebugEnabled()) {
+      return;
+    }
+    const topbar = topbarRef.current;
+    if (!topbar) {
+      return;
+    }
+
+    topbarHeightRef.current = topbar.getBoundingClientRect().height;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const nextHeight = entry.contentRect.height;
+        const previousHeight = topbarHeightRef.current;
+        if (
+          previousHeight == null ||
+          Math.abs(nextHeight - previousHeight) <= 0.5
+        ) {
+          topbarHeightRef.current = nextHeight;
+          continue;
+        }
+        debugFileListLayout(
+          "topbar height changed",
+          collectLayoutDebugData({
+            trigger: "ResizeObserver",
+            previousHeight: roundedNumber(previousHeight),
+            nextHeight: roundedNumber(nextHeight),
+            delta: roundedNumber(nextHeight - previousHeight),
+            sidebarView: sidebarViewRef.current,
+            currentFolderId: currentFolderIdRef.current ?? "__ROOT__",
+            flatFolderView: flatFolderViewRef.current,
+          }),
+        );
+        topbarHeightRef.current = nextHeight;
+      }
+    });
+    observer.observe(topbar);
+    return () => observer.disconnect();
+  }, [collectLayoutDebugData, currentFolderId, sidebarView]);
 
   const setFetchedThumbsWithLayoutDebug = useCallback(
     (nextState: React.SetStateAction<Record<string, string>>) => {
@@ -1830,6 +2013,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     setSidebarView("all");
     if (isFileListLayoutDebugEnabled()) {
       const data = {
+        trigger: "selectFolder",
         fromFolderId: currentFolderId ?? "__ROOT__",
         fromFolderName: currentFolderId
           ? foldersById.get(currentFolderId)?.name ?? null
@@ -1837,11 +2021,23 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         toFolderId: folderId ?? "__ROOT__",
         toFolderName: folderId ? foldersById.get(folderId)?.name ?? null : "所有文件",
         visibleThumbs: visibleThumbIds.size,
+        breadcrumbSegments: folderId
+          ? (() => {
+              const segments: string[] = [];
+              let cursor: string | null = folderId;
+              while (cursor) {
+                const folder = foldersById.get(cursor);
+                if (!folder) {
+                  break;
+                }
+                segments.unshift(folder.name);
+                cursor = folder.parent_id;
+              }
+              return segments.length;
+            })()
+          : 0,
       };
-      pendingLayoutDebugRef.current = {
-        label: "after selectFolder layout",
-        data,
-      };
+      queueTopbarLayoutDebug("after selectFolder topbar layout", data);
       debugFileListLayout(
         "before selectFolder setState",
         collectLayoutDebugData(data),
@@ -2428,7 +2624,21 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
           ]
             .filter(Boolean)
             .join(" ")}
-          onClick={() => setSidebarView("recent")}
+          onClick={() => {
+            if (isFileListLayoutDebugEnabled()) {
+              const data = {
+                trigger: "sidebarView-recent",
+                fromSidebarView: sidebarViewRef.current,
+                fromFolderId: currentFolderIdRef.current ?? "__ROOT__",
+              };
+              queueTopbarLayoutDebug("after sidebarView recent topbar layout", data);
+              debugFileListLayout(
+                "before sidebarView recent setState",
+                collectLayoutDebugData(data),
+              );
+            }
+            setSidebarView("recent");
+          }}
         >
           <span className="filelist__sidebar-menu-icon" aria-hidden>
             <Icon type="clock" size={18} />
@@ -2933,7 +3143,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
           </div>
         )}
 
-        <header className="filelist__topbar">
+        <header className="filelist__topbar" ref={topbarRef}>
           <button
             type="button"
             className="filelist__mobile-menu"
@@ -3052,9 +3262,14 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
             </div>
           ) : (
             <div
-              className="filelist__grid"
+              className={[
+                "filelist__grid",
+                gridEnterAnimate ? "filelist__grid--animate-children" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
               ref={gridRef}
-              key={`${sidebarView}:${currentFolderId ?? "root"}:${sortKey}:${searchQuery.trim()}:${flatFolderView ? "flat" : "nested"}`}
+              key={gridListKey}
             >
               {showNewEntryCard ? renderNewEntryCard(0) : null}
               {filteredFiles.map((f, i) =>
