@@ -43,6 +43,7 @@
   --nb-radius-2xl: calc(var(--nb-unit) * 7);
   --nb-radius-3xl: calc(var(--nb-unit) * 8);
   --nb-radius-sheet-top: var(--nb-space-8);
+  --nb-radius-dialog: var(--nb-radius-sm);
 
   /* ── typography (rem) ── */
   --nb-font-micro: 0.625rem;
@@ -75,11 +76,13 @@
   --nb-border-input: rgba(27, 27, 31, 0.18);
   --nb-primary: #0ea5e9;
   --nb-primary-hover: #0284c7;
-  --nb-primary-soft: rgba(14, 165, 233, 0.14);
+  --nb-primary-soft: rgba(14, 165, 233, 0.07);
+  --nb-primary-soft-hover: rgba(14, 165, 233, 0.11);
   --nb-primary-focus: #0284c7;
   --nb-blue: #0ea5e9;
   --nb-blue-hover: #0284c7;
-  --nb-blue-soft: rgba(14, 165, 233, 0.14);
+  --nb-blue-soft: rgba(14, 165, 233, 0.07);
+  --nb-blue-soft-hover: rgba(14, 165, 233, 0.11);
   --nb-blue-focus: #0284c7;
   --nb-on-primary: #ffffff;
   --nb-on-primary-dark-contrast: #000000;
@@ -340,8 +343,10 @@
   --nb-fill-hover-strong: rgba(255, 255, 255, 0.13);
   --nb-border: rgba(255, 255, 255, 0.1);
   --nb-border-input: rgba(255, 255, 255, 0.16);
-  --nb-primary-soft: rgba(168, 165, 255, 0.16);
-  --nb-blue-soft: rgba(168, 165, 255, 0.16);
+  --nb-primary-soft: rgba(168, 165, 255, 0.1);
+  --nb-primary-soft-hover: rgba(168, 165, 255, 0.16);
+  --nb-blue-soft: rgba(168, 165, 255, 0.1);
+  --nb-blue-soft-hover: rgba(168, 165, 255, 0.16);
   --nb-btn-primary-shadow: rgba(0, 0, 0, 0.3) 0 0 0 var(--nb-border-width) inset,
     rgba(0, 0, 0, 0.2) 0 var(--nb-space-1) var(--nb-space-2);
   --nb-btn-ghost-shadow: rgba(0, 0, 0, 0.25) 0 0 0 var(--nb-border-width) inset;

@@ -45,7 +45,7 @@
   width: 100%;
   min-height: 2.375rem;
   padding: var(--nb-space-3) var(--nb-space-5);
-  border-radius: var(--nb-radius-md);
+  border-radius: var(--nb-radius-dialog, var(--nb-radius-sm));
   font-size: var(--nb-font-body-sm);
   font-weight: 500;
   font-family: inherit;
@@ -65,11 +65,7 @@
 .editor-platform-shell
   #editor-platform-dialog-root
   .app-confirm-dialog__btn--primary {
-  @include shell-modal-primary-btn;
-  width: 100%;
-  min-height: 2.375rem;
-  padding: var(--nb-space-3) var(--nb-space-5);
-  font-size: var(--nb-font-body-sm);
+  @include shell-modal-soft-primary-btn;
 }
 
 .editor-platform-shell
@@ -97,7 +93,7 @@
   color: var(--nb-text-muted);
   cursor: pointer;
   font-family: inherit;
-  border-radius: var(--nb-radius-md);
+  border-radius: var(--nb-radius-dialog, var(--nb-radius-sm));
   transition: color 0.15s ease, background-color 0.15s ease;
 }
 
