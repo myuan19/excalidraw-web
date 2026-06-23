@@ -81,21 +81,25 @@
   --nb-shadow-card-hover: 0 4px 14px var(--nb-shadow-ink-strong),
     0 0 0 1px rgba(14, 165, 233, 0.12);
   --nb-shadow-focus-primary: 0 0 0 2px rgba(14, 165, 233, 0.28);
+  --nb-search-focus-gradient: linear-gradient(
+    135deg,
+    rgba(14, 165, 233, 0.34) 0%,
+    rgba(186, 230, 253, 0.68) 38%,
+    rgba(224, 242, 254, 0.42) 62%,
+    rgba(14, 165, 233, 0.24) 100%
+  );
+  --nb-search-focus-glow: 0 2px 10px rgba(14, 165, 233, 0.07);
+  --nb-control-focus-border: rgba(14, 165, 233, 0.38);
+  --nb-control-focus-ring: none;
+  --nb-input-focus-border-soft: rgba(14, 165, 233, 0.22);
   --nb-shell-accent-color: #0ea5e9;
-  --nb-shell-focus-border: rgba(14, 165, 233, 0.55);
-  --nb-shell-focus-ring: rgba(14, 165, 233, 0.2);
+  --nb-shell-focus-border: var(--nb-control-focus-border);
+  --nb-shell-focus-ring: var(--nb-control-focus-ring);
 
   --nb-shimmer-from: #f0f9ff;
   --nb-shimmer-mid: #e0f2fe;
   --nb-shimmer-line-from: #e8f6fc;
   --nb-shimmer-line-mid: #dbeafe;
-
-  --nb-ai-dialog-bg: var(--nb-surface);
-  --nb-ai-dialog-text: var(--nb-text);
-  --nb-ai-dialog-border: var(--nb-border);
-  --nb-ai-input-bg: var(--nb-page-bg);
-  --nb-ai-focus-border: var(--nb-primary-focus);
-  --nb-ai-focus-ring: var(--nb-primary-soft);
 }
 
 @mixin shell-theme-dark {
@@ -169,9 +173,19 @@
   --nb-shadow-card-hover: 0 4px 14px rgba(0, 0, 0, 0.45),
     0 0 0 1px var(--nb-filelist-border-strong);
   --nb-shadow-focus-primary: 0 0 0 2px rgba(56, 189, 248, 0.28);
+  --nb-search-focus-gradient: linear-gradient(
+    135deg,
+    rgba(56, 189, 248, 0.38) 0%,
+    rgba(125, 211, 252, 0.32) 42%,
+    rgba(56, 189, 248, 0.14) 100%
+  );
+  --nb-search-focus-glow: 0 2px 12px rgba(56, 189, 248, 0.1);
+  --nb-control-focus-border: rgba(56, 189, 248, 0.34);
+  --nb-control-focus-ring: none;
+  --nb-input-focus-border-soft: rgba(56, 189, 248, 0.26);
   --nb-shell-accent-color: #38bdf8;
-  --nb-shell-focus-border: rgba(56, 189, 248, 0.45);
-  --nb-shell-focus-ring: rgba(56, 189, 248, 0.16);
+  --nb-shell-focus-border: var(--nb-control-focus-border);
+  --nb-shell-focus-ring: var(--nb-control-focus-ring);
 
   --nb-shimmer-from: #1e293b;
   --nb-shimmer-mid: #273548;
@@ -181,24 +195,6 @@
   --nb-btn-primary-shadow: rgba(0, 0, 0, 0.35) 0 0 0 1px inset,
     rgba(0, 0, 0, 0.25) 0 1px 2px;
   --nb-btn-ghost-shadow: rgba(0, 0, 0, 0.3) 0 0 0 1px inset;
-
-  --nb-ai-dialog-bg: #1e293b;
-  --nb-ai-dialog-text: #e2e8f0;
-  --nb-ai-dialog-shadow: 0 24px 48px rgba(0, 0, 0, 0.45),
-    0 0 0 1px rgba(56, 189, 248, 0.1);
-  --nb-ai-dialog-border: rgba(148, 163, 184, 0.16);
-  --nb-ai-desc-muted: #94a3b8;
-  --nb-ai-error-bg: rgba(248, 113, 113, 0.12);
-  --nb-ai-error-border: rgba(248, 113, 113, 0.28);
-  --nb-ai-error-text: #fecaca;
-  --nb-ai-input-bg: #0f172a;
-  --nb-ai-input-border: rgba(148, 163, 184, 0.2);
-  --nb-ai-placeholder: rgba(226, 232, 240, 0.35);
-  --nb-ai-focus-border: rgba(56, 189, 248, 0.55);
-  --nb-ai-focus-ring: rgba(56, 189, 248, 0.16);
-  --nb-ai-secondary-bg: rgba(56, 189, 248, 0.08);
-  --nb-ai-secondary-border: rgba(148, 163, 184, 0.16);
-  --nb-ai-secondary-hover: rgba(56, 189, 248, 0.12);
 
   --nb-fork-home-surface: #1e293b;
   --nb-fork-home-text: #e2e8f0;

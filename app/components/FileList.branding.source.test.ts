@@ -38,7 +38,7 @@ describe("File list branding source contract", () => {
 
   it("uses editor registry icons and display names for document kinds", () => {
     const newFileSource = fs.readFileSync(
-      path.join(appRoot, "components/NewFileDialog.tsx"),
+      path.join(appRoot, "components/EditorKindDialog.tsx"),
       "utf8",
     );
 
@@ -95,7 +95,7 @@ describe("File list branding source contract", () => {
 
   it("uses per-editor icons in the new-file dialog", () => {
     const newFileSource = fs.readFileSync(
-      path.join(appRoot, "components/NewFileDialog.tsx"),
+      path.join(appRoot, "components/EditorKindDialog.tsx"),
       "utf8",
     );
 

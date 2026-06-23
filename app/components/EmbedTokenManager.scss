@@ -1,4 +1,5 @@
 /* 嵌入管理弹窗：复用 shell-modal 共享 mixin，与平台确认框同一套视觉语言。 */
+@import "../styles/shell/shellInput.scss";
 @import "../styles/shell/shellModal.scss";
 
 .embed-mgr__overlay {
@@ -24,7 +25,7 @@
   align-items: center;
   gap: var(--nb-space-4);
   padding: var(--nb-space-6) var(--nb-space-8);
-  border-bottom: var(--nb-border-width) solid var(--nb-ai-dialog-border);
+  border-bottom: var(--nb-border-width) solid var(--nb-border);
 }
 
 .embed-mgr__title {
@@ -32,7 +33,7 @@
   font-size: var(--nb-font-title-sm);
   font-weight: 600;
   letter-spacing: -0.01em;
-  color: var(--nb-ai-dialog-text);
+  color: var(--nb-text);
   flex-shrink: 0;
 }
 
@@ -62,7 +63,7 @@
 
   &:hover {
     background: var(--nb-fill-hover);
-    color: var(--nb-ai-dialog-text);
+    color: var(--nb-text);
   }
 }
 
@@ -257,25 +258,16 @@
 }
 
 .embed-mgr__input {
+  @include shell-control-field;
   width: 100%;
   padding: var(--nb-space-3) var(--nb-space-4);
-  border: var(--nb-border-width) solid var(--nb-border-input);
   border-radius: var(--nb-radius-md);
   font-size: var(--nb-font-body-sm);
-  font-family: inherit;
   color: var(--nb-text);
-  background: var(--nb-ai-input-bg);
-  outline: none;
-  transition: border-color var(--nb-dur-hover) var(--nb-ease-ui),
-    box-shadow var(--nb-dur-hover) var(--nb-ease-ui);
+  background: var(--nb-page-bg);
 
   &::placeholder {
     color: var(--nb-text-faint);
-  }
-
-  &:focus {
-    border-color: var(--nb-ai-focus-border);
-    box-shadow: 0 0 0 var(--nb-border-width-ring) var(--nb-ai-focus-ring);
   }
 }
 

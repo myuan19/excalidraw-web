@@ -1,5 +1,7 @@
 @import "./filelist-design-tokens";
+@import "../styles/shell/filelistSubtleScrollbar";
 @import "../styles/shell/shellModal.scss";
+@import "../styles/shell/shellInput";
 
 /**
  * 编辑器内打开的保存/新建/导入类型弹层不在 .filelist 内，须自带 --fl-* token，
@@ -61,26 +63,19 @@
   }
 
   .filelist__folder-input {
+    @include shell-control-field;
     box-sizing: border-box;
     display: block;
     width: 100%;
     margin: 0;
     flex-shrink: 0;
-    border: var(--nb-border-width) solid var(--fl-border);
+    border-color: var(--fl-border);
     border-radius: var(--nb-radius-dialog, var(--nb-radius-sm));
     padding: var(--nb-space-3) var(--nb-space-5);
     font-size: var(--nb-font-body-sm);
     font-weight: 500;
-    font-family: inherit;
     color: var(--nb-text);
     background: var(--nb-surface);
-    outline: none;
-    box-shadow: none;
-
-    &:focus {
-      border-color: var(--fl-border-strong);
-      box-shadow: none;
-    }
   }
 
   .filelist__folder-path-picker {
@@ -163,7 +158,138 @@
     }
   }
 
-  .filelist__kind-option {
-    appearance: none;
+  .filelist__move-dialog {
+    width: min(var(--nb-filelist-move-max-w), 100%);
+    max-height: min(80vh, 40rem);
+    display: flex;
+    flex-direction: column;
+
+    .filelist__move-list {
+      margin: 0 0 var(--nb-space-7);
+    }
+  }
+
+  .filelist__new-file-dialog {
+    .filelist__new-file-kind {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--nb-space-4);
+      margin-bottom: var(--nb-space-6);
+    }
+
+    .filelist__kind-option {
+      display: flex;
+      align-items: center;
+      gap: var(--nb-space-3);
+      padding: var(--nb-space-5);
+      border: var(--nb-border-width) solid var(--fl-border);
+      border-radius: var(--nb-radius-lg);
+      background: var(--fl-surface-high);
+      color: var(--nb-text);
+      font-family: inherit;
+      cursor: pointer;
+      text-align: left;
+      touch-action: manipulation;
+      transition: none;
+      appearance: none;
+
+      &:hover {
+        border-color: var(--fl-border-strong);
+        background: var(--nb-surface-row-hover);
+      }
+    }
+
+    .filelist__kind-option--active {
+      border-color: var(--fl-control-focus-border);
+      background: var(--fl-nav-surface-active);
+      color: var(--nb-text);
+    }
+  }
+
+  .filelist__move-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: min(44vh, var(--nb-filelist-move-list-max-h));
+    overflow-y: auto;
+    border: var(--nb-border-width) solid var(--fl-border);
+    border-radius: var(--nb-radius-md);
+    background: var(--fl-panel-solid);
+  }
+
+  .filelist__move-tree-node {
+    width: 100%;
+  }
+
+  .filelist__move-option {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--nb-space-4);
+    width: 100%;
+    padding: var(--nb-space-5) var(--nb-space-6);
+    border: none;
+    border-bottom: var(--nb-border-width) solid var(--fl-border);
+    background: transparent;
+    color: var(--nb-text);
+    font-size: var(--nb-font-folder-name);
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.12s ease;
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    &:hover:not(:disabled) {
+      background: var(--fl-primary-soft);
+    }
+
+    &--active {
+      background: var(--nb-filelist-move-active-bg);
+      color: var(--fl-primary);
+    }
+
+    &--current:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+  }
+
+  .filelist__move-option-label {
+    flex: 1;
+    min-width: 0;
+    word-break: break-word;
+    line-height: 1.4;
+  }
+
+  .filelist__move-list {
+    @include filelist-subtle-scrollbar;
+  }
+
+  @media (max-width: 51.25rem) {
+    &.filelist__detail-overlay {
+      align-items: flex-end;
+      padding: 0;
+    }
+
+    .filelist__detail-card {
+      width: 100%;
+      max-height: 88vh;
+      overflow: auto;
+      border-radius: var(--nb-radius-sheet-top) var(--nb-radius-sheet-top) 0 0;
+      animation: filelistDialogSheetUp 0.25s var(--nb-ease-ui) both;
+    }
+  }
+}
+
+@keyframes filelistDialogSheetUp {
+  from {
+    opacity: 0;
+    transform: translateY(var(--nb-space-16));
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }

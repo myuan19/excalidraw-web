@@ -265,3 +265,33 @@
     opacity: 1;
   }
 }
+
+@mixin shell-drawer-overlay-root {
+  position: fixed;
+  inset: 0;
+  z-index: var(--nb-z-modal);
+  overflow: hidden;
+  font-family: var(--nb-font-ui), system-ui, sans-serif;
+  pointer-events: auto;
+}
+
+@mixin shell-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  cursor: default;
+  background: var(--nb-shell-overlay, var(--nb-overlay-scrim));
+}
+
+@mixin shell-drawer-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--nb-surface);
+  color: var(--nb-text);
+  border-left: var(--nb-border-width) solid var(--nb-border);
+}

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 
 import {
   listTokens,
@@ -9,6 +9,11 @@ import {
   buildEmbedUrl,
   type EmbedToken,
 } from "../data/embedApi";
+import { useStrictOverlayDismiss } from "../hooks/useStrictOverlayDismiss";
+import {
+  requestDestructiveConfirm,
+  type DestructiveConfirmOptions,
+} from "../shell/shellConfirm";
 
 import "./EmbedTokenManager.scss";
 
@@ -17,27 +22,7 @@ interface Props {
   fileName: string;
   open: boolean;
   onClose: () => void;
-}
-
-function useStrictOverlayDismiss(onDismiss: () => void) {
-  const down = useRef(false);
-  return useMemo(
-    () => ({
-      onPointerDown: (e: React.PointerEvent) => {
-        down.current = e.target === e.currentTarget;
-      },
-      onPointerUp: (e: React.PointerEvent) => {
-        if (e.target === e.currentTarget && down.current) {
-          onDismiss();
-        }
-        down.current = false;
-      },
-      onPointerCancel: () => {
-        down.current = false;
-      },
-    }),
-    [onDismiss],
-  );
+  confirmDestructive?: (options: DestructiveConfirmOptions) => Promise<boolean>;
 }
 
 export const EmbedTokenManager: React.FC<Props> = ({
@@ -45,6 +30,7 @@ export const EmbedTokenManager: React.FC<Props> = ({
   fileName,
   open,
   onClose,
+  confirmDestructive = requestDestructiveConfirm,
 }) => {
   const [tokens, setTokens] = useState<EmbedToken[]>([]);
   const [loading, setLoading] = useState(true);
@@ -127,7 +113,12 @@ export const EmbedTokenManager: React.FC<Props> = ({
 
   const handleDelete = useCallback(
     async (id: string) => {
-      if (!window.confirm("确定删除此嵌入令牌？删除后已嵌入的页面将无法加载。")) {
+      const confirmed = await confirmDestructive({
+        title: "删除嵌入令牌",
+        message: "确定删除此嵌入令牌？删除后已嵌入的页面将无法加载。",
+        confirmLabel: "删除",
+      });
+      if (!confirmed) {
         return;
       }
       try {
@@ -137,7 +128,7 @@ export const EmbedTokenManager: React.FC<Props> = ({
         setError(e.message);
       }
     },
-    [refresh],
+    [confirmDestructive, refresh],
   );
 
   const copyToClipboard = useCallback(async (text: string, tokenId: string) => {
@@ -164,12 +155,13 @@ export const EmbedTokenManager: React.FC<Props> = ({
   }
 
   return (
-    <div
-      className="embed-mgr__overlay"
-      role="dialog"
-      aria-modal
-      {...overlayDismiss}
-    >
+    <>
+      <div
+        className="embed-mgr__overlay"
+        role="dialog"
+        aria-modal
+        {...overlayDismiss}
+      >
       <div
         className="embed-mgr__card"
         onPointerDown={(e) => e.stopPropagation()}
@@ -365,6 +357,7 @@ export const EmbedTokenManager: React.FC<Props> = ({
           )}
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 };

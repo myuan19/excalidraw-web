@@ -24,14 +24,22 @@
   --fl-nav-text-muted: var(--nb-nav-text-muted);
   --fl-nav-text-faint: var(--nb-nav-text-faint);
   --fl-nav-outline-drop: var(--nb-nav-outline-drop);
-  --fl-shell-focus-border: var(--nb-shell-focus-border, var(--nb-border-input));
-  --fl-shell-focus-ring: var(--nb-shell-focus-ring, var(--nb-primary-soft));
+  --fl-shell-focus-border: var(--nb-control-focus-border, var(--nb-border-input));
+  --fl-shell-focus-ring: var(--nb-control-focus-ring, none);
   --fl-shell-accent: var(--nb-shell-accent-color, var(--nb-primary));
+  --fl-control-focus-border: var(--nb-control-focus-border);
+  --fl-control-focus-ring: var(--nb-control-focus-ring);
   --fl-input-border: var(--fl-border);
   --fl-input-bg: var(--fl-surface-high);
-  --fl-input-focus-border: var(--nb-primary-focus);
-  --fl-input-focus-ring: var(--nb-shadow-focus-primary);
-  --fl-input-focus-bg: var(--nb-page-bg);
+  --fl-input-focus-border: var(
+    --nb-input-focus-border-soft,
+    var(--nb-control-focus-border)
+  );
+  --fl-input-focus-ring: none;
+  --fl-input-focus-bg: var(--fl-input-bg);
+  --fl-search-focus-gradient: var(--nb-search-focus-gradient);
+  --fl-search-focus-glow: var(--nb-search-focus-glow);
+  --fl-topbar-control-h: calc(var(--nb-unit) * 16);
   /* 须在 .filelist 上定义，避免 :root 预计算渐变导致暗色侧栏仍为亮色 */
   --fl-sidebar-gradient: linear-gradient(
     180deg,

@@ -1,36 +1,13 @@
 import {
   useCallback,
-  useMemo,
-  useRef,
   useState,
-  type PointerEvent as ReactPointerEvent,
 } from "react";
 
 import { isLocalDraftFileId } from "../data/localDraftFileId";
 import { LocalDraftSessions } from "../data/localDraftSessions";
 import { saveNewDocument } from "../data/saveNewDocument";
 import { editorRegistry } from "../editors";
-
-function useStrictOverlayDismiss(onDismiss: () => void) {
-  const armedRef = useRef(false);
-  return useMemo(
-    () => ({
-      onPointerDown: (e: ReactPointerEvent) => {
-        armedRef.current = e.target === e.currentTarget;
-      },
-      onPointerUp: (e: ReactPointerEvent) => {
-        if (e.target === e.currentTarget && armedRef.current) {
-          onDismiss();
-        }
-        armedRef.current = false;
-      },
-      onPointerCancel: () => {
-        armedRef.current = false;
-      },
-    }),
-    [onDismiss],
-  );
-}
+import { useStrictOverlayDismiss } from "./useStrictOverlayDismiss";
 
 export function useSaveNewDocumentDialog(opts: {
   getFileId: () => string | null;

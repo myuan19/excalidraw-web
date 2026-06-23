@@ -189,9 +189,11 @@
     var(--nb-shadow-primary-medium);
   --nb-shadow-focus-primary: 0 0 0 var(--nb-border-width-ring)
     var(--nb-primary-soft);
+  --nb-control-focus-border: rgba(14, 165, 233, 0.38);
+  --nb-control-focus-ring: none;
   --nb-shell-accent-color: var(--nb-primary);
-  --nb-shell-focus-border: var(--nb-border-input);
-  --nb-shell-focus-ring: var(--nb-primary-soft);
+  --nb-shell-focus-border: var(--nb-control-focus-border);
+  --nb-shell-focus-ring: var(--nb-control-focus-ring);
   --nb-shadow-focus-danger: 0 0 0 var(--nb-border-width-ring)
     rgba(220, 38, 38, 0.12);
 
@@ -323,15 +325,6 @@
   --nb-keyframe-slide-sm: var(--nb-space-8);
   --nb-keyframe-slide-md: var(--nb-space-16);
   --nb-shimmer-distance: 25rem;
-
-  /* AI / system dark surfaces (prefers-color-scheme) */
-  --nb-ai-dialog-bg: var(--nb-surface);
-  --nb-ai-dialog-text: var(--nb-text);
-  --nb-ai-dialog-border: var(--nb-border);
-  --nb-ai-dialog-shadow: var(--nb-shadow-dialog);
-  --nb-ai-input-bg: var(--nb-page-bg);
-  --nb-ai-focus-border: var(--nb-primary-focus);
-  --nb-ai-focus-ring: var(--nb-primary-soft);
 }
 
 /* Breakpoint tokens: use rem in @media (no px in query values). */
@@ -365,23 +358,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --nb-ai-dialog-bg: #1e1e24;
-    --nb-ai-dialog-text: #ececf1;
-    --nb-ai-dialog-shadow: 0 var(--nb-space-24) var(--nb-space-27)
-        rgba(0, 0, 0, 0.45),
-      0 0 0 var(--nb-border-width) rgba(255, 255, 255, 0.06);
-    --nb-ai-dialog-border: rgba(255, 255, 255, 0.1);
-    --nb-ai-desc-muted: rgba(236, 236, 241, 0.65);
-    --nb-ai-error-bg: rgba(248, 113, 113, 0.12);
-    --nb-ai-error-border: rgba(248, 113, 113, 0.28);
-    --nb-ai-error-text: #fecaca;
-    --nb-ai-input-bg: #121218;
-    --nb-ai-input-border: rgba(255, 255, 255, 0.14);
-    --nb-ai-placeholder: rgba(236, 236, 241, 0.35);
-    --nb-ai-focus-border: #38bdf8;
-    --nb-ai-focus-ring: rgba(56, 189, 248, 0.2);
-    --nb-ai-secondary-bg: rgba(255, 255, 255, 0.06);
-    --nb-ai-secondary-border: rgba(255, 255, 255, 0.12);
-    --nb-ai-secondary-hover: rgba(255, 255, 255, 0.1);
+    --nb-control-focus-border: rgba(56, 189, 248, 0.34);
+    --nb-control-focus-ring: none;
   }
 }

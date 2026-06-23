@@ -1,24 +1,17 @@
+@import "../styles/shell/shellInput";
+@import "../styles/shell/shellModal.scss";
+
 .settings-panel-overlay {
+  @include shell-drawer-overlay-root;
   --settings-drawer-duration: 280ms;
   --settings-drawer-ease: cubic-bezier(0.16, 1, 0.3, 1);
   --settings-drawer-width: min(480px, 90vw);
   /* 仅向左投影，避免滑入期底部/右侧阴影带被误读为「多一层」 */
   --settings-drawer-shadow: -8px 0 32px rgba(15, 23, 42, 0.14);
-
-  position: fixed;
-  inset: 0;
-  z-index: var(--nb-z-modal);
-  overflow: hidden;
-  font-family: var(--nb-font-ui), system-ui, sans-serif;
-  pointer-events: auto;
 }
 
 .settings-panel-overlay__backdrop {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  cursor: default;
-  background: var(--nb-shell-overlay, var(--nb-overlay-scrim));
+  @include shell-drawer-backdrop;
   opacity: 0;
   backdrop-filter: blur(0);
   -webkit-backdrop-filter: blur(0);
@@ -35,17 +28,8 @@
 }
 
 .settings-panel {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 1;
+  @include shell-drawer-panel;
   width: var(--settings-drawer-width);
-  display: flex;
-  flex-direction: column;
-  background: var(--nb-ai-dialog-bg);
-  color: var(--nb-ai-dialog-text);
-  border-left: var(--nb-border-width) solid var(--nb-ai-dialog-border);
   box-shadow: var(--settings-drawer-shadow);
   transform: translateX(100%);
   transition: transform var(--settings-drawer-duration)
@@ -57,7 +41,7 @@
     align-items: center;
     justify-content: space-between;
     padding: var(--nb-space-7) var(--nb-space-8);
-    border-bottom: var(--nb-border-width) solid var(--nb-ai-dialog-border);
+    border-bottom: var(--nb-border-width) solid var(--nb-border);
     flex-shrink: 0;
 
     h2 {
@@ -82,7 +66,7 @@
 
     &:hover {
       background: var(--nb-fill-hover);
-      color: var(--nb-ai-dialog-text);
+      color: var(--nb-text);
     }
   }
 
@@ -90,7 +74,7 @@
     display: flex;
     gap: 0;
     padding: 0 var(--nb-space-8);
-    border-bottom: var(--nb-border-width) solid var(--nb-ai-dialog-border);
+    border-bottom: var(--nb-border-width) solid var(--nb-border);
     flex-shrink: 0;
   }
 
@@ -107,7 +91,7 @@
     transition: color 0.15s ease, border-color 0.15s ease;
 
     &:hover {
-      color: var(--nb-ai-dialog-text);
+      color: var(--nb-text);
     }
 
     &--active {
@@ -179,7 +163,7 @@
     display: block;
     font-size: var(--nb-font-body-sm);
     font-weight: 600;
-    color: var(--nb-ai-dialog-text);
+    color: var(--nb-text);
   }
 
   .settings-panel__option-desc {
@@ -237,23 +221,13 @@
 
   /* --- Select dropdown --- */
   .settings-panel__select {
+    @include shell-control-select;
     padding: var(--nb-space-3) var(--nb-space-4);
-    border: var(--nb-border-width) solid var(--nb-border-input);
     border-radius: var(--nb-radius-lg);
     font-size: var(--nb-font-body-sm);
-    font-family: inherit;
-    color: var(--nb-ai-dialog-text);
-    background: var(--nb-ai-input-bg);
-    cursor: pointer;
-    outline: none;
-
-    &:focus {
-      border-color: var(--nb-ai-focus-border);
-      box-shadow: 0 0 0 var(--nb-border-width-ring) var(--nb-ai-focus-ring);
-    }
   }
 
-  /* --- AI form inputs (reuse AISettings styling) --- */
+  /* --- AI form inputs --- */
   label {
     display: flex;
     flex-direction: column;
@@ -261,27 +235,19 @@
     margin-bottom: var(--nb-space-7);
     font-size: var(--nb-font-body-sm);
     font-weight: 600;
-    color: var(--nb-ai-dialog-text);
+    color: var(--nb-text);
 
     input {
+      @include shell-control-field;
       padding: var(--nb-space-4) var(--nb-space-5);
-      border: var(--nb-border-width) solid var(--nb-border-input);
       border-radius: var(--nb-radius-lg);
       font-size: var(--nb-font-body);
       font-weight: 400;
-      outline: none;
-      font-family: inherit;
-      color: var(--nb-ai-dialog-text);
-      background: var(--nb-ai-input-bg);
-      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      color: var(--nb-text);
+      background: var(--nb-page-bg);
 
       &::placeholder {
         color: var(--nb-text-faint);
-      }
-
-      &:focus {
-        border-color: var(--nb-ai-focus-border);
-        box-shadow: 0 0 0 var(--nb-border-width-ring) var(--nb-ai-focus-ring);
       }
     }
   }
@@ -322,22 +288,11 @@
   }
 
   .settings-panel__btn-primary {
+    @include shell-modal-soft-primary-btn;
     padding: var(--nb-space-4) var(--nb-space-9);
-    border: none;
     border-radius: var(--nb-radius-lg);
     font-size: var(--nb-font-body);
     font-weight: 600;
-    font-family: inherit;
-    cursor: pointer;
-    color: var(--nb-on-primary);
-    background: var(--nb-primary);
-    box-shadow: var(--nb-shadow-btn-primary);
-    transition: background 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
-
-    &:hover:not(:disabled) {
-      background: var(--nb-primary-hover);
-      box-shadow: var(--nb-shadow-btn-primary-hover);
-    }
 
     &:disabled {
       opacity: 0.55;
@@ -367,15 +322,10 @@
   }
 
   .settings-panel label input {
-    border-color: var(--nb-ai-input-border);
-  }
-
-  .settings-panel label input:focus {
-    border-color: var(--nb-ai-focus-border);
-    box-shadow: 0 0 0 var(--nb-border-width-ring) var(--nb-ai-focus-ring);
+    border-color: var(--nb-border-input);
   }
 
   .settings-panel label input::placeholder {
-    color: var(--nb-ai-placeholder);
+    color: var(--nb-text-faint);
   }
 }

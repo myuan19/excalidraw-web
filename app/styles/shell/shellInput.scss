@@ -1,11 +1,50 @@
-/** 首页外壳输入框聚焦样式（FileList 搜索等） */
+/**
+ * 外壳表单控件共享样式。
+ * - shell-control-*：设置面板、弹窗内 input/select（淡色边框 focus，无粗 ring）
+ * - shell-search-input：FileList 顶栏搜索（内框 + 外层渐变描边由 .filelist__search-wrap 负责）
+ */
+
+@mixin shell-control-focus {
+  outline: none;
+  border-color: var(
+    --fl-control-focus-border,
+    var(--nb-control-focus-border, var(--nb-border-input))
+  );
+  box-shadow: var(
+    --fl-control-focus-ring,
+    var(--nb-control-focus-ring, none)
+  );
+}
+
+@mixin shell-control-field {
+  border: var(--nb-border-width) solid var(--nb-border-input);
+  outline: none;
+  font-family: inherit;
+  transition: border-color var(--nb-dur-hover) var(--nb-ease-ui),
+    box-shadow var(--nb-dur-hover) var(--nb-ease-ui);
+
+  &:focus {
+    @include shell-control-focus;
+  }
+}
+
+@mixin shell-control-select {
+  @include shell-control-field;
+  cursor: pointer;
+  appearance: none;
+  background-color: var(--nb-page-bg);
+  color: var(--nb-text);
+}
+
+/** 首页外壳搜索框（渐变描边见 .filelist__search-wrap:focus-within） */
 @mixin shell-search-input {
   border: var(--nb-border-width) solid var(--fl-input-border);
   border-radius: var(--nb-radius-md);
   background: var(--fl-input-bg);
   outline: none;
-  transition: border-color 80ms ease-in,
-    box-shadow var(--nb-dur-hover) var(--nb-ease-ui);
+  transition: border-color var(--nb-dur-hover) var(--nb-ease-ui),
+    box-shadow var(--nb-dur-hover) var(--nb-ease-ui),
+    background-color var(--nb-dur-hover) var(--nb-ease-ui);
 
   &:focus {
     border-color: var(--fl-input-focus-border);
