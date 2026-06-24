@@ -435,11 +435,8 @@
           return null
         }
       }
-      // 渲染等待回退上限：node_tree_render_end 事件迟迟不来（或根本不会触发）时，
-      // 等待不再无限挂起，而是回退继续并补发一次心跳。这是历史「原生界面未响应保存请求」
-      // 真·卡死（save 永远等不到渲染事件）的根因修复。必须 < 宿主静默超时，
-      // 以保证保存管线持续向宿主发 mindMapSaveProgress，不被判定为卡死。
-      const NODE_TREE_RENDER_WAIT_TIMEOUT_MS = 8000
+      /** 须小于宿主静默超时，保证渲染等待期间心跳能续期。 */
+      const NODE_TREE_RENDER_WAIT_TIMEOUT_MS = 8_000
       const waitForNodeTreeRenderEnd = reason => {
         return new Promise(resolve => {
           const waitStartedAt = performance.now()
@@ -1313,10 +1310,6 @@
             )
             debugMindMapOpen('requestMindMapSave | posted', {
               requestId: requestId || null,
-              totalMs: Math.round(performance.now() - saveStartedAt),
-              hasThumbnail: !!thumbnail
-            })
-            reportMindMapSaveProgress(requestId, 'done', {
               totalMs: Math.round(performance.now() - saveStartedAt),
               hasThumbnail: !!thumbnail
             })

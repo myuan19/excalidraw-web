@@ -84,17 +84,13 @@ import type {
   SaveToServerOptions,
   SaveToServerSource,
 } from "../../hooks/types";
+import type { MindMapNativeSaveResult } from "./mindMapNativeSaveCoordinator";
 
 export { getCachedMindMapServerSha, toMindMapLocalCacheRecord };
 
 const logSave = createLogger({ module: "save" });
 
 type MindMapSaveDocument = ManagedDocument<MindMapDocumentData>;
-
-export type MindMapNativeSaveResult = {
-  document: MindMapSaveDocument;
-  thumbnail?: string | null;
-};
 
 type RequestNativeMindMapData = () => Promise<MindMapNativeSaveResult | null>;
 
@@ -110,16 +106,6 @@ type NativeDirtyDebugMeta = {
   source?: string | null;
   userEdit?: boolean;
 };
-
-/**
- * 宿主等待 native `saveMindMapData` 的「静默」超时：仅当 native 在该时长内既无
- * `mindMapSaveProgress` 心跳、也无结果返回时，才判定为卡死。正在推进的慢保存
- * （大图缩略图导出等）会被心跳持续续期，不再被这条墙钟硬超时误杀——这是历史上
- * 「mindmap 原生界面未响应保存请求」临界竞态（结果晚到 ~20ms 被当 stale 丢弃）的根因。
- */
-const MINDMAP_SAVE_INACTIVITY_TIMEOUT_MS = 15_000;
-/** 绝对上限：即使 native 持续发心跳，单次保存等待也不会超过此时长。 */
-const MINDMAP_SAVE_ABSOLUTE_TIMEOUT_MS = 60_000;
 
 function isSilentSaveSource(source: SaveToServerSource): boolean {
   return source === "auto" || source === "visibility" || source === "thumbnail";
@@ -1192,4 +1178,3 @@ export function useMindMapFileSave(opts: {
   };
 }
 
-export { MINDMAP_SAVE_INACTIVITY_TIMEOUT_MS, MINDMAP_SAVE_ABSOLUTE_TIMEOUT_MS };

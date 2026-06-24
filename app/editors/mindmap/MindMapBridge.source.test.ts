@@ -179,6 +179,7 @@ describe("MindMap bridge source contract", () => {
     expect(source).toContain("'skipped-not-ready'");
     expect(source).not.toContain("mindMapSaveTrace");
     expect(source).not.toContain("traceMindMapSave");
+    expect(source).not.toContain("reportMindMapSaveProgress(requestId, 'done'");
   });
 
   it("forwards host debug logs into iframe console", () => {

@@ -79,9 +79,7 @@ import { isSchematicMindMapThumbnailSvg } from "../../data/thumbnailSvg";
 import { debugMindMapBridge, warnMindMapBridge } from "./mindMapBridgeDebug";
 import {
   isNativeMindMapMessage,
-  parseMindMapSaveProgress,
   type NativeMindMapMessage,
-  type MindMapSaveProgressPayload,
 } from "./mindMapBridgeProtocol";
 import {
   describeMindMapBridgeState,
@@ -98,6 +96,10 @@ import { recordMindMapPersisted } from "./mindMapPersistCoordinator";
 import { explainRefreshCacheOnOpen } from "./mindMapOpenSyncPolicy";
 import { createMindMapHydrateCoordinator } from "./mindMapHydrateCoordinator";
 import {
+  createMindMapNativeSaveCoordinator,
+  type MindMapNativeSaveResult,
+} from "./mindMapNativeSaveCoordinator";
+import {
   compareMindMapTreeIntegrityRegression,
   debugMindMapPersist,
   findFirstRichMindMapNodeSummary,
@@ -113,10 +115,7 @@ import {
 import {
   getCachedMindMapDocument,
   getCachedMindMapServerSha,
-  MINDMAP_SAVE_ABSOLUTE_TIMEOUT_MS,
-  MINDMAP_SAVE_INACTIVITY_TIMEOUT_MS,
   toMindMapLocalCacheRecord,
-  type MindMapNativeSaveResult,
   useMindMapFileSave,
 } from "./useMindMapFileSave";
 
@@ -342,21 +341,56 @@ const MindMapEditorShell = () => {
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
   const [showEmbedManager, setShowEmbedManager] = useState(false);
   const needsInitialThumbnailRef = useRef(false);
-  const saveResolveRef = useRef<
-    ((result: MindMapNativeSaveResult | null) => void) | null
-  >(null);
-  const savePromiseRef = useRef<Promise<MindMapNativeSaveResult | null> | null>(
-    null,
+  const saveBridgeDepsRef = useRef({
+    fileId,
+    bridgePhase,
+    isBridgeReady,
+    isAppReady,
+    learnedOrigin,
+    iframeRef,
+    postToNative,
+    setError,
+  });
+  saveBridgeDepsRef.current = {
+    fileId,
+    bridgePhase,
+    isBridgeReady,
+    isAppReady,
+    learnedOrigin,
+    iframeRef,
+    postToNative,
+    setError,
+  };
+  const nativeSaveCoordinatorRef = useRef(
+    createMindMapNativeSaveCoordinator({
+      getBridgeContext: () => {
+        const deps = saveBridgeDepsRef.current;
+        return {
+          bridgeReady: deps.isBridgeReady,
+          appInited: deps.isAppReady,
+          bridgePhase: deps.bridgePhase,
+          fileId8: deps.fileId?.slice(0, 8) ?? null,
+          bridgeState: describeMindMapBridgeState({
+            hostOrigin: window.location.origin,
+            iframeSrc: deps.iframeRef.current?.src ?? null,
+            bridgeReady: deps.isBridgeReady,
+            appInited: deps.isAppReady,
+            learnedOrigin: deps.learnedOrigin,
+            hasContentWindow: !!deps.iframeRef.current?.contentWindow,
+          }),
+        };
+      },
+      postSaveRequest: (requestId) =>
+        saveBridgeDepsRef.current.postToNative("requestMindMapSave", {
+          requestId,
+        }),
+      onError: (message) => saveBridgeDepsRef.current.setError(message),
+    }),
   );
-  const saveTimeoutRef = useRef<number | null>(null);
-  const saveRequestIdRef = useRef<string | null>(null);
-  const saveRequestStartedAtRef = useRef<number | null>(null);
-  const lastNativeSaveProgressRef = useRef<MindMapSaveProgressPayload | null>(
-    null,
+  const requestNativeSave = useCallback(
+    () => nativeSaveCoordinatorRef.current.requestNativeSave(),
+    [],
   );
-  // 重新武装「静默超时」的闭包（由当前 in-flight 保存请求安装）。收到本请求的
-  // mindMapSaveProgress 心跳时调用它来续期，使正在推进的慢保存不被误判为卡死。
-  const armSaveInactivityTimerRef = useRef<(() => void) | null>(null);
   const missingFileRedirectTimerRef = useRef<number | null>(null);
   const latestNativeRevisionRef = useRef(0);
   const latestDocumentRef = useRef<ManagedDocument<MindMapDocumentData> | null>(
@@ -523,159 +557,6 @@ const MindMapEditorShell = () => {
     },
     [postClipboardResult],
   );
-
-  // 统一清理一次 native 保存请求的所有关联状态（计时器/解析器/请求标识/进度/续期闭包）。
-  // 超时、成功、解析失败、终态进度、卸载等所有收尾路径都经此入口，避免遗漏某个引用。
-  const resetNativeSaveRequestState = useCallback(() => {
-    if (saveTimeoutRef.current) {
-      window.clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = null;
-    }
-    saveResolveRef.current = null;
-    savePromiseRef.current = null;
-    saveRequestIdRef.current = null;
-    saveRequestStartedAtRef.current = null;
-    lastNativeSaveProgressRef.current = null;
-    armSaveInactivityTimerRef.current = null;
-  }, []);
-
-  const requestNativeSave = useCallback(() => {
-    if (savePromiseRef.current) {
-      debugMindMapBridge("requestNativeSave | reuse in-flight promise", {
-        requestId: saveRequestIdRef.current,
-        waitedMs:
-          saveRequestStartedAtRef.current != null
-            ? Math.round(performance.now() - saveRequestStartedAtRef.current)
-            : null,
-      });
-      return savePromiseRef.current;
-    }
-    const bridgeState = describeMindMapBridgeState({
-      hostOrigin: window.location.origin,
-      iframeSrc: iframeRef.current?.src ?? null,
-      bridgeReady: isBridgeReady,
-      appInited: isAppReady,
-      learnedOrigin,
-      hasContentWindow: !!iframeRef.current?.contentWindow,
-    });
-    debugMindMapBridge("requestNativeSave | start", bridgeState);
-
-    const promise = new Promise<MindMapNativeSaveResult | null>((resolve) => {
-      const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const startedAt = performance.now();
-      const absoluteDeadlineAt = startedAt + MINDMAP_SAVE_ABSOLUTE_TIMEOUT_MS;
-      saveResolveRef.current = resolve;
-      saveRequestIdRef.current = requestId;
-      saveRequestStartedAtRef.current = startedAt;
-      lastNativeSaveProgressRef.current = null;
-      debugMindMapBridge("requestNativeSave | dispatched", {
-        requestId,
-        fileId8: fileId?.slice(0, 8) ?? null,
-        bridgePhase,
-        inactivityTimeoutMs: MINDMAP_SAVE_INACTIVITY_TIMEOUT_MS,
-        absoluteTimeoutMs: MINDMAP_SAVE_ABSOLUTE_TIMEOUT_MS,
-        ...bridgeState,
-      });
-
-      const fireSaveTimeout = () => {
-        const now = performance.now();
-        const waitedMs = Math.round(now - startedAt);
-        const reason = now >= absoluteDeadlineAt ? "absolute" : "inactivity";
-        const lastProgress = lastNativeSaveProgressRef.current;
-        const sinceLastProgressMs =
-          lastProgress && typeof lastProgress.elapsedMs === "number"
-            ? waitedMs - lastProgress.elapsedMs
-            : null;
-        warnMindMapBridge("requestNativeSave | timeout", {
-          requestId,
-          reason,
-          waitedMs,
-          sinceLastProgressMs,
-          inactivityTimeoutMs: MINDMAP_SAVE_INACTIVITY_TIMEOUT_MS,
-          absoluteTimeoutMs: MINDMAP_SAVE_ABSOLUTE_TIMEOUT_MS,
-          fileId8: fileId?.slice(0, 8) ?? null,
-          bridgePhase,
-          nativeSaveProgress: lastProgress,
-          bridgeState: describeMindMapBridgeState({
-            hostOrigin: window.location.origin,
-            iframeSrc: iframeRef.current?.src ?? null,
-            bridgeReady: isBridgeReady,
-            appInited: isAppReady,
-            learnedOrigin,
-            hasContentWindow: !!iframeRef.current?.contentWindow,
-          }),
-        });
-        resetNativeSaveRequestState();
-        const hint = !isBridgeReady
-          ? "mindmap 原生 iframe 未就绪（请运行 yarn build:production）"
-          : !isAppReady
-          ? "mindmap 原生界面未完成初始化"
-          : "mindmap 原生界面未响应保存请求";
-        setError(hint);
-        resolve(null);
-      };
-
-      // 静默超时：仅在「绝对上限」内、且距上次心跳超过 inactivity 阈值时才触发。
-      // native 每个保存阶段（snapshot/thumbnail/post）及每次渲染等待都会发心跳，
-      // 收到后由 mindMapSaveProgress handler 调用本闭包续期，从而不误杀慢保存。
-      const armSaveInactivityTimer = () => {
-        if (saveTimeoutRef.current) {
-          window.clearTimeout(saveTimeoutRef.current);
-          saveTimeoutRef.current = null;
-        }
-        const remaining = Math.max(
-          0,
-          Math.min(
-            MINDMAP_SAVE_INACTIVITY_TIMEOUT_MS,
-            absoluteDeadlineAt - performance.now(),
-          ),
-        );
-        saveTimeoutRef.current = window.setTimeout(fireSaveTimeout, remaining);
-      };
-      armSaveInactivityTimerRef.current = armSaveInactivityTimer;
-      armSaveInactivityTimer();
-
-      if (!isAppReady) {
-        warnMindMapBridge("requestNativeSave | app not inited yet", {
-          requestId,
-          bridgeState,
-        });
-      }
-
-      const posted = postToNative("requestMindMapSave", { requestId });
-      if (!posted) {
-        warnMindMapBridge("requestNativeSave | postMessage not sent", {
-          requestId,
-          postMs: Math.round(performance.now() - startedAt),
-          bridgeState,
-        });
-        resetNativeSaveRequestState();
-        resolve(null);
-        return;
-      }
-      debugMindMapBridge("requestNativeSave | posted", {
-        requestId,
-        postMs: Math.round(performance.now() - startedAt),
-      });
-    });
-    savePromiseRef.current = promise;
-    // 安全网：请求结算后若 in-flight 引用仍指向本 promise（同步失败分支会在
-    // 赋值后才结算）则清空，避免把已 resolve 的 promise 永久当作 in-flight 复用。
-    void promise.finally(() => {
-      if (savePromiseRef.current === promise) {
-        savePromiseRef.current = null;
-      }
-    });
-    return promise;
-  }, [
-    bridgePhase,
-    fileId,
-    isAppReady,
-    isBridgeReady,
-    learnedOrigin,
-    postToNative,
-    resetNativeSaveRequestState,
-  ]);
 
   const navigateToFileListHomeRef = useRef(() => {});
   const navigateToFileListHome = useCallback(() => {
@@ -1170,21 +1051,12 @@ const MindMapEditorShell = () => {
 
     return () => {
       disposed = true;
-      if (saveTimeoutRef.current) {
-        window.clearTimeout(saveTimeoutRef.current);
-        saveTimeoutRef.current = null;
-      }
       if (missingFileRedirectTimerRef.current != null) {
         window.clearTimeout(missingFileRedirectTimerRef.current);
         missingFileRedirectTimerRef.current = null;
       }
       disposeNativeHydrate();
-      saveResolveRef.current = null;
-      savePromiseRef.current = null;
-      saveRequestIdRef.current = null;
-      saveRequestStartedAtRef.current = null;
-      lastNativeSaveProgressRef.current = null;
-      armSaveInactivityTimerRef.current = null;
+      nativeSaveCoordinatorRef.current.dispose();
     };
   }, [
     disposeNativeHydrate,
@@ -1298,73 +1170,23 @@ const MindMapEditorShell = () => {
         return;
       }
       if (event.data.type === "mindMapSaveProgress") {
-        const progress = parseMindMapSaveProgress(event.data.payload);
-        if (
-          !progress?.requestId ||
-          progress.requestId !== saveRequestIdRef.current
-        ) {
-          return;
-        }
-        lastNativeSaveProgressRef.current = progress;
-        const hostWaitedMs =
-          saveRequestStartedAtRef.current != null
-            ? Math.round(performance.now() - saveRequestStartedAtRef.current)
-            : null;
-        debugMindMapBridge("mindMapSaveProgress", {
-          ...progress,
-          hostWaitedMs,
-          fileId8: fileId?.slice(0, 8) ?? null,
-        });
-        // 终态进度：native 明确放弃本次保存 → 立即失败（fail-fast），不空等到超时。
-        if (
-          progress.phase === "skipped-not-ready" ||
-          progress.phase === "failed"
-        ) {
-          warnMindMapBridge(`requestNativeSave | ${progress.phase}`, {
-            ...progress,
-            hostWaitedMs,
-            fileId8: fileId?.slice(0, 8) ?? null,
-          });
-          if (!saveResolveRef.current) {
-            return;
-          }
-          const resolve = saveResolveRef.current;
-          resetNativeSaveRequestState();
-          setError(
-            progress.phase === "skipped-not-ready"
-              ? "mindmap 原生界面未就绪，无法保存"
-              : progress.message || "mindmap 保存失败",
-          );
-          resolve(null);
-          return;
-        }
-        // 非终态进度即「心跳」：native 仍在推进本次保存 → 重置静默超时窗口，
-        // 使慢但活着的保存（大图缩略图导出、渲染等待）不会被误判为卡死。
-        // concurrent 表示此前有未结算的保存，native 会接管为当前请求，仍属推进中。
-        if (progress.phase === "concurrent") {
-          warnMindMapBridge("requestNativeSave | concurrent", {
-            ...progress,
-            hostWaitedMs,
-            fileId8: fileId?.slice(0, 8) ?? null,
-          });
-        }
-        armSaveInactivityTimerRef.current?.();
+        nativeSaveCoordinatorRef.current.handleSaveProgress(
+          event.data.payload,
+        );
         return;
       }
       if (event.data.type === "saveMindMapData") {
         const savePayload = getMindMapSavePayload(event.data.payload);
-        const hostWaitedMs =
-          saveRequestStartedAtRef.current != null
-            ? Math.round(performance.now() - saveRequestStartedAtRef.current)
-            : null;
-        const isCurrentSaveResponse =
-          !!saveResolveRef.current &&
-          !!savePayload.requestId &&
-          savePayload.requestId === saveRequestIdRef.current;
+        const saveCorrelation =
+          nativeSaveCoordinatorRef.current.correlateSaveResponse(
+            savePayload.requestId,
+          );
+        const { isCurrentSaveResponse, isStaleRequestId, hostWaitedMs } =
+          saveCorrelation;
         debugMindMapBridge("saveMindMapData", {
           isCurrentSaveResponse,
           requestId: savePayload.requestId ?? null,
-          hostRequestId: saveRequestIdRef.current,
+          hostRequestId: saveCorrelation.hostRequestId,
           hostWaitedMs,
           revision: savePayload.revision ?? null,
           hasThumbnail: !!savePayload.thumbnail,
@@ -1379,13 +1201,10 @@ const MindMapEditorShell = () => {
           hydrating: nativeHydratingRef.current,
           fileId8: fileId?.slice(0, 8) ?? null,
         });
-        if (
-          savePayload.requestId &&
-          savePayload.requestId !== saveRequestIdRef.current
-        ) {
+        if (isStaleRequestId) {
           warnMindMapBridge("saveMindMapData | stale requestId dropped", {
             requestId: savePayload.requestId,
-            hostRequestId: saveRequestIdRef.current,
+            hostRequestId: saveCorrelation.hostRequestId,
             hostWaitedMs,
             revision: savePayload.revision ?? null,
           });
@@ -1485,31 +1304,24 @@ const MindMapEditorShell = () => {
                 hashDocumentSnapshot(document),
               );
             }
-            if (isCurrentSaveResponse && saveResolveRef.current) {
-              const resolve = saveResolveRef.current;
-              const resolvedWaitedMs =
-                saveRequestStartedAtRef.current != null
-                  ? Math.round(
-                      performance.now() - saveRequestStartedAtRef.current,
-                    )
-                  : null;
-              resetNativeSaveRequestState();
+            if (isCurrentSaveResponse) {
+              const { waitedMs, requestId: fulfilledRequestId } =
+                nativeSaveCoordinatorRef.current.fulfillCurrentSave({
+                  document,
+                  thumbnail: savePayload.thumbnail,
+                });
               debugMindMapBridge("requestNativeSave | resolved", {
-                requestId: savePayload.requestId ?? null,
-                waitedMs: resolvedWaitedMs,
+                requestId: fulfilledRequestId,
+                waitedMs,
                 hasThumbnail: !!savePayload.thumbnail,
                 snapshotRejected,
                 fileId8: fileId?.slice(0, 8) ?? null,
               });
               debugMindMapPersist("native save response resolved", {
-                requestId: savePayload.requestId ?? null,
-                waitedMs: resolvedWaitedMs,
+                requestId: fulfilledRequestId,
+                waitedMs,
                 hasThumbnail: !!savePayload.thumbnail,
                 fileId8: fileId?.slice(0, 8) ?? null,
-              });
-              resolve({
-                document,
-                thumbnail: savePayload.thumbnail,
               });
             } else if (draftResult.shouldExtendSettle) {
               extendNativeHydrateSettle("draft-push");
@@ -1547,21 +1359,17 @@ const MindMapEditorShell = () => {
             setError(null);
           })
           .catch((err: any) => {
-            if (saveResolveRef.current) {
-              warnMindMapBridge("saveMindMapData | parse failed", {
-                requestId: savePayload.requestId ?? null,
-                isCurrentSaveResponse,
-                message: err?.message || String(err),
-                hostWaitedMs:
-                  saveRequestStartedAtRef.current != null
-                    ? Math.round(
-                        performance.now() - saveRequestStartedAtRef.current,
-                      )
-                    : null,
+            if (isCurrentSaveResponse) {
+              nativeSaveCoordinatorRef.current.rejectCurrentSave({
+                warnLabel: "saveMindMapData | parse failed",
+                warnExtra: {
+                  requestId: savePayload.requestId ?? null,
+                  isCurrentSaveResponse,
+                  message: err?.message || String(err),
+                  hostWaitedMs,
+                },
+                message: err?.message || "mindmap 数据保存失败",
               });
-              const resolve = saveResolveRef.current;
-              resetNativeSaveRequestState();
-              resolve(null);
             }
             debugMindMapOpen("saveMindMapData parse failed", {
               isCurrentSaveResponse,
@@ -1570,9 +1378,6 @@ const MindMapEditorShell = () => {
               message: err?.message || String(err),
               stack: err?.stack,
             });
-            if (isCurrentSaveResponse) {
-              setError(err?.message || "mindmap 数据保存失败");
-            }
           });
         return;
       }
