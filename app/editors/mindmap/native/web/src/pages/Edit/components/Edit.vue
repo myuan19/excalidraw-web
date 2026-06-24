@@ -20,18 +20,17 @@
       v-if="!isZenMode && !isEmbedMode"
     ></NavigatorToolbar>
     <OutlineSidebar
-      v-if="mindMap && !isEmbedMode && mountedSidebars.outline"
-      v-show="activeSidebar === 'outline' && !isOutlineEdit"
+      v-if="
+        mindMap && !isEmbedMode && mountedSidebars.outline && !isOutlineEdit
+      "
       :mindMap="mindMap"
     ></OutlineSidebar>
     <Style
       v-if="mindMap && !isZenMode && !isEmbedMode && mountedSidebars.nodeStyle"
-      v-show="activeSidebar === 'nodeStyle'"
       :mindMap="mindMap"
     ></Style>
     <BaseStyle
       v-if="mindMap && !isEmbedMode && mountedSidebars.baseStyle"
-      v-show="activeSidebar === 'baseStyle'"
       :data="mindMapData"
       :configData="mindMapConfig"
       :mindMap="mindMap"
@@ -42,13 +41,11 @@
     ></AssociativeLineStyle>
     <Theme
       v-if="mindMap && !isEmbedMode && mountedSidebars.theme"
-      v-show="activeSidebar === 'theme'"
       :data="mindMapData"
       :mindMap="mindMap"
     ></Theme>
     <Structure
       v-if="mindMap && !isEmbedMode && mountedSidebars.structure"
-      v-show="activeSidebar === 'structure'"
       :mindMap="mindMap"
     ></Structure>
     <ShortcutKey
@@ -106,7 +103,6 @@
     ></RichTextToolbar>
     <AiSidebar
       v-if="mindMap && enableAi && !isEmbedMode && mountedSidebars.ai"
-      v-show="activeSidebar === 'ai'"
       :mindMap="mindMap"
     ></AiSidebar>
     <AiCreate

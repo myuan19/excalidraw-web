@@ -3,7 +3,7 @@
     class="sidebarContainer"
     @click.stop
     :class="{
-      show: isPanelVisible,
+      show: transitionVisible,
       isDark: isDark,
       instantSwitch: shouldSkipOpenTransition
     }"
@@ -50,7 +50,8 @@ export default {
     return {
       zIndex: SIDEBAR_UI_Z_INDEX_BASE,
       sidebarUiZIndexBase: SIDEBAR_UI_Z_INDEX_BASE,
-      sidebarPanelWidth: SIDEBAR_PANEL_WIDTH
+      sidebarPanelWidth: SIDEBAR_PANEL_WIDTH,
+      transitionVisible: false
     }
   },
   computed: {
@@ -101,10 +102,9 @@ export default {
         sidebarMemoryDebug('panel open', {
           panelKey: this.panelKey || this.title
         })
-        if (this.shouldSkipOpenTransition) {
-          this.skipOpenTransition()
-        }
+        this.openWithTransition()
       } else if (!val && oldVal) {
+        this.transitionVisible = false
         sidebarDebug('panel hidden', {
           panelKey: this.panelKey || this.title,
           activeSidebar: this.activeSidebar || null
@@ -133,7 +133,7 @@ export default {
       if (!this.zIndex) {
         this.zIndex = store.sidebarZIndex++
       }
-      this.skipOpenTransition()
+      this.openWithTransition()
     }
   },
   beforeDestroy() {
@@ -144,6 +144,27 @@ export default {
   },
   methods: {
     ...mapMutations(['setActiveSidebar']),
+
+    openWithTransition() {
+      if (this.shouldSkipOpenTransition) {
+        this.transitionVisible = true
+        this.skipOpenTransition()
+        return
+      }
+      this.transitionVisible = false
+      this.$nextTick(() => {
+        const show = () => {
+          if (this.isPanelVisible) {
+            this.transitionVisible = true
+          }
+        }
+        if (typeof window !== 'undefined' && window.requestAnimationFrame) {
+          window.requestAnimationFrame(show)
+        } else {
+          window.setTimeout(show, 0)
+        }
+      })
+    },
 
     skipOpenTransition() {
       if (!this.$el) return
