@@ -113,6 +113,8 @@ describe("MindMap bridge source contract", () => {
     expect(thumbnailExportBlock).toContain("forceLoadNode");
     expect(saveRequestBlock).toContain("collectMindMapSaveSnapshot");
     expect(saveRequestBlock).toContain("exportThumbnailForSnapshot");
+    expect(saveRequestBlock).toContain("debugMindMapOpen('requestMindMapSave | received'");
+    expect(saveRequestBlock).toContain("reportMindMapSaveProgress(requestId, 'skipped-not-ready'");
     expect(
       saveRequestBlock.indexOf("collectMindMapSaveSnapshot"),
     ).toBeLessThan(saveRequestBlock.indexOf("exportThumbnailForSnapshot"));
@@ -163,6 +165,20 @@ describe("MindMap bridge source contract", () => {
     expect(source).not.toContain(
       "nativeMindMap.setFullData(bridgeState.mindMapData)",
     );
+  });
+
+  it("reports save progress over the bridge and logs details in debugMindMapOpen", () => {
+    const source = readBridgeShell(
+      "editors/mindmap/native/web/src/bridge/takeoverShell.js",
+    );
+    expect(source).toContain("debugMindMapOpen('requestMindMapSave | snapshot start'");
+    expect(source).toContain("debugMindMapOpen('requestMindMapSave | posted'");
+    expect(source).toContain("wait node_tree_render_end start");
+    expect(source).toContain("postToHost('mindMapSaveProgress'");
+    expect(source).toContain("reportMindMapSaveProgress");
+    expect(source).toContain("'skipped-not-ready'");
+    expect(source).not.toContain("mindMapSaveTrace");
+    expect(source).not.toContain("traceMindMapSave");
   });
 
   it("forwards host debug logs into iframe console", () => {

@@ -248,6 +248,7 @@
       let draftThumbExportInFlight = false
       let draftThumbExportRequestedDuringFlight = false
       let draftThumbExportRevision = 0
+      let nativeSaveInFlight = null
       let dirtyNotifyEnabled = false
       let dirtyNotifyEnableTimer = null
       // [DEBUG] 记录最近一次静默窗口的来源，便于诊断被吞掉的脏通知/草稿推送
@@ -273,6 +274,21 @@
             '*'
           )
         }
+      }
+      const reportMindMapSaveProgress = (requestId, phase, extra) => {
+        if (nativeSaveInFlight && phase !== 'skipped-not-ready' && phase !== 'failed' && phase !== 'concurrent') {
+          nativeSaveInFlight.phase = phase
+        }
+        postToHost('mindMapSaveProgress', {
+          requestId: requestId || null,
+          phase,
+          elapsedMs:
+            nativeSaveInFlight &&
+            typeof nativeSaveInFlight.startedAt === 'number'
+              ? Math.round(performance.now() - nativeSaveInFlight.startedAt)
+              : null,
+          ...(extra || {})
+        })
       }
       const reportIframeFailure = (payload) => {
         console.error('[mindmap-bridge] iframe failure', payload)
@@ -395,7 +411,7 @@
           if (synced && typeof synced.then === 'function') {
             await synced
           }
-          await waitForNodeTreeRenderEnd()
+          await waitForNodeTreeRenderEnd('sync-text-edit')
           debugMindMapOpen('synced text edit before snapshot', {
             reason,
             synced: !!synced
@@ -419,13 +435,71 @@
           return null
         }
       }
-      const waitForNodeTreeRenderEnd = () => {
+      // 渲染等待回退上限：node_tree_render_end 事件迟迟不来（或根本不会触发）时，
+      // 等待不再无限挂起，而是回退继续并补发一次心跳。这是历史「原生界面未响应保存请求」
+      // 真·卡死（save 永远等不到渲染事件）的根因修复。必须 < 宿主静默超时，
+      // 以保证保存管线持续向宿主发 mindMapSaveProgress，不被判定为卡死。
+      const NODE_TREE_RENDER_WAIT_TIMEOUT_MS = 8000
+      const waitForNodeTreeRenderEnd = reason => {
         return new Promise(resolve => {
+          const waitStartedAt = performance.now()
+          const requestId =
+            nativeSaveInFlight && nativeSaveInFlight.requestId
+              ? nativeSaveInFlight.requestId
+              : null
+          if (reason) {
+            debugMindMapOpen('wait node_tree_render_end start', {
+              reason,
+              requestId,
+              renderEnded
+            })
+            if (requestId && nativeSaveInFlight) {
+              reportMindMapSaveProgress(requestId, nativeSaveInFlight.phase, {
+                waitReason: reason
+              })
+            }
+          }
+          let settled = false
+          let fallbackTimer = null
+          const finish = timedOut => {
+            if (settled) return
+            settled = true
+            if (fallbackTimer != null) {
+              window.clearTimeout(fallbackTimer)
+              fallbackTimer = null
+            }
+            if (window.$bus && typeof window.$bus.$off === 'function') {
+              window.$bus.$off('node_tree_render_end', onRenderEnd)
+            }
+            if (reason) {
+              debugMindMapOpen('wait node_tree_render_end done', {
+                reason,
+                requestId,
+                waitMs: Math.round(performance.now() - waitStartedAt),
+                timedOut: !!timedOut
+              })
+            }
+            // 回退继续时补发心跳，向宿主表明 native 仍在推进（而非卡死）。
+            if (timedOut && requestId && nativeSaveInFlight) {
+              reportMindMapSaveProgress(requestId, nativeSaveInFlight.phase, {
+                waitReason: reason
+                  ? reason + ':render-wait-timeout'
+                  : 'render-wait-timeout',
+                renderWaitTimedOut: true
+              })
+            }
+            resolve()
+          }
+          const onRenderEnd = () => finish(false)
           if (window.$bus && typeof window.$bus.$once === 'function') {
-            window.$bus.$once('node_tree_render_end', () => resolve())
+            window.$bus.$once('node_tree_render_end', onRenderEnd)
+            fallbackTimer = window.setTimeout(
+              () => finish(true),
+              NODE_TREE_RENDER_WAIT_TIMEOUT_MS
+            )
             return
           }
-          window.setTimeout(resolve, 0)
+          window.setTimeout(() => finish(false), 0)
         })
       }
       const countSnapshotNodes = data =>
@@ -436,7 +510,7 @@
         }
         await syncPendingTextEditForSnapshot(reason || 'request-save')
         if (!renderEnded) {
-          await waitForNodeTreeRenderEnd()
+          await waitForNodeTreeRenderEnd('collect-snapshot')
         }
         const data = nativeMindMap.getData(true, {
           skipTextSync: true,
@@ -471,7 +545,7 @@
         })
         nativeMindMap.setFullData(snapshotData)
         renderEnded = false
-        await waitForNodeTreeRenderEnd()
+        await waitForNodeTreeRenderEnd('canvas-resync')
         return true
       }
       const exportThumbnailForSnapshot = async (snapshotData, reason) => {
@@ -489,12 +563,12 @@
         ) {
           renderEnded = false
           nativeMindMap.renderer.forceLoadNode()
-          await waitForNodeTreeRenderEnd()
+          await waitForNodeTreeRenderEnd('export-thumbnail-force-load')
         } else if (!renderEnded) {
           debugMindMapOpen('snapshot thumbnail export waiting for render end', {
             reason
           })
-          await waitForNodeTreeRenderEnd()
+          await waitForNodeTreeRenderEnd('export-thumbnail-render')
         }
         const exportStart = performance.now()
         const thumbnail = await getMindMapThumbnail()
@@ -1135,35 +1209,127 @@
         }
         if (message.type === 'requestMindMapSave') {
           const requestId = message.payload && message.payload.requestId
-          debugMindMapOpen('received requestMindMapSave', {
+          const saveStartedAt = performance.now()
+          debugMindMapOpen('requestMindMapSave | received', {
             requestId: requestId || null,
             hasNativeMindMap: !!nativeMindMap,
-            bridgeReady: !!window.takeOverAppMethods
+            bridgeReady: !!window.takeOverAppMethods,
+            renderEnded,
+            openPerformance: !!(
+              nativeMindMap &&
+              nativeMindMap.opt &&
+              nativeMindMap.opt.openPerformance
+            ),
+            draftThumbExportInFlight,
+            concurrentInFlight: nativeSaveInFlight
+              ? {
+                  requestId: nativeSaveInFlight.requestId,
+                  phase: nativeSaveInFlight.phase,
+                  elapsedMs: Math.round(
+                    performance.now() - nativeSaveInFlight.startedAt
+                  )
+                }
+              : null,
+            ...describeDirtyNotifyWindow()
           })
           if (!nativeMindMap || typeof nativeMindMap.getData !== 'function') {
-            console.warn(
-              '[DEBUG] mindmap-bridge | requestMindMapSave skipped: nativeMindMap not ready',
-              { requestId: requestId || null, hasNativeMindMap: !!nativeMindMap }
-            )
+            reportMindMapSaveProgress(requestId, 'skipped-not-ready', {
+              hasNativeMindMap: !!nativeMindMap
+            })
             return
           }
-          bridgeState.mindMapData =
-            (await collectMindMapSaveSnapshot(requestId, 'request-save')) ||
-            bridgeState.mindMapData
-          let thumbnail = null
-          try {
-            thumbnail = await exportThumbnailForSnapshot(
-              bridgeState.mindMapData,
-              'request-save'
-            )
-          } catch (error) {
-            console.warn('Failed to export MindMap save thumbnail', error)
+          if (nativeSaveInFlight) {
+            reportMindMapSaveProgress(requestId, 'concurrent', {
+              existingRequestId: nativeSaveInFlight.requestId,
+              existingPhase: nativeSaveInFlight.phase,
+              existingElapsedMs: Math.round(
+                performance.now() - nativeSaveInFlight.startedAt
+              )
+            })
           }
-          postMindMapDataToHost(
-            bridgeState.mindMapData,
-            requestId,
-            thumbnail
-          )
+          nativeSaveInFlight = {
+            requestId: requestId || null,
+            startedAt: saveStartedAt,
+            phase: 'snapshot'
+          }
+          reportMindMapSaveProgress(requestId, 'snapshot', { renderEnded })
+          try {
+            const snapshotStartedAt = performance.now()
+            debugMindMapOpen('requestMindMapSave | snapshot start', {
+              requestId: requestId || null,
+              renderEnded
+            })
+            bridgeState.mindMapData =
+              (await collectMindMapSaveSnapshot(requestId, 'request-save')) ||
+              bridgeState.mindMapData
+            debugMindMapOpen('requestMindMapSave | snapshot done', {
+              requestId: requestId || null,
+              snapshotMs: Math.round(performance.now() - snapshotStartedAt),
+              ...summarizeMindMapPayloadIntegrity(bridgeState.mindMapData)
+            })
+            reportMindMapSaveProgress(requestId, 'thumbnail', {
+              snapshotMs: Math.round(performance.now() - snapshotStartedAt),
+              openPerformance: !!(
+                nativeMindMap.opt && nativeMindMap.opt.openPerformance
+              ),
+              renderEnded
+            })
+            const thumbStartedAt = performance.now()
+            debugMindMapOpen('requestMindMapSave | thumbnail start', {
+              requestId: requestId || null,
+              openPerformance: !!(
+                nativeMindMap.opt && nativeMindMap.opt.openPerformance
+              ),
+              renderEnded
+            })
+            let thumbnail = null
+            try {
+              thumbnail = await exportThumbnailForSnapshot(
+                bridgeState.mindMapData,
+                'request-save'
+              )
+            } catch (error) {
+              debugMindMapOpen('requestMindMapSave | thumbnail export failed', {
+                requestId: requestId || null,
+                message: error && error.message ? error.message : String(error)
+              })
+              console.warn('Failed to export MindMap save thumbnail', error)
+            }
+            debugMindMapOpen('requestMindMapSave | thumbnail done', {
+              requestId: requestId || null,
+              thumbnailMs: Math.round(performance.now() - thumbStartedAt),
+              hasThumbnail: !!thumbnail,
+              thumbnailLength: thumbnail ? thumbnail.length : 0
+            })
+            reportMindMapSaveProgress(requestId, 'post', {
+              snapshotMs: Math.round(performance.now() - snapshotStartedAt),
+              thumbnailMs: Math.round(performance.now() - thumbStartedAt),
+              hasThumbnail: !!thumbnail
+            })
+            postMindMapDataToHost(
+              bridgeState.mindMapData,
+              requestId,
+              thumbnail
+            )
+            debugMindMapOpen('requestMindMapSave | posted', {
+              requestId: requestId || null,
+              totalMs: Math.round(performance.now() - saveStartedAt),
+              hasThumbnail: !!thumbnail
+            })
+            reportMindMapSaveProgress(requestId, 'done', {
+              totalMs: Math.round(performance.now() - saveStartedAt),
+              hasThumbnail: !!thumbnail
+            })
+          } catch (error) {
+            reportMindMapSaveProgress(requestId, 'failed', {
+              phase: nativeSaveInFlight ? nativeSaveInFlight.phase : null,
+              totalMs: Math.round(performance.now() - saveStartedAt),
+              message: error && error.message ? error.message : String(error)
+            })
+            return
+          } finally {
+            nativeSaveInFlight = null
+          }
         }
         if (message.type === 'updateRootText') {
           const newText = message.payload && message.payload.text

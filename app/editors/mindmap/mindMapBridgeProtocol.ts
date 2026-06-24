@@ -81,6 +81,11 @@ export type NativeMindMapMessage =
     }
   | {
       source: typeof MINDMAP_NATIVE_SOURCE;
+      type: "mindMapSaveProgress";
+      payload: unknown;
+    }
+  | {
+      source: typeof MINDMAP_NATIVE_SOURCE;
       type:
         | "saveMindMapConfig"
         | "saveLocalConfig"
@@ -205,4 +210,44 @@ export function isBridgeReadyPhase(phase: MindMapHostBridgePhase): boolean {
 
 export function isAppReadyPhase(phase: MindMapHostBridgePhase): boolean {
   return phase === "app_ready";
+}
+
+export type MindMapSaveProgressPayload = {
+  requestId: string | null;
+  phase: string;
+  elapsedMs: number | null;
+  waitReason?: string | null;
+  message?: string | null;
+  snapshotMs?: number | null;
+  thumbnailMs?: number | null;
+  hasThumbnail?: boolean;
+};
+
+export function parseMindMapSaveProgress(
+  payload: unknown,
+): MindMapSaveProgressPayload | null {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+  const record = payload as Record<string, unknown>;
+  const requestId = record.requestId;
+  const phase = record.phase;
+  if (typeof phase !== "string") {
+    return null;
+  }
+  const elapsedMs = record.elapsedMs;
+  return {
+    requestId: typeof requestId === "string" ? requestId : null,
+    phase,
+    elapsedMs: typeof elapsedMs === "number" ? elapsedMs : null,
+    waitReason:
+      typeof record.waitReason === "string" ? record.waitReason : null,
+    message: typeof record.message === "string" ? record.message : null,
+    snapshotMs:
+      typeof record.snapshotMs === "number" ? record.snapshotMs : null,
+    thumbnailMs:
+      typeof record.thumbnailMs === "number" ? record.thumbnailMs : null,
+    hasThumbnail:
+      typeof record.hasThumbnail === "boolean" ? record.hasThumbnail : undefined,
+  };
 }
