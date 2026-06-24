@@ -16,6 +16,10 @@ vi.mock("./crossTabFileSync", () => ({
   broadcastFileSaved: vi.fn(),
 }));
 
+vi.mock("../lib/perfLog", () => ({
+  logPerf: vi.fn(),
+}));
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((res) => {
@@ -131,6 +135,174 @@ describe("saveQueue source priority", () => {
         forceThumbnail: true,
       }),
     );
+  });
+});
+
+describe("saveQueue overlapping save requests", () => {
+  it("merges pending auto then home into one active navigation save", async () => {
+    updateAppSettings({ autoSaveEnabled: true });
+    const executor = vi.fn(async (req) => ({
+      saved: true,
+      fileId: "file-home-pending",
+      contentSha256: req.source,
+    }));
+    cleanup = installExecutor(executor);
+
+    requestSave({ source: "auto" });
+    const save = requestSaveAndWait({
+      source: "home",
+      navigateAfter: true,
+    });
+
+    await expect(save).resolves.toEqual({
+      saved: true,
+      fileId: "file-home-pending",
+      contentSha256: "home",
+    });
+    expect(executor).toHaveBeenCalledTimes(1);
+    expect(executor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "home",
+        navigateAfter: true,
+        requiresFreshSnapshot: true,
+      }),
+    );
+  });
+
+  it("queues a home follow-up instead of reusing a running auto save", async () => {
+    vi.useFakeTimers();
+    updateAppSettings({ autoSaveEnabled: true });
+    let dirty = true;
+    const autoSave = deferred<SaveResult>();
+    const homeSave = deferred<SaveResult>();
+    const executor = vi.fn((req) =>
+      req.source === "auto" ? autoSave.promise : homeSave.promise,
+    );
+    cleanup = installExecutor(executor, {
+      getCurrentFileDirty: () => dirty,
+    });
+
+    requestSave({ source: "auto" });
+    await vi.advanceTimersByTimeAsync(300);
+    await flushMicrotasks();
+    expect(executor).toHaveBeenCalledTimes(1);
+    expect(executor).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ source: "auto" }),
+    );
+
+    const home = requestSaveAndWait({
+      source: "home",
+      navigateAfter: true,
+    });
+    await flushMicrotasks();
+    expect(executor).toHaveBeenCalledTimes(1);
+
+    autoSave.resolve({
+      saved: true,
+      fileId: "file-overlap",
+      contentSha256: "auto",
+    });
+    await flushMicrotasks();
+    expect(executor).toHaveBeenCalledTimes(2);
+    expect(executor).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        source: "home",
+        navigateAfter: true,
+        requiresFreshSnapshot: true,
+      }),
+    );
+
+    homeSave.resolve({
+      saved: true,
+      fileId: "file-overlap",
+      contentSha256: "home",
+    });
+    await expect(home).resolves.toEqual({
+      saved: true,
+      fileId: "file-overlap",
+      contentSha256: "home",
+    });
+    dirty = false;
+  });
+
+  it("skips a running-save follow-up when the latest state is already clean", async () => {
+    vi.useFakeTimers();
+    updateAppSettings({ autoSaveEnabled: true });
+    let dirty = true;
+    const autoSave = deferred<SaveResult>();
+    const executor = vi.fn(() => autoSave.promise);
+    cleanup = installExecutor(executor, {
+      getCurrentFileDirty: () => dirty,
+    });
+
+    requestSave({ source: "auto" });
+    await vi.advanceTimersByTimeAsync(300);
+    await flushMicrotasks();
+
+    const home = requestSaveAndWait({
+      source: "home",
+      navigateAfter: true,
+    });
+    dirty = false;
+    autoSave.resolve({
+      saved: true,
+      fileId: "file-clean-followup",
+      contentSha256: "auto",
+    });
+
+    await expect(home).resolves.toEqual({ saved: false, clean: true });
+    expect(executor).toHaveBeenCalledTimes(1);
+  });
+
+  it("executes a running-save follow-up when the latest state is still dirty", async () => {
+    vi.useFakeTimers();
+    updateAppSettings({ autoSaveEnabled: true });
+    const autoSave = deferred<SaveResult>();
+    const followUpSave = deferred<SaveResult>();
+    const executor = vi.fn((req) =>
+      req.source === "auto" ? autoSave.promise : followUpSave.promise,
+    );
+    cleanup = installExecutor(executor, {
+      getCurrentFileDirty: () => true,
+    });
+
+    requestSave({ source: "auto" });
+    await vi.advanceTimersByTimeAsync(300);
+    await flushMicrotasks();
+
+    const followUp = requestSaveAndWait({
+      source: "toolbar",
+      requestId: "manual-after-auto",
+    });
+    autoSave.resolve({
+      saved: true,
+      fileId: "file-dirty-followup",
+      contentSha256: "auto",
+    });
+    await flushMicrotasks();
+
+    expect(executor).toHaveBeenCalledTimes(2);
+    expect(executor).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        source: "toolbar",
+        requestId: "manual-after-auto",
+        requiresFreshSnapshot: true,
+      }),
+    );
+
+    followUpSave.resolve({
+      saved: true,
+      fileId: "file-dirty-followup",
+      contentSha256: "toolbar",
+    });
+    await expect(followUp).resolves.toEqual({
+      saved: true,
+      fileId: "file-dirty-followup",
+      contentSha256: "toolbar",
+    });
   });
 });
 

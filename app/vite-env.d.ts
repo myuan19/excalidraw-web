@@ -11,6 +11,8 @@ interface ImportMetaEnv {
   readonly VITE_LOG_LEVEL?: string;
   /** If `"0"`, disable POST /api/logs remote transport. */
   readonly VITE_LOG_REMOTE?: string;
+  /** If `"0"`, disable minimal production performance log beacons. */
+  readonly VITE_PERF_LOG_REMOTE?: string;
   /** Set by debug-ship build: enable all devDebug channels + debug logger + remote ingest. */
   readonly VITE_APP_DEPLOY_DEBUG?: string;
   /** If `"true"`, emit production source maps (larger deploy; use for debug-ship). */

@@ -48,9 +48,9 @@ import {
 } from "../../data/tabFileDirtyState";
 import {
   cacheDraftThumbnailIfVisible,
-  finalizeSavedThumbnail,
 } from "../../data/thumbnailLifecycle";
-import { LocalThumbnailCache } from "../../data/localThumbnailCache";
+import { scheduleSavedFileThumbnailUpload } from "../../data/fileThumbnailPersistence";
+import { logPerf, markPerfNow, perfDurationMs } from "../../lib/perfLog";
 
 import {
   clearMindMapDraftIfUnchanged,
@@ -99,6 +99,16 @@ type ServerSaveMeta = {
   skipped: boolean;
   contentSha256: string | null;
   version: number | null;
+};
+
+export type MindMapSavedThumbnailTarget = {
+  fileId: string;
+  name: string;
+  kind: "mindmap";
+  contentSha: string | null;
+  version?: number | null;
+  updatedAt?: string | null;
+  source: SaveToServerSource;
 };
 
 type NativeDirtyDebugMeta = {
@@ -179,6 +189,7 @@ export function useMindMapFileSave(opts: {
   setStatus: (msg: string) => void;
   onRequestSaveNew?: (opts: { navigateAfter: boolean }) => void;
   applyRemoteServerVersion?: (target?: RemoteUpdateTarget) => Promise<void>;
+  onServerSaveCommitted?: (target: MindMapSavedThumbnailTarget) => void;
 }) {
   const {
     getCurrentDocument,
@@ -189,6 +200,7 @@ export function useMindMapFileSave(opts: {
     setStatus,
     onRequestSaveNew,
     applyRemoteServerVersion,
+    onServerSaveCommitted,
   } = opts;
 
   const [mindMapSaving, setMindMapSaving] = useState(false);
@@ -354,6 +366,24 @@ export function useMindMapFileSave(opts: {
     }, 80);
   }, [navigateToFileListHome]);
 
+  const blockLeaveAfterNativeSnapshotFailure = useCallback(
+    (fileId: string) => {
+      clearAppShellPendingNavigation();
+      setMindMapSaveHint(
+        "无法获取最新 MindMap 快照，已停留在编辑器，请重试保存",
+      );
+      setStatus("保存失败");
+      setErrorMessage("MindMap 保存失败：原生编辑器未返回最新快照");
+      debugMindMapPersist("blocked leave after native snapshot failure", {
+        fileId8: fileId.slice(0, 8),
+        draftHash16: FileSyncState.getDraftHash(fileId)?.slice(0, 16) ?? null,
+        baselineHash8:
+          FileSyncState.getBaselineHash(fileId)?.slice(0, 8) ?? null,
+      });
+    },
+    [setErrorMessage, setStatus],
+  );
+
   const markDocumentChanged = useCallback(
     (document: MindMapSaveDocument) => {
       const fileId = getFileIdFromHash();
@@ -500,18 +530,53 @@ export function useMindMapFileSave(opts: {
 
       updateDraftHashDebouncedRef.current.flush();
 
+      const saveStartedAt = markPerfNow();
+      logPerf("mindmap.save.start", {
+        fileId8: fileId.slice(0, 8),
+        source,
+        navigateAfter,
+        forceThumbnail,
+        sessionVersion: getDocumentSessionVersion(fileId),
+        hasUnsaved: FileSyncState.hasUnsavedChanges(fileId),
+      });
+      const nativeStartedAt = markPerfNow();
       const nativeSave = await requestNativeMindMapData();
+      const nativeMs = perfDurationMs(nativeStartedAt);
       if (!nativeSave) {
-        logSave.event("warn", "mindmap.save.native-empty", "native save returned null", {
-          fields: {
+        logPerf(
+          "mindmap.save.native_failed",
+          {
             fileId8: fileId.slice(0, 8),
             source,
             navigateAfter,
-            bridgeLogModule: "mindmap-bridge",
+            nativeMs,
+            totalMs: perfDurationMs(saveStartedAt),
+            stillUnsaved: FileSyncState.hasUnsavedChanges(fileId),
           },
-        });
+          "warn",
+        );
+        logSave.event(
+          "warn",
+          "mindmap.save.native-empty",
+          "native save returned null",
+          {
+            fields: {
+              fileId8: fileId.slice(0, 8),
+              source,
+              navigateAfter,
+              bridgeLogModule: "mindmap-bridge",
+            },
+          },
+        );
         if (navigateAfter) {
-          finishNavigateHome();
+          if (!FileSyncState.hasUnsavedChanges(fileId)) {
+            finishNavigateHome();
+          } else {
+            blockLeaveAfterNativeSnapshotFailure(fileId);
+          }
+        } else if (!isSilentSaveSource(source)) {
+          setStatus("保存失败");
+          setErrorMessage("MindMap 保存失败：原生编辑器未返回最新快照");
         }
         return false;
       }
@@ -524,6 +589,17 @@ export function useMindMapFileSave(opts: {
       const hash = hashDocumentSnapshot(document);
       const baseline = FileSyncState.getBaselineHash(fileId);
       const unchanged = !!baseline && hash === baseline && !forceThumbnail;
+      FileSyncState.setDraftHash(fileId, hash);
+      logPerf("mindmap.save.native_done", {
+        fileId8: fileId.slice(0, 8),
+        source,
+        navigateAfter,
+        nativeMs,
+        contentHash8: hash.slice(0, 8),
+        baselineHash8: baseline?.slice(0, 8) ?? null,
+        hasInlineThumbnail: typeof thumbnail === "string" && thumbnail.length > 0,
+        thumbnailLen: typeof thumbnail === "string" ? thumbnail.length : 0,
+      });
       logSave.info("mindmap save evaluate", {
         fileId8: fileId.slice(0, 8),
         source,
@@ -582,7 +658,6 @@ export function useMindMapFileSave(opts: {
         integrity: summarizeMindMapTreeIntegrity(document.data),
         sampleNode: findFirstRichMindMapNodeSummary(document.data),
       });
-
       if (unchanged) {
         clearTabFileDirty(fileId);
       }
@@ -598,6 +673,7 @@ export function useMindMapFileSave(opts: {
 
       try {
         let outcome: Awaited<ReturnType<typeof executeCheckpointSave>>;
+        const putStartedAt = markPerfNow();
         try {
           outcome = await executeCheckpointSave(
             {
@@ -609,10 +685,7 @@ export function useMindMapFileSave(opts: {
               document,
             },
             {
-              resolveFileThumbnailForPut: async () =>
-                thumbnail ??
-                LocalThumbnailCache.getForDraft(fileId, hash) ??
-                undefined,
+              resolveFileThumbnailForPut: async () => undefined,
               putDocument: async ({
                 thumbnail: thumbForPut,
                 checkpointPolicy,
@@ -631,6 +704,17 @@ export function useMindMapFileSave(opts: {
             },
           );
         } catch (error) {
+          logPerf(
+            "mindmap.save.put_error",
+            {
+              fileId8: fileId.slice(0, 8),
+              source,
+              putMs: perfDurationMs(putStartedAt),
+              totalMs: perfDurationMs(saveStartedAt),
+              message: error instanceof Error ? error.message : String(error),
+            },
+            "warn",
+          );
           const conflictResult = await resolveVersionConflict({
             error,
             fileId,
@@ -671,6 +755,21 @@ export function useMindMapFileSave(opts: {
         }
 
         if (outcome.checkpointCreated && unchanged) {
+          const draftHashAfterCheckpoint = FileSyncState.getDraftHash(fileId);
+          const preserveNewerLocalDirty =
+            !!draftHashAfterCheckpoint && draftHashAfterCheckpoint !== hash;
+          if (preserveNewerLocalDirty) {
+            logPerf("mindmap.save.checkpoint_preserve_newer_dirty", {
+              fileId8: fileId.slice(0, 8),
+              source,
+              navigateAfter,
+              savedHash8: hash.slice(0, 8),
+              draftHash8: draftHashAfterCheckpoint.slice(0, 8),
+              totalMs: perfDurationMs(saveStartedAt),
+            });
+            setStatus("有未保存更改");
+            return false;
+          }
           lastServerSaveMetaRef.current = {
             skipped: false,
             contentSha256: baseline,
@@ -693,6 +792,19 @@ export function useMindMapFileSave(opts: {
         }
 
         updateDraftHashDebouncedRef.current.cancel();
+        logPerf("mindmap.save.put_done", {
+          fileId8: fileId.slice(0, 8),
+          source,
+          navigateAfter,
+          putMs: perfDurationMs(putStartedAt),
+          totalMs: perfDurationMs(saveStartedAt),
+          saved: outcome.saved,
+          skipped: !!outcome.skipped,
+          checkpointCreated: !!outcome.checkpointCreated,
+          contentSha8: outcome.contentSha256?.slice(0, 8) ?? null,
+          version: outcome.version ?? null,
+          unchanged,
+        });
         logSave.info("mindmap save outcome", {
           fileId8: fileId.slice(0, 8),
           source,
@@ -708,18 +820,38 @@ export function useMindMapFileSave(opts: {
           contentSha256: outcome.contentSha256 ?? null,
           version: outcome.version ?? null,
         };
+        const draftHashAfterPut = FileSyncState.getDraftHash(fileId);
+        const preserveNewerLocalDirty =
+          !!draftHashAfterPut && draftHashAfterPut !== hash;
+        if (preserveNewerLocalDirty) {
+          logPerf("mindmap.save.preserve_newer_dirty", {
+            fileId8: fileId.slice(0, 8),
+            source,
+            navigateAfter,
+            savedHash8: hash.slice(0, 8),
+            draftHash8: draftHashAfterPut.slice(0, 8),
+            totalMs: perfDurationMs(saveStartedAt),
+          });
+        }
         recordMindMapPersisted(fileId, document, {
           serverContentSha256: outcome.contentSha256 ?? undefined,
           serverVersion: outcome.version ?? undefined,
+          preserveDirty: preserveNewerLocalDirty,
         });
-        finalizeSavedThumbnail({
+        const thumbnailTarget = {
           fileId,
           name: displayName,
           kind: "mindmap",
-          contentSha: outcome.contentSha256,
+          contentSha: outcome.contentSha256 ?? null,
           version: outcome.version,
           updatedAt: outcome.updatedAt,
+          source,
+        } satisfies MindMapSavedThumbnailTarget;
+        onServerSaveCommitted?.(thumbnailTarget);
+        scheduleSavedFileThumbnailUpload({
+          ...thumbnailTarget,
           thumbnail: thumbnail ?? outcome.fileThumbnail,
+          documentHash: hash,
         });
         debugMindMapPersist("saveCurrentFileToServer success", {
           fileId8: fileId.slice(0, 8),
@@ -737,19 +869,45 @@ export function useMindMapFileSave(opts: {
         if (!navigateAfter) {
           window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
         }
-        if (source === "auto") {
+        if (preserveNewerLocalDirty) {
+          setStatus("有未保存更改");
+        } else if (source === "auto") {
           setMindMapSaveHint("自动保存完成");
         } else if (isManualCheckpointSource(source)) {
           setMindMapSaveHint(outcome.skipped ? "已是最新状态" : "已保存");
         }
-        setStatus("已保存");
-        setErrorMessage(null);
-        if (navigateAfter) {
-          FileSyncState.clearLocalCache(fileId);
-          finishNavigateHome();
+        if (!preserveNewerLocalDirty) {
+          setStatus("已保存");
         }
-        return true;
+        setErrorMessage(null);
+        if (navigateAfter && !preserveNewerLocalDirty) {
+          FileSyncState.clearLocalCache(fileId);
+          logPerf("mindmap.save.navigate_home", {
+            fileId8: fileId.slice(0, 8),
+            source,
+            totalMs: perfDurationMs(saveStartedAt),
+          });
+          finishNavigateHome();
+        } else if (navigateAfter) {
+          logPerf("mindmap.save.navigate_deferred_dirty", {
+            fileId8: fileId.slice(0, 8),
+            source,
+            totalMs: perfDurationMs(saveStartedAt),
+          });
+        }
+        return !preserveNewerLocalDirty;
       } catch (err: any) {
+        logPerf(
+          "mindmap.save.failed",
+          {
+            fileId8: fileId.slice(0, 8),
+            source,
+            navigateAfter,
+            totalMs: perfDurationMs(saveStartedAt),
+            message: err?.message || String(err),
+          },
+          "error",
+        );
         debugMindMapPersist("saveCurrentFileToServer failed", {
           fileId8: fileId.slice(0, 8),
           source,
@@ -779,9 +937,11 @@ export function useMindMapFileSave(opts: {
       }
     },
     [
+      blockLeaveAfterNativeSnapshotFailure,
       finishNavigateHome,
       getFileName,
       onRequestSaveNew,
+      onServerSaveCommitted,
       persistLocalDraftToCache,
       requestNativeMindMapData,
       resolveVersionConflict,
@@ -837,10 +997,7 @@ export function useMindMapFileSave(opts: {
               checkpointPolicyOverride,
             },
             {
-              resolveFileThumbnailForPut: async () =>
-                thumbnail ??
-                LocalThumbnailCache.getForDraft(fileId, hash) ??
-                undefined,
+              resolveFileThumbnailForPut: async () => undefined,
               putDocument: async ({
                 thumbnail: thumbForPut,
                 checkpointPolicy,
@@ -904,14 +1061,20 @@ export function useMindMapFileSave(opts: {
           serverContentSha256: outcome.contentSha256 ?? undefined,
           serverVersion: outcome.version ?? undefined,
         });
-        finalizeSavedThumbnail({
+        const thumbnailTarget = {
           fileId,
           name: displayName,
           kind: "mindmap",
-          contentSha: outcome.contentSha256,
+          contentSha: outcome.contentSha256 ?? null,
           version: outcome.version,
           updatedAt: outcome.updatedAt,
+          source: "sidebar",
+        } satisfies MindMapSavedThumbnailTarget;
+        onServerSaveCommitted?.(thumbnailTarget);
+        scheduleSavedFileThumbnailUpload({
+          ...thumbnailTarget,
           thumbnail: thumbnail ?? outcome.fileThumbnail,
+          documentHash: hash,
         });
         localStorage.removeItem(legacyMindMapCacheKey(fileId));
         window.dispatchEvent(
@@ -931,6 +1094,7 @@ export function useMindMapFileSave(opts: {
     },
     [
       getFileName,
+      onServerSaveCommitted,
       requestNativeMindMapData,
       resolveVersionConflict,
       setErrorMessage,
@@ -973,12 +1137,18 @@ export function useMindMapFileSave(opts: {
           version: meta?.version,
         };
       },
-      { getCurrentFileId: getFileIdFromHash },
+      {
+        getCurrentFileId: getFileIdFromHash,
+        getCurrentFileDirty: () => {
+          const fid = getFileIdFromHash();
+          return !!fid && FileSyncState.hasUnsavedChanges(fid);
+        },
+      },
     );
   }, [saveCurrentFileToServer]);
 
   const syncCurrentMindMapDraftForLeave = useCallback(
-    async (fileId: string) => {
+    async (fileId: string): Promise<boolean> => {
       const nativeSave = await requestNativeMindMapData();
       if (!nativeSave) {
         debugMindMapPersist("syncDraftForLeave: native save failed/timeout", {
@@ -986,7 +1156,7 @@ export function useMindMapFileSave(opts: {
           draftHash16: FileSyncState.getDraftHash(fileId)?.slice(0, 16) ?? null,
         });
         updateDraftHashDebouncedRef.current.flush();
-        return;
+        return !FileSyncState.hasUnsavedChanges(fileId);
       }
       const { document } = nativeSave;
       updateDraftHashDebouncedRef.current.flush();
@@ -1011,7 +1181,7 @@ export function useMindMapFileSave(opts: {
         clearLocalCacheWhenSynced: true,
       });
       if (!state.modified) {
-        return;
+        return true;
       }
       FileSyncState.setServerBackedLocalCache(
         fileId,
@@ -1020,6 +1190,7 @@ export function useMindMapFileSave(opts: {
       if (isLocalDraftFileId(fileId)) {
         notifyLocalDraftEdited(fileId);
       }
+      return true;
     },
     [requestNativeMindMapData],
   );
@@ -1044,6 +1215,17 @@ export function useMindMapFileSave(opts: {
     finishNavigateHome();
   }, [finishNavigateHome]);
 
+  const requestMindMapHomeSaveAndNavigate = useCallback(async () => {
+    const result = await requestSaveAndWait({
+      source: "home",
+      navigateAfter: true,
+      requiresFreshSnapshot: true,
+    });
+    if (result.clean) {
+      finishNavigateHome();
+    }
+  }, [finishNavigateHome]);
+
   const mindMapGoHomeWithServerSave = useCallback(async () => {
     const fileId = getFileIdFromHash();
     if (!fileId) {
@@ -1054,7 +1236,11 @@ export function useMindMapFileSave(opts: {
       return;
     }
     if (isLocalDraftFileId(fileId)) {
-      await syncCurrentMindMapDraftForLeave(fileId);
+      const syncedForLeave = await syncCurrentMindMapDraftForLeave(fileId);
+      if (!syncedForLeave) {
+        blockLeaveAfterNativeSnapshotFailure(fileId);
+        return;
+      }
       if (!shouldPromptEditorHomeNavDialog(fileId)) {
         await discardLocalDraftSession(fileId);
         navigateToFileListHome();
@@ -1105,7 +1291,7 @@ export function useMindMapFileSave(opts: {
           FileSyncState.getBaselineHash(fileId)?.slice(0, 8) ?? null,
       });
       if (autoSaveExit) {
-        await requestSaveAndWait({ source: "home", navigateAfter: true });
+        await requestMindMapHomeSaveAndNavigate();
         return;
       }
       const leaveChoice = await promptLeaveEditorConfirm({
@@ -1117,14 +1303,18 @@ export function useMindMapFileSave(opts: {
         return;
       }
       if (leaveChoice === "save") {
-        await requestSaveAndWait({ source: "home", navigateAfter: true });
+        await requestMindMapHomeSaveAndNavigate();
         return;
       }
       await discardMindMapEditsForHomeNavigation();
       return;
     }
 
-    await syncCurrentMindMapDraftForLeave(fileId);
+    const syncedForLeave = await syncCurrentMindMapDraftForLeave(fileId);
+    if (!syncedForLeave) {
+      blockLeaveAfterNativeSnapshotFailure(fileId);
+      return;
+    }
     const promptNeeded = shouldPromptEditorHomeNavDialog(fileId);
     debugMindMapPersist("goHome decision", {
       fileId8: fileId.slice(0, 8),
@@ -1138,7 +1328,7 @@ export function useMindMapFileSave(opts: {
       return;
     }
     if (autoSaveExit) {
-      await requestSaveAndWait({ source: "home", navigateAfter: true });
+      await requestMindMapHomeSaveAndNavigate();
       return;
     }
     const leaveChoice = await promptLeaveEditorConfirm({
@@ -1150,15 +1340,17 @@ export function useMindMapFileSave(opts: {
       return;
     }
     if (leaveChoice === "save") {
-      await requestSaveAndWait({ source: "home", navigateAfter: true });
+      await requestMindMapHomeSaveAndNavigate();
       return;
     }
     await discardMindMapEditsForHomeNavigation();
   }, [
     discardMindMapEditsForHomeNavigation,
+    blockLeaveAfterNativeSnapshotFailure,
     finishNavigateHome,
     navigateToFileListHome,
     onRequestSaveNew,
+    requestMindMapHomeSaveAndNavigate,
     syncCurrentMindMapDraftForLeave,
   ]);
 

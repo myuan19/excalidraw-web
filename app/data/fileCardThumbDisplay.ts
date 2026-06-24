@@ -5,6 +5,7 @@ import {
   chooseFileCardThumbnailForFile,
   type FileCardThumbDraftSlot,
 } from "./resolveFileCardThumbnail";
+import { hasPendingSavedFileThumbnail } from "./sessionFileThumbnail";
 import { editorUsesSessionThumbnail } from "./thumbnailLifecycle";
 import { isThumbnailServerMiss } from "./thumbnailServerFetchMiss";
 import { toCardSvg } from "./thumbnailService";
@@ -35,17 +36,20 @@ function buildFileCardThumbDisplay(
   syncState: "synced" | "draft",
 ): FileCardThumbDisplay {
   const isBrowserDraft = isLocalDraftFileId(fileId);
-  const thumbSvg = choice.thumbSvg;
+  const pendingSavedThumb = hasPendingSavedFileThumbnail(
+    fileId,
+    file.content_sha256,
+  );
+  const thumbSvg = pendingSavedThumb ? null : choice.thumbSvg;
   const cardThumbSvg = toCardSvg(thumbSvg);
   const usesSessionThumbnail = editorUsesSessionThumbnail(file.kind);
   const thumbLoading =
-    !thumbSvg &&
-    !isThumbnailServerMiss(fileId, file.content_sha256) &&
-    (usesSessionThumbnail
-      ? syncState === "draft" ||
-        isBrowserDraft ||
-        !!file.has_thumbnail
-      : !!file.has_thumbnail && !isBrowserDraft);
+    (pendingSavedThumb ||
+      (!thumbSvg &&
+        !isThumbnailServerMiss(fileId, file.content_sha256) &&
+        (usesSessionThumbnail
+          ? syncState === "draft" || isBrowserDraft || !!file.has_thumbnail
+          : !!file.has_thumbnail && !isBrowserDraft)));
   const badge: FileCardThumbBadge = isBrowserDraft
     ? "temp"
     : syncState === "draft"

@@ -1,4 +1,5 @@
 import { createLogger } from "../lib/logger";
+import { logPerf, markPerfNow, perfDurationMs } from "../lib/perfLog";
 
 const logPipe = createLogger({ module: "thumbPipeline" });
 
@@ -21,6 +22,7 @@ export async function fetchThumbnailSvgForCard(
   };
 
   async function attempt(url: string, label: "A" | "B") {
+    const startedAt = markPerfNow();
     logPipe.debug("GET thumb request", {
       id8,
       step: label,
@@ -35,6 +37,16 @@ export async function fetchThumbnailSvgForCard(
         err: String(e),
       });
       return "";
+    });
+    logPerf("thumb.fetch_attempt", {
+      id8,
+      step: label,
+      status: res.status,
+      ok: res.ok,
+      durationMs: perfDurationMs(startedAt),
+      bodyLen: raw.length,
+      bodyEmpty: !raw.trim(),
+      immutable: hasImmutableHash,
     });
     logPipe.debug("GET thumb response", {
       id8,

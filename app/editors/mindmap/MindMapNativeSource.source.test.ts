@@ -8,6 +8,73 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, "../..");
 
 describe("MindMap native source contract", () => {
+  it("resyncs thumbnail export canvas by full snapshot fingerprint", () => {
+    const source = fs.readFileSync(
+      path.join(
+        appRoot,
+        "editors/mindmap/native/web/src/bridge/takeoverShell.js",
+      ),
+      "utf8",
+    );
+    const resyncBlock = source.slice(
+      source.indexOf("const ensureCanvasMatchesSnapshot = async snapshotData"),
+      source.indexOf("const exportThumbnailForSnapshot = async"),
+    );
+
+    expect(resyncBlock).toContain("getMindMapFullDataFingerprint(snapshotData)");
+    expect(resyncBlock).toContain("getMindMapFullDataFingerprint(liveData)");
+    expect(resyncBlock).toContain(
+      "snapshotFingerprint && snapshotFingerprint === liveFingerprint",
+    );
+    expect(resyncBlock).not.toContain("if (snapCount === liveCount)");
+  });
+
+  it("exports collapsed child-count badges by reusing expand button rendering", () => {
+    const source = fs.readFileSync(
+      path.join(
+        appRoot,
+        "editors/mindmap/native/simple-mind-map/src/plugins/Export.js",
+      ),
+      "utf8",
+    );
+    const exportBadgeBlock = source.slice(
+      source.indexOf("showCollapsedExpandNumForExport()"),
+      source.indexOf("//  导出为svg"),
+    );
+
+    expect(exportBadgeBlock).toContain("this.mindMap.opt.isShowExpandNum");
+    expect(exportBadgeBlock).toContain("this.mindMap.renderer.root");
+    expect(exportBadgeBlock).not.toContain("this.mindMap.renderer.renderTree");
+    expect(exportBadgeBlock).toContain("node.getData('expand') === false");
+    expect(exportBadgeBlock).toContain("node.renderExpandBtn()");
+    expect(exportBadgeBlock).toContain("node.removeExpandBtn()");
+    expect(source).toContain(
+      "const restoreExportExpandBtns = this.showCollapsedExpandNumForExport()",
+    );
+  });
+
+  it("does not block request saves on thumbnail export", () => {
+    const source = fs.readFileSync(
+      path.join(
+        appRoot,
+        "editors/mindmap/native/web/src/bridge/takeoverShell.js",
+      ),
+      "utf8",
+    );
+    const requestSaveBlock = source.slice(
+      source.indexOf("requestMindMapSave | snapshot start"),
+      source.indexOf("if (message.type === 'updateRootText')"),
+    );
+
+    expect(requestSaveBlock).toContain(
+      "postMindMapDataToHost(\n              bridgeState.mindMapData,\n              requestId,\n              null",
+    );
+    expect(requestSaveBlock).toContain("thumbnailDeferred: true");
+    expect(requestSaveBlock).not.toContain(
+      "await exportThumbnailForSnapshot(\n                bridgeState.mindMapData,\n                'request-save'",
+    );
+  });
+
   it("does not route viewport changes through document saves in takeover mode", () => {
     const source = fs.readFileSync(
       path.join(

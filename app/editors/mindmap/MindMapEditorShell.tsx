@@ -47,6 +47,7 @@ import { readFileListTreeCache } from "../../data/fileListSessionCache";
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
 import { LocalThumbnailCache } from "../../data/localThumbnailCache";
 import { cacheDraftThumbnailIfVisible } from "../../data/thumbnailLifecycle";
+import { scheduleSavedFileThumbnailUpload } from "../../data/fileThumbnailPersistence";
 import { removeRecentFileEntry } from "../../data/recentFiles";
 import {
   createEmptyMindMapData,
@@ -100,13 +101,12 @@ import {
   type MindMapNativeSaveResult,
 } from "./mindMapNativeSaveCoordinator";
 import {
-  compareMindMapTreeIntegrityRegression,
   debugMindMapPersist,
   findFirstRichMindMapNodeSummary,
   summarizeMindMapRichTextTree,
-  summarizeMindMapTreeIntegrity,
   warnMindMapPersist,
 } from "./mindMapPersistDebug";
+import { validateMindMapSaveSnapshot } from "./mindMapSaveSnapshotValidation";
 import {
   clearMindMapHostDebugForward,
   forwardMindMapHostDebug,
@@ -115,6 +115,7 @@ import {
 import {
   getCachedMindMapDocument,
   getCachedMindMapServerSha,
+  type MindMapSavedThumbnailTarget,
   toMindMapLocalCacheRecord,
   useMindMapFileSave,
 } from "./useMindMapFileSave";
@@ -124,6 +125,7 @@ import type { MindMapDocumentData } from "../../data/formats/MindMapAdapter";
 
 import { HOME_APP_TITLE, useEditorDocumentTitle } from "../../lib/appBranding";
 import { devDebug } from "../../lib/devDebug";
+import { logPerf } from "../../lib/perfLog";
 import { useMindMapNativeAIConfig } from "./useMindMapNativeAIConfig";
 import {
   resolveMindMapOpenDisplayName,
@@ -361,6 +363,8 @@ const MindMapEditorShell = () => {
     resolveInitialMindMapFileName(fileId),
   );
   const lastNativeThumbnailRef = useRef<string | null>(null);
+  const lastSavedThumbnailTargetRef =
+    useRef<MindMapSavedThumbnailTarget | null>(null);
   const [showAISettings, setShowAISettings] = useState(false);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
   const [showEmbedManager, setShowEmbedManager] = useState(false);
@@ -654,6 +658,9 @@ const MindMapEditorShell = () => {
     setStatus,
     onRequestSaveNew: ({ navigateAfter }) => {
       saveNewDoc.openSaveDialog(navigateAfter);
+    },
+    onServerSaveCommitted: (target) => {
+      lastSavedThumbnailTargetRef.current = target;
     },
     applyRemoteServerVersion: async (target) => {
       await reloadMindMapFromServerRef.current?.({
@@ -1269,33 +1276,49 @@ const MindMapEditorShell = () => {
               latestNativeRevisionRef.current = savePayload.revision;
             }
             const parsedDocument = MindMapAdapter.toDocument(parsedData);
-            const incomingIntegrity = summarizeMindMapTreeIntegrity(parsedData);
-            const previousIntegrity = previousDocument
-              ? summarizeMindMapTreeIntegrity(previousDocument.data)
-              : null;
-            let snapshotRejected = false;
-            if (isCurrentSaveResponse && previousIntegrity) {
-              const regression = compareMindMapTreeIntegrityRegression(
-                previousIntegrity,
-                incomingIntegrity,
-              );
-              if (regression.regressed) {
-                snapshotRejected = true;
-                warnMindMapPersist("save snapshot regression rejected", {
+            const snapshotValidation = validateMindMapSaveSnapshot({
+              previousData: previousDocument?.data ?? null,
+              incomingData: parsedData,
+            });
+            if (
+              isCurrentSaveResponse &&
+              snapshotValidation.regressionReasons.length > 0
+            ) {
+              warnMindMapPersist(
+                "save snapshot integrity regression observed",
+                {
                   requestId: savePayload.requestId ?? null,
                   fileId8: fileId?.slice(0, 8) ?? null,
-                  reasons: regression.reasons,
-                  previous: previousIntegrity,
-                  incoming: incomingIntegrity,
-                });
-              }
+                  reasons: snapshotValidation.regressionReasons,
+                  previous: snapshotValidation.previousIntegrity,
+                  incoming: snapshotValidation.incomingIntegrity,
+                },
+              );
             }
-            const documentForSave =
-              snapshotRejected && previousDocument
-                ? previousDocument
-                : parsedDocument;
+            if (isCurrentSaveResponse && !snapshotValidation.accepted) {
+              warnMindMapPersist("save snapshot rejected", {
+                requestId: savePayload.requestId ?? null,
+                fileId8: fileId?.slice(0, 8) ?? null,
+                reasons: snapshotValidation.rejectionReasons,
+                previous: snapshotValidation.previousIntegrity,
+                incoming: snapshotValidation.incomingIntegrity,
+              });
+              nativeSaveCoordinatorRef.current.rejectCurrentSave({
+                warnLabel: "saveMindMapData | snapshot rejected",
+                warnExtra: {
+                  requestId: savePayload.requestId ?? null,
+                  reasons: snapshotValidation.rejectionReasons,
+                  previous: snapshotValidation.previousIntegrity,
+                  incoming: snapshotValidation.incomingIntegrity,
+                  hostWaitedMs,
+                },
+                message:
+                  "mindmap 原生保存快照异常，已保留未保存状态，请重试保存",
+              });
+              return;
+            }
             const draftResult = hydrateCoordinatorRef.current.handleDraftPush(
-              documentForSave,
+              parsedDocument,
               latestDocumentRef.current,
               {
                 isSaveResponse: isCurrentSaveResponse,
@@ -1306,23 +1329,21 @@ const MindMapEditorShell = () => {
             latestDocumentRef.current = document;
             debugMindMapPersist("saveMindMapData parsed", {
               isCurrentSaveResponse,
-              snapshotRejected,
+              snapshotRejected: false,
+              snapshotAccepted: snapshotValidation.accepted,
+              integrityRegression:
+                snapshotValidation.regressionReasons.length > 0,
+              regressionReasons: snapshotValidation.regressionReasons,
               revision: savePayload.revision ?? null,
               fileId8: fileId?.slice(0, 8) ?? null,
               hydrateDecision: hydrateDecision.reason,
               adoptBaseline: hydrateDecision.adoptBaseline,
               updateHostDocument: hydrateDecision.updateHostDocument,
-              richText: summarizeMindMapRichTextTree(
-                snapshotRejected ? document.data : parsedData,
-              ),
-              integrity: snapshotRejected
-                ? previousIntegrity
-                : incomingIntegrity,
-              previousIntegrity,
-              rejectedIntegrity: snapshotRejected ? incomingIntegrity : null,
-              sampleNode: findFirstRichMindMapNodeSummary(
-                snapshotRejected ? document.data : parsedData,
-              ),
+              richText: summarizeMindMapRichTextTree(parsedData),
+              integrity: snapshotValidation.incomingIntegrity,
+              previousIntegrity: snapshotValidation.previousIntegrity,
+              rejectedIntegrity: null,
+              sampleNode: findFirstRichMindMapNodeSummary(parsedData),
             });
             if (savePayload.thumbnail) {
               cacheDraftThumbnailIfVisible(
@@ -1342,7 +1363,9 @@ const MindMapEditorShell = () => {
                 requestId: fulfilledRequestId,
                 waitedMs,
                 hasThumbnail: !!savePayload.thumbnail,
-                snapshotRejected,
+                snapshotRejected: false,
+                integrityRegression:
+                  snapshotValidation.regressionReasons.length > 0,
                 fileId8: fileId?.slice(0, 8) ?? null,
               });
               debugMindMapPersist("native save response resolved", {
@@ -1425,13 +1448,37 @@ const MindMapEditorShell = () => {
           (payload as { thumbnail?: unknown }).thumbnail,
         );
         const currentDocument = latestDocumentRef.current;
+        if (thumbnail) {
+          lastNativeThumbnailRef.current = thumbnail;
+        }
         if (thumbnail && fileId && currentDocument) {
+          const currentHash = hashDocumentSnapshot(currentDocument);
           cacheDraftThumbnailIfVisible(
             fileId,
             "mindmap",
             thumbnail,
-            hashDocumentSnapshot(currentDocument),
+            currentHash,
           );
+          const savedTarget = lastSavedThumbnailTargetRef.current;
+          const savedTargetMatches =
+            !!savedTarget &&
+            savedTarget.fileId === fileId &&
+            savedTarget.contentSha === currentHash;
+          logPerf("thumbnail.native_received", {
+            fileId8: fileId.slice(0, 8),
+            revision: typeof revision === "number" ? revision : null,
+            thumbLen: thumbnail.length,
+            currentHash8: currentHash.slice(0, 8),
+            savedTargetSha8: savedTarget?.contentSha?.slice(0, 8) ?? null,
+            savedTargetMatches,
+          });
+          if (savedTargetMatches) {
+            scheduleSavedFileThumbnailUpload({
+              ...savedTarget,
+              thumbnail,
+              documentHash: currentHash,
+            });
+          }
         }
         return;
       }
@@ -1832,7 +1879,7 @@ const MindMapEditorShell = () => {
       if (!isAutoSaveEligibleForCurrentFile()) {
         return;
       }
-      requestAutoSave();
+      return requestAutoSave();
     });
 
     return () => {

@@ -24,6 +24,11 @@ describe("server logging event source contract", () => {
     expect(filesSource).toContain("put.start");
     expect(filesSource).toContain("put.version_conflict");
     expect(filesSource).toContain("put.saved");
+    expect(filesSource).toContain("thumbnail_put.start");
+    expect(filesSource).toContain("thumbnail_put.stale");
+    expect(filesSource).toContain("thumbnail_put.saved");
+    expect(filesSource).toContain("thumbnail_get.stale_meta");
+    expect(filesSource).toContain("thumbnailMatchesContent");
   });
 
   it("keeps client log ingestion diagnostics on stable debug events", () => {

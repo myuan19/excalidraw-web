@@ -24,6 +24,7 @@ import {
 import { createLogger } from "./lib/logger.js";
 import {
   isClientLogIngestEnabled,
+  isClientPerfLogIngestEnabled,
   isDebugLogAllowed,
   isHttpTraceEnabled,
   truncStr,
@@ -282,5 +283,6 @@ app.listen(PORT, HOST, () => {
     DEBUG_ALLOWED: isDebugLogAllowed(),
     HTTP_TRACE: isHttpTraceEnabled(),
     CLIENT_INGEST: isClientLogIngestEnabled(),
+    CLIENT_PERF_INGEST: isClientPerfLogIngestEnabled(),
   });
 });

@@ -5,7 +5,8 @@ import {
   removeHTMLEntities,
   resizeImgSize,
   handleSelfCloseTags,
-  addXmlns
+  addXmlns,
+  walk
 } from '../utils'
 import { SVG } from '@svgdotjs/svg.js'
 import drawBackgroundImageToCanvas from '../utils/simulateCSSBackgroundInCanvas'
@@ -308,7 +309,7 @@ class Export {
 
   //  在svg上绘制思维导图背景
   drawBackgroundToSvg(svg) {
-    return new Promise(async resolve => {
+    return new Promise(resolve => {
       const {
         backgroundColor = '#fff',
         backgroundImage,
@@ -318,10 +319,13 @@ class Export {
       svg.css('background-color', backgroundColor)
       // 背景图片
       if (backgroundImage && backgroundImage !== 'none') {
-        const imgDataUrl = await imgToDataUrl(backgroundImage)
-        svg.css('background-image', `url(${imgDataUrl})`)
-        svg.css('background-repeat', backgroundRepeat)
-        resolve()
+        void imgToDataUrl(backgroundImage)
+          .then(imgDataUrl => {
+            svg.css('background-image', `url(${imgDataUrl})`)
+            svg.css('background-repeat', backgroundRepeat)
+            resolve()
+          })
+          .catch(() => resolve())
       } else {
         resolve()
       }
@@ -395,6 +399,43 @@ class Export {
     return res
   }
 
+  showCollapsedExpandNumForExport() {
+    if (!this.mindMap.opt.isShowExpandNum) {
+      return () => {}
+    }
+    const rootNode = this.mindMap.renderer && this.mindMap.renderer.root
+    if (!rootNode) {
+      return () => {}
+    }
+    const restoreList = []
+    walk(rootNode, null, node => {
+      if (
+        node &&
+        !node.isRoot &&
+        node.getData &&
+        node.getData('expand') === false &&
+        node.getChildrenLength &&
+        node.getChildrenLength() > 0 &&
+        typeof node.renderExpandBtn === 'function'
+      ) {
+        restoreList.push({
+          node,
+          wasShown: !!node._showExpandBtn
+        })
+        node.renderExpandBtn()
+      }
+    })
+    return () => {
+      restoreList.forEach(({ node, wasShown }) => {
+        if (wasShown && typeof node.renderExpandBtn === 'function') {
+          node.renderExpandBtn()
+        } else if (!wasShown && typeof node.removeExpandBtn === 'function') {
+          node.removeExpandBtn()
+        }
+      })
+    }
+  }
+
   //  导出为svg
   async svg(name, options = {}) {
     const { preserveTextEdit = false } = options || {}
@@ -404,12 +445,17 @@ class Export {
     } else {
       textEdit.hideEditTextBox()
     }
-    const { node } = await this.getSvgData()
-    node.first().before(SVG(`<title>${name}</title>`))
-    await this.drawBackgroundToSvg(node)
-    const str = node.svg()
-    const res = await this.fixSvgStrAndToBlob(str)
-    return res
+    const restoreExportExpandBtns = this.showCollapsedExpandNumForExport()
+    try {
+      const { node } = await this.getSvgData()
+      node.first().before(SVG(`<title>${name}</title>`))
+      await this.drawBackgroundToSvg(node)
+      const str = node.svg()
+      const res = await this.fixSvgStrAndToBlob(str)
+      return res
+    } finally {
+      restoreExportExpandBtns()
+    }
   }
 
   // 修复svg字符串，并且转换为blob数据

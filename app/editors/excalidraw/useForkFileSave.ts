@@ -49,9 +49,7 @@ import {
 } from "../../data/checkpointPolicy";
 import { executeCheckpointSave } from "../../data/checkpointSaveOrchestrator";
 import { installExecutor, requestSaveAndWait } from "../../data/saveQueue";
-import {
-  clearTabFileDirty,
-} from "../../data/tabFileDirtyState";
+import { clearTabFileDirty } from "../../data/tabFileDirtyState";
 import { applyRemoteExcalidrawScene } from "./applyRemoteExcalidrawScene";
 import { getDocumentSessionVersion } from "../../data/documentSessionVersion";
 import { logDocumentVersion } from "../../data/documentVersionLog";
@@ -883,7 +881,13 @@ export function useForkFileSave(opts: {
           version: meta?.version,
         };
       },
-      { getCurrentFileId: getFileIdFromHash },
+      {
+        getCurrentFileId: getFileIdFromHash,
+        getCurrentFileDirty: () => {
+          const fid = getFileIdFromHash();
+          return !!fid && FileSyncState.hasUnsavedChanges(fid);
+        },
+      },
     );
   }, [saveCurrentFileToServer]);
 
@@ -896,6 +900,17 @@ export function useForkFileSave(opts: {
       },
       navigateToFileListHome: finishNavigateHome,
     });
+  }, [finishNavigateHome]);
+
+  const requestForkHomeSaveAndNavigate = useCallback(async () => {
+    const result = await requestSaveAndWait({
+      source: "home",
+      navigateAfter: true,
+      requiresFreshSnapshot: true,
+    });
+    if (result.clean) {
+      finishNavigateHome();
+    }
   }, [finishNavigateHome]);
 
   const forkGoHomeWithServerSave = useCallback(async () => {
@@ -956,7 +971,7 @@ export function useForkFileSave(opts: {
       return;
     }
     if (isAutoSaveOnExitActive() && isAutoSaveEligibleFile(fid)) {
-      await requestSaveAndWait({ source: "home", navigateAfter: true });
+      await requestForkHomeSaveAndNavigate();
       return;
     }
     const leaveChoice = await promptLeaveEditorConfirm({
@@ -968,7 +983,7 @@ export function useForkFileSave(opts: {
       return;
     }
     if (leaveChoice === "save") {
-      await requestSaveAndWait({ source: "home", navigateAfter: true });
+      await requestForkHomeSaveAndNavigate();
       return;
     }
     await discardLocalEditsForHomeNavigation();
@@ -979,6 +994,7 @@ export function useForkFileSave(opts: {
     getSceneData,
     navigateToFileListHome,
     onRequestSaveNew,
+    requestForkHomeSaveAndNavigate,
   ]);
 
   return {

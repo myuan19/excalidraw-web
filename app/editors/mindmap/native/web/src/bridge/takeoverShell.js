@@ -1,5 +1,5 @@
 /* MindMap iframe host-takeover runtime. Built into public/mind-map via copy.js */
-;(function () {
+(function () {
       // Must match app/editors/mindmap/mindMapDraftState.ts NATIVE_HYDRATE_SETTLE_MS
       const DIRTY_NOTIFY_SETTLE_MS = 2500
       const bridgeSource = 'simple-mind-map-native'
@@ -99,7 +99,9 @@
             sample = text
             return
           }
-          ;(node.children || []).forEach(walk)
+          for (const child of node.children || []) {
+            walk(child)
+          }
         }
         if (root) walk(root)
         return {
@@ -531,14 +533,19 @@
           return false
         }
         const liveData = nativeMindMap.getData(true, { skipTextSync: true })
+        const snapshotFingerprint = getMindMapFullDataFingerprint(snapshotData)
+        const liveFingerprint = getMindMapFullDataFingerprint(liveData)
         const snapCount = countSnapshotNodes(snapshotData)
         const liveCount = countSnapshotNodes(liveData)
-        if (snapCount === liveCount) {
+        if (snapshotFingerprint && snapshotFingerprint === liveFingerprint) {
           return false
         }
         debugMindMapOpen('snapshot thumbnail canvas resync', {
           snapCount,
-          liveCount
+          liveCount,
+          fingerprintChanged: !!snapshotFingerprint,
+          snapshotFingerprintLength: snapshotFingerprint.length,
+          liveFingerprintLength: liveFingerprint.length
         })
         nativeMindMap.setFullData(snapshotData)
         renderEnded = false
@@ -688,7 +695,9 @@
               sample = text
               return
             }
-            ;(node.children || []).forEach(walk)
+            for (const child of node.children || []) {
+              walk(child)
+            }
           }
           if (data && data.root) walk(data.root)
           return sample
@@ -870,6 +879,44 @@
         }, delayMs)
       }
 
+      const notifyHostPreviewViewport = payload => {
+        const reason = (payload && payload.reason) || 'preview-viewport'
+        const requestId =
+          payload && payload.requestId !== undefined ? payload.requestId : null
+        const ok = !!(payload && payload.ok)
+        const error =
+          payload && payload.error !== undefined ? payload.error : null
+        window.setTimeout(() => {
+          debugMindMapOpen('preview viewport applied to host', {
+            reason,
+            requestId,
+            ok,
+            error,
+            scaleAfter: nativeMindMap?.view?.scale || null
+          })
+          postToHost('mindMapViewRestoreDone', {
+            requestId,
+            reason,
+            ok,
+            error,
+            scale: nativeMindMap?.view?.scale || null
+          })
+          if (
+            ok &&
+            payload &&
+            payload.scale != null &&
+            payload.x != null &&
+            payload.y != null
+          ) {
+            postToHost('mindMapViewState', {
+              scale: payload.scale,
+              x: payload.x,
+              y: payload.y
+            })
+          }
+        }, ok ? 80 : 0)
+      }
+
       const startTakeOverApp = data => {
         if (!isRuntimeReady()) {
           blockRuntime('startTakeOverApp-not-ready', {
@@ -989,37 +1036,6 @@
             postToHost('mindMapViewState', viewData)
           }
         })
-        const notifyHostPreviewViewport = payload => {
-          const reason = (payload && payload.reason) || 'preview-viewport'
-          const requestId =
-            payload && payload.requestId !== undefined ? payload.requestId : null
-          const ok = !!(payload && payload.ok)
-          const error =
-            payload && payload.error !== undefined ? payload.error : null
-          window.setTimeout(() => {
-            debugMindMapOpen('preview viewport applied to host', {
-              reason,
-              requestId,
-              ok,
-              error,
-              scaleAfter: nativeMindMap?.view?.scale || null
-            })
-            postToHost('mindMapViewRestoreDone', {
-              requestId,
-              reason,
-              ok,
-              error,
-              scale: nativeMindMap?.view?.scale || null
-            })
-            if (ok && payload && payload.scale != null && payload.x != null && payload.y != null) {
-              postToHost('mindMapViewState', {
-                scale: payload.scale,
-                x: payload.x,
-                y: payload.y
-              })
-            }
-          }, ok ? 80 : 0)
-        }
         window.$bus.$on('embed_preview_viewport_applied', notifyHostPreviewViewport)
         window.$bus.$on('host_ai_config_listener_ready', () => {
           hostAiConfigListenerReady = true
@@ -1264,54 +1280,22 @@
               snapshotMs: Math.round(performance.now() - snapshotStartedAt),
               ...summarizeMindMapPayloadIntegrity(bridgeState.mindMapData)
             })
-            reportMindMapSaveProgress(requestId, 'thumbnail', {
-              snapshotMs: Math.round(performance.now() - snapshotStartedAt),
-              openPerformance: !!(
-                nativeMindMap.opt && nativeMindMap.opt.openPerformance
-              ),
-              renderEnded
-            })
-            const thumbStartedAt = performance.now()
-            debugMindMapOpen('requestMindMapSave | thumbnail start', {
-              requestId: requestId || null,
-              openPerformance: !!(
-                nativeMindMap.opt && nativeMindMap.opt.openPerformance
-              ),
-              renderEnded
-            })
-            let thumbnail = null
-            try {
-              thumbnail = await exportThumbnailForSnapshot(
-                bridgeState.mindMapData,
-                'request-save'
-              )
-            } catch (error) {
-              debugMindMapOpen('requestMindMapSave | thumbnail export failed', {
-                requestId: requestId || null,
-                message: error && error.message ? error.message : String(error)
-              })
-              console.warn('Failed to export MindMap save thumbnail', error)
-            }
-            debugMindMapOpen('requestMindMapSave | thumbnail done', {
-              requestId: requestId || null,
-              thumbnailMs: Math.round(performance.now() - thumbStartedAt),
-              hasThumbnail: !!thumbnail,
-              thumbnailLength: thumbnail ? thumbnail.length : 0
-            })
             reportMindMapSaveProgress(requestId, 'post', {
               snapshotMs: Math.round(performance.now() - snapshotStartedAt),
-              thumbnailMs: Math.round(performance.now() - thumbStartedAt),
-              hasThumbnail: !!thumbnail
+              openPerformance: !!(
+                nativeMindMap.opt && nativeMindMap.opt.openPerformance
+              ),
+              renderEnded
             })
             postMindMapDataToHost(
               bridgeState.mindMapData,
               requestId,
-              thumbnail
+              null
             )
             debugMindMapOpen('requestMindMapSave | posted', {
               requestId: requestId || null,
               totalMs: Math.round(performance.now() - saveStartedAt),
-              hasThumbnail: !!thumbnail
+              thumbnailDeferred: true
             })
           } catch (error) {
             reportMindMapSaveProgress(requestId, 'failed', {

@@ -392,6 +392,7 @@ function removeElementByClassAt(
   svgMarkup: string,
   className: string,
   fromIndex = 0,
+  shouldRemove: (elementMarkup: string) => boolean = () => true,
 ): { svg: string; removed: boolean } {
   const pattern = new RegExp(
     `<([a-zA-Z][\\w:-]*)\\b(?=[^>]*\\bclass="[^"]*\\b${className}\\b[^"]*")[^>]*>`,
@@ -406,6 +407,9 @@ function removeElementByClassAt(
   const tagName = openMatch[1];
   const openEnd = openMatch.index + openMatch[0].length;
   if (/\/>\s*$/i.test(openMatch[0])) {
+    if (!shouldRemove(openMatch[0])) {
+      return removeElementByClassAt(svgMarkup, className, openEnd, shouldRemove);
+    }
     return {
       svg: svgMarkup.slice(0, openMatch.index) + svgMarkup.slice(openEnd),
       removed: true,
@@ -434,10 +438,20 @@ function removeElementByClassAt(
     depth -= 1;
     cursor = nextClose.index + closeTag.length;
     if (depth === 0) {
+      const elementMarkup = svgMarkup.slice(openMatch.index, cursor);
+      if (!shouldRemove(elementMarkup)) {
+        return removeElementByClassAt(
+          svgMarkup,
+          className,
+          cursor,
+          shouldRemove,
+        );
+      }
       const next = removeElementByClassAt(
         svgMarkup.slice(0, openMatch.index) + svgMarkup.slice(cursor),
         className,
         openMatch.index,
+        shouldRemove,
       );
       return { svg: next.svg, removed: true };
     }
@@ -446,11 +460,15 @@ function removeElementByClassAt(
   return { svg: svgMarkup, removed: false };
 }
 
-function removeElementsByClass(svgMarkup: string, className: string): string {
+function removeElementsByClass(
+  svgMarkup: string,
+  className: string,
+  shouldRemove?: (elementMarkup: string) => boolean,
+): string {
   let svg = svgMarkup;
   let removed = true;
   while (removed) {
-    const result = removeElementByClassAt(svg, className);
+    const result = removeElementByClassAt(svg, className, 0, shouldRemove);
     svg = result.svg;
     removed = result.removed;
   }
@@ -489,7 +507,11 @@ function removeMindMapEditOverlays(svgMarkup: string): string {
   let svg = removeElementsByClass(svgMarkup, "smm-hover-node");
   svg = removeMindMapNodeControls(svg);
   svg = removeElementsByClass(svg, "smm-quick-create-child-btn");
-  svg = removeElementsByClass(svg, "smm-expand-btn");
+  svg = removeElementsByClass(
+    svg,
+    "smm-expand-btn",
+    (elementMarkup) => !/\bsmm-expand-btn-text\b/i.test(elementMarkup),
+  );
   svg = removeElementsByClass(svg, "smm-other-container");
   svg = removeElementsByClass(svg, "smm-outer-frame-container");
   svg = removeMindMapExportFooter(svg);

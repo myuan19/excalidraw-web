@@ -11,6 +11,7 @@ export type SaveToServerOptions = {
   source?: SaveToServerSource;
   navigateAfter?: boolean;
   forceThumbnail?: boolean;
+  requiresFreshSnapshot?: boolean;
 };
 
 export type SceneData = {

@@ -27,6 +27,7 @@ describe("MindMapEditorShell hydrate source contract", () => {
       'debugMindMapPersist("auto save rearmed after hydrate"',
     );
     expect(source).toContain('return "deferred"');
+    expect(source).toContain("return requestAutoSave();");
     expect(source).toContain(
       "config change skipped while native dirty pending",
     );
@@ -37,5 +38,29 @@ describe("MindMapEditorShell hydrate source contract", () => {
     expect(source).toContain('debugMindMapPersist("hydrate draft rejected"');
     expect(source).not.toContain("forwardMindMapHostDebug(\"mindmap-bridge\"");
     expect(source).not.toContain("explainHydrateDraftDecision");
+  });
+
+  it("does not silently replace explicit save snapshots with previous documents", () => {
+    const source = fs.readFileSync(
+      path.join(__dirname, "MindMapEditorShell.tsx"),
+      "utf8",
+    );
+
+    expect(source).toContain("validateMindMapSaveSnapshot");
+    expect(source).toContain("rejectCurrentSave");
+    expect(source).not.toContain("snapshotRejected && previousDocument");
+    expect(source).not.toContain(
+      "? previousDocument\n                : parsedDocument",
+    );
+  });
+
+  it("keeps native saved-thumbnail uploads bound to the saved document hash", () => {
+    const source = fs.readFileSync(
+      path.join(__dirname, "MindMapEditorShell.tsx"),
+      "utf8",
+    );
+
+    expect(source).toContain("savedTargetMatches");
+    expect(source).toContain("documentHash: currentHash");
   });
 });

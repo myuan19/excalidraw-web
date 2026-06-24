@@ -19,12 +19,32 @@ import type { MindMapSaveDocument } from "./mindMapDraftState";
 export function recordMindMapPersisted(
   fileId: string,
   document: MindMapSaveDocument,
-  opts?: { serverContentSha256?: string; serverVersion?: number },
+  opts?: {
+    serverContentSha256?: string;
+    serverVersion?: number;
+    preserveDirty?: boolean;
+  },
 ): void {
   if (isLocalDraftFileId(fileId)) {
     return;
   }
   noteMindMapPersistedSnapshot(fileId, document);
+  const contentHash = hashDocumentSnapshot(document);
+  if (opts?.preserveDirty) {
+    FileSyncState.setBaselineHash(fileId, contentHash);
+    if (opts.serverContentSha256) {
+      FileSyncState.setServerHash(fileId, opts.serverContentSha256);
+    }
+    debugMindMapPersist("recordMindMapPersisted preserve dirty", {
+      fileId8: fileId.slice(0, 8),
+      serverSha8: opts.serverContentSha256?.slice(0, 8) ?? null,
+      serverVersion: opts.serverVersion ?? null,
+      contentHash8: contentHash.slice(0, 8),
+      draftHash8: FileSyncState.getDraftHash(fileId)?.slice(0, 8) ?? null,
+      sampleNode: findFirstRichMindMapNodeSummary(document.data),
+    });
+    return;
+  }
   const existing = FileSyncState.getLocalCache(fileId);
   const serverSha =
     opts?.serverContentSha256 ??
@@ -46,7 +66,7 @@ export function recordMindMapPersisted(
       sessionVersion: getDocumentSessionVersion(fileId),
     });
   }
-  FileSyncState.alignHashes(fileId, hashDocumentSnapshot(document));
+  FileSyncState.alignHashes(fileId, contentHash);
   if (opts?.serverContentSha256) {
     FileSyncState.setServerHash(fileId, opts.serverContentSha256);
   }
@@ -56,7 +76,7 @@ export function recordMindMapPersisted(
     fileId8: fileId.slice(0, 8),
     serverSha8: opts?.serverContentSha256?.slice(0, 8) ?? null,
     serverVersion: opts?.serverVersion ?? null,
-    contentHash8: hashDocumentSnapshot(document).slice(0, 8),
+    contentHash8: contentHash.slice(0, 8),
     sampleNode: findFirstRichMindMapNodeSummary(document.data),
   });
 }

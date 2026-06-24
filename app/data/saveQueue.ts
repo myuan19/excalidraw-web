@@ -20,6 +20,7 @@ import { getAppSettings, isIdleAutoSaveActive } from "./appSettings";
 import { broadcastFileSaved } from "./crossTabFileSync";
 import { getClientTabId } from "./clientRequestContext";
 import { shouldBlockPassiveSave } from "./fileSyncOperationState";
+import { logPerf } from "../lib/perfLog";
 
 import type { SaveToServerSource } from "../hooks/types";
 
@@ -48,6 +49,12 @@ export interface SaveRequest {
   source: SaveToServerSource;
   navigateAfter?: boolean;
   forceThumbnail?: boolean;
+  /**
+   * Active requests must not assume an already-running passive save is enough.
+   * When queued behind an in-flight save, re-check the latest dirty state before
+   * deciding whether to run a fresh snapshot save.
+   */
+  requiresFreshSnapshot?: boolean;
   /** 同一次 UI 命令的幂等 key，避免重复事件创建重复 checkpoint。 */
   requestId?: string;
 }
@@ -61,14 +68,19 @@ export interface SaveResult {
   contentSha256?: string | null;
   /** 服务器返回的整数版本，随广播下发用于接收端绑定提示目标 */
   version?: number | null;
+  /** 队列级 follow-up 发现当前文件已干净，未再调用 executor。 */
+  clean?: boolean;
 }
 
 type SaveExecutor = (req: SaveRequest) => Promise<SaveResult>;
 type CurrentFileIdGetter = () => string | null | undefined;
+type CurrentFileDirtyGetter = (req: SaveRequest) => boolean;
+type QueuedSaveRequest = SaveRequest & { queuedWhileRunning?: boolean };
 
 let executor: SaveExecutor | null = null;
 let getCurrentFileId: CurrentFileIdGetter | null = null;
-let pending: SaveRequest | null = null;
+let getCurrentFileDirty: CurrentFileDirtyGetter | null = null;
+let pending: QueuedSaveRequest | null = null;
 let pendingResolvers: Array<(r: SaveResult) => void> = [];
 let coalesceTimer: number | null = null;
 let running = false;
@@ -89,7 +101,9 @@ function requestMeta(req: SaveRequest, extra?: Record<string, unknown>) {
     fileId8: fileId8(currentFileId),
     navigateAfter: !!req.navigateAfter,
     forceThumbnail: !!req.forceThumbnail,
+    requiresFreshSnapshot: !!req.requiresFreshSnapshot,
     pendingSource: pending?.source ?? null,
+    pendingQueuedWhileRunning: !!pending?.queuedWhileRunning,
     running,
     runningRequestId,
     ...extra,
@@ -105,6 +119,26 @@ function logSaveQueue(
   log.event(level, `save.queue.${event}`, message, { fields });
 }
 
+function logSaveQueuePerf(
+  event: string,
+  req: SaveRequest,
+  fields?: Record<string, unknown>,
+): void {
+  logPerf(`save.queue.${event}`, requestMeta(req, fields));
+}
+
+function isActiveSaveSource(source: SaveToServerSource): boolean {
+  return (SOURCE_PRIORITY[source] ?? 0) >= SOURCE_PRIORITY.home;
+}
+
+function normalizeRequest(req: SaveRequest): QueuedSaveRequest {
+  return {
+    ...req,
+    requiresFreshSnapshot:
+      req.requiresFreshSnapshot ?? isActiveSaveSource(req.source),
+  };
+}
+
 function clearCoalesceTimer() {
   if (coalesceTimer != null) {
     window.clearTimeout(coalesceTimer);
@@ -113,21 +147,26 @@ function clearCoalesceTimer() {
 }
 
 function mergeRequest(
-  existing: SaveRequest,
-  incoming: SaveRequest,
-): SaveRequest {
+  existing: QueuedSaveRequest,
+  incoming: QueuedSaveRequest,
+): QueuedSaveRequest {
   return {
     source: higherPrioritySource(existing.source, incoming.source),
     navigateAfter: existing.navigateAfter || incoming.navigateAfter,
     forceThumbnail: existing.forceThumbnail || incoming.forceThumbnail,
+    requiresFreshSnapshot:
+      existing.requiresFreshSnapshot || incoming.requiresFreshSnapshot,
     requestId:
       existing.requestId === incoming.requestId
         ? existing.requestId
         : incoming.requestId ?? existing.requestId,
+    queuedWhileRunning:
+      existing.queuedWhileRunning || incoming.queuedWhileRunning,
   };
 }
 
 const NO_SAVE: SaveResult = { saved: false };
+const CLEAN_NO_SAVE: SaveResult = { saved: false, clean: true };
 const COMPLETED_REQUEST_TTL_MS = 2_000;
 
 const completedRequests = new Map<
@@ -245,6 +284,46 @@ async function drain(): Promise<SaveResult> {
     return NO_SAVE;
   }
 
+  if (
+    req.queuedWhileRunning &&
+    req.requiresFreshSnapshot &&
+    !req.forceThumbnail &&
+    getCurrentFileDirty &&
+    !getCurrentFileDirty(req)
+  ) {
+    logSaveQueue(
+      "info",
+      "followup.skipped_clean",
+      "follow-up skipped because latest state is clean",
+      requestMeta(req, { queueId, resolverCount: resolvers.length }),
+    );
+    logSaveQueuePerf("followup_skipped_clean", req, {
+      queueId,
+      resolverCount: resolvers.length,
+    });
+    rememberCompletedRequest(req.requestId ?? null, CLEAN_NO_SAVE);
+    for (const resolve of resolvers) {
+      resolve(CLEAN_NO_SAVE);
+    }
+    if (pending) {
+      void drain();
+    }
+    return CLEAN_NO_SAVE;
+  }
+
+  if (req.queuedWhileRunning && req.requiresFreshSnapshot) {
+    logSaveQueue(
+      "info",
+      "followup.executed_dirty",
+      "follow-up executing because latest state changed",
+      requestMeta(req, { queueId, resolverCount: resolvers.length }),
+    );
+    logSaveQueuePerf("followup_executed_dirty", req, {
+      queueId,
+      resolverCount: resolvers.length,
+    });
+  }
+
   running = true;
   runningRequestId = req.requestId ?? null;
 
@@ -336,70 +415,94 @@ function scheduleFlush(immediate: boolean) {
  * - 如果当前有保存正在执行，排队等待
  */
 export function requestSave(req: SaveRequest): void {
+  const normalizedReq = normalizeRequest(req);
   if (!executor) {
     logSaveQueue(
       "info",
       "request.ignored_no_executor",
       "requestSave ignored: no executor installed",
-      requestMeta(req),
+      requestMeta(normalizedReq),
     );
     return;
   }
 
-  if (shouldIgnoreSaveRequest(req)) {
+  if (shouldIgnoreSaveRequest(normalizedReq)) {
     return;
   }
 
-  if (getCompletedRequestResult(req.requestId)) {
+  if (getCompletedRequestResult(normalizedReq.requestId)) {
     logSaveQueue(
       "info",
       "request.ignored_duplicate_completed",
       "requestSave ignored: duplicate completed request",
-      requestMeta(req),
+      requestMeta(normalizedReq),
     );
     return;
   }
 
-  if (hasSameRequestId(req.requestId, runningRequestId)) {
+  if (hasSameRequestId(normalizedReq.requestId, runningRequestId)) {
     logSaveQueue(
       "info",
       "request.ignored_duplicate_running",
       "requestSave ignored: duplicate running request",
-      requestMeta(req),
+      requestMeta(normalizedReq),
     );
     return;
   }
 
   if (pending) {
     const before = pending;
-    pending = mergeRequest(pending, req);
+    pending = mergeRequest(pending, {
+      ...normalizedReq,
+      queuedWhileRunning: running,
+    });
     logSaveQueue(
       "info",
       "request.merged",
       "requestSave merged",
-      requestMeta(req, {
+      requestMeta(normalizedReq, {
         previousPendingSource: before.source,
         mergedSource: pending.source,
         previousPendingRequestId: before.requestId ?? null,
         mergedRequestId: pending.requestId ?? null,
+        mergedRequiresFreshSnapshot: !!pending.requiresFreshSnapshot,
+        queuedWhileRunning: running,
       }),
     );
   } else {
-    pending = { ...req };
+    pending = { ...normalizedReq, queuedWhileRunning: running };
     logSaveQueue(
       "info",
       "request.queued",
       "requestSave queued",
-      requestMeta(req),
+      requestMeta(normalizedReq),
     );
   }
 
-  const isUserAction = SOURCE_PRIORITY[req.source] >= SOURCE_PRIORITY.home;
+  if (running) {
+    logSaveQueue(
+      "info",
+      "followup.queued",
+      "requestSave queued follow-up while running",
+      requestMeta(normalizedReq, {
+        pendingSource: pending.source,
+        pendingRequestId: pending.requestId ?? null,
+        pendingRequiresFreshSnapshot: !!pending.requiresFreshSnapshot,
+      }),
+    );
+    logSaveQueuePerf("followup_queued", normalizedReq, {
+      pendingSource: pending.source,
+      pendingRequestId: pending.requestId ?? null,
+      pendingRequiresFreshSnapshot: !!pending.requiresFreshSnapshot,
+    });
+  }
+
+  const isUserAction = isActiveSaveSource(normalizedReq.source);
   logSaveQueue(
     "info",
     "request.schedule",
     "requestSave schedule",
-    requestMeta(req, { immediate: isUserAction }),
+    requestMeta(normalizedReq, { immediate: isUserAction }),
   );
   scheduleFlush(isUserAction);
 }
@@ -410,62 +513,69 @@ export function requestSave(req: SaveRequest): void {
  * 如果当前有保存在执行，等待其完成后再执行合并后的新请求。
  */
 export function requestSaveAndWait(req: SaveRequest): Promise<SaveResult> {
+  const normalizedReq = normalizeRequest(req);
   if (!executor) {
     logSaveQueue(
       "info",
       "request_wait.ignored_no_executor",
       "requestSaveAndWait ignored: no executor installed",
-      requestMeta(req),
+      requestMeta(normalizedReq),
     );
     return Promise.resolve(NO_SAVE);
   }
 
-  if (shouldIgnoreSaveRequest(req)) {
+  if (shouldIgnoreSaveRequest(normalizedReq)) {
     return Promise.resolve(NO_SAVE);
   }
 
-  const completed = getCompletedRequestResult(req.requestId);
+  const completed = getCompletedRequestResult(normalizedReq.requestId);
   if (completed) {
     logSaveQueue(
       "info",
       "request_wait.reused_completed",
       "requestSaveAndWait reused completed request",
-      requestMeta(req),
+      requestMeta(normalizedReq),
     );
     return Promise.resolve(completed);
   }
 
-  if (hasSameRequestId(req.requestId, runningRequestId)) {
+  if (hasSameRequestId(normalizedReq.requestId, runningRequestId)) {
     logSaveQueue(
       "info",
       "request_wait.joined_running",
       "requestSaveAndWait joined running request",
-      requestMeta(req),
+      requestMeta(normalizedReq),
     );
+    logSaveQueuePerf("joined_running", normalizedReq);
     return runningPromise ?? Promise.resolve(NO_SAVE);
   }
 
   if (pending) {
     const before = pending;
-    pending = mergeRequest(pending, req);
+    pending = mergeRequest(pending, {
+      ...normalizedReq,
+      queuedWhileRunning: running,
+    });
     logSaveQueue(
       "info",
       "request_wait.merged",
       "requestSaveAndWait merged",
-      requestMeta(req, {
+      requestMeta(normalizedReq, {
         previousPendingSource: before.source,
         mergedSource: pending.source,
         previousPendingRequestId: before.requestId ?? null,
         mergedRequestId: pending.requestId ?? null,
+        mergedRequiresFreshSnapshot: !!pending.requiresFreshSnapshot,
+        queuedWhileRunning: running,
       }),
     );
   } else {
-    pending = { ...req };
+    pending = { ...normalizedReq, queuedWhileRunning: running };
     logSaveQueue(
       "info",
       "request_wait.queued",
       "requestSaveAndWait queued",
-      requestMeta(req),
+      requestMeta(normalizedReq),
     );
   }
 
@@ -476,8 +586,23 @@ export function requestSaveAndWait(req: SaveRequest): Promise<SaveResult> {
       "info",
       "request_wait.waits_running",
       "requestSaveAndWait waits running save",
-      requestMeta(req),
+      requestMeta(normalizedReq),
     );
+    logSaveQueue(
+      "info",
+      "followup.queued",
+      "requestSaveAndWait queued follow-up while running",
+      requestMeta(normalizedReq, {
+        pendingSource: pending.source,
+        pendingRequestId: pending.requestId ?? null,
+        pendingRequiresFreshSnapshot: !!pending.requiresFreshSnapshot,
+      }),
+    );
+    logSaveQueuePerf("followup_queued", normalizedReq, {
+      pendingSource: pending.source,
+      pendingRequestId: pending.requestId ?? null,
+      pendingRequiresFreshSnapshot: !!pending.requiresFreshSnapshot,
+    });
     return new Promise<SaveResult>((resolve) => {
       pendingResolvers.push(resolve);
     });
@@ -501,13 +626,17 @@ export function requestSaveAndWait(req: SaveRequest): Promise<SaveResult> {
  */
 export function installExecutor(
   fn: SaveExecutor,
-  opts?: { getCurrentFileId?: CurrentFileIdGetter },
+  opts?: {
+    getCurrentFileId?: CurrentFileIdGetter;
+    getCurrentFileDirty?: CurrentFileDirtyGetter;
+  },
 ): () => void {
   logSaveQueue("info", "executor.installed", "executor installed", {
     clientTabId: getClientTabId(),
   });
   executor = fn;
   getCurrentFileId = opts?.getCurrentFileId ?? null;
+  getCurrentFileDirty = opts?.getCurrentFileDirty ?? null;
   completedRequests.clear();
   return () => {
     if (executor === fn) {
@@ -516,9 +645,11 @@ export function installExecutor(
       });
       executor = null;
       getCurrentFileId = null;
+      getCurrentFileDirty = null;
     }
     clearCoalesceTimer();
     pending = null;
+    pendingResolvers = [];
   };
 }
 

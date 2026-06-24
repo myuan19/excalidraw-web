@@ -113,3 +113,21 @@ export function finalizeSavedThumbnail({
   });
   return savedThumbnail;
 }
+
+export function finalizeSavedThumbnailMetadata({
+  fileId,
+  kind,
+  name,
+  contentSha,
+  version,
+  updatedAt,
+}: SavedThumbnailPatch): null {
+  patchFileListTreeCacheSavedFile(fileId, {
+    name,
+    kind,
+    content_sha256: contentSha ?? undefined,
+    version: version ?? undefined,
+    updated_at: updatedAt ?? undefined,
+  });
+  return null;
+}

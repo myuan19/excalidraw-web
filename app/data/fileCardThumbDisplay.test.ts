@@ -4,6 +4,10 @@ import { FileSyncState } from "./FileSyncState";
 import { LocalThumbnailCache } from "./localThumbnailCache";
 import { resolveFileCardThumbDisplay } from "./fileCardThumbDisplay";
 import {
+  clearPendingSavedFileThumbnail,
+  markPendingSavedFileThumbnail,
+} from "./sessionFileThumbnail";
+import {
   clearThumbnailServerMiss,
   markThumbnailServerMiss,
 } from "./thumbnailServerFetchMiss";
@@ -26,6 +30,7 @@ function mockFile(overrides: Partial<ServerFile> = {}): ServerFile {
 describe("resolveFileCardThumbDisplay", () => {
   afterEach(() => {
     sessionStorage.clear();
+    clearPendingSavedFileThumbnail("file-1");
   });
 
   it("shows temp badge for local drafts", () => {
@@ -85,5 +90,19 @@ describe("resolveFileCardThumbDisplay", () => {
     const display = resolveFileCardThumbDisplay("file-1", mockFile());
     expect(display.thumbLoading).toBe(false);
     clearThumbnailServerMiss("file-1");
+  });
+
+  it("shows loading instead of a stale thumbnail while a saved thumbnail is pending", () => {
+    markPendingSavedFileThumbnail("file-1", "sha-2");
+
+    const display = resolveFileCardThumbDisplay(
+      "file-1",
+      mockFile({ content_sha256: "sha-2", has_thumbnail: false }),
+      "<svg id='old-server'></svg>",
+      "sha-1",
+    );
+
+    expect(display.cardThumbSvg).toBeNull();
+    expect(display.thumbLoading).toBe(true);
   });
 });

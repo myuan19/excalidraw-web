@@ -407,6 +407,13 @@ export interface PutFileResult {
   };
 }
 
+export interface PutFileThumbnailResult {
+  ok?: boolean;
+  updated_at?: string;
+  content_sha256?: string;
+  version?: number;
+}
+
 export interface ServerFileHash {
   id: string;
   content_sha256: string | null;
@@ -730,6 +737,53 @@ export const ServerSync = {
       );
     }
     return result;
+    });
+  },
+
+  async saveFileThumbnail(
+    id: string,
+    thumbnail: string,
+    opts: {
+      contentSha256: string;
+      source?: string;
+    },
+  ): Promise<PutFileThumbnailResult> {
+    return withFileSaveLock(id, opts.source ?? "thumbnail", async () => {
+      logSaveEvent("info", "thumbnail.start", "saveFileThumbnail start", {
+        clientTabId: getClientTabId(),
+        id,
+        id8: id.slice(0, 8),
+        source: opts.source ?? "thumbnail",
+        contentHash8: opts.contentSha256.slice(0, 8),
+        thumbLen: thumbnail.length,
+      });
+      const result = await api<PutFileThumbnailResult>(
+        `/files/${id}/thumbnail`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            thumbnail,
+            contentSha256: opts.contentSha256,
+            clientDebug: {
+              tabId: getClientTabId(),
+              source: opts.source ?? "thumbnail",
+              contentHash: opts.contentSha256,
+              sessionVersion: getDocumentSessionVersion(id) ?? null,
+              clientTime: new Date().toISOString(),
+            },
+          }),
+        },
+        opts.source ?? "thumbnail",
+      );
+      logSaveEvent("info", "thumbnail.done", "saveFileThumbnail done", {
+        clientTabId: getClientTabId(),
+        id,
+        id8: id.slice(0, 8),
+        source: opts.source ?? "thumbnail",
+        contentHash8: result.content_sha256?.slice(0, 8) ?? null,
+        version: result.version ?? null,
+      });
+      return result;
     });
   },
 

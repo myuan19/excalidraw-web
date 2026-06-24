@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  clearDocumentSessionVersion,
+  setDocumentSessionVersion,
+} from "./documentSessionVersion";
+import { FileSyncState } from "./FileSyncState";
+import { ServerSync } from "./ServerSync";
+
 vi.mock("./debugCapability", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./debugCapability")>();
   return {
@@ -8,13 +15,6 @@ vi.mock("./debugCapability", async (importOriginal) => {
     isDebugRuntimeEnabled: () => true,
   };
 });
-
-import {
-  clearDocumentSessionVersion,
-  setDocumentSessionVersion,
-} from "./documentSessionVersion";
-import { FileSyncState } from "./FileSyncState";
-import { ServerSync } from "./ServerSync";
 
 const FILE_ID = "server-sync-save-lock";
 
@@ -177,7 +177,7 @@ describe("ServerSync.saveFileImmediate", () => {
 
     const file = await ServerSync.getFile(FILE_ID, { force: true });
 
-    expect(statuses).toEqual([304, 200]);
+    expect(statuses.slice(0, 2)).toEqual([304, 200]);
     expect(file.version).toBe(11);
   });
 
@@ -227,5 +227,51 @@ describe("ServerSync.saveFileImmediate", () => {
     expect(
       (file.data as { elements: Array<{ id: string }> }).elements[0].id,
     ).toBe("new-element");
+  });
+
+  it("uploads thumbnails through the dedicated thumbnail endpoint", async () => {
+    const requests: Array<{ input: RequestInfo | URL; init?: RequestInit }> =
+      [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push({ input, init });
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            content_sha256: "server-sha",
+            version: 12,
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      },
+    );
+
+    const result = await ServerSync.saveFileThumbnail(
+      FILE_ID,
+      "<svg><rect /></svg>",
+      {
+        contentSha256: "server-sha",
+        source: "home-thumbnail",
+      },
+    );
+
+    expect(result.version).toBe(12);
+    expect(String(requests[0].input)).toContain(
+      `/files/${FILE_ID}/thumbnail`,
+    );
+    const body = JSON.parse(String(requests[0].init?.body ?? "{}")) as {
+      data?: unknown;
+      thumbnail?: string;
+      contentSha256?: string;
+    };
+    expect(body.data).toBeUndefined();
+    expect(body.thumbnail).toBe("<svg><rect /></svg>");
+    expect(body.contentSha256).toBe("server-sha");
+    expect(getHeader(requests[0].init?.headers, "X-EditorHub-Source")).toBe(
+      "home-thumbnail",
+    );
   });
 });

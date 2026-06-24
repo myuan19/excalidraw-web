@@ -3,6 +3,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 
 import { createLogger } from "../lib/logger";
 import { devDebug, isDevDebugChannelEnabled } from "../lib/devDebug";
+import { logPerf } from "../lib/perfLog";
 import { fetchThumbnailSvgForCard } from "../data/fetchThumbnailSvgForCard";
 import { patchFileListTreeCacheThumbnailMissing } from "../data/fileListSessionCache";
 import { isLocalDraftFileId } from "../data/localDraftFileId";
@@ -220,6 +221,20 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
       toFetchN: toFetch.length,
       toFetchIds: toFetch.map((t) => t.id.slice(0, 8)),
     });
+    if (toFetch.length > 0 || skipped.draftSessionThumbPending > 0) {
+      logPerf("thumb.pipeline_tick", {
+        scopeN: thumbLoadScopeFiles.length,
+        allowN: thumbFetchAllowIds.size,
+        toFetchN: toFetch.length,
+        toFetchIds: toFetch.map((t) => t.id.slice(0, 8)).join(","),
+        skippedNotInAllowSet: skipped.notInAllowSet,
+        skippedLocalDraftThumb: skipped.localDraftThumb,
+        skippedDraftPending: skipped.draftSessionThumbPending,
+        skippedServerMiss: skipped.serverThumbMiss,
+        skippedAlreadyFetched: skipped.alreadyInFetched,
+        skippedInFlight: skipped.inFlightRef,
+      });
+    }
 
     for (const item of toFetch) {
       thumbFetchingRef.current.add(item.id);
@@ -241,6 +256,16 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
             return;
           }
           if (!svg) {
+            logPerf(
+              "thumb.fetch_empty",
+              {
+                id8,
+                status,
+                contentSha8: item.contentSha?.slice(0, 8) ?? null,
+                errPreview,
+              },
+              status >= 500 ? "warn" : "info",
+            );
             debugThumbnailPipeline("GET thumb empty/failed", {
               id: item.id,
               id8,
@@ -273,9 +298,23 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
             contentSha: item.contentSha,
           });
           fetchedThumbHashByIdRef.current[item.id] = item.contentSha;
+          logPerf("thumb.fetch_applied", {
+            id8,
+            svgLen: svg.length,
+            contentSha8: item.contentSha?.slice(0, 8) ?? null,
+          });
           setFetchedThumbs((prev) => ({ ...prev, [item.id]: svg }));
         })
         .catch((err: unknown) => {
+          logPerf(
+            "thumb.fetch_threw",
+            {
+              id8,
+              contentSha8: item.contentSha?.slice(0, 8) ?? null,
+              message: err instanceof Error ? err.message : String(err),
+            },
+            "warn",
+          );
           debugThumbnailPipeline("GET thumb threw", {
             id: item.id,
             id8,

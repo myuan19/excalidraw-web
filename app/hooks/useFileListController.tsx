@@ -26,6 +26,7 @@ import {
 import { useStrictOverlayDismiss } from "./useStrictOverlayDismiss";
 import { useShellTheme } from "./useShellTheme";
 import { createLogger, logFileListOpen } from "../lib/logger";
+import { logPerf, markPerfNow, perfDurationMs } from "../lib/perfLog";
 import {
   devDebug,
   isDevDebugChannelEnabled,
@@ -942,18 +943,36 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       mustApply?: boolean;
     }) => {
       if (inflightRef.current) {
+        logPerf("filelist.refresh.abort_previous", {
+          nextSilent: !!options?.silent,
+          nextMustApply: !!options?.mustApply,
+        });
         inflightRef.current.abort();
       }
       const seq = ++refreshSeqRef.current;
       const ac = new AbortController();
+      const startedAt = markPerfNow();
       inflightRef.current = ac;
       try {
         if (!options?.silent) {
           setLoading(true);
         }
+        logPerf("filelist.refresh_start", {
+          seq,
+          silent: !!options?.silent,
+          mustApply: !!options?.mustApply,
+          noErrorOnFailure: !!options?.noErrorOnFailure,
+        });
         logList.debug("refresh start");
         const tree = await ServerSync.listFileTree({ signal: ac.signal });
         if (ac.signal.aborted || seq !== refreshSeqRef.current) {
+          logPerf("filelist.refresh_superseded", {
+            seq,
+            durationMs: perfDurationMs(startedAt),
+            aborted: ac.signal.aborted,
+            latestSeq: refreshSeqRef.current,
+            mustApply: !!options?.mustApply,
+          });
           if (options?.mustApply) {
             throw new Error("file-list refresh superseded");
           }
@@ -995,17 +1014,42 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
           withThumb: tree.files.filter((x) => x.has_thumbnail).length,
           withSha: tree.files.filter((x) => x.content_sha256).length,
         });
+        logPerf("filelist.refresh_done", {
+          seq,
+          durationMs: perfDurationMs(startedAt),
+          silent: !!options?.silent,
+          files: tree.files.length,
+          folders: tree.folders.length,
+          withThumb: tree.files.filter((x) => x.has_thumbnail).length,
+          withSha: tree.files.filter((x) => x.content_sha256).length,
+        });
         setError(null);
         setImportNotice(null);
         writeFileListTreeCache(tree);
         onReady?.();
       } catch (e: any) {
         if (ac.signal.aborted || seq !== refreshSeqRef.current) {
+          logPerf("filelist.refresh_abort_catch", {
+            seq,
+            durationMs: perfDurationMs(startedAt),
+            aborted: ac.signal.aborted,
+            latestSeq: refreshSeqRef.current,
+            mustApply: !!options?.mustApply,
+          });
           if (options?.mustApply) {
             throw new Error("file-list refresh superseded");
           }
           return;
         }
+        logPerf(
+          "filelist.refresh_error",
+          {
+            seq,
+            durationMs: perfDurationMs(startedAt),
+            message: e?.message || String(e),
+          },
+          "warn",
+        );
         logList.debug("refresh error", e);
         if (options?.noErrorOnFailure) {
           onReady?.();
@@ -1033,6 +1077,9 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       if (importInFlightRef.current) {
         return;
       }
+      logPerf("filelist.refresh_event", {
+        event: "excalidraw-file-list-refresh",
+      });
       logList.debug("excalidraw-file-list-refresh -> refresh(silent)");
       void refresh({ silent: true });
     };

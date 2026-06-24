@@ -1,4 +1,5 @@
 import { debugMindMapBridge, warnMindMapBridge } from "./mindMapBridgeDebug";
+import { logPerf } from "../../lib/perfLog";
 import {
   parseMindMapSaveProgress,
   type MindMapSaveProgressPayload,
@@ -220,6 +221,18 @@ export function createMindMapNativeSaveCoordinator(
     lastProgress = progress;
     const waitedMs = hostWaitedMs();
     const ctx = deps.getBridgeContext();
+    logPerf("mindmap.native_progress", {
+      fileId8: ctx.fileId8,
+      requestId: progress.requestId.slice(0, 32),
+      phase: progress.phase,
+      elapsedMs: progress.elapsedMs ?? null,
+      hostWaitedMs: waitedMs,
+      waitReason: progress.waitReason ?? null,
+      message: progress.message ?? null,
+      snapshotMs: progress.snapshotMs ?? null,
+      thumbnailMs: progress.thumbnailMs ?? null,
+      hasThumbnail: progress.hasThumbnail ?? null,
+    });
     debugMindMapBridge("mindMapSaveProgress", {
       ...progress,
       hostWaitedMs: waitedMs,

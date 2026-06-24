@@ -6,6 +6,7 @@ import express from "express";
 import { sanitizeLogRecord } from "../../lib/logger/core.js";
 import { createLogger, _transports } from "../lib/logger.js";
 import {
+  isClientPerfLogIngestEnabled,
   isClientLogIngestEnabled,
   isDebugLogAllowed,
   truncStr,
@@ -84,7 +85,16 @@ function sanitizeContext(context) {
 
 router.post("/", (req, res) => {
   const debugMode = req.body?.debugMode === true;
-  if (!isDebugLogAllowed() || !debugMode || !isClientLogIngestEnabled()) {
+  const perfMode = req.body?.perf === true;
+  if (perfMode) {
+    if (!isClientPerfLogIngestEnabled()) {
+      return res.status(204).send();
+    }
+  } else if (
+    !isDebugLogAllowed() ||
+    !debugMode ||
+    !isClientLogIngestEnabled()
+  ) {
     return res.status(204).send();
   }
   if (isRateLimited(req, debugMode)) {
@@ -100,7 +110,7 @@ router.post("/", (req, res) => {
     return res.status(400).json({ error: "entries array required" });
   }
 
-  const dropped = Math.max(0, entries.length - MAX_ENTRIES_PER_BATCH);
+  let dropped = Math.max(0, entries.length - MAX_ENTRIES_PER_BATCH);
   const batch = entries
     .slice(0, MAX_ENTRIES_PER_BATCH)
     .filter((raw) => raw && typeof raw === "object")
@@ -113,6 +123,18 @@ router.post("/", (req, res) => {
 
   for (const raw of batch) {
     if (!raw.msg || typeof raw.msg !== "string") continue;
+    if (
+      perfMode &&
+      !(
+        typeof raw.event === "string" &&
+        raw.event.startsWith("perf.") &&
+        typeof raw.module === "string" &&
+        raw.module === "perf"
+      )
+    ) {
+      dropped++;
+      continue;
+    }
 
     const entry = {
       ts: typeof raw.ts === "string" ? raw.ts.slice(0, 64) : new Date().toISOString(),
@@ -146,6 +168,7 @@ router.post("/", (req, res) => {
       ...(entry.data ?? {}),
       ...(entry.fields ?? {}),
       ...(debugMode ? { debugMode: true } : {}),
+      ...(perfMode ? { perf: true } : {}),
     };
 
     for (const t of _transports) {
@@ -160,6 +183,7 @@ router.post("/", (req, res) => {
     written,
     ip: req.ip,
     debugMode,
+    perfMode,
   });
 
   return res.status(204).send();

@@ -16,6 +16,7 @@ describe("MindMap thumbnail persistence source contract", () => {
     const serverSyncSource = read("data/ServerSync.ts");
     const mindMapSaveSource = read("editors/mindmap/useMindMapFileSave.ts");
     const mindMapShellSource = read("editors/mindmap/MindMapEditorShell.tsx");
+    const thumbnailPersistenceSource = read("data/fileThumbnailPersistence.ts");
     const hookTypesSource = read("hooks/types.ts");
     const filesRouteSource = fs.readFileSync(
       path.join(appRoot, "../server/routes/files.js"),
@@ -23,6 +24,10 @@ describe("MindMap thumbnail persistence source contract", () => {
     );
     const putRouteSource = filesRouteSource.slice(
       filesRouteSource.indexOf('router.put("/:id"'),
+      filesRouteSource.indexOf('router.get("/:id/thumbnail"'),
+    );
+    const thumbnailPutRouteSource = filesRouteSource.slice(
+      filesRouteSource.indexOf('router.put("/:id/thumbnail"'),
       filesRouteSource.indexOf('router.get("/:id/thumbnail"'),
     );
 
@@ -33,10 +38,33 @@ describe("MindMap thumbnail persistence source contract", () => {
     expect(serverSyncSource).toContain(
       "hasThumbnailField ? { thumbnail } : {}",
     );
+    expect(serverSyncSource).toContain("saveFileThumbnail");
+    expect(serverSyncSource).toContain("`/files/${id}/thumbnail`");
 
-    expect(mindMapSaveSource).toContain("thumbnail ?? undefined");
-    expect(mindMapSaveSource).toContain('source === "thumbnail"');
-    expect(mindMapSaveSource).toContain("if (thumbnail)");
+    expect(mindMapSaveSource).toContain("scheduleSavedFileThumbnailUpload");
+    expect(mindMapSaveSource).toContain("onServerSaveCommitted");
+    expect(mindMapSaveSource).toContain(
+      "resolveFileThumbnailForPut: async () => undefined",
+    );
+    expect(mindMapSaveSource).not.toContain("shouldUploadFileThumbnailInline");
+    expect(mindMapSaveSource).not.toContain("uploadedInline");
+    expect(thumbnailPersistenceSource).toContain(
+      "markPendingSavedFileThumbnail",
+    );
+    expect(thumbnailPersistenceSource).toContain(
+      "function markThumbnailGenerationPending",
+    );
+    expect(thumbnailPersistenceSource).toContain(
+      "function completeGeneratedThumbnailLocally",
+    );
+    expect(thumbnailPersistenceSource).toContain(
+      "function queueServerThumbnailUpload",
+    );
+    expect(mindMapShellSource).toContain("lastSavedThumbnailTargetRef");
+    expect(mindMapShellSource).toContain("scheduleSavedFileThumbnailUpload");
+    expect(mindMapShellSource).toContain(
+      "savedTarget.contentSha === currentHash",
+    );
     expect(mindMapShellSource).toContain('source: "thumbnail"');
     expect(mindMapShellSource).toContain("shouldRefreshMindMapServerThumbnail");
     expect(mindMapShellSource).toContain("isSchematicMindMapThumbnailSvg");
@@ -52,5 +80,11 @@ describe("MindMap thumbnail persistence source contract", () => {
     );
     expect(putRouteSource).toContain("rmSync(thumbFile, { force: true })");
     expect(putRouteSource).toContain("rmSync(metaFile, { force: true })");
+    expect(thumbnailPutRouteSource).toContain('router.put("/:id/thumbnail"');
+    expect(thumbnailPutRouteSource).toContain("normalizeThumbnailSvgInput");
+    expect(thumbnailPutRouteSource).toContain("stale_thumbnail");
+    expect(thumbnailPutRouteSource).toContain(
+      "contentSha256 !== currentSha",
+    );
   });
 });

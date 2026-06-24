@@ -37,6 +37,13 @@ export function isClientLogIngestEnabled() {
   return true;
 }
 
+/** Minimal always-on frontend performance ingest. Off only if explicitly disabled. */
+export function isClientPerfLogIngestEnabled() {
+  if (envLogOff(process.env.LOG_CLIENT_PERF_INGEST)) return false;
+  if (envLogOff(process.env.EXCALIDRAW_CLIENT_PERF_LOG)) return false;
+  return true;
+}
+
 export function isHttpTraceEnabled() {
   const v = (process.env.EXCALIDRAW_HTTP_TRACE ?? "").trim().toLowerCase();
   return v === "1" || v === "true" || v === "yes" || v === "on";
