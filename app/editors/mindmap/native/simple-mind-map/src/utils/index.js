@@ -36,13 +36,37 @@ export const isMindMapDebugEnabled = () => {
 // [DEBUG] 统一的库层调试输出（与 web 层 mindmapDevDebug 同一开关）
 export const mindMapDebugLog = (scope, label, data = {}) => {
   if (!isMindMapDebugEnabled()) return
+  const debugData = {
+    t: Math.round(
+      typeof performance !== 'undefined' && performance.now
+        ? performance.now()
+        : Date.now()
+    ),
+    ...(data || {})
+  }
   let payload = ''
   try {
-    payload = JSON.stringify(data)
+    payload = JSON.stringify(debugData)
   } catch (error) {
     payload = '[Unserializable]'
   }
   console.log(`[DEBUG] ${scope} | ${label} ${payload}`)
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage(
+        {
+          source: 'simple-mind-map-native',
+          type: 'mindMapNativeDebug',
+          payload: {
+            scope,
+            label,
+            data: debugData
+          }
+        },
+        '*'
+      )
+    }
+  } catch (error) {}
 }
 
 export const getSvgNodeVisibleRect = (svgNode, label = '') => {
@@ -1333,14 +1357,45 @@ export const isSameObject = (a, b) => {
 
 // 检查navigator.clipboard对象的读取是否可用
 export const checkClipboardReadEnable = () => {
-  return navigator.clipboard && typeof navigator.clipboard.read === 'function'
+  const hasHostBridge =
+    typeof window !== 'undefined' &&
+    !!window.takeOverAppMethods?.readClipboardItems
+  const hasNativeClipboard =
+    typeof navigator !== 'undefined' &&
+    navigator.clipboard &&
+    typeof navigator.clipboard.read === 'function'
+  return hasHostBridge || hasNativeClipboard
 }
 
 // 将数据设置到用户剪切板中
 export const setDataToClipboard = data => {
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(JSON.stringify(data))
+  const text = typeof data === 'string' ? data : JSON.stringify(data)
+  if (
+    typeof window !== 'undefined' &&
+    window.takeOverAppMethods?.writeClipboardText
+  ) {
+    mindMapDebugLog('mindmap-clipboard', 'write via host bridge', {
+      length: text.length,
+      isSmm: typeof data === 'object' && !!data?.simpleMindMap,
+      hasImgMap: typeof data === 'object' && !!data?.imgMap
+    })
+    return window.takeOverAppMethods.writeClipboardText(text)
   }
+  if (
+    typeof navigator !== 'undefined' &&
+    navigator.clipboard &&
+    navigator.clipboard.writeText
+  ) {
+    mindMapDebugLog('mindmap-clipboard', 'write via navigator', {
+      length: text.length,
+      isSmm: typeof data === 'object' && !!data?.simpleMindMap,
+      hasImgMap: typeof data === 'object' && !!data?.imgMap
+    })
+    return navigator.clipboard.writeText(text)
+  }
+  mindMapDebugLog('mindmap-clipboard', 'write unavailable', {
+    length: text.length
+  })
 }
 
 // 从用户剪贴板中读取文字和图片
@@ -1348,20 +1403,52 @@ export const getDataFromClipboard = async () => {
   let text = null
   let img = null
   if (checkClipboardReadEnable()) {
-    const items = await navigator.clipboard.read()
+    const useHostBridge =
+      typeof window !== 'undefined' &&
+      window.takeOverAppMethods?.readClipboardItems
+    const raw =
+      useHostBridge
+        ? await window.takeOverAppMethods.readClipboardItems()
+        : await navigator.clipboard.read()
+    const items = Array.isArray(raw)
+      ? raw
+      : Array.isArray(raw?.items)
+        ? raw.items
+        : []
+    mindMapDebugLog('mindmap-clipboard', 'read items', {
+      source: useHostBridge ? 'host' : 'navigator',
+      rawHasItems: !!raw?.items,
+      itemCount: items.length,
+      itemTypes: items.map(item => item.types || [])
+    })
     if (items && items.length > 0) {
       for (const clipboardItem of items) {
         for (const type of clipboardItem.types) {
           if (/^image\//.test(type)) {
-            img = await clipboardItem.getType(type)
+            const entry = clipboardItem.entries
+              ? clipboardItem.entries[type]
+              : await clipboardItem.getType(type)
+            img =
+              typeof entry === 'string' && /^data:/.test(entry)
+                ? await fetch(entry).then(res => res.blob())
+                : entry
           } else if (type === 'text/plain') {
-            const blob = await clipboardItem.getType(type)
-            text = await blob.text()
+            const entry = clipboardItem.entries
+              ? clipboardItem.entries[type]
+              : await clipboardItem.getType(type)
+            text = typeof entry === 'string' ? entry : await entry.text()
           }
         }
       }
     }
+  } else {
+    mindMapDebugLog('mindmap-clipboard', 'read unavailable')
   }
+  mindMapDebugLog('mindmap-clipboard', 'read result', {
+    hasText: !!text,
+    textLength: text ? text.length : 0,
+    hasImg: !!img
+  })
   return {
     text,
     img
@@ -1411,17 +1498,64 @@ export const getChromeVersion = () => {
   return ''
 }
 
+const isSmmImageKey = value => {
+  return typeof value === 'string' && /^smm_img_key_/.test(value)
+}
+
+const walkSmmClipboardNodes = (data, callback) => {
+  const list = Array.isArray(data) ? data : data ? [data] : []
+  const walk = nodes => {
+    nodes.forEach(node => {
+      if (!node || typeof node !== 'object') return
+      callback(node)
+      if (Array.isArray(node.children) && node.children.length > 0) {
+        walk(node.children)
+      }
+    })
+  }
+  walk(list)
+}
+
+const pickSmmClipboardImgMap = (data, imgMap) => {
+  if (!imgMap || typeof imgMap !== 'object') return null
+  const res = {}
+  walkSmmClipboardNodes(data, node => {
+    const image = node.data && node.data.image
+    if (isSmmImageKey(image) && imgMap[image]) {
+      res[image] = imgMap[image]
+    }
+  })
+  return Object.keys(res).length > 0 ? res : null
+}
+
+export const restoreSmmClipboardImages = (data, imgMap) => {
+  if (!imgMap || typeof imgMap !== 'object') return data
+  walkSmmClipboardNodes(data, node => {
+    const image = node.data && node.data.image
+    if (isSmmImageKey(image) && imgMap[image]) {
+      node.data.image = imgMap[image]
+    }
+  })
+  return data
+}
+
 // 创建smm粘贴的粘贴数据
-export const createSmmFormatData = data => {
-  return {
+export const createSmmFormatData = (data, imgMap = null) => {
+  const res = {
     simpleMindMap: true,
     data
   }
+  const scopedImgMap = pickSmmClipboardImgMap(data, imgMap)
+  if (scopedImgMap) {
+    res.imgMap = scopedImgMap
+  }
+  return res
 }
 
 // 检查是否是smm粘贴格式的数据
 export const checkSmmFormatData = data => {
   let smmData = null
+  let smmImgMap = null
   // 如果是字符串，则尝试解析为对象
   if (typeof data === 'string') {
     try {
@@ -1429,16 +1563,20 @@ export const checkSmmFormatData = data => {
       // 判断是否是对象，且存在属性标志
       if (typeof parsedData === 'object' && parsedData.simpleMindMap) {
         smmData = parsedData.data
+        smmImgMap = parsedData.imgMap
       }
     } catch (error) {}
   } else if (typeof data === 'object' && data.simpleMindMap) {
     // 否则如果是对象，则检查属性标志
     smmData = data.data
+    smmImgMap = data.imgMap
   }
   const isSmm = !!smmData
   return {
     isSmm,
-    data: isSmm ? smmData : String(data)
+    data: isSmm ? smmData : String(data),
+    imgMap:
+      isSmm && smmImgMap && typeof smmImgMap === 'object' ? smmImgMap : null
   }
 }
 

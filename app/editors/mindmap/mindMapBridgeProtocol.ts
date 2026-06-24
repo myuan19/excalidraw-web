@@ -101,6 +101,11 @@ export type NativeMindMapMessage =
     }
   | {
       source: typeof MINDMAP_NATIVE_SOURCE;
+      type: "mindMapNativeDebug";
+      payload?: unknown;
+    }
+  | {
+      source: typeof MINDMAP_NATIVE_SOURCE;
       type:
         | "hostBackToFiles"
         | "hostRequestSave"

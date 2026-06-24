@@ -143,6 +143,30 @@ function debugMindMapOpen(label: string, data?: Record<string, unknown>) {
   forwardMindMapHostDebug("mindmap-open", label, data);
 }
 
+function debugMindMapNative(payload: unknown): void {
+  if (!payload || typeof payload !== "object") {
+    return;
+  }
+  const scope =
+    typeof (payload as { scope?: unknown }).scope === "string"
+      ? (payload as { scope: string }).scope
+      : "mindmap-native";
+  const label =
+    typeof (payload as { label?: unknown }).label === "string"
+      ? (payload as { label: string }).label
+      : "debug";
+  const data =
+    (payload as { data?: unknown }).data &&
+    typeof (payload as { data?: unknown }).data === "object" &&
+    !Array.isArray((payload as { data?: unknown }).data)
+      ? ((payload as { data: Record<string, unknown> }).data)
+      : {};
+  devDebug("mindmap-bridge", `native ${scope} ${label}`, {
+    nativeScope: scope,
+    ...data,
+  });
+}
+
 function getClipboardRequestId(payload: unknown): string | undefined {
   return payload &&
     typeof payload === "object" &&
@@ -1107,6 +1131,10 @@ const MindMapEditorShell = () => {
         origin: event.origin,
         hasPayload: event.data.payload != null,
       });
+      if (event.data.type === "mindMapNativeDebug") {
+        debugMindMapNative(event.data.payload);
+        return;
+      }
       if (
         event.data.type === "CLIPBOARD_WRITE_TEXT" ||
         event.data.type === "CLIPBOARD_READ_TEXT" ||

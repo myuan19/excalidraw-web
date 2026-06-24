@@ -29,6 +29,7 @@ import {
   checkNodeListIsEqual,
   createSmmFormatData,
   checkSmmFormatData,
+  restoreSmmClipboardImages,
   checkIsNodeStyleDataKey,
   formatGetNodeGeneralization,
   sortNodeList,
@@ -36,7 +37,8 @@ import {
   checkClipboardReadEnable,
   isNodeNotNeedRenderData,
   getRenderTreeFromHistorySnapshot,
-  fitPastedImageSizeToNodeText
+  fitPastedImageSizeToNodeText,
+  mindMapDebugLog
 } from '../../utils'
 import {
   createNodeInvalidationState,
@@ -123,6 +125,7 @@ class Render {
     this.textEdit = new TextEdit(this)
     // 当前复制的数据
     this.beingCopyData = null
+    this.beingCopyImgMap = null
     // 节点高亮框
     this.highlightBoxNode = null
     this.highlightBoxNodeStyle = null
@@ -1409,20 +1412,50 @@ class Render {
   }
 
   // 复制节点
+  getClipboardImgMap() {
+    const imgMap =
+      (this.renderTree && this.renderTree.data && this.renderTree.data.imgMap) ||
+      null
+    return imgMap ? simpleDeepClone(imgMap) || imgMap : null
+  }
+
+  restoreClipboardData(data, imgMap) {
+    const cloned = simpleDeepClone(data)
+    return restoreSmmClipboardImages(cloned || data, imgMap)
+  }
+
   copy() {
     this.beingCopyData = this.copyNode()
+    this.beingCopyImgMap = this.getClipboardImgMap()
     if (!this.beingCopyData) return
+    const payload = createSmmFormatData(
+      this.beingCopyData,
+      this.beingCopyImgMap
+    )
+    mindMapDebugLog('mindmap-clipboard', 'copy nodes', {
+      nodeCount: this.beingCopyData.length,
+      hasImgMap: !!payload.imgMap,
+      imgMapCount: payload.imgMap ? Object.keys(payload.imgMap).length : 0
+    })
     if (!this.mindMap.opt.disabledClipboard) {
-      setDataToClipboard(createSmmFormatData(this.beingCopyData))
+      setDataToClipboard(payload)
     }
   }
 
   // 剪切节点
   cut() {
+    const imgMap = this.getClipboardImgMap()
     this.mindMap.execCommand('CUT_NODE', copyData => {
       this.beingCopyData = copyData
+      this.beingCopyImgMap = imgMap
+      const payload = createSmmFormatData(copyData, this.beingCopyImgMap)
+      mindMapDebugLog('mindmap-clipboard', 'cut nodes', {
+        nodeCount: copyData.length,
+        hasImgMap: !!payload.imgMap,
+        imgMapCount: payload.imgMap ? Object.keys(payload.imgMap).length : 0
+      })
       if (!this.mindMap.opt.disabledClipboard) {
-        setDataToClipboard(createSmmFormatData(copyData))
+        setDataToClipboard(payload)
       }
     })
   }
@@ -1468,6 +1501,10 @@ class Render {
         let img = res.img || null
         // 存在文本，则创建子节点
         if (text) {
+          mindMapDebugLog('mindmap-clipboard', 'paste text payload', {
+            textLength: text.length,
+            startsWithSmm: /^\s*\{/.test(text)
+          })
           // 判断粘贴的是否是simple-mind-map的数据
           let smmData = null
           let useDefault = true
@@ -1475,14 +1512,22 @@ class Render {
           if (this.mindMap.opt.customHandleClipboardText) {
             try {
               const res = await this.mindMap.opt.customHandleClipboardText(text)
-              if (!isUndef(res)) {
+              if (!isUndef(res) && res !== '') {
                 useDefault = false
                 const checkRes = checkSmmFormatData(res)
                 if (checkRes.isSmm) {
-                  smmData = checkRes.data
+                  smmData = this.restoreClipboardData(
+                    checkRes.data,
+                    checkRes.imgMap
+                  )
                 } else {
                   text = checkRes.data
                 }
+              } else {
+                mindMapDebugLog(
+                  'mindmap-clipboard',
+                  'custom clipboard handler skipped'
+                )
               }
             } catch (error) {
               errorHandler(
@@ -1495,12 +1540,18 @@ class Render {
           if (useDefault) {
             const checkRes = checkSmmFormatData(text)
             if (checkRes.isSmm) {
-              smmData = checkRes.data
+              smmData = this.restoreClipboardData(
+                checkRes.data,
+                checkRes.imgMap
+              )
             } else {
               text = checkRes.data
             }
           }
           if (smmData) {
+            mindMapDebugLog('mindmap-clipboard', 'paste smm nodes', {
+              nodeCount: Array.isArray(smmData) ? smmData.length : 1
+            })
             this.mindMap.execCommand(
               'INSERT_MULTI_CHILD_NODE',
               [],
@@ -1588,7 +1639,14 @@ class Render {
       // 禁用剪贴板或不支持剪贴板时
       // 粘贴画布内的节点数据
       if (this.beingCopyData) {
-        this.mindMap.execCommand('PASTE_NODE', this.beingCopyData)
+        mindMapDebugLog('mindmap-clipboard', 'paste memory nodes', {
+          nodeCount: this.beingCopyData.length,
+          hasImgMap: !!this.beingCopyImgMap
+        })
+        this.mindMap.execCommand(
+          'PASTE_NODE',
+          this.restoreClipboardData(this.beingCopyData, this.beingCopyImgMap)
+        )
       }
     }
   }
