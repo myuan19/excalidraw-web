@@ -24,16 +24,12 @@
   display: flex;
   align-items: center;
   gap: var(--nb-space-4);
-  padding: var(--nb-space-6) var(--nb-space-8);
+  padding: var(--nb-space-7) var(--nb-space-8);
   border-bottom: var(--nb-border-width) solid var(--nb-border);
 }
 
 .embed-mgr__title {
-  margin: 0;
-  font-size: var(--nb-font-title-sm);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--nb-text);
+  @extend .shell-dialog-title;
   flex-shrink: 0;
 }
 

@@ -39,8 +39,8 @@ export function AppConfirmDialog({
 
   return (
     <div
-      className={[
-        "app-confirm-dialog-overlay",
+        className={[
+        "app-confirm-dialog-overlay shell-dialog-overlay",
         overlayClassName,
       ]
         .filter(Boolean)
@@ -53,14 +53,14 @@ export function AppConfirmDialog({
       }}
     >
       <div
-        className="app-confirm-dialog"
+        className="app-confirm-dialog shell-dialog-card"
         role="alertdialog"
         aria-modal="true"
         aria-labelledby={titleId}
         onClick={(event) => event.stopPropagation()}
       >
-        <h3 id={titleId}>{title}</h3>
-        <p className="app-confirm-dialog__desc">{message}</p>
+        <h3 id={titleId} className="shell-dialog-title">{title}</h3>
+        <p className="app-confirm-dialog__desc shell-dialog-desc">{message}</p>
         <div className="app-confirm-dialog__actions">
           <button
             type="button"

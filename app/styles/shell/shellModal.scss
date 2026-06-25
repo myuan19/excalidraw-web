@@ -266,6 +266,35 @@
   }
 }
 
+/** 外壳弹窗共享类名：遮罩 / 卡片 / 标题 / 说明（与 AppConfirmDialog 对齐） */
+.shell-dialog-overlay {
+  @include shell-modal-overlay;
+  font-family: var(--nb-font-ui), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  animation: shellOverlayIn 0.12s var(--nb-ease-ui) both;
+}
+
+.shell-dialog-card {
+  @include shell-modal-card;
+  animation: none;
+}
+
+.shell-dialog-title {
+  margin: 0 0 var(--nb-space-3);
+  font-size: var(--nb-font-body);
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--nb-text);
+}
+
+.shell-dialog-desc {
+  margin: 0 0 var(--nb-space-7);
+  font-size: var(--nb-font-body-sm);
+  line-height: 1.5;
+  color: var(--nb-text-muted);
+  white-space: pre-line;
+}
+
 @mixin shell-drawer-overlay-root {
   position: fixed;
   inset: 0;

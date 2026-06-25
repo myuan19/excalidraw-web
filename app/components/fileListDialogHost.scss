@@ -31,17 +31,11 @@
   }
 
   .filelist__detail-title {
-    margin: 0 0 var(--nb-space-3);
-    font-size: var(--nb-font-body);
-    font-weight: 600;
-    color: var(--nb-text);
+    @extend .shell-dialog-title;
   }
 
   .filelist__new-file-hint {
-    margin: 0 0 var(--nb-space-7);
-    font-size: var(--nb-font-body-sm);
-    line-height: 1.5;
-    color: var(--nb-text-muted);
+    @extend .shell-dialog-desc;
   }
 
   .filelist__save-dialog-body {

@@ -24,14 +24,14 @@ export function FileListDialogFrame({
   }
 
   return (
-    <div
-      className={`filelist-dialog-host ${shellThemeClassName()} filelist__detail-overlay`}
-      role="dialog"
+      <div
+        className={`filelist-dialog-host ${shellThemeClassName()} filelist__detail-overlay shell-dialog-overlay`}
+        role="dialog"
       aria-modal
       {...overlayDismiss}
     >
       <div
-        className={cardClassName}
+        className={`${cardClassName} shell-dialog-card`}
         onPointerDown={(e: PointerEvent) => e.stopPropagation()}
       >
         {children}

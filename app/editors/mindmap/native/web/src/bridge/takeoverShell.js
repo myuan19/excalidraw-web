@@ -1280,8 +1280,17 @@
               snapshotMs: Math.round(performance.now() - snapshotStartedAt),
               ...summarizeMindMapPayloadIntegrity(bridgeState.mindMapData)
             })
+            nativeSaveInFlight.phase = 'thumbnail'
+            reportMindMapSaveProgress(requestId, 'thumbnail', { renderEnded })
+            const thumbnailStartedAt = performance.now()
+            const saveThumbnail = await exportThumbnailForSnapshot(
+              bridgeState.mindMapData,
+              'request-save'
+            )
             reportMindMapSaveProgress(requestId, 'post', {
               snapshotMs: Math.round(performance.now() - snapshotStartedAt),
+              thumbnailMs: Math.round(performance.now() - thumbnailStartedAt),
+              hasThumbnail: !!saveThumbnail,
               openPerformance: !!(
                 nativeMindMap.opt && nativeMindMap.opt.openPerformance
               ),
@@ -1290,12 +1299,13 @@
             postMindMapDataToHost(
               bridgeState.mindMapData,
               requestId,
-              null
+              saveThumbnail
             )
             debugMindMapOpen('requestMindMapSave | posted', {
               requestId: requestId || null,
               totalMs: Math.round(performance.now() - saveStartedAt),
-              thumbnailDeferred: true
+              hasThumbnail: !!saveThumbnail,
+              thumbnailDeferred: !saveThumbnail
             })
           } catch (error) {
             reportMindMapSaveProgress(requestId, 'failed', {

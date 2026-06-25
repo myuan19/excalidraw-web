@@ -63,8 +63,9 @@ describe("MindMap thumbnail persistence source contract", () => {
     expect(mindMapShellSource).toContain("lastSavedThumbnailTargetRef");
     expect(mindMapShellSource).toContain("scheduleSavedFileThumbnailUpload");
     expect(mindMapShellSource).toContain(
-      "savedTarget.contentSha === currentHash",
+      "savedTarget.documentHash === currentHash",
     );
+    expect(mindMapSaveSource).toContain("documentHash: hash");
     expect(mindMapShellSource).toContain('source: "thumbnail"');
     expect(mindMapShellSource).toContain("shouldRefreshMindMapServerThumbnail");
     expect(mindMapShellSource).toContain("isSchematicMindMapThumbnailSvg");

@@ -32,11 +32,9 @@ import { isLocalDraftFileId } from "../../data/localDraftFileId";
 import { finalizeSavedThumbnail } from "../../data/thumbnailLifecycle";
 import { notifyLocalDraftEdited } from "../../data/localDraftSessions";
 import { discardLocalDraftSession } from "../../data/discardLocalDraftSession";
-import { getLocalDraftDisplayName } from "../../data/localDraftDisplayName";
 import { clearAppShellPendingNavigation } from "../../shell/appShellNavigate";
 import {
   promptLeaveEditorConfirm,
-  promptLocalDraftLossConfirm,
   promptServerUpdateConfirm,
 } from "../../shell/editorLeaveConfirm";
 import { isAutoSaveOnExitActive } from "../../data/appSettings";
@@ -953,13 +951,6 @@ export function useForkFileSave(opts: {
       }
       if (leaveChoice === "save") {
         onRequestSaveNew?.({ navigateAfter: true });
-        return;
-      }
-      const confirmed = await promptLocalDraftLossConfirm(
-        getLocalDraftDisplayName(fid),
-      );
-      if (!confirmed) {
-        clearAppShellPendingNavigation();
         return;
       }
       await discardLocalDraftSession(fid);

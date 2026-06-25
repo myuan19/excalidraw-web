@@ -28,10 +28,8 @@ import { discardLocalDraftSession } from "../../data/discardLocalDraftSession";
 import { clearAppShellPendingNavigation } from "../../shell/appShellNavigate";
 import {
   promptLeaveEditorConfirm,
-  promptLocalDraftLossConfirm,
   promptServerUpdateConfirm,
 } from "../../shell/editorLeaveConfirm";
-import { getLocalDraftDisplayName } from "../../data/localDraftDisplayName";
 import { isAutoSaveEligibleFile, notifyEdit } from "../../data/autoSaveSession";
 import {
   CHECKPOINT_LABELS,
@@ -49,7 +47,10 @@ import {
 import {
   cacheDraftThumbnailIfVisible,
 } from "../../data/thumbnailLifecycle";
-import { scheduleSavedFileThumbnailUpload } from "../../data/fileThumbnailPersistence";
+import {
+  scheduleSavedFileThumbnailUpload,
+  whenSavedThumbnailUploadSettled,
+} from "../../data/fileThumbnailPersistence";
 import { logPerf, markPerfNow, perfDurationMs } from "../../lib/perfLog";
 
 import {
@@ -106,6 +107,8 @@ export type MindMapSavedThumbnailTarget = {
   name: string;
   kind: "mindmap";
   contentSha: string | null;
+  /** Client document snapshot hash at save time (hashDocumentSnapshot). */
+  documentHash?: string | null;
   version?: number | null;
   updatedAt?: string | null;
   source: SaveToServerSource;
@@ -843,6 +846,7 @@ export function useMindMapFileSave(opts: {
           name: displayName,
           kind: "mindmap",
           contentSha: outcome.contentSha256 ?? null,
+          documentHash: hash,
           version: outcome.version,
           updatedAt: outcome.updatedAt,
           source,
@@ -851,7 +855,6 @@ export function useMindMapFileSave(opts: {
         scheduleSavedFileThumbnailUpload({
           ...thumbnailTarget,
           thumbnail: thumbnail ?? outcome.fileThumbnail,
-          documentHash: hash,
         });
         debugMindMapPersist("saveCurrentFileToServer success", {
           fileId8: fileId.slice(0, 8),
@@ -881,6 +884,10 @@ export function useMindMapFileSave(opts: {
         }
         setErrorMessage(null);
         if (navigateAfter && !preserveNewerLocalDirty) {
+          await whenSavedThumbnailUploadSettled(
+            fileId,
+            outcome.contentSha256 ?? null,
+          );
           FileSyncState.clearLocalCache(fileId);
           logPerf("mindmap.save.navigate_home", {
             fileId8: fileId.slice(0, 8),
@@ -1066,6 +1073,7 @@ export function useMindMapFileSave(opts: {
           name: displayName,
           kind: "mindmap",
           contentSha: outcome.contentSha256 ?? null,
+          documentHash: hash,
           version: outcome.version,
           updatedAt: outcome.updatedAt,
           source: "sidebar",
@@ -1074,7 +1082,6 @@ export function useMindMapFileSave(opts: {
         scheduleSavedFileThumbnailUpload({
           ...thumbnailTarget,
           thumbnail: thumbnail ?? outcome.fileThumbnail,
-          documentHash: hash,
         });
         localStorage.removeItem(legacyMindMapCacheKey(fileId));
         window.dispatchEvent(
@@ -1256,13 +1263,6 @@ export function useMindMapFileSave(opts: {
       }
       if (leaveChoice === "save") {
         onRequestSaveNew?.({ navigateAfter: true });
-        return;
-      }
-      const confirmed = await promptLocalDraftLossConfirm(
-        getLocalDraftDisplayName(fileId),
-      );
-      if (!confirmed) {
-        clearAppShellPendingNavigation();
         return;
       }
       await discardLocalDraftSession(fileId);

@@ -1463,12 +1463,14 @@ const MindMapEditorShell = () => {
           const savedTargetMatches =
             !!savedTarget &&
             savedTarget.fileId === fileId &&
-            savedTarget.contentSha === currentHash;
+            savedTarget.documentHash === currentHash;
           logPerf("thumbnail.native_received", {
             fileId8: fileId.slice(0, 8),
             revision: typeof revision === "number" ? revision : null,
             thumbLen: thumbnail.length,
             currentHash8: currentHash.slice(0, 8),
+            savedTargetDocHash8:
+              savedTarget?.documentHash?.slice(0, 8) ?? null,
             savedTargetSha8: savedTarget?.contentSha?.slice(0, 8) ?? null,
             savedTargetMatches,
           });

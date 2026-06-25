@@ -445,6 +445,23 @@ class Export {
     } else {
       textEdit.hideEditTextBox()
     }
+    let restoreEditingSvgText = null
+    if (
+      preserveTextEdit &&
+      this.mindMap.opt.openRealtimeRenderOnNodeTextEdit &&
+      textEdit.isShowTextEdit()
+    ) {
+      const node = textEdit.getCurrentEditNode()
+      const g = node && node._textData && node._textData.node
+      if (g) {
+        g.show()
+        g.opacity(1)
+        restoreEditingSvgText = () => {
+          g.hide()
+          g.opacity(0)
+        }
+      }
+    }
     const restoreExportExpandBtns = this.showCollapsedExpandNumForExport()
     try {
       const { node } = await this.getSvgData()
@@ -455,6 +472,9 @@ class Export {
       return res
     } finally {
       restoreExportExpandBtns()
+      if (restoreEditingSvgText) {
+        restoreEditingSvgText()
+      }
     }
   }
 

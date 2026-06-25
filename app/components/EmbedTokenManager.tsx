@@ -157,13 +157,13 @@ export const EmbedTokenManager: React.FC<Props> = ({
   return (
     <>
       <div
-        className="embed-mgr__overlay"
+        className="embed-mgr__overlay shell-dialog-overlay"
         role="dialog"
         aria-modal
         {...overlayDismiss}
       >
       <div
-        className="embed-mgr__card"
+        className="embed-mgr__card shell-dialog-card"
         onPointerDown={(e) => e.stopPropagation()}
       >
         <div className="embed-mgr__header">

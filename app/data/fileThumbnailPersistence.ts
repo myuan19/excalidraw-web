@@ -8,6 +8,7 @@ import {
 } from "./thumbnailLifecycle";
 import {
   getPendingSavedFileThumbnailContentSha,
+  hasPendingSavedFileThumbnail,
   markPendingSavedFileThumbnail,
 } from "./sessionFileThumbnail";
 import { thumbnailSvgHasVisibleContent } from "./thumbnailSvg";
@@ -205,4 +206,39 @@ export function scheduleSavedFileThumbnailUpload(
     thumbnail,
   });
   return localThumbnail;
+}
+
+/** Wait until a post-save thumbnail upload finishes or is no longer expected. */
+export function whenSavedThumbnailUploadSettled(
+  fileId: string,
+  contentSha: string | null | undefined,
+  timeoutMs = 8000,
+): Promise<void> {
+  if (!contentSha) {
+    return Promise.resolve();
+  }
+  const uploadKey = `${fileId}:${contentSha}`;
+  const start = Date.now();
+  return new Promise((resolve) => {
+    const tick = () => {
+      const pending = hasPendingSavedFileThumbnail(fileId, contentSha);
+      const inFlight = pendingUploads.get(fileId) === uploadKey;
+      if (!pending && !inFlight) {
+        resolve();
+        return;
+      }
+      if (Date.now() - start >= timeoutMs) {
+        logPerf("thumbnail.wait_timeout", {
+          fileId8: fileId.slice(0, 8),
+          contentSha8: contentSha.slice(0, 8),
+          pending,
+          inFlight,
+        });
+        resolve();
+        return;
+      }
+      setTimeout(tick, 100);
+    };
+    tick();
+  });
 }

@@ -606,6 +606,9 @@ $recent-flyout-max-rows: 6;
   @include shell-modal-overlay;
   z-index: calc(var(--nb-z-fork-home, 200000) + 1);
   pointer-events: auto;
+  font-family: var(--nb-font-ui), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  animation: shellOverlayIn 0.12s var(--nb-ease-ui) both;
 }
 
 .editor-file-info__dialog {
@@ -613,6 +616,7 @@ $recent-flyout-max-rows: 6;
   width: min(28rem, 100%);
   max-height: calc(100vh - 2rem);
   overflow: auto;
+  animation: none;
 }
 
 .editor-file-info__header {
@@ -620,12 +624,8 @@ $recent-flyout-max-rows: 6;
   padding: var(--nb-space-7) var(--nb-space-8);
 
   h3 {
-    margin: 0;
+    @extend .shell-dialog-title;
     font-family: inherit;
-    font-size: var(--nb-font-title-sm);
-    line-height: 1.5;
-    font-weight: 600;
-    color: var(--nb-text);
   }
 }
 

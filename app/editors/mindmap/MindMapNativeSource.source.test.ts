@@ -53,7 +53,26 @@ describe("MindMap native source contract", () => {
     );
   });
 
-  it("does not block request saves on thumbnail export", () => {
+  it("reveals editing node svg text during preserveTextEdit svg export", () => {
+    const source = fs.readFileSync(
+      path.join(
+        appRoot,
+        "editors/mindmap/native/simple-mind-map/src/plugins/Export.js",
+      ),
+      "utf8",
+    );
+    const svgBlock = source.slice(
+      source.indexOf("//  导出为svg"),
+      source.indexOf("// 修复svg字符串"),
+    );
+
+    expect(svgBlock).toContain("preserveTextEdit");
+    expect(svgBlock).toContain("openRealtimeRenderOnNodeTextEdit");
+    expect(svgBlock).toContain("restoreEditingSvgText");
+    expect(svgBlock).toContain("g.opacity(1)");
+  });
+
+  it("exports inline thumbnail during request save", () => {
     const source = fs.readFileSync(
       path.join(
         appRoot,
@@ -67,12 +86,10 @@ describe("MindMap native source contract", () => {
     );
 
     expect(requestSaveBlock).toContain(
-      "postMindMapDataToHost(\n              bridgeState.mindMapData,\n              requestId,\n              null",
+      "await exportThumbnailForSnapshot(",
     );
-    expect(requestSaveBlock).toContain("thumbnailDeferred: true");
-    expect(requestSaveBlock).not.toContain(
-      "await exportThumbnailForSnapshot(\n                bridgeState.mindMapData,\n                'request-save'",
-    );
+    expect(requestSaveBlock).toContain("saveThumbnail");
+    expect(requestSaveBlock).not.toContain("thumbnailDeferred: true");
   });
 
   it("does not route viewport changes through document saves in takeover mode", () => {

@@ -930,7 +930,7 @@ function FileInfoDialog({
 
   return (
     <div
-      className="editor-file-info"
+      className="editor-file-info shell-dialog-overlay"
       role="presentation"
       onClick={(event) => {
         if (event.target === event.currentTarget) {
@@ -939,7 +939,7 @@ function FileInfoDialog({
       }}
     >
       <section
-        className="editor-file-info__dialog"
+        className="editor-file-info__dialog shell-dialog-card"
         role="dialog"
         aria-modal="true"
         aria-labelledby="editor-file-info-title"
