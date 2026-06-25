@@ -60,6 +60,7 @@ const lazyChunks = {"${chunkId}":"${chunkHash}"};
 let runtimeReady = false;
 let latestPayload = null;
 let editorApi = null;
+let startTakeOverPromise = null;
 
 function postToHost(type, payload = {}) {
   window.parent?.postMessage({ source, type, ...payload }, "*");
@@ -77,11 +78,31 @@ async function ensureEditorApi() {
 
 async function startTakeOverApp(payload = latestPayload) {
   latestPayload = payload;
-  const root = document.getElementById("app");
-  const mod = await ensureEditorApi();
-  await mod.renderMindMap(root, payload);
-  runtimeReady = true;
-  postToHost("appInited");
+  if (startTakeOverPromise) {
+    try {
+      await startTakeOverPromise;
+    } catch {
+      // 上一次 init 失败时仍允许重试。
+    }
+  }
+  startTakeOverPromise = (async () => {
+    const root = document.getElementById("app");
+    if (!root) {
+      throw new Error("Missing #app container");
+    }
+    const mod = await ensureEditorApi();
+    if (runtimeReady && mod.isNativeReady?.()) {
+      await mod.applyMindMapData(payload);
+      return;
+    }
+    await mod.renderMindMap(root, payload);
+    runtimeReady = true;
+  })();
+  try {
+    await startTakeOverPromise;
+  } finally {
+    startTakeOverPromise = null;
+  }
 }
 
 window.startTakeOverApp = startTakeOverApp;
@@ -134,7 +155,7 @@ if (!window.takeOverApp) {
         data: { text: "<p>MindMap</p>", richText: true, expand: true },
         children: [],
       },
-      theme: "default",
+      theme: "classic4",
       layout: "logicalStructure",
     },
   });
@@ -149,7 +170,15 @@ const cssBase = fs.readFileSync(smmCss, "utf8");
 const cssExtra = `
 html, body, #app { height: 100%; margin: 0; overflow: hidden; }
 #app { background: #f8fafc; }
+.editContainer { width: 100%; height: 100%; position: relative; overflow: hidden; }
 .mindmap-native-root { width: 100%; height: 100%; }
+.mindMapOverlayRoot {
+  position: fixed;
+  inset: 0;
+  z-index: var(--mm-layer-node-text-edit, 10090);
+  pointer-events: none;
+}
+.mindMapOverlayRoot > * { pointer-events: auto; }
 `;
 const cssFile = `app.${hash(cssBase + cssExtra)}.css`;
 write(`dist/css/${cssFile}`, `${cssBase}\n${cssExtra}`);

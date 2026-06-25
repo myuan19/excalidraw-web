@@ -21,7 +21,7 @@ export function parseByteSize(spec) {
  */
 function listManagedLogFiles(logDir, prefix, protect) {
   const sessionPattern = new RegExp(
-    `^${prefix}-\\d{8}-\\d{6}-\\d+\\.log(\\.\\d+)?(\\.gz)?$`,
+    `^${prefix}-\\d{8}-\\d{6}(?:-\\d+)?\\.log(\\.\\d+)?(\\.gz)?$`,
   );
   const legacyPattern = new RegExp(`^${prefix}\\.log(\\.\\d+)?(\\.gz)?$`);
 

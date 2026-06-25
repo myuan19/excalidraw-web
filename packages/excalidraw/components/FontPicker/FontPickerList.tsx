@@ -35,6 +35,13 @@ export interface FontDescriptor {
   };
 }
 
+type FontPickerMetadata = {
+  fallback?: true;
+  serverSide?: true;
+  deprecated?: true;
+  icon?: JSX.Element;
+};
+
 interface FontPickerListProps {
   selectedFontFamily: FontFamilyValues | null;
   hoveredFontFamily: FontFamilyValues | null;
@@ -65,18 +72,21 @@ export const FontPickerList = React.memo(
       () =>
         Array.from(Fonts.registered.entries())
           .filter(
-            ([_, { metadata }]) => !metadata.serverSide && !metadata.fallback,
+            ([_, { metadata }]) =>
+              !(metadata as FontPickerMetadata).serverSide &&
+              !(metadata as FontPickerMetadata).fallback,
           )
           .map(([familyId, { metadata, fontFaces }]) => {
+            const pickerMetadata = metadata as FontPickerMetadata;
             const fontDescriptor = {
               value: familyId,
-              icon: metadata.icon ?? FontFamilyNormalIcon,
+              icon: pickerMetadata.icon ?? FontFamilyNormalIcon,
               text: fontFaces[0]?.fontFace?.family ?? "Unknown",
             };
 
-            if (metadata.deprecated) {
+            if (pickerMetadata.deprecated) {
               Object.assign(fontDescriptor, {
-                deprecated: metadata.deprecated,
+                deprecated: pickerMetadata.deprecated,
                 badge: {
                   type: DropDownMenuItemBadgeType.RED,
                   placeholder: t("fontList.badge.old"),

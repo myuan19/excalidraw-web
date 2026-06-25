@@ -2,44 +2,31 @@ import { useEffect, useRef } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 
 import { createLogger } from "../lib/logger";
-import { devDebug, isDevDebugChannelEnabled } from "../lib/devDebug";
+import { devDebug } from "../lib/devDebug";
+import { traceThumb } from "../lib/interactionDebugTrace";
+import { traceResourceOp } from "../lib/resourceTrace";
 import { fetchThumbnailSvgForCard } from "../data/fetchThumbnailSvgForCard";
 import { patchFileListTreeCacheThumbnailMissing } from "../data/fileListSessionCache";
+import { buildServerThumbnailRequestPath } from "../data/serverThumbnailUrl";
 import { isLocalDraftFileId } from "../data/localDraftFileId";
+import { LocalThumbnailCache } from "../data/localThumbnailCache";
+import { isNativeThumbnailPending } from "../data/nativeThumbnailPending";
 import {
   markThumbnailServerMiss,
   shouldFetchServerThumbnail,
 } from "../data/thumbnailServerFetchMiss";
 import { ensureLocalDraftThumbnailFromCache } from "../data/localDraftThumbnailRecovery";
+import { buildThumbnailDraftSlot } from "../data/thumbnailLifecycle";
+import { shouldAwaitSessionThumbnailBeforeServerFetch } from "../data/resolveFileCardThumbnail";
 import type { ServerFile } from "../data/ServerSync";
 
 const logPipe = createLogger({ module: "thumbPipeline" });
 const logThumb = createLogger({ module: "thumbnail" });
 
-function isThumbnailPipelineDebugEnabled(): boolean {
-  if (isDevDebugChannelEnabled("thumbnail-pipeline")) {
-    return true;
-  }
-  if (typeof window === "undefined") {
-    return false;
-  }
-  try {
-    return (
-      window.localStorage.getItem("excalidraw-web-debug-thumbnail-pipeline") ===
-      "1"
-    );
-  } catch {
-    return false;
-  }
-}
-
 function debugThumbnailPipeline(
   label: string,
   data: Record<string, unknown>,
 ): void {
-  if (!isThumbnailPipelineDebugEnabled()) {
-    return;
-  }
   devDebug("thumbnail-pipeline", label, data);
 }
 
@@ -90,13 +77,20 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
     const skipped = {
       notInAllowSet: 0,
       localDraftThumb: 0,
+      localContentThumb: 0,
+      draftSessionThumbPending: 0,
       localDraftRecoverQueued: 0,
       serverNoThumbFlag: 0,
       serverThumbMiss: 0,
       alreadyInFetched: 0,
       inFlightRef: 0,
     };
-    const toFetch: { id: string; url: string; contentSha: string | null }[] = [];
+    const toFetch: {
+      id: string;
+      url: string;
+      contentSha: string | null;
+      cacheKey: string | null;
+    }[] = [];
 
     for (const f of thumbLoadScopeFiles) {
       if (!thumbFetchAllowIds.has(f.id)) {
@@ -121,6 +115,44 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
           localDraftThumbLen: localDraftThumb.length,
         });
         skipped.localDraftThumb++;
+        continue;
+      }
+      const warmedLocalThumb = LocalThumbnailCache.getForContent(
+        f.id,
+        f.content_sha256,
+      );
+      if (warmedLocalThumb) {
+        debugThumbnailPipeline("skip content-bound local thumb", {
+          id: f.id,
+          id8: f.id.slice(0, 8),
+          syncState,
+          localThumbLen: warmedLocalThumb.length,
+        });
+        skipped.localContentThumb++;
+        continue;
+      }
+      if (isNativeThumbnailPending(f.id)) {
+        debugThumbnailPipeline("skip native thumbnail in flight", {
+          id: f.id,
+          id8: f.id.slice(0, 8),
+          syncState,
+        });
+        skipped.localContentThumb++;
+        continue;
+      }
+      if (
+        shouldAwaitSessionThumbnailBeforeServerFetch(
+          f,
+          buildThumbnailDraftSlot(f),
+        )
+      ) {
+        debugThumbnailPipeline("skip draft session thumb pending", {
+          id: f.id,
+          id8: f.id.slice(0, 8),
+          syncState,
+          kind: f.kind,
+        });
+        skipped.draftSessionThumbPending++;
         continue;
       }
       if (isLocalDraftFileId(f.id)) {
@@ -165,9 +197,10 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
         continue;
       }
       const contentSha = f.content_sha256 ?? null;
+      const cacheKey = fileThumbHashByIdRef.current[f.id] ?? contentSha;
       if (
         fetchedThumbSvgByIdRef.current[f.id] &&
-        fetchedThumbHashByIdRef.current[f.id] === contentSha
+        fetchedThumbHashByIdRef.current[f.id] === cacheKey
       ) {
         skipped.alreadyInFetched++;
         continue;
@@ -182,9 +215,13 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
       toFetch.push({
         id: f.id,
         contentSha,
-        url: `/api/files/${f.id}/thumbnail${
-          f.content_sha256 ? `?h=${encodeURIComponent(f.content_sha256)}` : ""
-        }`,
+        cacheKey,
+        url: buildServerThumbnailRequestPath(f.id, f),
+      });
+      traceThumb("pipeline.queueFetch", {
+        fileId8: f.id.slice(0, 8),
+        contentSha8: contentSha?.slice(0, 8) ?? null,
+        syncState,
       });
     }
 
@@ -194,6 +231,18 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
       skipped,
       toFetchN: toFetch.length,
       toFetchIds: toFetch.map((t) => t.id.slice(0, 8)),
+    });
+    traceResourceOp("thumbnail", "effectTick", "ok", {
+      scopeN: thumbLoadScopeFiles.length,
+      allowN: thumbFetchAllowIds.size,
+      toFetchN: toFetch.length,
+    });
+    traceThumb("pipeline.tick", {
+      scopeN: thumbLoadScopeFiles.length,
+      allowN: thumbFetchAllowIds.size,
+      toFetchN: toFetch.length,
+      toFetchIds8: toFetch.map((t) => t.id.slice(0, 8)),
+      skipped,
     });
     debugThumbnailPipeline("effect tick", {
       scopeN: thumbLoadScopeFiles.length,
@@ -214,10 +263,10 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
             });
             return;
           }
-          if (fileThumbHashByIdRef.current[item.id] !== item.contentSha) {
+          if (fileThumbHashByIdRef.current[item.id] !== item.cacheKey) {
             logPipe.debug("GET thumb ignored (stale content hash)", {
               id8,
-              fetchedHash: item.contentSha,
+              fetchedHash: item.cacheKey,
               currentHash: fileThumbHashByIdRef.current[item.id],
             });
             return;
@@ -254,7 +303,7 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
             svgLen: svg.length,
             contentSha: item.contentSha,
           });
-          fetchedThumbHashByIdRef.current[item.id] = item.contentSha;
+          fetchedThumbHashByIdRef.current[item.id] = item.cacheKey;
           setFetchedThumbs((prev) => ({ ...prev, [item.id]: svg }));
         })
         .catch((err: unknown) => {

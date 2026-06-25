@@ -37,7 +37,8 @@ verify_desktop_entry() {
     cd "$ROOT"
     node --input-type=module - <<'NODE'
 await import("./apps/desktop/src/config.mjs");
-await import("./apps/desktop/src/bootstrapServer.mjs");
+await import("./apps/desktop/src/bootstrapBackend.mjs");
+await import("./apps/desktop/src/editorHubProtocol.mjs");
 NODE
   )
   [[ -f "${ROOT}/apps/desktop/electron/main.mjs" ]] || fail "missing apps/desktop/electron/main.mjs"

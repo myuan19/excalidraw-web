@@ -1,3 +1,6 @@
+import { excalidrawPlugin } from "./excalidraw";
+import { mindMapPlugin } from "./mindmap";
+
 import type { EditorPlugin } from "./types";
 
 export function createEditorRegistry(plugins: EditorPlugin[]) {
@@ -37,7 +40,9 @@ export function createEditorRegistry(plugins: EditorPlugin[]) {
 
     /** Plugins that expose create/import hooks for the file list. */
     listCreatable(): EditorPlugin[] {
-      return plugins.filter((plugin) => typeof plugin.createFile === "function");
+      return plugins.filter(
+        (plugin) => typeof plugin.createFile === "function",
+      );
     },
 
     resolveKind(kind: string | null | undefined): string {
@@ -86,9 +91,6 @@ export function createEditorRegistry(plugins: EditorPlugin[]) {
     },
 
     getDownloadExtension(kind: string): string {
-      if (kind === "text") {
-        return "txt";
-      }
       const plugin = byKind.get(kind);
       if (plugin?.downloadExtension) {
         return plugin.downloadExtension;
@@ -146,9 +148,6 @@ export function createEditorRegistry(plugins: EditorPlugin[]) {
     },
   };
 }
-
-import { excalidrawPlugin } from "./excalidraw";
-import { mindMapPlugin } from "./mindmap";
 
 export const editorRegistry = createEditorRegistry([
   excalidrawPlugin,

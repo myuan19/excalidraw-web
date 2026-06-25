@@ -48,6 +48,7 @@ const MainMenu = Object.assign(
               {HamburgerMenuIcon}
             </DropdownMenu.Trigger>
             <DropdownMenu.Content
+              className="main-menu"
               onClickOutside={onClickOutside}
               onSelect={composeEventHandlers(onSelect, () => {
                 setAppState({ openMenu: null });

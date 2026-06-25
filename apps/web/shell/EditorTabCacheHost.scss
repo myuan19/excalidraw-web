@@ -1,0 +1,92 @@
+.editor-tab-cache-host {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.editor-tab-cache-pane {
+  height: 100%;
+  min-height: 0;
+}
+
+.editor-tab-cache-pane--active {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+
+/*
+ * 缓存（非激活）标签页：保持挂载并隐藏，但不能用 content-visibility/contain
+ * 挂起 iframe-backed editor 的子树。MindMap 的画布在 iframe 内由 SVG + HTML
+ * <foreignObject> 组成，切换标签时如果祖先进入浏览器级布局/渲染跳过状态，
+ * Chromium 需要重新恢复嵌入 HTML 的行盒与绘制位置，容易出现节点文字整体偏下。
+ *
+ * 因此缓存态只隔离交互和可见性，不改变编辑器子树的布局/渲染生命周期。
+ */
+.editor-tab-cache-pane--cached {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  visibility: hidden;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.editor-tab-cache-pool {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.editor-tab-cache-file-stack {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+}
+
+.editor-tab-cache-host--home-active .editor-bridge {
+  display: none;
+}
+
+/*
+ * 首页激活时把编辑器外壳整体藏到不可见层，但绝不能给它 z-index/transform/contain，
+ * 否则会创建新的层叠上下文，把 position:fixed 的悬浮球（z 200000）连同其操作面板
+ * 一起困住，导致挂在 body 上的关闭遮罩反而盖住面板，小球侧边点不动。
+ */
+.editor-tab-cache-host--home-active .editor-platform-shell {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.editor-tab-cache-host--file-active .editor-platform-shell {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.app-shell--desktop .editor-tab-cache-host .editor-platform-shell__content {
+  height: 100%;
+  min-height: 0;
+}

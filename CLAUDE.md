@@ -21,7 +21,7 @@ _references/   Reference only — experiments, old shell, upstream docs
 
 - **`packages/excalidraw/`** - Main React component library published to npm as `@excalidraw/excalidraw`
 - **`apps/web/`** - Full-featured web application that uses the editor packages
-- **`apps/desktop/`** - Electron desktop app and local folder mapping adapter
+- **`apps/desktop/`** - Electron desktop app and local folder mapping adapter. Main window loads `editorhub://app`; file API uses IPC (`editorhub:api`); `/api/*` from iframes and streaming AI is proxied via the custom protocol to an internal loopback Express instance (no fixed user-visible port).
 - **`packages/`** - Core packages: `@excalidraw/common`, `@excalidraw/element`, `@excalidraw/math`, `@excalidraw/utils`
 - **`_references/`** - Reference-only experiments, old v0.3 shell, upstream examples/docs (not in active build)
 

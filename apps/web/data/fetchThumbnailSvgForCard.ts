@@ -1,4 +1,6 @@
 import { createLogger } from "../lib/logger";
+import { apiTransport } from "./apiTransport";
+import { decodeMindMapThumbnailPayload } from "./thumbnailSvg";
 
 const logPipe = createLogger({ module: "thumbPipeline" });
 
@@ -15,9 +17,9 @@ export async function fetchThumbnailSvgForCard(
 }> {
   const { id8 } = ctx;
   const hasImmutableHash = /[?&]h=/.test(urlPath);
-  const opts: RequestInit = {
-    cache: hasImmutableHash ? "force-cache" : "no-store",
-    headers: { Accept: "image/svg+xml,text/plain,*/*;q=0.8,*/*;q=0.1" },
+  const requestHeaders = {
+    Accept: "image/svg+xml,text/plain,*/*;q=0.8,*/*;q=0.1",
+    "Cache-Control": hasImmutableHash ? "max-age=31536000" : "no-store",
   };
 
   async function attempt(url: string, label: "A" | "B") {
@@ -27,26 +29,24 @@ export async function fetchThumbnailSvgForCard(
       urlLen: url.length,
       urlTail: url.slice(-120),
     });
-    const res = await fetch(url, opts);
-    const raw = await res.text().catch((e: unknown) => {
-      logPipe.debug("GET thumb text() threw", {
-        id8,
-        step: label,
-        err: String(e),
-      });
-      return "";
+    const path = url.startsWith("/api/") ? url : `/api${url}`;
+    const res = await apiTransport.request({
+      method: "GET",
+      path,
+      headers: requestHeaders,
     });
+    const raw = res.bodyText;
     logPipe.debug("GET thumb response", {
       id8,
       step: label,
       http: res.status,
-      ok: res.ok,
-      ct: res.headers.get("content-type"),
+      ok: res.status >= 200 && res.status < 300,
+      ct: res.headers["content-type"],
       bodyLen: raw.length,
       bodyEmpty: !raw.trim(),
       head: raw.trim().slice(0, 140),
     });
-    if (!res.ok) {
+    if (res.status < 200 || res.status >= 300) {
       return { ok: false as const, status: res.status, body: raw };
     }
     return { ok: true as const, status: res.status, body: raw };
@@ -81,13 +81,15 @@ export async function fetchThumbnailSvgForCard(
       id8,
       status: r.status,
     });
-  } else {
-    logPipe.debug("GET thumb OK", {
-      id8,
-      status: r.status,
-      svgLen: r.body.length,
-      startsSvg: /^[\s\S]*<svg\b/i.test(r.body),
-    });
+    return { svg: null, status: r.status };
   }
-  return { svg: t ? r.body : null, status: r.status };
+  const decoded = decodeMindMapThumbnailPayload(t) ?? t;
+  logPipe.debug("GET thumb OK", {
+    id8,
+    status: r.status,
+    svgLen: decoded.length,
+    startsSvg: /^[\s\S]*<svg\b/i.test(decoded),
+    wasDataUrl: t !== decoded,
+  });
+  return { svg: decoded, status: r.status };
 }

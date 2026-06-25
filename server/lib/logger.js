@@ -1,7 +1,12 @@
-import { Logger, LEVEL_VALUE } from "../../lib/logger/core.js";
-import { formatLogTimestamp } from "../config/logNaming.js";
+import {
+  Logger,
+  LEVEL_VALUE,
+  formatDebugEvent,
+} from "../../lib/logger/core.js";
+
 import {
   getClientFileTransport,
+  getMergedFileTransport,
   getServerFileTransport,
 } from "./rotatingFileTransport.js";
 
@@ -10,38 +15,46 @@ import {
 class StdoutTransport {
   /** @param {LogEntry} entry */
   write(entry) {
-    const lvl = entry.level.toUpperCase().padEnd(5);
-    const src = `${entry.source}:${entry.module}`;
-    const data = entry.data ? " " + JSON.stringify(entry.data) : "";
-    process.stdout.write(
-      `${formatLogTimestamp(new Date(entry.ts))} [${lvl}] [${src}] ${entry.msg}${data}\n`,
-    );
+    process.stdout.write(`${formatDebugEvent(entry)}\n`);
   }
 }
 
 const minLevel = (() => {
   const v = (process.env.LOG_LEVEL ?? "").trim().toLowerCase();
-  if (v && v in LEVEL_VALUE) return v;
+  if (v && v in LEVEL_VALUE) {
+    return v;
+  }
   return "info";
 })();
 
 const transports = [new StdoutTransport()];
 
 const serverFile = getServerFileTransport();
-if (serverFile) transports.push(serverFile);
+if (serverFile) {
+  transports.push(serverFile);
+}
 
 const clientFile = getClientFileTransport();
-if (clientFile) transports.push(clientFile);
+if (clientFile) {
+  transports.push(clientFile);
+}
+
+const mergedFile = getMergedFileTransport();
+if (mergedFile) {
+  transports.push(mergedFile);
+}
 
 /**
- * @param {{ module: string }} opts
+ * @param {{ module: string, component?: string, context?: object | (() => object), minLevel?: string | (() => string) }} opts
  * @returns {Logger}
  */
 export function createLogger(opts) {
   return new Logger({
     module: opts.module,
     source: "server",
-    minLevel,
+    component: opts.component,
+    context: opts.context,
+    minLevel: opts.minLevel ?? minLevel,
     transports,
   });
 }

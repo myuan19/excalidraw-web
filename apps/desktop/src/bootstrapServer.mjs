@@ -1,23 +1,5 @@
-import path from "path";
-import { fileURLToPath, pathToFileURL } from "url";
-
-import { createFolderMappingRouter } from "../adapters/folderMapping/router.js";
+import { assembleDesktopExpressApp } from "./bootstrapBackend.mjs";
 import { writeDesktopLog } from "./desktopLogger.mjs";
-
-const DESKTOP_SOURCE_ROOT = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../..",
-);
-
-async function loadCreateApp(config) {
-  const runtimeRoot =
-    config.runtimeRoot ||
-    process.env.EDITORHUB_DESKTOP_RUNTIME_ROOT ||
-    DESKTOP_SOURCE_ROOT;
-  const createAppPath = path.join(runtimeRoot, "server/createApp.js");
-  const { createApp } = await import(pathToFileURL(createAppPath).href);
-  return createApp;
-}
 
 export async function createDesktopServer(config) {
   writeDesktopLog("server", "create-begin", {
@@ -25,18 +7,11 @@ export async function createDesktopServer(config) {
     appBuildPath: config.appBuildPath,
     host: config.host,
     port: config.port,
-    runtimeRoot: config.runtimeRoot ?? process.env.EDITORHUB_DESKTOP_RUNTIME_ROOT ?? "",
+    runtimeRoot:
+      config.runtimeRoot ?? process.env.EDITORHUB_DESKTOP_RUNTIME_ROOT ?? "",
   });
-  const filesRouter = await createFolderMappingRouter({
-    workspacePath: config.workspacePath,
-  });
-  const createApp = await loadCreateApp(config);
-
-  return createApp({
-    filesRouter,
-    includeDefaultRoutes: false,
-    serveSpa: config.appBuildPath,
-  });
+  const { app } = await assembleDesktopExpressApp(config);
+  return app;
 }
 
 export async function listenDesktopServer(config) {

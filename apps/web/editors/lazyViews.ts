@@ -24,12 +24,12 @@ export function getLazyEmbedViewer(
 
 const editorShellCache = new Map<
   string,
-  LazyExoticComponent<ComponentType>
+  LazyExoticComponent<ComponentType<any>>
 >();
 
 export function getLazyEditorShell(
   plugin: EditorPlugin | null,
-): LazyExoticComponent<ComponentType> | null {
+): LazyExoticComponent<ComponentType<any>> | null {
   if (!plugin) {
     return null;
   }

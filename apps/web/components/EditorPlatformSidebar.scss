@@ -1,3 +1,5 @@
+@import "../styles/shell/shellModal.scss";
+
 .editor-platform-shell {
   position: relative;
   height: 100%;
@@ -32,8 +34,7 @@
   z-index: var(--nb-z-fork-home, 200000);
   overflow: visible;
   touch-action: none;
-  transition:
-    left 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+  transition: left 0.28s cubic-bezier(0.22, 1, 0.36, 1),
     top 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -70,7 +71,8 @@
 }
 
 .editor-bridge--docked:hover .editor-bridge__peel-zone,
-.editor-bridge--docked:has(.editor-bridge__peel-zone:hover) .editor-bridge__peel-zone {
+.editor-bridge--docked:has(.editor-bridge__peel-zone:hover)
+  .editor-bridge__peel-zone {
   transform: translate(-50%, -50%);
 }
 
@@ -94,11 +96,13 @@
   padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.72);
   border-radius: 9999px;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.84), rgba(235, 242, 255, 0.58)),
+  background: linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.84),
+      rgba(235, 242, 255, 0.58)
+    ),
     rgba(255, 255, 255, 0.68);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92),
     inset 0 -10px 18px rgba(148, 163, 184, 0.14),
     0 10px 28px rgba(15, 23, 42, 0.16);
   backdrop-filter: blur(16px) saturate(1.35);
@@ -106,10 +110,8 @@
   cursor: grab;
   user-select: none;
   overflow: visible;
-  transition:
-    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 0.2s ease,
-    border-color 0.2s ease;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.2s ease, border-color 0.2s ease;
 
   /*
    * 外圈 viewport：白底留白，铺满按钮内侧
@@ -129,11 +131,17 @@
     width: calc(100% - 2 * var(--ep-ball-viewport-inset));
     height: calc(100% - 2 * var(--ep-ball-viewport-inset));
     border-radius: 9999px;
-    background:
-      radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.92), transparent 42%),
-      linear-gradient(150deg, rgba(255, 255, 255, 0.66), rgba(226, 232, 240, 0.42));
-    box-shadow:
-      inset 0 0 0 1px rgba(255, 255, 255, 0.6),
+    background: radial-gradient(
+        circle at 30% 22%,
+        rgba(255, 255, 255, 0.92),
+        transparent 42%
+      ),
+      linear-gradient(
+        150deg,
+        rgba(255, 255, 255, 0.66),
+        rgba(226, 232, 240, 0.42)
+      );
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6),
       inset 0 -8px 16px rgba(148, 163, 184, 0.12);
     backdrop-filter: blur(12px) saturate(1.25);
     -webkit-backdrop-filter: blur(12px) saturate(1.25);
@@ -169,8 +177,7 @@
   }
 
   &:hover {
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95),
       inset 0 -10px 18px rgba(148, 163, 184, 0.12),
       0 14px 32px rgba(15, 23, 42, 0.2);
   }
@@ -180,7 +187,7 @@
   }
 
   &:focus-visible {
-    outline: 2px solid var(--nb-primary, #6965db);
+    outline: 2px solid var(--nb-primary);
     outline-offset: 2px;
   }
 }
@@ -210,7 +217,8 @@
 }
 
 .editor-bridge--docked:hover .editor-bridge__ball-anchor,
-.editor-bridge--docked:has(.editor-bridge__peel-zone:hover) .editor-bridge__ball-anchor {
+.editor-bridge--docked:has(.editor-bridge__peel-zone:hover)
+  .editor-bridge__ball-anchor {
   transform: translate(0, 0);
 }
 
@@ -237,23 +245,20 @@
 }
 
 .editor-bridge--open .editor-bridge__ball:hover {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92),
     inset 0 -10px 18px rgba(148, 163, 184, 0.14),
     0 10px 28px rgba(15, 23, 42, 0.16);
 }
 
 .editor-bridge--open.editor-bridge--unsaved .editor-bridge__ball:hover {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92),
     inset 0 -10px 18px rgba(148, 163, 184, 0.14),
     0 0 0 2px color-mix(in srgb, var(--nb-warning, #f59e0b) 18%, transparent),
     0 10px 28px rgba(15, 23, 42, 0.16);
 }
 
 .editor-bridge--open.editor-bridge--saved .editor-bridge__ball:hover {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92),
     inset 0 -10px 18px rgba(148, 163, 184, 0.14),
     0 0 0 2px color-mix(in srgb, var(--nb-success, #22c55e) 18%, transparent),
     0 10px 28px rgba(15, 23, 42, 0.16);
@@ -266,8 +271,7 @@
 /* 草稿状态外圈：与历史面板「未保存 / 无修改」一致，展开时也保持 */
 .editor-bridge--unsaved .editor-bridge__ball {
   border-color: color-mix(in srgb, var(--nb-warning, #f59e0b) 45%, transparent);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92),
     inset 0 -10px 18px rgba(148, 163, 184, 0.14),
     0 0 0 2px color-mix(in srgb, var(--nb-warning, #f59e0b) 18%, transparent),
     0 10px 28px rgba(15, 23, 42, 0.16);
@@ -275,61 +279,10 @@
 
 .editor-bridge--saved .editor-bridge__ball {
   border-color: color-mix(in srgb, var(--nb-success, #22c55e) 45%, transparent);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92),
     inset 0 -10px 18px rgba(148, 163, 184, 0.14),
     0 0 0 2px color-mix(in srgb, var(--nb-success, #22c55e) 18%, transparent),
     0 10px 28px rgba(15, 23, 42, 0.16);
-}
-
-.editor-bridge__status-dot {
-  position: absolute;
-  z-index: 2;
-  box-sizing: border-box;
-  width: 0.75rem;
-  height: 0.75rem;
-  border: 2px solid var(--nb-surface, #fff);
-  border-radius: 9999px;
-  pointer-events: none;
-  transform: none;
-  contain: strict;
-}
-
-.editor-bridge--edge-left .editor-bridge__status-dot,
-.editor-bridge--edge-right .editor-bridge__status-dot {
-  top: calc(50% - 0.375rem);
-  right: -0.1875rem;
-}
-
-.editor-bridge--edge-top .editor-bridge__status-dot,
-.editor-bridge--edge-bottom .editor-bridge__status-dot {
-  left: calc(50% - 0.375rem);
-  bottom: -0.1875rem;
-}
-
-.editor-bridge--unsaved .editor-bridge__status-dot {
-  background: var(--nb-warning, #f59e0b);
-  animation: editorBridgeStatusPulse 2.4s ease-in-out infinite;
-}
-
-.editor-bridge--saved .editor-bridge__status-dot {
-  background: var(--nb-success, #22c55e);
-}
-
-.editor-bridge--open .editor-bridge__status-dot {
-  animation: none;
-  opacity: 1;
-}
-
-@keyframes editorBridgeStatusPulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0.55;
-  }
 }
 
 .editor-bridge__menu {
@@ -445,8 +398,8 @@ $recent-flyout-max-rows: 6;
   box-shadow: inset 0 0 0 0 transparent;
 
   &:hover:not(:disabled) {
-    color: var(--nb-primary, #6965db);
-    box-shadow: inset 0 0 0 9999px var(--nb-filelist-muted, rgba(105, 101, 219, 0.08));
+    color: var(--nb-primary);
+    box-shadow: inset 0 0 0 9999px var(--nb-filelist-muted);
   }
 
   &:disabled {
@@ -455,7 +408,7 @@ $recent-flyout-max-rows: 6;
   }
 
   &:focus-visible {
-    outline: 2px solid var(--nb-primary, #6965db);
+    outline: 2px solid var(--nb-primary);
     outline-offset: -2px;
   }
 }
@@ -485,8 +438,8 @@ $recent-flyout-max-rows: 6;
 }
 
 .editor-bridge__action--active {
-  color: var(--nb-primary, #6965db);
-  box-shadow: inset 0 0 0 9999px var(--nb-filelist-muted, rgba(105, 101, 219, 0.1));
+  color: var(--nb-primary);
+  box-shadow: inset 0 0 0 9999px var(--nb-filelist-muted);
 }
 
 .editor-bridge__recent-flyout-list {
@@ -529,11 +482,11 @@ $recent-flyout-max-rows: 6;
   box-shadow: inset 0 0 0 0 transparent;
 
   &:hover {
-    box-shadow: inset 0 0 0 9999px var(--nb-filelist-muted, rgba(105, 101, 219, 0.08));
+    box-shadow: inset 0 0 0 9999px var(--nb-filelist-muted);
   }
 
   &:focus-visible {
-    outline: 2px solid var(--nb-primary, #6965db);
+    outline: 2px solid var(--nb-primary);
     outline-offset: -2px;
   }
 }
@@ -599,60 +552,34 @@ $recent-flyout-max-rows: 6;
 }
 
 .editor-file-info {
-  position: fixed;
-  inset: 0;
+  @include shell-modal-overlay;
   z-index: calc(var(--nb-z-fork-home, 200000) + 1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
-  background: rgba(15, 23, 42, 0.32);
   pointer-events: auto;
 }
 
 .editor-file-info__dialog {
+  @include shell-modal-card;
   width: min(28rem, 100%);
   max-height: calc(100vh - 2rem);
   overflow: auto;
-  border: 1px solid var(--nb-filelist-border, rgba(0, 0, 0, 0.08));
-  border-radius: var(--nb-radius-xl, 1rem);
-  background: var(--nb-surface, #fff);
-  box-shadow: var(--nb-shadow-card, 0 10px 30px rgba(15, 23, 42, 0.12));
 }
 
 .editor-file-info__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1rem 1rem 0.75rem;
-  border-bottom: 1px solid var(--nb-filelist-border, rgba(0, 0, 0, 0.08));
+  @include shell-modal-header;
+  padding: var(--nb-space-7) var(--nb-space-8);
 
   h3 {
     margin: 0;
-    font-family: var(--nb-font-ui, system-ui, sans-serif);
-    font-size: 1rem;
-    line-height: 1.5rem;
-    font-weight: 700;
-    color: var(--nb-text, #0f172a);
+    font-family: inherit;
+    font-size: var(--nb-font-title-sm);
+    line-height: 1.5;
+    font-weight: 600;
+    color: var(--nb-text);
   }
 }
 
 .editor-file-info__close {
-  width: 2rem;
-  height: 2rem;
-  border: 0;
-  border-radius: 9999px;
-  background: transparent;
-  color: var(--nb-text-muted, #64748b);
-  font-size: 1.5rem;
-  line-height: 1;
-  cursor: pointer;
-
-  &:hover {
-    background: var(--nb-filelist-muted, rgba(105, 101, 219, 0.08));
-    color: var(--nb-text, #0f172a);
-  }
+  @include shell-modal-close-btn;
 }
 
 .editor-file-info__muted,
@@ -697,24 +624,33 @@ $recent-flyout-max-rows: 6;
   }
 }
 
-.excalidraw-app.theme--dark {
+.editor-bridge--modal-hidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.excalidraw-app.theme--dark,
+.editor-platform-shell.theme--dark {
   .editor-bridge__ball {
-    background:
-      linear-gradient(145deg, rgba(58, 58, 68, 0.82), rgba(25, 25, 32, 0.62)),
+    background: linear-gradient(
+        145deg,
+        rgba(58, 58, 68, 0.82),
+        rgba(25, 25, 32, 0.62)
+      ),
       rgba(42, 42, 50, 0.7);
     border-color: rgba(255, 255, 255, 0.16);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.16),
-      inset 0 -10px 18px rgba(0, 0, 0, 0.22),
-      0 10px 28px rgba(0, 0, 0, 0.35);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16),
+      inset 0 -10px 18px rgba(0, 0, 0, 0.22), 0 10px 28px rgba(0, 0, 0, 0.35);
   }
 
   .editor-bridge__ball-viewport {
-    background:
-      radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.16), transparent 42%),
+    background: radial-gradient(
+        circle at 30% 22%,
+        rgba(255, 255, 255, 0.16),
+        transparent 42%
+      ),
       linear-gradient(150deg, rgba(70, 70, 82, 0.62), rgba(28, 28, 36, 0.48));
-    box-shadow:
-      inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1),
       inset 0 -8px 16px rgba(0, 0, 0, 0.2);
   }
 
@@ -730,20 +666,36 @@ $recent-flyout-max-rows: 6;
   }
 
   .editor-bridge--unsaved .editor-bridge__ball {
-    border-color: color-mix(in srgb, var(--nb-warning-text-dark, #fbbf24) 50%, transparent);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    border-color: color-mix(
+      in srgb,
+      var(--nb-warning-text-dark, #fbbf24) 50%,
+      transparent
+    );
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16),
       inset 0 -10px 18px rgba(0, 0, 0, 0.22),
-      0 0 0 2px color-mix(in srgb, var(--nb-warning-text-dark, #fbbf24) 22%, transparent),
+      0 0 0 2px
+        color-mix(
+          in srgb,
+          var(--nb-warning-text-dark, #fbbf24) 22%,
+          transparent
+        ),
       0 10px 28px rgba(0, 0, 0, 0.35);
   }
 
   .editor-bridge--saved .editor-bridge__ball {
-    border-color: color-mix(in srgb, var(--nb-success-text-dark, #86efac) 50%, transparent);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    border-color: color-mix(
+      in srgb,
+      var(--nb-success-text-dark, #86efac) 50%,
+      transparent
+    );
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16),
       inset 0 -10px 18px rgba(0, 0, 0, 0.22),
-      0 0 0 2px color-mix(in srgb, var(--nb-success-text-dark, #86efac) 22%, transparent),
+      0 0 0 2px
+        color-mix(
+          in srgb,
+          var(--nb-success-text-dark, #86efac) 22%,
+          transparent
+        ),
       0 10px 28px rgba(0, 0, 0, 0.35);
   }
 

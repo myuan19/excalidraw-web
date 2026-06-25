@@ -64,7 +64,30 @@ export function stripMindMapChunkPreloads(html) {
   );
 }
 
+/** Ensure webpack-dynamic-public-path has a runtime prefix (lazy chunks → dist/js, dist/css). */
+export function ensureMindMapExternalPublicPath(html) {
+  if (/window\.externalPublicPath\s*=/.test(html)) {
+    return html;
+  }
+  const snippet = "window.externalPublicPath = './dist/';";
+  if (/<script\b/i.test(html)) {
+    return html.replace(
+      /(<script\b[^>]*>\s*)/i,
+      `$1${snippet}\n    `,
+    );
+  }
+  if (/<head\b/i.test(html)) {
+    return html.replace(
+      /<head\b[^>]*>/i,
+      `$&\n  <script>${snippet}</script>`,
+    );
+  }
+  return `<script>${snippet}</script>\n${html}`;
+}
+
 /** Final index.html normalization after vue build + copy. */
 export function normalizeMindMapIndexHtml(html) {
-  return stripMindMapChunkPreloads(stripWebpackHtmlQueryHashes(html));
+  return ensureMindMapExternalPublicPath(
+    stripMindMapChunkPreloads(stripWebpackHtmlQueryHashes(html)),
+  );
 }

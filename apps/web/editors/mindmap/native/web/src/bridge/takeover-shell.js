@@ -21,7 +21,5 @@
     postToHost: postToHost,
   };
 
-  postToHost('ready');
-  postToHost('appInited');
-  postToHost('host_restore_preview_view', { ok: true });
+  // ready 由 app 模块在 message 监听器注册后再发送，避免宿主 postInit 早于 iframe 监听而丢失。
 })();

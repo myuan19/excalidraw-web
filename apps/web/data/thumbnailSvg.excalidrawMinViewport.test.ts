@@ -1,17 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@excalidraw/excalidraw", () => ({
-  exportToSvg: vi.fn(async () => {
+  exportToSvg: vi.fn(async ({ elements }: { elements?: unknown[] } = {}) => {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("width", "18");
     svg.setAttribute("height", "18");
     svg.setAttribute("viewBox", "0 0 18 18");
-    svg.innerHTML = '<path d="M0 0L18 0L0 18Z" fill="#111111"/>';
+    svg.innerHTML = elements?.length
+      ? '<path d="M0 0L18 0L0 18Z" fill="#111111"/>'
+      : '<rect width="18" height="18" fill="#ffffff"/>';
     return svg;
   }),
 }));
 
-import { buildSceneThumbnailSvg } from "./thumbnailSvg";
+import {
+  buildSceneThumbnailSvg,
+  thumbnailSvgHasVisibleContent,
+} from "./thumbnailSvg";
 
 const getViewBoxNumbers = (svg: string) =>
   svg
@@ -33,5 +38,16 @@ describe("Excalidraw thumbnail minimum viewport", () => {
     expect(x).toBeCloseTo(-231, 6);
     expect(y).toBeCloseTo(-135, 6);
     expect(svg).toContain('data-excal-filelist-thumb="1"');
+    expect(thumbnailSvgHasVisibleContent(svg)).toBe(true);
+  });
+
+  it("does not treat background-only SVGs as visible thumbnails", async () => {
+    const svg = await buildSceneThumbnailSvg({
+      elements: [],
+      appState: { viewBackgroundColor: "#ffffff" },
+      files: {},
+    });
+
+    expect(thumbnailSvgHasVisibleContent(svg)).toBe(false);
   });
 });

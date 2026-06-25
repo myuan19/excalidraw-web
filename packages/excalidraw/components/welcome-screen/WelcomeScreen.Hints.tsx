@@ -1,5 +1,6 @@
 import { t } from "../../i18n";
 import { useTunnels } from "../../context/tunnels";
+import { useUIAppState } from "../../context/ui-appState";
 import {
   WelcomeScreenHelpArrow,
   WelcomeScreenMenuArrow,
@@ -8,6 +9,12 @@ import {
 
 const MenuHint = ({ children }: { children?: React.ReactNode }) => {
   const { WelcomeScreenMenuHintTunnel } = useTunnels();
+  const appState = useUIAppState();
+
+  if (appState.openMenu === "canvas") {
+    return null;
+  }
+
   return (
     <WelcomeScreenMenuHintTunnel.In>
       <div className="excalifont welcome-screen-decor welcome-screen-decor-hint welcome-screen-decor-hint--menu">

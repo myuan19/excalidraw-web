@@ -76,17 +76,16 @@ const handleFontSizeChange: DragInputCallbackType<
     for (const textElement of latestTextElements) {
       mutateElement(
         textElement,
+        elementsMap,
         {
           fontSize: nextFontSize,
         },
-        false,
       );
 
       redrawTextBoundingBox(
         textElement,
         scene.getContainerElement(textElement),
-        elementsMap,
-        false,
+        scene,
       );
     }
 
@@ -109,17 +108,16 @@ const handleFontSizeChange: DragInputCallbackType<
       }
       mutateElement(
         latestElement,
+        elementsMap,
         {
           fontSize: nextFontSize,
         },
-        false,
       );
 
       redrawTextBoundingBox(
         latestElement,
         scene.getContainerElement(latestElement),
-        elementsMap,
-        false,
+        scene,
       );
     }
 

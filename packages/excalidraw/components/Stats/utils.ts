@@ -142,11 +142,11 @@ export const moveElement = (
 
   mutateElement(
     latestElement,
+    elementsMap,
     {
       x,
       y,
     },
-    shouldInformMutation,
   );
   updateBindings(latestElement, elementsMap, elements, scene);
 
@@ -159,11 +159,11 @@ export const moveElement = (
     latestBoundTextElement &&
       mutateElement(
         latestBoundTextElement,
+        elementsMap,
         {
           x: boundTextElement.x + changeInX,
           y: boundTextElement.y + changeInY,
         },
-        shouldInformMutation,
       );
   }
 };
@@ -201,8 +201,8 @@ export const updateBindings = (
   },
 ) => {
   if (isLinearElement(latestElement)) {
-    updateBoundElements(latestElement, elementsMap, options);
+    updateBoundElements(latestElement, scene, options);
   } else {
-    updateBoundElements(latestElement, elementsMap, options);
+    updateBoundElements(latestElement, scene, options);
   }
 };

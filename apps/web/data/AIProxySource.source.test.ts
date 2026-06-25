@@ -27,7 +27,7 @@ describe("AI proxy source contract", () => {
     );
 
     expect(aiClientSource).toContain('fetch("/api/ai/chat"');
-    expect(aiClientSource).toContain('fetch("/api/ai/vision"');
+    expect(aiClientSource).toContain("/api/ai/vision");
     expect(openaiSource).toContain("streamAIChat");
     expect(openaiSource).toContain("requestAIVision");
     expect(openaiSource).not.toContain("Authorization");

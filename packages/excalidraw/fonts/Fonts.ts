@@ -31,17 +31,17 @@ import type { ValueOf } from "@excalidraw/common/utility-types";
 
 import type { Scene } from "@excalidraw/element";
 
-import { CascadiaFontFaces } from "./Cascadia";
-import { ComicShannsFontFaces } from "./ComicShanns";
-import { EmojiFontFaces } from "./Emoji";
+import { CascadiaFontFaces } from "./Cascadia/index";
+import { ComicShannsFontFaces } from "./ComicShanns/index";
+import { EmojiFontFaces } from "./Emoji/index";
 import { ExcalidrawFontFace } from "./ExcalidrawFontFace";
-import { ExcalifontFontFaces } from "./Excalifont";
-import { HelveticaFontFaces } from "./Helvetica";
-import { LiberationFontFaces } from "./Liberation";
-import { LilitaFontFaces } from "./Lilita";
-import { NunitoFontFaces } from "./Nunito";
-import { VirgilFontFaces } from "./Virgil";
-import { XiaolaiFontFaces } from "./Xiaolai";
+import { ExcalifontFontFaces } from "./Excalifont/index";
+import { HelveticaFontFaces } from "./Helvetica/index";
+import { LiberationFontFaces } from "./Liberation/index";
+import { LilitaFontFaces } from "./Lilita/index";
+import { NunitoFontFaces } from "./Nunito/index";
+import { VirgilFontFaces } from "./Virgil/index";
+import { XiaolaiFontFaces } from "./Xiaolai/index";
 
 export class Fonts {
   // it's ok to track fonts across multiple instances only once, so let's use

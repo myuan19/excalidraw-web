@@ -1,34 +1,120 @@
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import zlib from "node:zlib";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-const nativeRoot = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(nativeRoot, "../../../../..");
-const webDist = path.join(nativeRoot, "web/dist");
-const nativeDist = path.join(nativeRoot, "dist");
-const publicMindMap = path.join(repoRoot, "public/mind-map");
+const nativeDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(nativeDir, "../../../../../");
+const distDir = path.join(nativeDir, "dist");
+const servedDir = path.join(repoRoot, "public/mind-map");
+const indexDest = path.join(nativeDir, "index.html");
+const indexSrc = path.join(distDir, "index.html");
 
 function copyDir(from, to) {
   fs.mkdirSync(to, { recursive: true });
   for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
-    const src = path.join(from, entry.name);
-    const dst = path.join(to, entry.name);
+    const fromPath = path.join(from, entry.name);
+    const toPath = path.join(to, entry.name);
     if (entry.isDirectory()) {
-      copyDir(src, dst);
+      copyDir(fromPath, toPath);
     } else {
-      fs.copyFileSync(src, dst);
+      fs.copyFileSync(fromPath, toPath);
     }
   }
 }
 
-if (!fs.existsSync(path.join(webDist, "index.html"))) {
-  throw new Error(`MindMap web build not found: ${webDist}`);
+const PRECOMPRESS_EXTENSIONS = new Set([
+  ".css",
+  ".html",
+  ".js",
+  ".json",
+  ".svg",
+  ".txt",
+]);
+
+function shouldPrecompress(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (!PRECOMPRESS_EXTENSIONS.has(ext)) {
+    return false;
+  }
+  try {
+    return fs.statSync(filePath).size >= 1024;
+  } catch {
+    return false;
+  }
 }
 
-for (const target of [nativeDist, publicMindMap]) {
-  fs.rmSync(target, { recursive: true, force: true });
-  copyDir(webDist, target);
+function gzipFile(filePath) {
+  if (!shouldPrecompress(filePath)) {
+    return;
+  }
+  const source = fs.readFileSync(filePath);
+  const compressed = zlib.gzipSync(source, { level: 9 });
+  fs.writeFileSync(`${filePath}.gz`, compressed);
 }
 
-fs.copyFileSync(path.join(webDist, "index.html"), path.join(nativeRoot, "index.html"));
-console.log(`[mindmap-copy] synced ${path.relative(repoRoot, publicMindMap)}`);
+function gzipDir(dir) {
+  if (!fs.existsSync(dir)) {
+    return;
+  }
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const filePath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      gzipDir(filePath);
+    } else if (!entry.name.endsWith(".gz")) {
+      gzipFile(filePath);
+    }
+  }
+}
+
+if (!fs.existsSync(indexSrc)) {
+  throw new Error(`MindMap vue build not found: ${indexSrc}`);
+}
+
+if (fs.existsSync(indexDest)) {
+  fs.unlinkSync(indexDest);
+}
+fs.copyFileSync(indexSrc, indexDest);
+fs.unlinkSync(indexSrc);
+
+if (fs.existsSync(servedDir)) {
+  fs.rmSync(servedDir, { recursive: true, force: true });
+}
+fs.mkdirSync(servedDir, { recursive: true });
+copyDir(distDir, path.join(servedDir, "dist"));
+
+const bridgeSrc = path.join(nativeDir, "web/src/bridge/takeoverShell.js");
+const bridgeTargets = [
+  path.join(servedDir, "dist/bridge/takeover-shell.js"),
+  path.join(distDir, "dist/bridge/takeover-shell.js"),
+];
+if (fs.existsSync(bridgeSrc)) {
+  for (const target of bridgeTargets) {
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.copyFileSync(bridgeSrc, target);
+    gzipFile(target);
+  }
+} else {
+  console.warn("[mindmap-copy] missing bridge source:", bridgeSrc);
+}
+
+let html = fs.readFileSync(indexDest, "utf8");
+try {
+  const { normalizeMindMapIndexHtml } = await import(
+    pathToFileURL(
+      path.join(repoRoot, "scripts/mind-map-webpack-chunks.mjs"),
+    ).href
+  );
+  html = normalizeMindMapIndexHtml(html);
+} catch (error) {
+  console.warn(
+    "[mindmap-copy] index.html normalize skipped:",
+    error instanceof Error ? error.message : String(error),
+  );
+}
+fs.writeFileSync(path.join(servedDir, "index.html"), html);
+fs.writeFileSync(indexDest, html);
+gzipDir(distDir);
+gzipDir(path.join(servedDir, "dist"));
+
+console.log(`[mindmap-copy] synced ${path.relative(repoRoot, servedDir)}`);

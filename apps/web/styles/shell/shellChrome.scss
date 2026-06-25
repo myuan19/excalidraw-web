@@ -1,0 +1,132 @@
+/**
+ * Shell Chrome — 顶栏 / 工具条 / Tab 条共享布局与控件几何。
+ * 原则：固定槽位网格、单一盒模型（border 分隔）、solid 背景（避免毛玻璃重绘抖动）。
+ */
+
+@mixin shell-chrome-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: var(--nb-shell-chrome-bg);
+  border-bottom: var(--nb-border-width) solid var(--nb-shell-chrome-border);
+  color: var(--nb-text);
+}
+
+@mixin shell-chrome-control {
+  box-sizing: border-box;
+  height: var(--nb-shell-control-h);
+  min-height: var(--nb-shell-control-h);
+  max-height: var(--nb-shell-control-h);
+  border: var(--nb-border-width) solid var(--nb-shell-control-border);
+  border-radius: var(--nb-radius-md);
+  background: var(--nb-shell-control-bg);
+  color: var(--nb-text);
+  font-family: inherit;
+  font-size: var(--nb-font-caption);
+  font-weight: 500;
+  line-height: 1;
+  transition: background-color var(--nb-dur-hover) var(--nb-ease-ui),
+    border-color var(--nb-dur-hover) var(--nb-ease-ui),
+    color var(--nb-dur-hover) var(--nb-ease-ui);
+}
+
+@mixin shell-toolbar-slot($width: var(--nb-shell-toolbar-slot-w)) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex: 0 0 $width;
+  width: $width;
+  min-width: $width;
+  max-width: $width;
+  height: var(--nb-shell-control-h);
+  min-height: var(--nb-shell-control-h);
+  max-height: var(--nb-shell-control-h);
+  box-sizing: border-box;
+}
+
+@mixin shell-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--nb-space-3);
+  margin-left: auto;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+  height: var(--nb-shell-control-h);
+  min-height: var(--nb-shell-control-h);
+  max-height: var(--nb-shell-control-h);
+}
+
+@mixin shell-tab-strip {
+  display: grid;
+  grid-template-columns:
+    var(--nb-shell-tab-strip-arrow-w)
+    minmax(0, 1fr)
+    var(--nb-shell-tab-strip-arrow-w);
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 100%;
+  position: relative;
+}
+
+@mixin shell-tab-strip-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: var(--nb-shell-tab-strip-arrow-w);
+  height: var(--nb-shell-tab-strip-arrow-h);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--nb-radius-sm);
+  background: transparent;
+  color: var(--nb-text-muted);
+  cursor: pointer;
+  visibility: hidden;
+  pointer-events: none;
+  transition: background 0.1s, color 0.1s, visibility 0s linear 0s;
+  -webkit-app-region: no-drag;
+
+  &:hover {
+    background: var(--nb-fill-hover);
+    color: var(--nb-text);
+  }
+
+  &--visible {
+    visibility: visible;
+    pointer-events: auto;
+  }
+}
+
+.shell-toolbar__slot {
+  @include shell-toolbar-slot(var(--nb-shell-toolbar-view-mode-slot-w));
+}
+
+.shell-tab-strip {
+  @include shell-tab-strip;
+}
+
+.shell-tab-strip__scroll {
+  display: flex;
+  align-items: center;
+  gap: var(--nb-space-1);
+  height: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 0 var(--nb-space-2);
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.shell-tab-strip__arrow {
+  @include shell-tab-strip-arrow;
+}

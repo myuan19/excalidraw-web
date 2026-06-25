@@ -8,7 +8,6 @@
   "scripts": {
     "start": "electron .",
     "start:server": "node src/main.mjs",
-    "start:workspace": "node src/main.mjs --workspace",
     "pack": "electron-builder --dir",
     "dist": "electron-builder --win nsis portable"
   },

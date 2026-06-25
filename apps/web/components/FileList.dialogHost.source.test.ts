@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 describe("FileList dialog host source contract", () => {
-  it("scopes --fl-* tokens for overlays opened outside .filelist", () => {
+  it("keeps dialog host styles and theme class on save/kind dialogs", () => {
     const hostScss = fs.readFileSync(
       path.join(__dirname, "fileListDialogHost.scss"),
       "utf8",
@@ -23,8 +23,17 @@ describe("FileList dialog host source contract", () => {
 
     expect(hostScss).toContain(".filelist-dialog-host");
     expect(hostScss).toContain("filelist-design-tokens");
+    expect(hostScss).toContain(
+      ".filelist__new-btn:not(.filelist__new-btn--danger)",
+    );
+    expect(hostScss).toContain("background: var(--fl-primary-soft);");
+    expect(hostScss).toContain("color: var(--fl-primary);");
     expect(saveDialog).toContain('import "./fileListDialogHost.scss"');
-    expect(saveDialog).toContain("filelist-dialog-host filelist__detail-overlay");
-    expect(kindDialog).toContain("filelist-dialog-host filelist__detail-overlay");
+    expect(saveDialog).toContain("shellThemeClassName");
+    expect(saveDialog).toContain("filelist-dialog-host");
+    expect(saveDialog).toContain("filelist__detail-overlay");
+    expect(kindDialog).toContain("shellThemeClassName");
+    expect(kindDialog).toContain("filelist-dialog-host");
+    expect(kindDialog).toContain("filelist__detail-overlay");
   });
 });

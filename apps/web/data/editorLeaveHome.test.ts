@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { FileSyncState } from "./FileSyncState";
 import {
+  resolveEditorHomeNavPlan,
   shouldDeferLeaveWhileNewDocumentHash,
   shouldPromptEditorHomeNavDialog,
 } from "./editorLeaveHome";
@@ -11,12 +12,25 @@ describe("editorLeaveHome", () => {
     localStorage.clear();
   });
 
-  it("prompts for local-draft only after it has edits", () => {
+  it("prompts for local-draft even before it has edits", () => {
     const id = `local-draft:${crypto.randomUUID()}`;
-    expect(shouldPromptEditorHomeNavDialog(id)).toBe(false);
+    expect(shouldPromptEditorHomeNavDialog(id)).toBe(true);
     FileSyncState.setDraftHash(id, "hash-a");
     FileSyncState.setBaselineHash(id, "hash-b");
     expect(shouldPromptEditorHomeNavDialog(id)).toBe(true);
+  });
+
+  it("resolves unedited local-draft leave as prompt before discard", () => {
+    const id = `local-draft:${crypto.randomUUID()}`;
+    FileSyncState.alignHashes(id, "same-hash");
+    expect(resolveEditorHomeNavPlan(id, { kind: "mindmap" })).toEqual({
+      action: "prompt-leave",
+    });
+    FileSyncState.setDraftHash(id, "dirty");
+    FileSyncState.setBaselineHash(id, "baseline");
+    expect(resolveEditorHomeNavPlan(id, { kind: "mindmap" })).toEqual({
+      action: "prompt-leave",
+    });
   });
 
   it("prompts server file only when draft sync state", () => {

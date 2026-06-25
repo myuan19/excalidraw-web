@@ -59,13 +59,13 @@ const handleFontSizeChange: DragInputCallbackType<
     }
 
     if (nextFontSize) {
-      mutateElement(latestElement, {
+      mutateElement(latestElement, elementsMap, {
         fontSize: nextFontSize,
       });
       redrawTextBoundingBox(
         latestElement,
         scene.getContainerElement(latestElement),
-        scene.getNonDeletedElementsMap(),
+        scene,
       );
     }
   }

@@ -8,6 +8,7 @@ import {
   clearMindMapDraftIfUnchanged,
   isMindMapNativeDirtyPending,
   markMindMapNativeDirtyPending,
+  shouldSkipMindMapHydrateSettleBaselineAdopt,
 } from "./mindMapDraftState";
 
 describe("mindMapDraftState", () => {
@@ -40,6 +41,18 @@ describe("mindMapDraftState", () => {
     expect(FileSyncState.hasUnsavedChanges(fileId)).toBe(false);
   });
 
+  it("adoptMindMapNativeBaseline clears pending dirty on unedited local drafts", () => {
+    const draftId = `local-draft:${crypto.randomUUID()}`;
+    const document = MindMapAdapter.toDocument(MindMapAdapter.createEmpty());
+    FileSyncState.alignHashes(draftId, hashDocumentSnapshot(document));
+    markMindMapNativeDirtyPending(draftId);
+
+    adoptMindMapNativeBaseline(draftId, document);
+
+    expect(isMindMapNativeDirtyPending(draftId)).toBe(false);
+    expect(FileSyncState.hasUnsavedChanges(draftId)).toBe(false);
+  });
+
   it("clearMindMapDraftIfUnchanged returns true when document matches baseline", () => {
     const document = MindMapAdapter.toDocument(MindMapAdapter.createEmpty());
     FileSyncState.alignHashes(fileId, hashDocumentSnapshot(document));
@@ -63,9 +76,26 @@ describe("mindMapDraftState", () => {
     expect(clearMindMapDraftIfUnchanged(fileId, mutated)).toBe(false);
   });
 
-  it("marks native dirty notifications as unsaved until a real snapshot arrives", () => {
+  it("does not mark native dirty when document is already synced", () => {
     const document = MindMapAdapter.toDocument(MindMapAdapter.createEmpty());
     FileSyncState.alignHashes(fileId, hashDocumentSnapshot(document));
+
+    expect(markMindMapNativeDirtyPending(fileId)).toBe(false);
+    expect(isMindMapNativeDirtyPending(fileId)).toBe(false);
+    expect(FileSyncState.hasUnsavedChanges(fileId)).toBe(false);
+  });
+
+  it("marks native dirty notifications as unsaved until a real snapshot arrives", () => {
+    const document = MindMapAdapter.toDocument(MindMapAdapter.createEmpty());
+    const mutated = MindMapAdapter.toDocument({
+      ...document.data,
+      root: {
+        ...document.data.root,
+        data: { ...document.data.root.data, text: "edited" },
+      },
+    });
+    FileSyncState.alignHashes(fileId, hashDocumentSnapshot(document));
+    FileSyncState.setDraftHash(fileId, hashDocumentSnapshot(mutated));
 
     expect(markMindMapNativeDirtyPending(fileId)).toBe(true);
     expect(isMindMapNativeDirtyPending(fileId)).toBe(true);
@@ -78,12 +108,54 @@ describe("mindMapDraftState", () => {
 
   it("does not churn pending dirty hash for repeated native dirty notifications", () => {
     const document = MindMapAdapter.toDocument(MindMapAdapter.createEmpty());
+    const mutated = MindMapAdapter.toDocument({
+      ...document.data,
+      root: {
+        ...document.data.root,
+        data: { ...document.data.root.data, text: "edited" },
+      },
+    });
     FileSyncState.alignHashes(fileId, hashDocumentSnapshot(document));
+    FileSyncState.setDraftHash(fileId, hashDocumentSnapshot(mutated));
 
     expect(markMindMapNativeDirtyPending(fileId)).toBe(true);
     const pendingHash = FileSyncState.getDraftHash(fileId);
 
     expect(markMindMapNativeDirtyPending(fileId)).toBe(false);
     expect(FileSyncState.getDraftHash(fileId)).toBe(pendingHash);
+  });
+
+  it("skips hydrate settle baseline adopt while user edits are pending", () => {
+    const document = MindMapAdapter.toDocument(MindMapAdapter.createEmpty());
+    const mutated = MindMapAdapter.toDocument({
+      ...document.data,
+      root: {
+        ...document.data.root,
+        data: { ...document.data.root.data, text: "edited" },
+      },
+    });
+    FileSyncState.alignHashes(fileId, hashDocumentSnapshot(document));
+    FileSyncState.setDraftHash(fileId, hashDocumentSnapshot(mutated));
+
+    expect(shouldSkipMindMapHydrateSettleBaselineAdopt(fileId, document)).toBe(
+      false,
+    );
+
+    markMindMapNativeDirtyPending(fileId);
+    expect(shouldSkipMindMapHydrateSettleBaselineAdopt(fileId)).toBe(true);
+    expect(shouldSkipMindMapHydrateSettleBaselineAdopt(fileId, document)).toBe(
+      false,
+    );
+  });
+
+  it("allows hydrate settle baseline adopt for unedited local drafts", () => {
+    const draftId = `local-draft:${crypto.randomUUID()}`;
+    const document = MindMapAdapter.toDocument(MindMapAdapter.createEmpty());
+    FileSyncState.alignHashes(draftId, hashDocumentSnapshot(document));
+    markMindMapNativeDirtyPending(draftId);
+
+    expect(shouldSkipMindMapHydrateSettleBaselineAdopt(draftId, document)).toBe(
+      false,
+    );
   });
 });

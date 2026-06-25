@@ -1,75 +1,104 @@
 /**
  * Central development diagnostics for the host app (MindMap shell, file list, embed).
- * Vite dev: common channels on; noisy render/thumbnail channels are opt-in.
- * Production bundle: off unless debug-ship build (VITE_APP_DEPLOY_DEBUG) or per-channel VITE_APP_ENABLE_*_DEBUG.
+ * EDITORHUB_DESKTOP_DEBUG / 设置内调试日志开启后：全部通道 + IPC/协议 → desktop-op.log。
+ * 未开调试时：Vite dev 全开；生产仅 VITE_APP_DEPLOY_DEBUG 或 per-channel VITE_APP_ENABLE_*_DEBUG。
  */
+
+import { isDebugRuntimeEnabled } from "../data/debugCapability";
+
+import { createLogger } from "./logger";
+import { isDesktopEditorHub } from "./runtimePlatform";
 
 export type DevDebugChannel =
   | "app"
+  | "api-sync"
   | "editor-bridge"
   | "editor-open"
   | "mindmap-open"
   | "mindmap-bridge"
+  | "mindmap-op"
   | "mindmap-persist"
   | "mindmap-thumbnail"
   | "ai-config"
   | "embed"
   | "file-list"
-  | "thumbnail-pipeline";
+  | "shell-nav"
+  | "thumbnail-pipeline"
+  | "user-trace";
 
 const CHANNEL_ENV_FLAG: Record<DevDebugChannel, string> = {
   app: "VITE_APP_ENABLE_APP_DEBUG",
+  "api-sync": "VITE_APP_ENABLE_API_SYNC_DEBUG",
   "editor-bridge": "VITE_APP_ENABLE_EDITOR_BRIDGE_DEBUG",
   "editor-open": "VITE_APP_ENABLE_EDITOR_OPEN_DEBUG",
   "mindmap-open": "VITE_APP_ENABLE_MINDMAP_DEBUG",
   "mindmap-bridge": "VITE_APP_ENABLE_MINDMAP_DEBUG",
+  "mindmap-op": "VITE_APP_ENABLE_MINDMAP_DEBUG",
   "mindmap-persist": "VITE_APP_ENABLE_MINDMAP_DEBUG",
   "mindmap-thumbnail": "VITE_APP_ENABLE_MINDMAP_THUMBNAIL_DEBUG",
   "ai-config": "VITE_APP_ENABLE_AI_CONFIG_DEBUG",
   embed: "VITE_APP_ENABLE_EMBED_DEBUG",
   "file-list": "VITE_APP_ENABLE_FILE_LIST_DEBUG",
+  "shell-nav": "VITE_APP_ENABLE_SHELL_NAV_DEBUG",
   "thumbnail-pipeline": "VITE_APP_ENABLE_THUMBNAIL_DEBUG",
+  "user-trace": "VITE_APP_ENABLE_USER_TRACE_DEBUG",
 };
-
-const NOISY_DEV_CHANNELS = new Set<DevDebugChannel>([
-  "file-list",
-  "mindmap-thumbnail",
-  "thumbnail-pipeline",
-]);
 
 function isDeployDebugBuild(): boolean {
   return import.meta.env.VITE_APP_DEPLOY_DEBUG === "true";
 }
 
-function isLocalStorageDebugEnabled(channel: DevDebugChannel): boolean {
-  if (typeof window === "undefined") {
-    return false;
+export function isDevDebugChannelEnabled(channel: DevDebugChannel): boolean {
+  if (isDebugRuntimeEnabled()) {
+    return true;
   }
-  if (channel === "mindmap-thumbnail") {
-    return false;
+  if (isDeployDebugBuild()) {
+    return true;
   }
+  if (import.meta.env.DEV) {
+    return true;
+  }
+  const flag = CHANNEL_ENV_FLAG[channel];
+  return import.meta.env[flag] === "true";
+}
+
+export function isFileListLayoutDebugEnabled(): boolean {
+  return isDevDebugChannelEnabled("file-list");
+}
+
+export function isFileListThumbnailDebugEnabled(): boolean {
+  return isDevDebugChannelEnabled("file-list");
+}
+
+export function isTitlebarTabsLayoutDebugEnabled(): boolean {
+  return isDevDebugChannelEnabled("app");
+}
+
+export function isFileListFolderDndDebugEnabled(): boolean {
+  return isDevDebugChannelEnabled("file-list");
+}
+
+let desktopDebugLog: ReturnType<typeof createLogger> | null = null;
+
+function getDesktopDebugLog() {
+  if (!desktopDebugLog) {
+    desktopDebugLog = createLogger({ module: "devDebug" });
+  }
+  return desktopDebugLog;
+}
+
+function formatDevDebugConsoleData(
+  data: Record<string, unknown>,
+): string | undefined {
   try {
-    return (
-      window.localStorage.getItem("excalidraw-web-debug") === "1" ||
-      window.localStorage.getItem(`excalidraw-web-debug-${channel}`) === "1"
-    );
+    return JSON.stringify(data);
   } catch {
-    return false;
+    return undefined;
   }
 }
 
-export function isDevDebugChannelEnabled(channel: DevDebugChannel): boolean {
-  const flag = CHANNEL_ENV_FLAG[channel];
-  if (import.meta.env.PROD) {
-    if (isDeployDebugBuild()) {
-      return true;
-    }
-    return import.meta.env[flag] === "true" || isLocalStorageDebugEnabled(channel);
-  }
-  if (NOISY_DEV_CHANNELS.has(channel)) {
-    return import.meta.env[flag] === "true" || isLocalStorageDebugEnabled(channel);
-  }
-  return true;
+function isDesktopEditorHubLocal(): boolean {
+  return isDesktopEditorHub();
 }
 
 export function devDebug(
@@ -81,14 +110,28 @@ export function devDebug(
     return;
   }
   const prefix = `[DEBUG] ${channel} | ${label}`;
+
+  if (isDesktopEditorHubLocal()) {
+    getDesktopDebugLog().debug(label, { channel, ...(data ?? {}) });
+    if (data === undefined) {
+      console.warn(prefix);
+      return;
+    }
+    const serialized = formatDevDebugConsoleData(data);
+    console.warn(prefix, serialized ?? "");
+    return;
+  }
+
+  // eslint-disable-next-line no-console -- devDebug intentionally mirrors to DevTools.
+  const write = console.log;
   if (data === undefined) {
-    console.log(prefix);
+    write(prefix);
     return;
   }
   try {
-    console.log(prefix, data);
+    write(prefix, data);
   } catch {
-    console.log(prefix);
+    write(prefix);
   }
 }
 
@@ -105,21 +148,6 @@ export function isMindMapOpenDebugEnabled(): boolean {
 /** @deprecated Use isDevDebugChannelEnabled("app") */
 export function isAppDebugEnabled(): boolean {
   return isDevDebugChannelEnabled("app");
-}
-
-/** Sidebar folder drag + POST /files/order (localStorage opt-in in production). */
-export function isFileListFolderDndDebugEnabled(): boolean {
-  if (isDevDebugChannelEnabled("file-list")) {
-    return true;
-  }
-  if (typeof window === "undefined") {
-    return false;
-  }
-  try {
-    return localStorage.getItem("excalidraw-filelist-folder-dnd-debug") === "1";
-  } catch {
-    return false;
-  }
 }
 
 /** @deprecated Use isDevDebugChannelEnabled("ai-config") */

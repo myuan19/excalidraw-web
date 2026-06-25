@@ -1,6 +1,6 @@
 /**
  * Local-first library mirror + debounced POST /api/library/sync.
- * JSON.stringify runs in requestIdleCallback (with timeout) before fetch.
+ * JSON.stringify runs in requestIdleCallback (with timeout) before sync.
  *
  * Large embedded binaries in library `elements` still travel in JSON; a future
  * improvement is blob upload via /api/files with refs only — see plan.
@@ -9,6 +9,8 @@
 import { set } from "idb-keyval";
 
 import { createLogger } from "../lib/logger";
+
+import { apiTransport } from "./apiTransport";
 
 const logLibrary = createLogger({ module: "library" });
 
@@ -38,21 +40,26 @@ async function postSyncJson(json: string): Promise<void> {
   logLibrary.debug("POST /api/library/sync sending", {
     bytes: json.length,
   });
-  logLibrary.debug("POST /api/library/sync sending", {
-    bytes: json.length,
-  });
-  const res = await fetch("/api/library/sync", {
+
+  const res = await apiTransport.request({
     method: "POST",
+    path: "/api/library/sync",
     headers: { "Content-Type": "application/json" },
     body: json,
   });
-  const ct = res.headers.get("content-type") || "";
-  if (!res.ok || !ct.includes("application/json")) {
-    const errText = await res.text().catch(() => "");
+
+  const ct = res.headers["content-type"] || res.headers["Content-Type"] || "";
+  if (res.status < 200 || res.status >= 300 || !ct.includes("application/json")) {
+    const errText = res.bodyText || "";
     console.error("[lib-sync] POST failed", res.status, errText);
     throw new Error(`Library sync ${res.status}`);
   }
-  const result = await res.json().catch(() => ({}));
+  let result: unknown = {};
+  try {
+    result = JSON.parse(res.bodyText);
+  } catch {
+    result = {};
+  }
   logLibrary.debug("POST success", { result });
 }
 
@@ -122,12 +129,14 @@ export function flushPendingLibrarySync(): void {
   }
   pendingSyncBody = null;
   try {
-    fetch("/api/library/sync", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: json,
-      keepalive: true,
-    }).catch(() => {});
+    void apiTransport
+      .request({
+        method: "POST",
+        path: "/api/library/sync",
+        headers: { "Content-Type": "application/json" },
+        body: json,
+      })
+      .catch(() => {});
   } catch {
     // ignore
   }

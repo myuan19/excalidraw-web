@@ -6,22 +6,28 @@ import type { MindMapSaveDocument } from "./mindMapDraftState";
 function normalizeMindMapSaveDocument(
   document: MindMapSaveDocument,
 ): MindMapSaveDocument {
-  return MindMapAdapter.toDocument(MindMapAdapter.migrate(document, 1));
+  return MindMapAdapter.toDocument(MindMapAdapter.parse(document));
 }
 
 export function toMindMapLocalCacheRecord(
   document: MindMapSaveDocument,
   serverContentSha256?: string,
+  serverVersion?: number | null,
 ) {
+  const meta =
+    serverContentSha256 || typeof serverVersion === "number"
+      ? {
+          ...(serverContentSha256 ? { serverContentSha256 } : {}),
+          ...(typeof serverVersion === "number" ? { serverVersion } : {}),
+        }
+      : undefined;
   return {
     document: normalizeMindMapSaveDocument(document),
     elements: undefined,
     appState: undefined,
     files: {},
     deltas: [],
-    ...(serverContentSha256
-      ? { meta: { serverContentSha256 } }
-      : {}),
+    ...(meta ? { meta } : {}),
   };
 }
 

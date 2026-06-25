@@ -76,6 +76,12 @@ if (!html.includes('src="dist/bridge/takeover-shell.js"')) {
   );
 }
 
+if (!/window\.externalPublicPath\s*=/.test(html)) {
+  fail(
+    "index.html must set window.externalPublicPath = './dist/' before vue bundles (webpack lazy chunks)",
+  );
+}
+
 if (!fs.existsSync(bridgeShellPath)) {
   fail(
     `missing ${path.relative(
@@ -86,22 +92,39 @@ if (!fs.existsSync(bridgeShellPath)) {
 }
 
 const bridgeShell = fs.readFileSync(bridgeShellPath, "utf8");
-const requiredMarkers = [
+const bridgeMarkers = [
   "simple-mind-map-native",
   "window.takeOverApp",
   "startTakeOverApp",
-  "postToHost('ready')",
-  "postToHost('appInited')",
-  "host_restore_preview_view",
-  "isRuntimeReady",
 ];
 
-for (const marker of requiredMarkers) {
+for (const marker of bridgeMarkers) {
   if (!bridgeShell.includes(marker)) {
     fail(
       `takeover-shell.js is not a bridge runtime (missing "${marker}"). Rebuild MindMap native/web and sync public/mind-map/.`,
     );
   }
+}
+
+const isVueHostBridge =
+  bridgeShell.includes("postBridgeReady") &&
+  bridgeShell.includes("isRuntimeReady");
+const isMinimalBridge = bridgeShell.includes("__editorhubMindMapBridge");
+
+if (!isVueHostBridge && !isMinimalBridge) {
+  fail(
+    "takeover-shell.js must be either Vue host bridge (postBridgeReady + isRuntimeReady) or minimal runtime bridge (__editorhubMindMapBridge).",
+  );
+}
+
+// 极简 runtime：ready 由 app chunk 发送；Vue 宿主桥：仅在 initApp 就绪后 postBridgeReady。
+if (
+  bridgeShell.includes("postToHost('ready')") &&
+  !isVueHostBridge
+) {
+  fail(
+    "takeover-shell.js must not post ready before app module registers message listeners (race with host postInit).",
+  );
 }
 
 const scriptSrcs = [
@@ -125,15 +148,39 @@ if (!fs.existsSync(distJsDir)) {
   fail("missing public/mind-map/dist/js/");
 }
 
-const appBundle = findMindMapAppBundle(distJsDir);
-if (!appBundle) {
+const appBundleFile = findMindMapAppBundle(distJsDir);
+if (!appBundleFile) {
   fail("missing public/mind-map/dist/js/app.[hash].js");
 }
+
+const appBundlePath = path.join(distJsDir, appBundleFile);
 
 const lazyChunks = listWebpackLazyChunks(distJsDir);
 if (lazyChunks.length === 0) {
   fail(
-    `cannot parse lazy chunk manifest from ${appBundle} — vue build output looks broken`,
+    `cannot parse lazy chunk manifest from ${appBundleFile} — vue build output looks broken`,
+  );
+}
+
+const appBundleSource = fs.readFileSync(appBundlePath, "utf8");
+const isMinimalRuntimeApp =
+  appBundleSource.includes('postToHost("ready"') &&
+  /chunk-editor/.test(appBundleSource);
+
+if (isMinimalRuntimeApp) {
+  const appMarkers = [
+    'postToHost("ready"',
+    "mindMapIframeError",
+    "startTakeOverApp",
+  ];
+  for (const marker of appMarkers) {
+    if (!appBundleSource.includes(marker)) {
+      fail(`app bundle missing "${marker}" — rebuild MindMap native/web`);
+    }
+  }
+} else if (!bridgeShell.includes("postToHost('appInited')")) {
+  fail(
+    "takeover-shell.js missing appInited handshake for Vue host bridge build.",
   );
 }
 
@@ -159,5 +206,5 @@ for (const chunk of lazyChunks) {
 
 const label = path.relative(root, mindMapDir) || mindMapDir;
 console.log(
-  `[verify-mind-map] ok — ${label}/index.html (${scriptSrcs.length} scripts, ${lazyChunks.length} lazy chunks via ${appBundle})`,
+  `[verify-mind-map] ok — ${label}/index.html (${scriptSrcs.length} scripts, ${lazyChunks.length} lazy chunks via ${appBundleFile})`,
 );

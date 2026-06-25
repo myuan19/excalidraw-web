@@ -10,20 +10,7 @@ export function resetMindmapLoadTimeline(reason = 'reset') {
 }
 
 function isMindmapLoadDebugEnabled() {
-  if (isMindmapDevDebugEnabled()) {
-    return true
-  }
-  if (typeof window === 'undefined') {
-    return false
-  }
-  try {
-    return (
-      window.__MINDMAP_LOAD_DEBUG__ === true ||
-      window.localStorage.getItem('mindmapLoadDebug') === '1'
-    )
-  } catch (error) {
-    return false
-  }
+  return isMindmapDevDebugEnabled()
 }
 
 export function mindmapLoadMark(label, data = {}) {

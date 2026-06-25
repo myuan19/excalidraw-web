@@ -6,7 +6,8 @@ import { ArrowRightIcon } from "../icons";
 import "./MermaidToExcalidraw.scss";
 import { t } from "../../i18n";
 import Trans from "../Trans";
-import type { MermaidToExcalidrawLibProps } from "./common";
+import { useUIAppState } from "../../context/ui-appState";
+import type { MermaidToExcalidrawLibProps } from "./types";
 import {
   convertMermaidToExcalidraw,
   insertToEditor,
@@ -28,8 +29,10 @@ const debouncedSaveMermaidDefinition = debounce(saveMermaidDataToStorage, 300);
 
 const MermaidToExcalidraw = ({
   mermaidToExcalidrawLib,
+  isActive = true,
 }: {
   mermaidToExcalidrawLib: MermaidToExcalidrawLibProps;
+  isActive?: boolean;
 }) => {
   const [text, setText] = useState(
     () =>
@@ -46,22 +49,27 @@ const MermaidToExcalidraw = ({
   }>({ elements: [], files: null });
 
   const app = useApp();
+  const { theme } = useUIAppState();
 
   useEffect(() => {
-    convertMermaidToExcalidraw({
+    if (!isActive) {
+      return;
+    }
+    void convertMermaidToExcalidraw({
       canvasRef,
       data,
       mermaidToExcalidrawLib,
       setError,
       mermaidDefinition: deferredText,
-    }).catch((err) => {
-      if (isDevEnv()) {
-        console.error("Failed to parse mermaid definition", err);
+      theme,
+    }).then((result) => {
+      if (!result.success && result.error && isDevEnv()) {
+        console.error("Failed to parse mermaid definition", result.error);
       }
     });
 
     debouncedSaveMermaidDefinition(deferredText);
-  }, [deferredText, mermaidToExcalidrawLib]);
+  }, [deferredText, isActive, mermaidToExcalidrawLib, theme]);
 
   useEffect(
     () => () => {
@@ -110,13 +118,16 @@ const MermaidToExcalidraw = ({
         </TTDDialogPanel>
         <TTDDialogPanel
           label={t("mermaid.preview")}
-          panelAction={{
-            action: () => {
-              onInsertToEditor();
+          panelActions={[
+            {
+              action: () => {
+                onInsertToEditor();
+              },
+              label: t("mermaid.button"),
+              icon: ArrowRightIcon,
+              variant: "button",
             },
-            label: t("mermaid.button"),
-            icon: ArrowRightIcon,
-          }}
+          ]}
           renderSubmitShortcut={() => <TTDDialogSubmitShortcut />}
         >
           <TTDDialogOutput

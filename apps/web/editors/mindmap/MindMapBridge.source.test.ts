@@ -17,7 +17,7 @@ describe("MindMap bridge source contract", () => {
     (relativePath) => {
       const source = readBridgeShell(relativePath);
       const dataChangeBlock = source.slice(
-        source.indexOf("const notifyDirty = () =>"),
+        source.indexOf("const notifyDirty = (opts = {}) =>"),
         source.indexOf("window.$bus.$on('view_data_change'"),
       );
       const viewChangeBlock = source.slice(
@@ -51,15 +51,20 @@ describe("MindMap bridge source contract", () => {
     );
 
     expect(source).toContain("syncPendingTextEditForSnapshot");
+    expect(source).toContain("collectMindMapDataForSnapshot");
+    expect(source).toContain("waitForPendingInsertEditForSnapshot");
+    expect(source).toContain("pendingInsertEditPromise");
     expect(saveRequestBlock).toContain(
-      "await syncPendingTextEditForSnapshot('request-save')",
+      "await collectMindMapDataForSnapshot('request-save')",
     );
     expect(
-      saveRequestBlock.indexOf("syncPendingTextEditForSnapshot"),
-    ).toBeLessThan(saveRequestBlock.indexOf("nativeMindMap.getData(true)"));
-    expect(saveRequestBlock.indexOf("nativeMindMap.getData(true)")).toBeLessThan(
+      saveRequestBlock.indexOf("collectMindMapDataForSnapshot"),
+    ).toBeLessThan(
       saveRequestBlock.indexOf("postMindMapDataToHost"),
     );
+    expect(saveRequestBlock).not.toContain("nativeMindMap.getData(true)");
+    expect(saveRequestBlock).toContain("requestMindMapSave.skipUnsettled");
+    expect(source).toContain("collectMindMapDataForSnapshot.syncTextEditFailed");
   });
 
   it("suppresses draft pushes to host while hydrate dirty notify is disabled", () => {
@@ -67,7 +72,7 @@ describe("MindMap bridge source contract", () => {
       "editors/mindmap/native/web/src/bridge/takeoverShell.js",
     );
     expect(source).toContain("postMindMapDataToHost draft push suppressed");
-    expect(source).toContain("if (!dirtyNotifyEnabled)");
+    expect(source).toContain("if (!dirtyNotifyEnabled && !draftUserEditMeta.userEdit)");
   });
 
   it("skips host data pushes whose content matches the canvas", () => {
@@ -75,11 +80,32 @@ describe("MindMap bridge source contract", () => {
       "editors/mindmap/native/web/src/bridge/takeoverShell.js",
     );
     expect(source).toContain("getMindMapFullDataFingerprint");
+    expect(source).toContain("collectMindMapTextRenderHealth");
+    expect(source).toContain("expectedRichTextNodes");
+    expect(source).toContain("collapsedForeignObjectCount");
+    expect(source).toContain("text render unhealthy after force render");
     expect(source).toContain("applyHostMindMapData('set-mind-map-data')");
     expect(source).toContain("applyHostMindMapData('init-mind-map-repeat')");
     // 推送应用收敛到单一入口，禁止绕过指纹比对直接 setFullData
     expect(source).not.toContain(
       "nativeMindMap.setFullData(bridgeState.mindMapData)",
+    );
+  });
+
+  it("requires expected rich-text nodes to have rendered foreignObjects", () => {
+    const source = readBridgeShell(
+      "editors/mindmap/native/web/src/bridge/takeoverShell.js",
+    );
+    const healthBlock = source.slice(
+      source.indexOf("const collectMindMapTextRenderHealth"),
+      source.indexOf("const ensureMindMapTextRendered"),
+    );
+
+    expect(healthBlock).toContain("hasAllExpectedRichText");
+    expect(healthBlock).toContain("textForeignObjects.length");
+    expect(healthBlock).toContain("expected.expectedRichTextNodes");
+    expect(healthBlock.indexOf("hasAllExpectedRichText")).toBeLessThan(
+      healthBlock.indexOf("health.healthy"),
     );
   });
 
@@ -90,6 +116,17 @@ describe("MindMap bridge source contract", () => {
     expect(source).toContain("message.type === 'mindMapHostDebug'");
     expect(source).toContain("debugMindMapHostForward");
     expect(source).toContain("summarizeMindMapPayloadRichText");
+  });
+
+  it("routes native iframe messages only to the owning MindMap shell", () => {
+    const source = readBridgeShell("editors/mindmap/MindMapEditorShell.tsx");
+
+    expect(source).toContain("isMessageFromCurrentIframe(event.source)");
+    expect(
+      source.indexOf("isMessageFromCurrentIframe(event.source)"),
+    ).toBeLessThan(
+      source.indexOf("isAllowedNativeMindMapMessageOrigin(event.origin"),
+    );
   });
 
   it("index.html loads external takeover bridge before vue bundles", () => {

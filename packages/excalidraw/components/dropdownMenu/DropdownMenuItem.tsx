@@ -9,8 +9,23 @@ import { useExcalidrawAppState } from "../App";
 import { THEME } from "../../constants";
 import type { ValueOf } from "../../utility-types";
 
+export type DropdownMenuItemProps = {
+  icon?: JSX.Element;
+  badge?: React.ReactNode;
+  value?: string | number | undefined;
+  order?: number;
+  onSelect?: (event: Event) => void;
+  children: React.ReactNode;
+  shortcut?: string;
+  hovered?: boolean;
+  selected?: boolean;
+  textStyle?: React.CSSProperties;
+  className?: string;
+} & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "onSelect">;
+
 const DropdownMenuItem = ({
   icon,
+  badge,
   value,
   order,
   children,
@@ -22,18 +37,7 @@ const DropdownMenuItem = ({
   onSelect,
   onClick,
   ...rest
-}: {
-  icon?: JSX.Element;
-  value?: string | number | undefined;
-  order?: number;
-  onSelect?: (event: Event) => void;
-  children: React.ReactNode;
-  shortcut?: string;
-  hovered?: boolean;
-  selected?: boolean;
-  textStyle?: React.CSSProperties;
-  className?: string;
-} & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "onSelect">) => {
+}: DropdownMenuItemProps) => {
   const handleClick = useHandleDropdownMenuItemClick(onClick, onSelect);
   const ref = useRef<HTMLButtonElement>(null);
 
@@ -57,7 +61,12 @@ const DropdownMenuItem = ({
       className={getDropdownMenuItemClassName(className, selected, hovered)}
       title={rest.title ?? rest["aria-label"]}
     >
-      <MenuItemContent textStyle={textStyle} icon={icon} shortcut={shortcut}>
+      <MenuItemContent
+        textStyle={textStyle}
+        icon={icon}
+        shortcut={shortcut}
+        badge={badge}
+      >
         {children}
       </MenuItemContent>
     </button>

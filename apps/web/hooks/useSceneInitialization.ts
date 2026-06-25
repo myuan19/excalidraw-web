@@ -1,18 +1,12 @@
 import { useCallback, useEffect, useRef } from "react";
-import {
-  EVENT,
-  resolvablePromise,
-} from "@excalidraw/common";
-import { getAppSettings } from "../data/appSettings";
+import { EVENT, resolvablePromise } from "@excalidraw/common";
 import {
   isAutoSaveEligibleForCurrentFile,
   registerAutoSaveTrigger,
 } from "../data/autoSaveSession";
 import { requestSave } from "../data/saveQueue";
 import { CaptureUpdateAction } from "@excalidraw/excalidraw";
-import {
-  parseLibraryTokensFromUrl,
-} from "@excalidraw/excalidraw/data/library";
+import { parseLibraryTokensFromUrl } from "@excalidraw/excalidraw/data/library";
 import { isInitializedImageElement } from "@excalidraw/element";
 import { type StoreDelta } from "@excalidraw/element";
 import { cleanAppStateForExport } from "@excalidraw/excalidraw/appState";
@@ -27,18 +21,17 @@ import type { ResolvablePromise } from "@excalidraw/common/utils";
 
 import { createLogger } from "../lib/logger";
 import { DeltaStorage } from "../data/DeltaStorage";
-import { FileEditDirty, VISIBILITY_BACKGROUND_SAVE_DELAY_MS } from "../data/fileEditDirty";
 import { FileSyncState } from "../data/FileSyncState";
 import { hashSceneSnapshot } from "../data/sceneHash";
 import { LocalData } from "../data/LocalData";
 import { updateStaleImageStatuses } from "../data/FileManager";
 import { persistDtoToStoreDelta } from "../data/storeDeltaPersist";
 import { revealForkCanvasAfterFit } from "../data/scrollEditorToFit";
-import { restoreSceneAppState, restoreSceneElements } from "../data/sceneRestore";
 import {
-  getFileIdFromHash,
-  getFileIdFromUrl,
-} from "../data/fileIdFromHash";
+  restoreSceneAppState,
+  restoreSceneElements,
+} from "../data/sceneRestore";
+import { getFileIdFromHash, getFileIdFromUrl } from "../data/fileIdFromHash";
 import {
   initializeExcalidrawScene,
   verifyExcalidrawRemoteAfterCachedOpen,
@@ -54,10 +47,13 @@ const logHook = createLogger({ module: "hook.sceneInit" });
 export function useSceneInitialization(opts: {
   excalidrawAPI: ExcalidrawImperativeAPI | null;
   onOpenPhase?: (phase: EditorOpenPhase) => void;
-  updateDraftHashDebouncedRef: React.MutableRefObject<{ flush: () => void; cancel: () => void } & ((...args: any[]) => void)>;
+  updateDraftHashDebouncedRef: React.MutableRefObject<
+    { flush: () => void; cancel: () => void } & ((...args: any[]) => void)
+  >;
   localPersistGenRef: React.MutableRefObject<number>;
-  saveToServerRef: React.MutableRefObject<(opts?: SaveToServerOptions) => Promise<boolean>>;
-  visibilitySaveInFlightRef: React.MutableRefObject<boolean>;
+  saveToServerRef: React.MutableRefObject<
+    (opts?: SaveToServerOptions) => Promise<boolean>
+  >;
 }) {
   const {
     excalidrawAPI,
@@ -65,7 +61,6 @@ export function useSceneInitialization(opts: {
     updateDraftHashDebouncedRef,
     localPersistGenRef,
     saveToServerRef,
-    visibilitySaveInFlightRef,
   } = opts;
 
   const initialStatePromiseRef = useRef<{
@@ -160,7 +155,7 @@ export function useSceneInitialization(opts: {
     const h = hashSceneSnapshot(scene);
     const b = FileSyncState.getBaselineHash(fid);
     const d = FileSyncState.getDraftHash(fid);
-    if (!b || (b === d)) {
+    if (!b || b === d) {
       FileSyncState.alignHashes(fid, h);
       const existing = FileSyncState.getLocalCache(fid);
       FileSyncState.setLocalCache(fid, {
@@ -177,7 +172,7 @@ export function useSceneInitialization(opts: {
     if (!excalidrawAPI) {
       return;
     }
-    logHook.info("mounted — registering hashchange / unload / visibility listeners");
+    logHook.info("mounted — registering hashchange / unload listeners");
 
     const finishOpen = async (data: ExcalidrawInitSceneResult) => {
       loadImages(data, true);
@@ -263,44 +258,14 @@ export function useSceneInitialization(opts: {
           }
         };
 
-        initializeExcalidrawScene({ onPhase: onOpenPhase }).then(finishHashOpen);
+        initializeExcalidrawScene({ onPhase: onOpenPhase }).then(
+          finishHashOpen,
+        );
       }
     };
 
     const onUnload = () => {
       LocalData.flushSave();
-    };
-
-    let visibilityFlushTimer: number | null = null;
-    const onVisibilityChange = () => {
-      if (visibilityFlushTimer != null) {
-        window.clearTimeout(visibilityFlushTimer);
-        visibilityFlushTimer = null;
-      }
-      if (!document.hidden) {
-        return;
-      }
-      if (!isAutoSaveEligibleForCurrentFile()) {
-        return;
-      }
-      if (!getAppSettings().autoSaveOnBlur) {
-        return;
-      }
-      visibilityFlushTimer = window.setTimeout(() => {
-        visibilityFlushTimer = null;
-        if (document.hidden) {
-          logHook.info("visibility hidden — running background save pipeline");
-          FileEditDirty.runVisibilityHiddenSavePipeline({
-            flushEmbeddedLocalFiles: () => LocalData.flushSave(),
-            draftFlusher: updateDraftHashDebouncedRef.current,
-            fileId: getFileIdFromHash(),
-            uploadInFlight: visibilitySaveInFlightRef.current,
-            onShouldUpload: () => {
-              requestSave({ source: "visibility" });
-            },
-          });
-        }
-      }, VISIBILITY_BACKGROUND_SAVE_DELAY_MS);
     };
 
     const unregisterAutoSave = registerAutoSaveTrigger(() => {
@@ -312,23 +277,10 @@ export function useSceneInitialization(opts: {
 
     window.addEventListener(EVENT.HASHCHANGE, onHashChange, false);
     window.addEventListener(EVENT.UNLOAD, onUnload, false);
-    document.addEventListener(
-      EVENT.VISIBILITY_CHANGE,
-      onVisibilityChange,
-      false,
-    );
     return () => {
-      if (visibilityFlushTimer != null) {
-        window.clearTimeout(visibilityFlushTimer);
-      }
       unregisterAutoSave();
       window.removeEventListener(EVENT.HASHCHANGE, onHashChange, false);
       window.removeEventListener(EVENT.UNLOAD, onUnload, false);
-      document.removeEventListener(
-        EVENT.VISIBILITY_CHANGE,
-        onVisibilityChange,
-        false,
-      );
     };
   }, [
     excalidrawAPI,
@@ -339,7 +291,6 @@ export function useSceneInitialization(opts: {
     onOpenPhase,
     updateDraftHashDebouncedRef,
     saveToServerRef,
-    visibilitySaveInFlightRef,
   ]);
 
   return {

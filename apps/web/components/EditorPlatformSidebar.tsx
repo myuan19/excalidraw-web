@@ -1,13 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type MutableRefObject,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import {
@@ -21,43 +12,64 @@ import {
   type FileCardThumbDisplay,
 } from "../data/fileCardThumbDisplay";
 import { resolveFileCardThumbnailSvg } from "../data/resolveFileCardThumbnail";
+import { buildThumbnailDraftSlot } from "../data/thumbnailLifecycle";
 import { shouldFetchServerThumbnail } from "../data/thumbnailServerFetchMiss";
-import { extractThumbBg } from "../data/thumbnailSvg";
-import { FileCardThumb } from "./FileCardThumb";
+
+import { resolveForegroundEditorFileId } from "../data/editorTabForeground";
 import { getFileIdFromHash } from "../data/fileIdFromHash";
 import { isLocalDraftFileId } from "../data/localDraftFileId";
-import {
-  LocalThumbnailCache,
-  LOCAL_THUMB_UPDATED_EVENT,
-} from "../data/localThumbnailCache";
+import { LOCAL_THUMB_UPDATED_EVENT } from "../data/localThumbnailCache";
 import {
   LocalDraftSessions,
   draftSessionToServerFile,
 } from "../data/localDraftSessions";
-import { readFileListTreeCache } from "../data/fileListSessionCache";
+import {
+  readFileListTreeCache,
+  writeFileListTreeCache,
+} from "../data/fileListSessionCache";
 import { RECENT_FILES_CHANGE_EVENT } from "../data/recentFiles";
 import {
   ServerSync,
   type ServerFile,
   type ServerFolder,
 } from "../data/ServerSync";
+import { requestActiveEditorSave } from "../data/activeEditorSaveBridge";
 import {
   useFileDraftStatus,
   type FileDraftStatus,
 } from "../hooks/useFileDraftStatus";
-import {
-  editorIconForKind,
-  getDocumentKindFromHash,
-} from "../lib/appBranding";
+import { useAppShellGoHomeListener } from "../hooks/useAppShellGoHomeListener";
+import { useDesktopWindowCloseGuard } from "../hooks/useDesktopWindowCloseGuard";
+import { editorIconForKind, getDocumentKindFromHash } from "../lib/appBranding";
+import { devDebug } from "../lib/devDebug";
+import { createLogger } from "../lib/logger";
+import { isDesktopEditorHub } from "../lib/runtimePlatform";
 import {
   APP_SHELL_PENDING_NAVIGATION_CHANGE,
   dispatchAppShellNavigate,
   type AppShellPendingNavigationChangeDetail,
 } from "../shell/appShellNavigate";
-import type { AppView } from "../shell/useAppView";
+import { dispatchEditorHostCommand } from "../shell/editorHostCommand";
+import { closeEditorTabWithSnapshot } from "../shell/editorTabNavigation";
+import { HOME_TAB_ID, readEditorTabsState } from "../shell/editorTabs";
+import {
+  subscribeEditorModalOverlayChange,
+  useEditorModalOverlayRegistration,
+} from "../shell/editorModalOverlay";
+import {
+  readShellTheme,
+  shellThemeClassName,
+  subscribeShellThemeChange,
+  type ShellTheme,
+} from "../hooks/useShellTheme";
 
+import { FileCardThumb } from "./FileCardThumb";
+
+import "./AppConfirmDialog.scss";
 import "./EditorPlatformSidebar.scss";
 import "./FileList.scss";
+
+import type { AppView } from "../shell/useAppView";
 
 /** 预览浮层：固定全屏、不参与文档流，避免缩略图引发布局/滚动条抖动 */
 const BRIDGE_PREVIEW_LAYER_ID = "editor-hub-bridge-preview-layer";
@@ -84,20 +96,42 @@ const PANEL_GAP = 6;
 const BALL_PANEL_SEPARATION = 4;
 /** 竖向分组：保存/嵌入/历史 | 最近/文件 | 导入/导出 | 信息 */
 const PANEL_BASE_HEIGHT = 390;
+/**
+ * 桌面版隐藏「嵌入」「历史」「导出」三行，但额外多出「关闭当前页」一行，
+ * 相对 Web 面板净少一行（用于飞出栏定位的高度估算）。
+ */
+const DESKTOP_HIDDEN_PANEL_ACTION_ROWS = 1;
 /** 最近飞出栏最多展示条数；不足时不补足空位 */
 const RECENT_PANEL_MAX = 6;
 const PANEL_WIDTH = 72;
 /** 主面板内「最近」按钮距顶部的估算偏移，用于对齐飞出侧栏 */
 const ACTION_ROW_HEIGHT = 48;
 const PANEL_DIVIDER_BLOCK = 11;
-const ACTIONS_BEFORE_RECENT = 3;
+const WEB_ACTIONS_BEFORE_RECENT = 3;
+const DESKTOP_ACTIONS_BEFORE_RECENT = 1;
 const DIVIDERS_BEFORE_RECENT = 1;
 /** 与 .editor-bridge__recent-preview-portal 的 width + gap 一致（px，16px 根字号） */
 const RECENT_PREVIEW_WIDTH_PX = 168;
 const RECENT_PREVIEW_GAP_PX = 6;
-const RECENT_FLYOUT_ROW_OFFSET =
-  ACTIONS_BEFORE_RECENT * ACTION_ROW_HEIGHT +
-  DIVIDERS_BEFORE_RECENT * PANEL_DIVIDER_BLOCK;
+
+function sidebarPanelMetrics(showWebOnlySidebarActions: boolean): {
+  panelBaseHeight: number;
+  recentFlyoutRowOffset: number;
+} {
+  const actionsBeforeRecent = showWebOnlySidebarActions
+    ? WEB_ACTIONS_BEFORE_RECENT
+    : DESKTOP_ACTIONS_BEFORE_RECENT;
+  const panelBaseHeight = showWebOnlySidebarActions
+    ? PANEL_BASE_HEIGHT
+    : PANEL_BASE_HEIGHT -
+      DESKTOP_HIDDEN_PANEL_ACTION_ROWS * ACTION_ROW_HEIGHT;
+  return {
+    panelBaseHeight,
+    recentFlyoutRowOffset:
+      actionsBeforeRecent * ACTION_ROW_HEIGHT +
+      DIVIDERS_BEFORE_RECENT * PANEL_DIVIDER_BLOCK,
+  };
+}
 const ANCHOR_STORAGE_KEY = "excalidraw-editor-bridge-anchor-v2";
 
 /** 沿边缘可移动区域：十等分，顶 1 + 中 6（拖拽）+ 底 1 */
@@ -116,7 +150,8 @@ type ActionIcon =
   | "embed"
   | "history"
   | "files"
-  | "recent";
+  | "recent"
+  | "close";
 
 type AnchorPosition = {
   edge: SnapEdge;
@@ -127,8 +162,7 @@ type AnchorPosition = {
 const DEFAULT_ANCHOR: AnchorPosition = { edge: "left", ratio: 0.38 };
 
 const ACTION_ICONS: Record<ActionIcon, string> = {
-  save:
-    "M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z",
+  save: "M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z",
   embed:
     "M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0L19.2 12l-4.6-4.6L16 6l6 6-6 6-1.4-1.4z",
   history:
@@ -137,12 +171,11 @@ const ACTION_ICONS: Record<ActionIcon, string> = {
     "M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z",
   recent:
     "M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z",
-  import:
-    "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z",
-  export:
-    "M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z",
-  info:
-    "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z",
+  import: "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z",
+  export: "M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z",
+  info: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z",
+  close:
+    "M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z",
 };
 
 function clampRatio(ratio: number): number {
@@ -246,13 +279,22 @@ function snapToEdge(
   const ballX = centerX - BALL_SIZE / 2;
 
   if (min === distLeft) {
-    return { edge: "left", ratio: ballCoordToTravelRatio(ballY, "left", viewport) };
+    return {
+      edge: "left",
+      ratio: ballCoordToTravelRatio(ballY, "left", viewport),
+    };
   }
   if (min === distRight) {
-    return { edge: "right", ratio: ballCoordToTravelRatio(ballY, "right", viewport) };
+    return {
+      edge: "right",
+      ratio: ballCoordToTravelRatio(ballY, "right", viewport),
+    };
   }
   if (min === distTop) {
-    return { edge: "top", ratio: ballCoordToTravelRatio(ballX, "top", viewport) };
+    return {
+      edge: "top",
+      ratio: ballCoordToTravelRatio(ballX, "top", viewport),
+    };
   }
   return {
     edge: "bottom",
@@ -295,8 +337,14 @@ function clampDragPoint(
   viewport: { width: number; height: number },
 ): { x: number; y: number } {
   return {
-    x: Math.max(EDGE_INSET, Math.min(viewport.width - BALL_SIZE - EDGE_INSET, x)),
-    y: Math.max(EDGE_INSET, Math.min(viewport.height - BALL_SIZE - EDGE_INSET, y)),
+    x: Math.max(
+      EDGE_INSET,
+      Math.min(viewport.width - BALL_SIZE - EDGE_INSET, x),
+    ),
+    y: Math.max(
+      EDGE_INSET,
+      Math.min(viewport.height - BALL_SIZE - EDGE_INSET, y),
+    ),
   };
 }
 
@@ -342,18 +390,19 @@ function computeMenuStyle(
   anchor: AnchorPosition,
   displayPoint: { x: number; y: number },
   viewport: { width: number; height: number },
+  panelBaseHeight: number,
 ): CSSProperties {
   if (anchor.edge === "left" || anchor.edge === "right") {
     const travelRatio = edgeTravelRatio(anchor, displayPoint, viewport);
     const rawTop = panelOffsetAlongBall(
       travelRatio,
       BALL_SIZE,
-      PANEL_BASE_HEIGHT,
+      panelBaseHeight,
     );
     const top = Math.round(
       clampPanelOffset(
         rawTop,
-        PANEL_BASE_HEIGHT,
+        panelBaseHeight,
         displayPoint.y,
         viewport.height,
       ),
@@ -405,46 +454,81 @@ function SidebarGlyph({ type }: { type: ActionIcon }) {
 }
 
 function dispatchHostSave() {
-  window.dispatchEvent(new Event("excalidraw-host-request-save"));
-  window.dispatchEvent(new Event("mindmap-host-request-save"));
+  void requestActiveEditorSave("manual").then((handled) => {
+    if (!handled) {
+      dispatchEditorHostCommand("save");
+    }
+  });
 }
 
 function dispatchHostExport() {
-  window.dispatchEvent(new Event("excalidraw-host-open-export"));
-  window.dispatchEvent(new Event("mindmap-host-open-export"));
+  dispatchEditorHostCommand("export");
 }
 
 function dispatchHostImport() {
-  window.dispatchEvent(new Event("excalidraw-host-open-import"));
-  window.dispatchEvent(new Event("mindmap-host-open-import"));
+  dispatchEditorHostCommand("import");
+}
+
+/** 关闭悬浮球对应的当前标签页：与顶部 tab 的「×」一致（先快照保存再关闭）。 */
+function dispatchCloseCurrentTab() {
+  const { activeTabId } = readEditorTabsState();
+  if (activeTabId === HOME_TAB_ID) {
+    return;
+  }
+  void closeEditorTabWithSnapshot(activeTabId);
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
   const tag = el?.tagName;
   return (
-    tag === "INPUT" ||
-    tag === "TEXTAREA" ||
-    el?.isContentEditable === true
+    tag === "INPUT" || tag === "TEXTAREA" || el?.isContentEditable === true
   );
 }
 
 function dispatchHostHistory() {
-  window.dispatchEvent(new Event("excalidraw-host-open-history"));
-  window.dispatchEvent(new Event("mindmap-host-open-history"));
+  dispatchEditorHostCommand("history");
 }
 
 function dispatchHostEmbed() {
-  window.dispatchEvent(new Event("excalidraw-host-open-embed"));
-  window.dispatchEvent(new Event("mindmap-host-open-embed"));
+  dispatchEditorHostCommand("embed");
 }
 
 function dispatchShellNavigate(target: Exclude<AppView, "editor">) {
+  devDebug("shell-nav", "dispatchShellNavigate", {
+    target,
+    hash: window.location.hash,
+  });
   dispatchAppShellNavigate({ target });
 }
 
 function SidebarDivider() {
   return <div className="editor-bridge__divider" role="separator" />;
+}
+
+const logRecent = createLogger({ module: "recentFlyout" });
+
+function getRecentThumbCacheKey(file: ServerFile): string {
+  const draftSlot = buildThumbnailDraftSlot(file);
+  const hash = draftSlot.preferLocalThumb
+    ? draftSlot.draftHash
+    : file.content_sha256;
+  return `${file.id}:${draftSlot.preferLocalThumb ? "draft" : "synced"}:${
+    hash ?? "none"
+  }`;
+}
+
+function recentFileId8(fileId: string | null | undefined): string | null {
+  return fileId ? fileId.slice(0, 8) : null;
+}
+
+function logRecentFlyout(
+  level: "debug" | "info" | "warn",
+  event: string,
+  message: string,
+  fields?: Record<string, unknown>,
+): void {
+  logRecent.event(level, `recent.flyout.${event}`, message, { fields });
 }
 
 type RecentRowHover = {
@@ -522,27 +606,78 @@ function SidebarRecentList({
     useState<FileCardThumbDisplay | null>(null);
 
   useEffect(() => {
-    const refresh = () => {
+    let cancelled = false;
+    const refresh = (reason: string) => {
       thumbSvgCacheRef.current = {};
-      setItems(
-        resolveRecentFlyoutItems({
-          limit: RECENT_PANEL_MAX,
-          excludeFileId,
-        }),
-      );
+      const nextItems = resolveRecentFlyoutItems({
+        limit: RECENT_PANEL_MAX,
+        excludeFileId,
+      });
+      logRecentFlyout("debug", "items.resolved", "recent flyout items resolved", {
+        reason,
+        fileId8: recentFileId8(excludeFileId),
+        excludeFileId8: recentFileId8(excludeFileId),
+        itemCount: nextItems.length,
+        itemIds8: nextItems.map((item) => recentFileId8(item.id)),
+      });
+      setItems(nextItems);
+      return nextItems;
     };
-    refresh();
-    window.addEventListener("hashchange", refresh);
-    window.addEventListener(RECENT_FILES_CHANGE_EVENT, refresh);
-    window.addEventListener("excalidraw-file-list-refresh", refresh);
-    window.addEventListener(LOCAL_THUMB_UPDATED_EVENT, refresh);
-    window.addEventListener("excalidraw-file-sync-state", refresh);
+    const refreshFromEvent = () => {
+      refresh("event");
+    };
+    const cachedTree = readFileListTreeCache();
+    logRecentFlyout("info", "open", "recent flyout opened", {
+      fileId8: recentFileId8(excludeFileId),
+      excludeFileId8: recentFileId8(excludeFileId),
+      cachedFileCount: cachedTree?.files.length ?? 0,
+      cachedFolderCount: cachedTree?.folders.length ?? 0,
+    });
+    refresh("open-cache");
+    logRecentFlyout("info", "live_refresh.start", "recent flyout live refresh start", {
+      fileId8: recentFileId8(excludeFileId),
+      excludeFileId8: recentFileId8(excludeFileId),
+    });
+    void ServerSync.listFileTree()
+      .then((tree) => {
+        if (cancelled) {
+          return;
+        }
+        writeFileListTreeCache(tree);
+        const nextItems = refresh("live-refresh-done");
+        logRecentFlyout("info", "live_refresh.done", "recent flyout live refresh done", {
+          fileId8: recentFileId8(excludeFileId),
+          excludeFileId8: recentFileId8(excludeFileId),
+          serverFileCount: tree.files.length,
+          serverFolderCount: tree.folders.length,
+          itemCount: nextItems.length,
+          itemIds8: nextItems.map((item) => recentFileId8(item.id)),
+        });
+      })
+      .catch((error) => {
+        logRecentFlyout(
+          "warn",
+          "live_refresh.failed",
+          "recent flyout live refresh failed",
+          {
+            fileId8: recentFileId8(excludeFileId),
+            excludeFileId8: recentFileId8(excludeFileId),
+            message: error instanceof Error ? error.message : String(error),
+          },
+        );
+      });
+    window.addEventListener("hashchange", refreshFromEvent);
+    window.addEventListener(RECENT_FILES_CHANGE_EVENT, refreshFromEvent);
+    window.addEventListener("excalidraw-file-list-refresh", refreshFromEvent);
+    window.addEventListener(LOCAL_THUMB_UPDATED_EVENT, refreshFromEvent);
+    window.addEventListener("excalidraw-file-sync-state", refreshFromEvent);
     return () => {
-      window.removeEventListener("hashchange", refresh);
-      window.removeEventListener(RECENT_FILES_CHANGE_EVENT, refresh);
-      window.removeEventListener("excalidraw-file-list-refresh", refresh);
-      window.removeEventListener(LOCAL_THUMB_UPDATED_EVENT, refresh);
-      window.removeEventListener("excalidraw-file-sync-state", refresh);
+      cancelled = true;
+      window.removeEventListener("hashchange", refreshFromEvent);
+      window.removeEventListener(RECENT_FILES_CHANGE_EVENT, refreshFromEvent);
+      window.removeEventListener("excalidraw-file-list-refresh", refreshFromEvent);
+      window.removeEventListener(LOCAL_THUMB_UPDATED_EVENT, refreshFromEvent);
+      window.removeEventListener("excalidraw-file-sync-state", refreshFromEvent);
     };
   }, [excludeFileId]);
 
@@ -570,7 +705,8 @@ function SidebarRecentList({
         return;
       }
 
-      const cachedSvg = thumbSvgCacheRef.current[item.id];
+      const thumbCacheKey = getRecentThumbCacheKey(file);
+      const cachedSvg = thumbSvgCacheRef.current[thumbCacheKey];
       const display = mergeFileCardThumbDisplay(item.id, file, cachedSvg);
       setPreviewDisplay(display);
 
@@ -584,11 +720,19 @@ function SidebarRecentList({
         if (hoverFileIdRef.current !== item.id) {
           return;
         }
+        const latestFile = resolveRecentFlyoutFileRecord(item.id);
+        if (!latestFile || getRecentThumbCacheKey(latestFile) !== thumbCacheKey) {
+          return;
+        }
         if (cardThumbSvg) {
-          thumbSvgCacheRef.current[item.id] = cardThumbSvg;
+          thumbSvgCacheRef.current[thumbCacheKey] = cardThumbSvg;
         }
         setPreviewDisplay(
-          mergeFileCardThumbDisplay(item.id, file, cardThumbSvg ?? undefined),
+          mergeFileCardThumbDisplay(
+            item.id,
+            latestFile,
+            cardThumbSvg ?? undefined,
+          ),
         );
       });
     },
@@ -772,7 +916,7 @@ async function loadFileInfo(fileId: string): Promise<FileInfo> {
 
   if (!file) {
     if (isLocalDraftFileId(fileId)) {
-      throw new Error("临时文件信息不存在，可能已被放弃或清理");
+      throw new Error("草稿信息不存在，可能已被放弃或清理");
     }
     file = await ServerSync.getFile(fileId);
   }
@@ -889,11 +1033,22 @@ export function EditorPlatformSidebar() {
   const [open, setOpen] = useState(false);
   const [recentOpen, setRecentOpen] = useState(false);
   const [showFileInfo, setShowFileInfo] = useState(false);
-  const [fileId, setFileId] = useState<string | null>(() => getFileIdFromHash());
+  const [modalOverlayOpen, setModalOverlayOpen] = useState(false);
+
+  useEditorModalOverlayRegistration(showFileInfo);
+
+  useEffect(() => {
+    return subscribeEditorModalOverlayChange(setModalOverlayOpen);
+  }, []);
+  const [fileId, setFileId] = useState<string | null>(() =>
+    getFileIdFromHash(),
+  );
   const [documentKind, setDocumentKind] = useState(() =>
     getDocumentKindFromHash(),
   );
-  const [anchor, setAnchor] = useState<AnchorPosition>(() => readStoredAnchor());
+  const [anchor, setAnchor] = useState<AnchorPosition>(() =>
+    readStoredAnchor(),
+  );
   const [viewport, setViewport] = useState(getViewportSize);
   const [dragPoint, setDragPoint] = useState<{ x: number; y: number } | null>(
     null,
@@ -905,8 +1060,9 @@ export function EditorPlatformSidebar() {
     useState<PendingOpenFileNavigation | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
-  const pendingOpenFileNavigationRef =
-    useRef<PendingOpenFileNavigation | null>(null);
+  const pendingOpenFileNavigationRef = useRef<PendingOpenFileNavigation | null>(
+    null,
+  );
   const dragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -926,18 +1082,29 @@ export function EditorPlatformSidebar() {
     () => ({ x: displayX, y: displayY }),
     [displayX, displayY],
   );
+  const showWebOnlySidebarActions = !isDesktopEditorHub();
+  const sidebarPanelLayout = useMemo(
+    () => sidebarPanelMetrics(showWebOnlySidebarActions),
+    [showWebOnlySidebarActions],
+  );
   const docked = !dragging && !open;
   const menuStyle = useMemo(
-    () => computeMenuStyle(anchor, displayPoint, viewport),
-    [anchor, displayPoint, viewport],
+    () =>
+      computeMenuStyle(
+        anchor,
+        displayPoint,
+        viewport,
+        sidebarPanelLayout.panelBaseHeight,
+      ),
+    [anchor, displayPoint, sidebarPanelLayout.panelBaseHeight, viewport],
   );
 
   const menuShellStyle = useMemo((): CSSProperties => {
     return {
       ...menuStyle,
-      ["--ep-recent-flyout-offset" as string]: `${RECENT_FLYOUT_ROW_OFFSET}px`,
+      ["--ep-recent-flyout-offset" as string]: `${sidebarPanelLayout.recentFlyoutRowOffset}px`,
     };
-  }, [menuStyle]);
+  }, [menuStyle, sidebarPanelLayout.recentFlyoutRowOffset]);
 
   useEffect(() => {
     pendingOpenFileNavigationRef.current = pendingOpenFileNavigation;
@@ -950,8 +1117,9 @@ export function EditorPlatformSidebar() {
   useEffect(() => {
     const syncFromHash = () => {
       const nextFileId = getFileIdFromHash();
+      const nextKind = getDocumentKindFromHash();
       setFileId(nextFileId);
-      setDocumentKind(getDocumentKindFromHash());
+      setDocumentKind(nextKind);
       if (
         nextFileId &&
         pendingOpenFileNavigationRef.current?.targetId === nextFileId
@@ -1011,7 +1179,8 @@ export function EditorPlatformSidebar() {
       if (isEditableTarget(event.target) || event.isComposing) {
         return;
       }
-      if (!fileId) {
+      const targetFileId = resolveForegroundEditorFileId();
+      if (!targetFileId) {
         return;
       }
       event.preventDefault();
@@ -1032,6 +1201,12 @@ export function EditorPlatformSidebar() {
     setOpen(false);
     setRecentOpen(false);
   }, []);
+
+  useEffect(() => {
+    if (modalOverlayOpen && open) {
+      closeSidebarPanel();
+    }
+  }, [closeSidebarPanel, modalOverlayOpen, open]);
 
   useEffect(() => {
     if (!open) {
@@ -1070,10 +1245,13 @@ export function EditorPlatformSidebar() {
     };
   }, [closeSidebarPanel, open]);
 
-  const closeAndRun = useCallback((action: () => void) => {
-    closeSidebarPanel();
-    action();
-  }, [closeSidebarPanel]);
+  const closeAndRun = useCallback(
+    (action: () => void) => {
+      closeSidebarPanel();
+      action();
+    },
+    [closeSidebarPanel],
+  );
 
   const openRecentFile = useCallback(
     (item: RecentFlyoutItem) => {
@@ -1162,7 +1340,9 @@ export function EditorPlatformSidebar() {
     }
   };
 
-  const onBallPointerCancel = (event: React.PointerEvent<HTMLButtonElement>) => {
+  const onBallPointerCancel = (
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) {
       return;
@@ -1184,8 +1364,7 @@ export function EditorPlatformSidebar() {
   };
 
   const fileActionsEnabled = !!fileId;
-  const serverFileActionsEnabled =
-    !!fileId && !isLocalDraftFileId(fileId);
+  const serverFileActionsEnabled = !!fileId && !isLocalDraftFileId(fileId);
   const pendingOpenFileToDifferentDocument =
     !!pendingOpenFileNavigation &&
     !!fileId &&
@@ -1215,6 +1394,7 @@ export function EditorPlatformSidebar() {
         open ? "editor-bridge--open" : "",
         dragging ? "editor-bridge--dragging" : "",
         docked ? "editor-bridge--docked" : "",
+        modalOverlayOpen ? "editor-bridge--modal-hidden" : "",
         visibleDraftStatus === "draft" ? "editor-bridge--unsaved" : "",
         visibleDraftStatus === "synced" ? "editor-bridge--saved" : "",
       ]
@@ -1256,7 +1436,11 @@ export function EditorPlatformSidebar() {
           }}
         >
           <nav className="editor-bridge__panel" aria-label="文档操作">
-            <div className="editor-bridge__group" role="group" aria-label="保存与版本">
+            <div
+              className="editor-bridge__group"
+              role="group"
+              aria-label="保存与版本"
+            >
               <SidebarActionButton
                 label="保存"
                 icon="save"
@@ -1264,33 +1448,39 @@ export function EditorPlatformSidebar() {
                 title={fileActionsEnabled ? "保存" : "打开文档后可保存"}
                 onClick={() => closeAndRun(dispatchHostSave)}
               />
-              <SidebarActionButton
-                label="嵌入"
-                icon="embed"
-                disabled={!serverFileActionsEnabled}
-                title={
-                  serverFileActionsEnabled
-                    ? "嵌入"
-                    : fileActionsEnabled
-                      ? "保存到服务器后可嵌入"
-                      : "打开文档后可嵌入"
-                }
-                onClick={() => closeAndRun(dispatchHostEmbed)}
-              />
-              <SidebarActionButton
-                label="历史"
-                icon="history"
-                disabled={!fileActionsEnabled}
-                title={
-                  fileActionsEnabled
-                    ? "历史版本"
-                    : "打开文档后可查看历史"
-                }
-                onClick={() => closeAndRun(dispatchHostHistory)}
-              />
+              {showWebOnlySidebarActions ? (
+                <>
+                  <SidebarActionButton
+                    label="嵌入"
+                    icon="embed"
+                    disabled={!serverFileActionsEnabled}
+                    title={
+                      serverFileActionsEnabled
+                        ? "嵌入"
+                        : fileActionsEnabled
+                        ? "保存到服务器后可嵌入"
+                        : "打开文档后可嵌入"
+                    }
+                    onClick={() => closeAndRun(dispatchHostEmbed)}
+                  />
+                  <SidebarActionButton
+                    label="历史"
+                    icon="history"
+                    disabled={!fileActionsEnabled}
+                    title={
+                      fileActionsEnabled ? "历史版本" : "打开文档后可查看历史"
+                    }
+                    onClick={() => closeAndRun(dispatchHostHistory)}
+                  />
+                </>
+              ) : null}
             </div>
             <SidebarDivider />
-            <div className="editor-bridge__group" role="group" aria-label="文件与最近">
+            <div
+              className="editor-bridge__group"
+              role="group"
+              aria-label="文件与最近"
+            >
               <button
                 type="button"
                 className={[
@@ -1320,9 +1510,26 @@ export function EditorPlatformSidebar() {
                 title="返回文件列表"
                 onClick={() => closeAndRun(() => dispatchShellNavigate("home"))}
               />
+              {showWebOnlySidebarActions ? null : (
+                <SidebarActionButton
+                  label="关闭"
+                  icon="close"
+                  disabled={!fileActionsEnabled}
+                  title={
+                    fileActionsEnabled
+                      ? "关闭当前标签页"
+                      : "打开文档后可关闭标签页"
+                  }
+                  onClick={() => closeAndRun(dispatchCloseCurrentTab)}
+                />
+              )}
             </div>
             <SidebarDivider />
-            <div className="editor-bridge__group" role="group" aria-label="导入与导出">
+            <div
+              className="editor-bridge__group"
+              role="group"
+              aria-label={showWebOnlySidebarActions ? "导入与导出" : "导入"}
+            >
               <SidebarActionButton
                 label="导入"
                 icon="import"
@@ -1330,16 +1537,22 @@ export function EditorPlatformSidebar() {
                 title={fileActionsEnabled ? "导入" : "打开文档后可导入"}
                 onClick={() => closeAndRun(dispatchHostImport)}
               />
-              <SidebarActionButton
-                label="导出"
-                icon="export"
-                disabled={!fileActionsEnabled}
-                title={fileActionsEnabled ? "导出" : "打开文档后可导出"}
-                onClick={() => closeAndRun(dispatchHostExport)}
-              />
+              {showWebOnlySidebarActions ? (
+                <SidebarActionButton
+                  label="导出"
+                  icon="export"
+                  disabled={!fileActionsEnabled}
+                  title={fileActionsEnabled ? "导出" : "打开文档后可导出"}
+                  onClick={() => closeAndRun(dispatchHostExport)}
+                />
+              ) : null}
             </div>
             <SidebarDivider />
-            <div className="editor-bridge__group" role="group" aria-label="文档信息">
+            <div
+              className="editor-bridge__group"
+              role="group"
+              aria-label="文档信息"
+            >
               <SidebarActionButton
                 label="信息"
                 icon="info"
@@ -1376,8 +1589,8 @@ export function EditorPlatformSidebar() {
             open
               ? "关闭操作面板"
               : visibleDraftStatusLabel
-                ? `打开操作面板（${visibleDraftStatusLabel}，可拖拽）`
-                : "打开操作面板（可拖拽）"
+              ? `打开操作面板（${visibleDraftStatusLabel}，可拖拽）`
+              : "打开操作面板（可拖拽）"
           }
           aria-expanded={open}
           title={
@@ -1392,7 +1605,13 @@ export function EditorPlatformSidebar() {
         >
           <span className="editor-bridge__ball-viewport" aria-hidden="true">
             <span className="editor-bridge__ball-icon-ring" aria-hidden="true">
-              <img src={ballIconSrc} alt="" width={28} height={28} draggable={false} />
+              <img
+                src={ballIconSrc}
+                alt=""
+                width={28}
+                height={28}
+                draggable={false}
+              />
             </span>
           </span>
         </button>
@@ -1414,8 +1633,18 @@ export function EditorPlatformSidebar() {
 }
 
 export function EditorPlatformShell({ children }: { children: ReactNode }) {
+  useAppShellGoHomeListener();
+  useDesktopWindowCloseGuard();
+  const [shellTheme, setShellTheme] = useState<ShellTheme>(readShellTheme);
+
+  useEffect(() => {
+    return subscribeShellThemeChange(setShellTheme);
+  }, []);
+
   return (
-    <div className="editor-platform-shell">
+    <div
+      className={`editor-platform-shell ${shellThemeClassName(shellTheme)}`}
+    >
       <EditorPlatformSidebar />
       <div className="editor-platform-shell__content">{children}</div>
     </div>

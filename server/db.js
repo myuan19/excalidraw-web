@@ -118,6 +118,12 @@ try {
 }
 
 try {
+  db.exec(`ALTER TABLE files ADD COLUMN version INTEGER NOT NULL DEFAULT 0`);
+} catch {
+  // column exists
+}
+
+try {
   db.exec(`ALTER TABLE files ADD COLUMN kind TEXT NOT NULL DEFAULT 'excalidraw'`);
 } catch {
   // column exists

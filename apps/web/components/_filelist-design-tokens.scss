@@ -1,4 +1,6 @@
 /* L3 别名层：--fl-* 须在 .filelist（或 .filelist-dialog-host）上定义，以便继承 L2 主题 token。 */
+@import "../styles/shell/shellChrome.scss";
+
 @mixin filelist-design-tokens {
   --fl-bg: var(--nb-page-bg);
   --fl-panel: var(--nb-filelist-panel-glass);
@@ -27,10 +29,26 @@
   --fl-shell-focus-border: var(--nb-shell-focus-border, var(--nb-border-input));
   --fl-shell-focus-ring: var(--nb-shell-focus-ring, var(--nb-primary-soft));
   --fl-shell-accent: var(--nb-shell-accent-color, var(--nb-primary));
+  --fl-input-border: var(--fl-border);
+  --fl-input-bg: var(--fl-surface-high);
+  --fl-input-focus-border: var(--nb-primary-focus);
+  --fl-input-focus-ring: var(--nb-shadow-focus-primary);
+  --fl-input-focus-bg: var(--nb-page-bg);
+  --fl-topbar-control-h: var(--nb-space-16);
+  --fl-topbar-pad-y: var(--nb-space-5);
+  --fl-topbar-view-mode-slot-w: var(--nb-shell-toolbar-view-mode-slot-w);
+  --fl-topbar-h: calc(
+    var(--fl-topbar-control-h) + var(--fl-topbar-pad-y) * 2 +
+      var(--nb-border-width)
+  );
   /* 须在 .filelist 上定义，避免 :root 预计算渐变导致暗色侧栏仍为亮色 */
   --fl-sidebar-gradient: linear-gradient(
     180deg,
     var(--nb-surface-sidebar-top) 0%,
     var(--nb-surface-sidebar-bottom) 100%
   );
+}
+
+@mixin filelist-topbar-chip {
+  @include shell-chrome-control;
 }

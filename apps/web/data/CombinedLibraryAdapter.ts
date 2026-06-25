@@ -1,16 +1,9 @@
 /**
- * Combined library persistence adapter that merges three sources:
- * 1. Personal (server /api/library/personal) — private items
- * 2. Public (server /api/library) — globally shared items
- * 3. Canvas (server /api/library/files/:fileId) — items scoped to current drawing
+ * Combined library persistence adapter:
+ * - Global (server /api/library/global) — merged personal + public
+ * - Canvas (server /api/library/files/:fileId) — per-file items
  *
- * On load: fetches all three in parallel and merges into one list.
- * On save: Excalidraw core calls `save()` → {@link queueLibrarySync} → POST `/api/library/sync`
- * (debounced ~400ms) with personal / public / canvas payloads + group metadata — **持久化到后端**。
- *
- * Canvas `fileId`：`load()` 优先读当前 `location.hash`（`#file=`），避免首次打开时 `_currentFileId` 尚未写入而漏拉画布素材。
- *
- * Published-library groups + fold state: SQLite `library_groups` only (see /api/library/groups).
+ * Save still maps published → public scope and unpublished → personal scope in SQLite.
  */
 import { get } from "idb-keyval";
 
@@ -28,44 +21,61 @@ import {
   getLibraryCollapsedMap,
   hydrateLibraryGroupsFromServer,
 } from "../components/LibraryGroupEnhancer";
+import { apiTransport } from "./apiTransport";
 import { LIBRARY_IDB_KEY, queueLibrarySync } from "./librarySyncQueue";
 
 const logLibrary = createLogger({ module: "library" });
 
-function url(path: string): string {
-  return `/api${path}`;
-}
-
-/** 与 app `getFileIdFromHash` 一致，避免 useEffect 设置 fileId 晚于首次 library load */
-function fileIdFromLocationHash(): string | null {
-  if (typeof window === "undefined") {
-    return null;
+function apiPath(path: string): string {
+  const trimmed = path.trim();
+  if (trimmed.startsWith("/api/")) {
+    return trimmed;
   }
-  const m = window.location.hash.match(/^#file=(.+)$/);
-  return m ? m[1] : null;
+  return `/api${trimmed.startsWith("/") ? trimmed : `/${trimmed}`}`;
 }
 
 async function apiJson<T = unknown>(
   path: string,
   opts: RequestInit = {},
 ): Promise<T> {
-  const res = await fetch(url(path), {
-    headers: { "Content-Type": "application/json", ...opts.headers },
-    ...opts,
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(opts.headers as Record<string, string> | undefined),
+  };
+  const body =
+    opts.body == null
+      ? null
+      : typeof opts.body === "string"
+        ? opts.body
+        : JSON.stringify(opts.body);
+
+  const res = await apiTransport.request({
+    method: opts.method ?? "GET",
+    path: apiPath(path),
+    headers,
+    body,
   });
-  const ct = res.headers.get("content-type") || "";
+
+  const ct = res.headers["content-type"] || res.headers["Content-Type"] || "";
   if (!ct.includes("application/json")) {
-    await res.text();
     throw new Error(
       `Library API ${path} expected JSON, got ${
         ct || "unknown"
       } (start Vite with /api proxy to server?)`,
     );
   }
-  if (!res.ok) {
+  if (res.status < 200 || res.status >= 300) {
     throw new Error(`Library API ${res.status}`);
   }
-  return res.json() as Promise<T>;
+  return JSON.parse(res.bodyText) as T;
+}
+
+function fileIdFromLocationHash(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const m = window.location.hash.match(/^#file=(.+)$/);
+  return m ? m[1] : null;
 }
 
 interface ServerLibraryItem {
@@ -78,20 +88,21 @@ interface ServerLibraryItem {
   sort_index?: number;
 }
 
-/** Where the item is stored; not part of upstream {@link LibraryItem}. */
-type LibraryScope = "personal" | "public" | "canvas";
-
-type CombinedLibraryItem = LibraryItem & { scope?: LibraryScope };
-
-function toLibraryScope(raw: string): LibraryScope {
-  if (raw === "public" || raw === "canvas" || raw === "personal") {
-    return raw;
-  }
-  return "personal";
-}
+type CombinedLibraryItem = LibraryItem & {
+  scope?: "global" | "canvas" | "personal" | "public";
+};
 
 function serverToLibraryItem(s: ServerLibraryItem): CombinedLibraryItem {
-  const scope = toLibraryScope(s.scope);
+  if (s.scope === "canvas") {
+    return {
+      id: s.id,
+      status: "unpublished",
+      elements: (Array.isArray(s.data) ? s.data : []) as LibraryItem["elements"],
+      created: new Date(s.created_at).getTime(),
+      name: s.name || undefined,
+      scope: "canvas",
+    };
+  }
   const published = s.scope === "public";
   return {
     id: s.id,
@@ -99,7 +110,7 @@ function serverToLibraryItem(s: ServerLibraryItem): CombinedLibraryItem {
     elements: (Array.isArray(s.data) ? s.data : []) as LibraryItem["elements"],
     created: new Date(s.created_at).getTime(),
     name: s.name || undefined,
-    scope,
+    scope: "global",
   };
 }
 
@@ -122,15 +133,14 @@ export const CombinedLibraryAdapter: LibraryPersistenceAdapter = {
 
     const canvasFileId = fileIdFromLocationHash() ?? _currentFileId;
 
-    const [publicItems, canvasItems, personalRows, serverGroups, idbMirror] =
+    const [globalRows, canvasItems, serverGroups, idbMirror] =
       await Promise.all([
-        apiJson<ServerLibraryItem[]>("/library").catch(() => []),
+        apiJson<ServerLibraryItem[]>("/library/global").catch(() => []),
         canvasFileId
           ? apiJson<ServerLibraryItem[]>(
               `/library/files/${canvasFileId}`,
             ).catch(() => [])
           : Promise.resolve([]),
-        apiJson<ServerLibraryItem[]>("/library/personal").catch(() => []),
         apiJson<ServerLibraryGroup[]>("/library/groups").catch(
           () => [] as ServerLibraryGroup[],
         ),
@@ -151,16 +161,12 @@ export const CombinedLibraryAdapter: LibraryPersistenceAdapter = {
 
     hydrateLibraryGroupsFromServer(serverGroups);
 
-    const personal: CombinedLibraryItem[] = personalRows.map(
-      serverToLibraryItem,
-    );
-    const publicConverted = publicItems.map(serverToLibraryItem);
+    const globalConverted = globalRows.map(serverToLibraryItem);
     const canvasConverted = canvasItems.map(serverToLibraryItem);
 
     const merged: CombinedLibraryItem[] = [
       ...canvasConverted,
-      ...personal,
-      ...publicConverted,
+      ...globalConverted,
     ];
 
     const serverIds = new Set(merged.map((item) => item.id));
@@ -203,9 +209,6 @@ export const CombinedLibraryAdapter: LibraryPersistenceAdapter = {
 
     for (const item of items) {
       const combined = item as CombinedLibraryItem;
-      const scope =
-        combined.scope ??
-        (item.status === "published" ? "public" : "personal");
 
       const base = {
         id: item.id,
@@ -214,15 +217,15 @@ export const CombinedLibraryAdapter: LibraryPersistenceAdapter = {
         created_at: new Date(item.created).toISOString(),
       };
 
-      if (scope === "public") {
-        publicItems.push({
-          ...base,
-          sort_index: publicItems.length,
-        });
-      } else if (scope === "canvas") {
+      if (combined.scope === "canvas") {
         canvasItems.push({
           ...base,
           sort_index: canvasItems.length,
+        });
+      } else if (item.status === "published") {
+        publicItems.push({
+          ...base,
+          sort_index: publicItems.length,
         });
       } else {
         personalItems.push({

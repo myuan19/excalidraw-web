@@ -93,6 +93,13 @@ export function useMindMapHostBridge({
     [],
   );
 
+  const isMessageFromCurrentIframe = useCallback(
+    (source: MessageEventSource | null) => {
+      return bridgeRef.current?.isMessageFromCurrentIframe(source) === true;
+    },
+    [],
+  );
+
   const learnOrigin = useCallback((origin: string) => {
     bridgeRef.current?.learnOrigin(origin);
   }, []);
@@ -106,6 +113,7 @@ export function useMindMapHostBridge({
     isAppReady: snapshot.isAppReady,
     isBridgeReady: snapshot.isBridgeReady,
     learnedOrigin: snapshot.learnedOrigin,
+    isMessageFromCurrentIframe,
     publishDocument,
     postToNative,
     onIframeLoad,

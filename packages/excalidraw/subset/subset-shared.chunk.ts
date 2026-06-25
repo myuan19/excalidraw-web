@@ -10,6 +10,18 @@
 import loadHbSubset from "./harfbuzz/harfbuzz-loader";
 import loadWoff2 from "./woff2/woff2-loader";
 
+const toArrayBuffer = (bytes: Uint8Array): ArrayBuffer => {
+  const buffer = bytes.buffer;
+  if (
+    buffer instanceof ArrayBuffer &&
+    bytes.byteOffset === 0 &&
+    bytes.byteLength === buffer.byteLength
+  ) {
+    return buffer;
+  }
+  return bytes.slice().buffer as ArrayBuffer;
+};
+
 /**
  * Shared commands between the main thread and worker threads.
  */
@@ -50,11 +62,11 @@ export const subsetToBinary = async (
   const { compress, decompress } = await loadWoff2();
   const { subset } = await loadHbSubset();
 
-  const decompressedBinary = decompress(arrayBuffer).buffer;
+  const decompressedBinary = toArrayBuffer(decompress(arrayBuffer));
   const snftSubset = subset(decompressedBinary, new Set(codePoints));
-  const compressedBinary = compress(snftSubset.buffer);
+  const compressedBinary = compress(toArrayBuffer(snftSubset));
 
-  return compressedBinary.buffer;
+  return toArrayBuffer(compressedBinary);
 };
 
 /**

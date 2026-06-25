@@ -39,3 +39,14 @@ export function sendNotModified(res, contentSha256) {
   res.setHeader("Cache-Control", "private, no-cache");
   return res.status(304).end();
 }
+
+/** PUT precondition: absent header allows write; present header must match current sha. */
+export function ifMatchAllowsWrite(ifMatchHeader, contentSha256) {
+  if (!ifMatchHeader || !String(ifMatchHeader).trim()) {
+    return true;
+  }
+  if (!contentSha256) {
+    return true;
+  }
+  return ifNoneMatchSatisfied(ifMatchHeader, contentSha256);
+}

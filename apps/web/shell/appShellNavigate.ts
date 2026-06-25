@@ -1,7 +1,12 @@
 import { recordRecentFileAccess } from "../data/recentFiles";
-import { editorRegistry } from "../editors/registry";
 
+import { devDebug } from "../lib/devDebug";
+import { traceUserAction } from "../lib/userTrace";
 import { APP_SHELL_GO_HOME } from "./Sidebar";
+import {
+  activateHomeTabWithoutSnapshot,
+  openEditorFileTab,
+} from "./editorTabNavigation";
 import { buildViewHash, type AppView } from "./useAppView";
 
 export const APP_SHELL_PENDING_NAVIGATION_CHANGE =
@@ -38,6 +43,7 @@ export function peekAppShellPendingNavigation(): AppShellNavigateDetail | null {
 }
 
 export function clearAppShellPendingNavigation(): void {
+  devDebug("shell-nav", "clearAppShellPendingNavigation");
   pendingShellNavigation = null;
   emitPendingNavigationChange({
     pending: null,
@@ -51,6 +57,13 @@ export function runAppShellPendingNavigation(
 ): void {
   const detail = pendingShellNavigation;
   pendingShellNavigation = null;
+  devDebug("shell-nav", "runAppShellPendingNavigation", {
+    consumed: detail,
+  });
+  traceUserAction("shell-nav", "runAppShellPendingNavigation", {
+    target: detail?.target ?? null,
+    openFileId8: detail?.openFile?.id.slice(0, 8) ?? null,
+  }, "ok");
   emitPendingNavigationChange({
     pending: null,
     consumed: detail,
@@ -62,18 +75,34 @@ export function runAppShellPendingNavigation(
       skipLeaveStashOnceRef.current = true;
     }
     recordRecentFileAccess(id);
-    window.location.hash = editorRegistry.buildFileHash(id, kind);
+    void openEditorFileTab(
+      {
+        fileId: id,
+        kind,
+      },
+      {
+        getCurrentFileId: () => null,
+      },
+    );
     return;
   }
   const target = detail?.target ?? "home";
   if (skipLeaveStashOnceRef) {
     skipLeaveStashOnceRef.current = true;
   }
-  window.location.hash = buildViewHash(target);
+  activateHomeTabWithoutSnapshot({
+    buildHomeHash: () => buildViewHash(target),
+  });
   window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
 }
 
 export function dispatchAppShellNavigate(detail: AppShellNavigateDetail): void {
+  devDebug("shell-nav", "dispatchAppShellNavigate", { detail });
+  traceUserAction("shell-nav", "dispatchAppShellNavigate", {
+    target: detail.target ?? null,
+    openFileId8: detail.openFile?.id.slice(0, 8) ?? null,
+    openFileKind: detail.openFile?.kind ?? null,
+  }, "start");
   window.dispatchEvent(
     new CustomEvent<AppShellNavigateDetail>(APP_SHELL_GO_HOME, { detail }),
   );

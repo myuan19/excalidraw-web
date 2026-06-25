@@ -1,24 +1,39 @@
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
-
 import {
-  Provider,
-  appJotaiStore,
-} from "./app-jotai";
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+
+import { Provider, appJotaiStore } from "./app-jotai";
 import { TopErrorBoundary } from "./components/TopErrorBoundary";
+import { DesktopTitleBar } from "./components/DesktopTitleBar";
 import { FileList } from "./components/FileList";
+import { DebugModeTrigger } from "./components/DebugModeTrigger";
 import { EditorPlatformShell } from "./components/EditorPlatformSidebar";
 import { recordRecentFileAccess } from "./data/recentFiles";
 import { logFileListOpen } from "./lib/logger";
 import { devDebug } from "./lib/devDebug";
+import { traceUserAction } from "./lib/userTrace";
 import { isEmbedMode } from "./embed/embedMode";
 import { editorRegistry } from "./editors";
 import { getLazyEditorShell } from "./editors/lazyViews";
 import { hashNeedsEditorRoute } from "./data/documentHash";
 import { getDocumentKindFromHash } from "./lib/appBranding";
+import { isDesktopEditorHub } from "./lib/runtimePlatform";
 import { EditorShellChunkFallback } from "./components/EditorShellChunkFallback";
 import { logEditorOpenPhase } from "./lib/editorOpenPhases";
+import { useHomePageWheelZoom } from "./hooks/useHomePageWheelZoom";
+import { EditorTabCacheHost } from "./shell/EditorTabCacheHost";
+import {
+  openEditorFileTab,
+  reconcileEditorTabsWithHash,
+} from "./shell/editorTabNavigation";
 
 import "./index.scss";
+import "./components/DesktopTitleBar.scss";
 
 const LazyEmbedApp = lazy(() => import("./embed/EmbedApp"));
 
@@ -90,8 +105,10 @@ const UnsupportedDocumentFallback = ({ kind }: { kind: string }) => (
 /** File list home when URL has no `#file=`; editor mounts only after opening. */
 const ForkRoot = () => {
   const [, bump] = useState(0);
+  const homeContainerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const h = () => {
+      reconcileEditorTabsWithHash(window.location.hash);
       logFileListOpen("App hashchange (ForkRoot)", {
         hash: window.location.hash,
         needsEditor: hashNeedsEditor(),
@@ -99,6 +116,7 @@ const ForkRoot = () => {
       bump((n) => n + 1);
     };
     window.addEventListener("hashchange", h);
+    reconcileEditorTabsWithHash(window.location.hash);
     logFileListOpen("App ForkRoot mount", {
       hash: window.location.hash,
       needsEditor: hashNeedsEditor(),
@@ -109,34 +127,60 @@ const ForkRoot = () => {
   const needsEditor = hashNeedsEditor();
   const onFileListReady = useDeferredEditorPrefetch();
   const documentKind = getDocumentKindFromHash();
+  useHomePageWheelZoom(homeContainerRef, !needsEditor);
 
   useEffect(() => {
     if (!needsEditor || documentKind !== "mindmap") {
       return;
     }
-    editorRegistry.getByKind("mindmap")?.loadEditorShell().catch(() => {});
+    editorRegistry
+      .getByKind("mindmap")
+      ?.loadEditorShell()
+      .catch(() => {});
   }, [needsEditor, documentKind]);
+
+  if (isDesktopEditorHub()) {
+    return <EditorTabCacheHost onFileListReady={onFileListReady} />;
+  }
 
   if (!needsEditor) {
     return (
-      <div className="excalidraw-app" style={{ height: "100%" }}>
+      <div
+        ref={homeContainerRef}
+        className="excalidraw-app"
+        style={{ height: "100%" }}
+      >
         <FileList
-          onOpenFile={({ id, kind }) => {
+          onOpenFile={({ id, kind, name }) => {
             recordRecentFileAccess(id);
             const resolvedKind = editorRegistry.resolveKind(kind);
             const next = buildFileHash(id, resolvedKind);
+            traceUserAction(
+              "file-list",
+              "onOpenFile",
+              {
+                id8: id.slice(0, 8),
+                kind: resolvedKind,
+                nextHash: next,
+              },
+              "start",
+            );
             if (resolvedKind === "mindmap") {
               debugMindMapOpen("App onOpenFile mindmap", {
                 id8: id.slice(0, 8),
                 nextHash: next,
               });
             }
-            logFileListOpen("App onOpenFile → assign location.hash", {
+            logFileListOpen("App onOpenFile → open editor tab", {
               id8: id.slice(0, 8),
               kind: resolvedKind,
               nextHash: next,
             });
-            window.location.hash = next;
+            void openEditorFileTab({
+              fileId: id,
+              kind: resolvedKind,
+              title: name,
+            });
             queueMicrotask(() => {
               logFileListOpen("App onOpenFile after microtask", {
                 hash: window.location.hash,
@@ -162,7 +206,9 @@ const ForkRoot = () => {
 
   return (
     <EditorPlatformShell>
-      <Suspense fallback={<EditorShellChunkFallback editorKind={documentKind} />}>
+      <Suspense
+        fallback={<EditorShellChunkFallback editorKind={documentKind} />}
+      >
         <LazyEditor />
       </Suspense>
     </EditorPlatformShell>
@@ -193,7 +239,16 @@ const ExcalidrawApp = () => {
   return (
     <TopErrorBoundary>
       <Provider store={appJotaiStore}>
-        <ForkRoot />
+        <div
+          className={isDesktopEditorHub() ? "app-shell--desktop" : undefined}
+          style={{ height: "100%" }}
+        >
+          <DesktopTitleBar />
+          <div className="app-shell--desktop__body">
+            <ForkRoot />
+          </div>
+        </div>
+        <DebugModeTrigger />
       </Provider>
     </TopErrorBoundary>
   );

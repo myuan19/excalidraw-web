@@ -2,29 +2,50 @@ import MindMap from "simple-mind-map";
 import Export from "simple-mind-map/src/plugins/Export.js";
 import RichText from "simple-mind-map/src/plugins/RichText.js";
 
+import {
+  getMindMapLayerCssVars,
+  getMindMapRuntimeOverlayOptions,
+  MINDMAP_OVERLAY_ROOT_CLASS,
+} from "../utils/mindMapEditorLayers.js";
+
 MindMap.usePlugin(RichText);
 MindMap.usePlugin(Export);
 
 const NATIVE_SOURCE = "simple-mind-map-native";
+const DEFAULT_THEME_TEMPLATE = "classic4";
 
 /** @type {MindMap | null} */
 let nativeMindMap = null;
+let mountGeneration = 0;
 let revision = 0;
 let draftPushTimer = null;
 let suppressDraftPushUntil = 0;
+let appInitedPosted = false;
 
 function postToHost(type, payload = {}) {
   window.parent?.postMessage({ source: NATIVE_SOURCE, type, ...payload }, "*");
+}
+
+function postAppInitedOnce() {
+  if (appInitedPosted) {
+    return;
+  }
+  appInitedPosted = true;
+  postToHost("appInited");
 }
 
 function normalizeTheme(theme) {
   if (typeof theme === "string") {
     return theme;
   }
-  if (theme && typeof theme === "object" && typeof theme.template === "string") {
+  if (
+    theme &&
+    typeof theme === "object" &&
+    typeof theme.template === "string"
+  ) {
     return theme.template;
   }
-  return "default";
+  return DEFAULT_THEME_TEMPLATE;
 }
 
 function normalizeDocumentData(raw) {
@@ -34,7 +55,7 @@ function normalizeDocumentData(raw) {
         data: { text: "<p>MindMap</p>", richText: true, expand: true },
         children: [],
       },
-      theme: "default",
+      theme: DEFAULT_THEME_TEMPLATE,
       layout: "logicalStructure",
     };
   }
@@ -146,41 +167,84 @@ function scheduleDraftPush() {
 }
 
 function destroyNativeMindMap() {
+  mountGeneration += 1;
+  appInitedPosted = false;
   if (nativeMindMap) {
-    nativeMindMap.destroy();
+    try {
+      nativeMindMap.destroy();
+    } catch {
+      // destroy 过程中 simple-mind-map 可能已部分卸载 DOM。
+    }
     nativeMindMap = null;
   }
 }
 
-function mountNativeMindMap(container, data) {
-  destroyNativeMindMap();
+function createMountShell(container) {
   container.innerHTML = "";
+  const editContainer = document.createElement("div");
+  editContainer.className = "editContainer";
+  Object.assign(editContainer.style, {
+    width: "100%",
+    height: "100%",
+    position: "relative",
+    overflow: "hidden",
+  });
+  for (const [key, value] of Object.entries(getMindMapLayerCssVars())) {
+    editContainer.style.setProperty(key, String(value));
+  }
+
   const mount = document.createElement("div");
   mount.className = "mindmap-native-root";
   mount.style.width = "100%";
   mount.style.height = "100%";
-  container.appendChild(mount);
+
+  const overlay = document.createElement("div");
+  overlay.className = MINDMAP_OVERLAY_ROOT_CLASS;
+
+  editContainer.appendChild(mount);
+  editContainer.appendChild(overlay);
+  container.appendChild(editContainer);
+
+  return { mount, overlay };
+}
+
+function mountNativeMindMap(container, data) {
+  if (!container) {
+    throw new Error("MindMap mount container missing (#app)");
+  }
+  destroyNativeMindMap();
+  const generation = mountGeneration;
+
+  const { mount, overlay } = createMountShell(container);
 
   nativeMindMap = new MindMap({
     el: mount,
     data: data.root,
     layout: data.layout || "logicalStructure",
-    theme: data.theme || "default",
+    theme: data.theme || DEFAULT_THEME_TEMPLATE,
     viewData: data.view ?? undefined,
     fit: true,
+    ...getMindMapRuntimeOverlayOptions(overlay),
   });
 
   nativeMindMap.on("data_change", () => {
+    if (generation !== mountGeneration) {
+      return;
+    }
     scheduleDraftPush();
   });
   nativeMindMap.on("node_tree_render_end", () => {
-    postToHost("appInited");
+    if (generation !== mountGeneration) {
+      return;
+    }
+    postAppInitedOnce();
   });
   nativeMindMap.on("view_data_change", (view) => {
+    if (generation !== mountGeneration) {
+      return;
+    }
     postToHost("mindMapViewState", { payload: view });
   });
-
-  postToHost("appInited");
 }
 
 export async function renderMindMap(container, message) {
@@ -192,7 +256,7 @@ export async function renderMindMap(container, message) {
   mountNativeMindMap(container, data);
 }
 
-export function applyMindMapData(message) {
+export async function applyMindMapData(message) {
   if (!nativeMindMap) {
     return renderMindMap(document.getElementById("app"), message);
   }
@@ -204,7 +268,7 @@ export function applyMindMapData(message) {
   nativeMindMap.setFullData({
     root: data.root,
     layout: data.layout,
-    theme: { template: data.theme || "default" },
+    theme: { template: data.theme || DEFAULT_THEME_TEMPLATE },
     view: data.view ?? undefined,
   });
 }

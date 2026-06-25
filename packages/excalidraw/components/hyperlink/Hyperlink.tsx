@@ -11,6 +11,7 @@ import type {
   ExcalidrawEmbeddableElement,
   NonDeletedExcalidrawElement,
 } from "../../element/types";
+import type { Scene } from "../../scene/Scene";
 
 import { ToolButton } from "../ToolButton";
 import { FreedrawIcon, TrashIcon, elementLinkIcon } from "../icons";
@@ -54,14 +55,14 @@ const embeddableLinkCache = new Map<
 
 export const Hyperlink = ({
   element,
-  elementsMap,
+  scene,
   setAppState,
   onLinkOpen,
   setToast,
   updateEmbedValidationStatus,
 }: {
   element: NonDeletedExcalidrawElement;
-  elementsMap: ElementsMap;
+  scene: Scene;
   setAppState: React.Component<any, AppState>["setState"];
   onLinkOpen: ExcalidrawProps["onLinkOpen"];
   setToast: (
@@ -75,6 +76,7 @@ export const Hyperlink = ({
   const appState = useExcalidrawAppState();
   const appProps = useAppProps();
   const device = useDevice();
+  const elementsMap = scene.getNonDeletedElementsMap();
 
   const linkVal = element.link || "";
 
@@ -98,7 +100,7 @@ export const Hyperlink = ({
         setAppState({ activeEmbeddable: null });
       }
       if (!link) {
-        mutateElement(element, {
+        mutateElement(element, elementsMap, {
           link: null,
         });
         updateEmbedValidationStatus(element, false);
@@ -110,7 +112,7 @@ export const Hyperlink = ({
           setToast({ message: t("toast.unableToEmbed"), closable: true });
         }
         element.link && embeddableLinkCache.set(element.id, element.link);
-        mutateElement(element, {
+        mutateElement(element, elementsMap, {
           link,
         });
         updateEmbedValidationStatus(element, false);
@@ -128,7 +130,7 @@ export const Hyperlink = ({
           : 1;
         const hasLinkChanged =
           embeddableLinkCache.get(element.id) !== element.link;
-        mutateElement(element, {
+        mutateElement(element, elementsMap, {
           ...(hasLinkChanged
             ? {
                 width:
@@ -153,7 +155,7 @@ export const Hyperlink = ({
         }
       }
     } else {
-      mutateElement(element, { link });
+      mutateElement(element, elementsMap, { link });
     }
   }, [
     element,
@@ -213,7 +215,7 @@ export const Hyperlink = ({
 
   const handleRemove = useCallback(() => {
     trackEvent("hyperlink", "delete");
-    mutateElement(element, { link: null });
+    mutateElement(element, elementsMap, { link: null });
     setAppState({ showHyperlinkPopup: false });
   }, [setAppState, element]);
 
@@ -448,7 +450,7 @@ const shouldHideLinkPopup = (
 
   const threshold = 15 / appState.zoom.value;
   // hitbox to prevent hiding when hovered in element bounding box
-  if (hitElementBoundingBox(sceneX, sceneY, element, elementsMap)) {
+  if (hitElementBoundingBox(pointFrom(sceneX, sceneY), element, elementsMap)) {
     return false;
   }
   const [x1, y1, x2] = getElementAbsoluteCoords(element, elementsMap);

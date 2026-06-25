@@ -2,6 +2,8 @@ import { DeltaStorage } from "./DeltaStorage";
 import { FileSyncState } from "./FileSyncState";
 import { LocalThumbnailCache } from "./localThumbnailCache";
 import { isLocalDraftFileId } from "./localDraftFileId";
+import { clearMindMapBrowserView } from "./mindMapBrowserViewStorage";
+import { traceUserAction } from "../lib/userTrace";
 import {
   LocalDraftSessions,
   removeLocalDraftFromRecent,
@@ -18,8 +20,16 @@ function legacyMindMapCacheKey(fileId: string): string {
  */
 export async function discardLocalDraftSession(draftId: string): Promise<void> {
   if (!isLocalDraftFileId(draftId)) {
+    traceUserAction("file-list", "discardLocalDraftSession", {
+      draftId8: draftId.slice(0, 12),
+      reason: "not-local-draft",
+    }, "skip");
     return;
   }
+
+  traceUserAction("file-list", "discardLocalDraftSession", {
+    draftId8: draftId.slice(0, 12),
+  }, "start");
 
   LocalDraftSessions.remove(draftId);
   removeLocalDraftFromRecent(draftId);
@@ -31,6 +41,7 @@ export async function discardLocalDraftSession(draftId: string): Promise<void> {
   try {
     localStorage.removeItem(legacyMindMapCacheKey(draftId));
     localStorage.removeItem(`${FORK_BROWSER_SCENE_PREFIX}${draftId}`);
+    clearMindMapBrowserView(draftId);
   } catch {
     /* ignore */
   }
@@ -40,4 +51,7 @@ export async function discardLocalDraftSession(draftId: string): Promise<void> {
 
   window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
   window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
+  traceUserAction("file-list", "discardLocalDraftSession", {
+    draftId8: draftId.slice(0, 12),
+  }, "ok");
 }

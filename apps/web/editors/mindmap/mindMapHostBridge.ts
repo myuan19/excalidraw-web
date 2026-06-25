@@ -167,6 +167,11 @@ export class MindMapHostBridge {
     }
   }
 
+  isMessageFromCurrentIframe(source: MessageEventSource | null): boolean {
+    const iframe = this.options.getIframe();
+    return !!iframe?.contentWindow && source === iframe.contentWindow;
+  }
+
   postToNative(type: string, payload?: unknown): boolean {
     const iframe = this.options.getIframe();
     const hostOrigin =

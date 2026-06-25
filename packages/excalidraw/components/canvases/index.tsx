@@ -18,6 +18,7 @@ type InteractiveCanvasProps = Omit<
   InteractiveSceneRenderConfig,
   "canvas" | "renderConfig" | "callback" | "animationState" | "deltaTime"
 > & {
+  containerRef?: React.RefObject<HTMLDivElement | null>;
   canvas: HTMLCanvasElement | null;
   sceneNonce?: number;
   selectionNonce?: number;
@@ -90,7 +91,9 @@ export function StaticCanvas(props: StaticCanvasProps) {
 }
 
 export function InteractiveCanvas(props: InteractiveCanvasProps) {
-  const animationState = useRef<InteractiveSceneRenderAnimationState | undefined>();
+  const animationState = useRef<
+    InteractiveSceneRenderAnimationState | undefined
+  >(undefined);
   const lastRenderTime = useRef(performance.now());
 
   useEffect(() => {

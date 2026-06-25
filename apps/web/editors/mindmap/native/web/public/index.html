@@ -1,35 +1,45 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <script>
-    window.takeOverApp = window.parent !== window;
-    window.__nbApplyHostViewport = function () {
-      window.parent.postMessage({
-        source: "simple-mind-map-native",
-        type: "embed_preview_viewport_applied",
-        ok: true
-      }, "*");
-    };
-    window.addEventListener("message", function (event) {
-      var message = event.data || {};
-      if (message.type === "host_restore_preview_view") {
-        try {
-          window.__nbApplyHostViewport(message.view);
-        } catch (error) {
-          window.parent.postMessage({
-            source: "simple-mind-map-native",
-            type: "mindMapIframeError",
-            ok: false,
-            message: String(error && error.message || error)
-          }, "*");
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <script>
+      // webpack-dynamic-public-path：lazy chunk 须由此前缀解析为 dist/js、dist/css
+      window.externalPublicPath = './dist/'
+      window.takeOverApp = window.parent !== window
+      window.addEventListener('message', function (event) {
+        var message = event.data || {}
+        if (message.type !== 'host_restore_preview_view') {
+          return
         }
-      }
-    });
-  </script>
-</head>
-<body>
-  <div id="app"></div>
-</body>
+        // 优先走 Vue Edit 的聚焦视口逻辑，避免旧版 stub 直接回传 ok
+        if (window.$bus && typeof window.$bus.$emit === 'function') {
+          window.$bus.$emit(
+            'host_restore_preview_view',
+            message.payload || message
+          )
+          return
+        }
+        if (typeof window.__nbApplyHostViewport === 'function') {
+          try {
+            window.__nbApplyHostViewport(message.payload || message)
+          } catch (error) {
+            window.parent.postMessage(
+              {
+                source: 'simple-mind-map-native',
+                type: 'mindMapIframeError',
+                ok: false,
+                message: String((error && error.message) || error)
+              },
+              '*'
+            )
+          }
+        }
+      })
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script src="dist/bridge/takeover-shell.js"></script>
+  </body>
 </html>

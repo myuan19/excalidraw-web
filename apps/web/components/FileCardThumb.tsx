@@ -10,6 +10,8 @@ type FileCardThumbOwnProps = {
   kind: string;
   cardThumbSvg: string | null;
   thumbLoading?: boolean;
+  thumbSwitchLoading?: boolean;
+  thumbBlank?: boolean;
   badge?: FileCardThumbBadge;
   thumbBg?: string;
   className?: string;
@@ -18,6 +20,10 @@ type FileCardThumbOwnProps = {
 
 type FileCardThumbProps = FileCardThumbOwnProps &
   Omit<HTMLAttributes<HTMLDivElement>, keyof FileCardThumbOwnProps>;
+
+function isImageDataUrl(value: string): boolean {
+  return /^data:image\//i.test(value.trim());
+}
 
 function FileCardThumbPlaceholder({ kind }: { kind: string }) {
   return (
@@ -34,24 +40,42 @@ function FileCardThumbPlaceholder({ kind }: { kind: string }) {
   );
 }
 
-function FileCardThumbBadgeLabel({ badge }: { badge: FileCardThumbBadge }) {
-  if (badge === "temp") {
+function FileCardThumbBadgeLabel({
+  badge,
+}: {
+  badge: FileCardThumbBadge | null;
+}) {
+  if (badge === "temporary") {
     return (
       <span
         className="filelist__card-thumb-badge"
-        title="仅保存在本机浏览器，尚未保存到服务器"
+        title="尚未保存到本地文件夹"
       >
         临时
       </span>
     );
   }
-  if (badge === "draft") {
+  if (badge === "draft" || badge === "interrupted") {
     return (
       <span
         className="filelist__card-thumb-badge"
-        title="有未保存到服务器的更改"
+        title={
+          badge === "interrupted"
+            ? "上次异常退出，可恢复未保存内容"
+            : "有未保存的修改"
+        }
       >
         未保存
+      </span>
+    );
+  }
+  if (badge === "corrupt") {
+    return (
+      <span
+        className="filelist__card-thumb-badge filelist__card-thumb-badge--warn"
+        title="文件已损坏或格式无法识别"
+      >
+        已损坏
       </span>
     );
   }
@@ -65,6 +89,8 @@ export const FileCardThumb = forwardRef<HTMLDivElement, FileCardThumbProps>(
       kind,
       cardThumbSvg,
       thumbLoading = false,
+      thumbSwitchLoading = false,
+      thumbBlank = false,
       badge = null,
       thumbBg,
       className,
@@ -85,17 +111,39 @@ export const FileCardThumb = forwardRef<HTMLDivElement, FileCardThumbProps>(
         style={thumbBg ? { background: thumbBg, ...style } : style}
         {...rest}
       >
-        <FileCardThumbBadgeLabel badge={badge} />
-        {cardThumbSvg ? (
+        <FileCardThumbBadgeLabel
+          badge={thumbSwitchLoading ? null : badge}
+        />
+        {cardThumbSvg && isImageDataUrl(cardThumbSvg) ? (
+          <img
+            className="filelist__card-thumb-img"
+            src={cardThumbSvg}
+            alt=""
+            draggable={false}
+          />
+        ) : cardThumbSvg ? (
           <div
             className="filelist__card-thumb-svg"
             dangerouslySetInnerHTML={{ __html: cardThumbSvg }}
           />
         ) : thumbLoading ? (
-          <div className="filelist__card-thumb-loading" />
-        ) : (
+          <div
+            className={[
+              "filelist__card-thumb-loading",
+              thumbSwitchLoading ? "filelist__card-thumb-loading--switch" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          />
+        ) : thumbBlank ? null : (
           <FileCardThumbPlaceholder kind={kind} />
         )}
+        {thumbSwitchLoading && cardThumbSvg ? (
+          <div
+            className="filelist__card-thumb-loading filelist__card-thumb-loading--switch"
+            aria-hidden
+          />
+        ) : null}
         {children}
       </div>
     );

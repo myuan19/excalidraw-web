@@ -36,6 +36,7 @@ import themeList from 'simple-mind-map-plugin-themes/themeList'
 import sidebarPanelDebug from '@/mixins/sidebarPanelDebug'
 import sidebarHistorySync from '@/mixins/sidebarHistorySync'
 import { compactCustomThemeConfig } from '@/utils/editHistory'
+import { hideLoading } from '@/utils/loading'
 
 // 主题
 export default {
@@ -81,9 +82,10 @@ export default {
     },
 
     currentList() {
-      return this.groupList.find(item => {
+      const group = this.groupList.find(item => {
         return item.name === this.activeName
-      }).list
+      })
+      return group ? group.list : []
     }
   },
   watch: {
@@ -229,6 +231,20 @@ export default {
           config
         }
       })
+      this.finishThemeChangeLoading()
+    },
+
+    finishThemeChangeLoading() {
+      let settled = false
+      const done = () => {
+        if (settled) return
+        settled = true
+        hideLoading('theme-change')
+      }
+      if (this.mindMap && typeof this.mindMap.on === 'function') {
+        this.mindMap.once('node_tree_render_end', done)
+      }
+      window.setTimeout(done, 600)
     },
 
     handleDark() {

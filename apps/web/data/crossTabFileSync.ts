@@ -7,6 +7,8 @@ type SyncMessage = {
   fileId: string;
   /** 服务器返回的 content_sha256，接收端用于「同一版本不重复提示」 */
   contentSha256?: string | null;
+  /** 服务器返回的 document version，接收端用于绑定远程提示目标 */
+  version?: number | null;
   timestamp: number;
 };
 
@@ -24,13 +26,26 @@ function getChannel(): BroadcastChannel | null {
 
 export function broadcastFileSaved(
   fileId: string,
-  contentSha256?: string | null,
+  detail?:
+    | string
+    | null
+    | {
+        contentSha256?: string | null;
+        version?: number | null;
+      },
 ): void {
+  const contentSha256 =
+    typeof detail === "object" && detail !== null
+      ? detail.contentSha256
+      : detail;
+  const version =
+    typeof detail === "object" && detail !== null ? detail.version : null;
   try {
     getChannel()?.postMessage({
       type: "file-saved",
       fileId,
       contentSha256: contentSha256 ?? null,
+      version: version ?? null,
       timestamp: Date.now(),
     } satisfies SyncMessage);
   } catch {
@@ -39,7 +54,11 @@ export function broadcastFileSaved(
 }
 
 export function onCrossTabFileSaved(
-  callback: (fileId: string, contentSha256: string | null) => void,
+  callback: (
+    fileId: string,
+    contentSha256: string | null,
+    version?: number | null,
+  ) => void,
 ): () => void {
   const ch = getChannel();
   if (!ch) {
@@ -47,7 +66,11 @@ export function onCrossTabFileSaved(
   }
   const handler = (event: MessageEvent<SyncMessage>) => {
     if (event.data?.type === "file-saved" && event.data.fileId) {
-      callback(event.data.fileId, event.data.contentSha256 ?? null);
+      callback(
+        event.data.fileId,
+        event.data.contentSha256 ?? null,
+        event.data.version ?? null,
+      );
     }
   };
   ch.addEventListener("message", handler);

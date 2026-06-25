@@ -12,11 +12,6 @@ import {
   buildMindMapThumbnailFocusedViewBoxOptions,
 } from "../editors/mindmap/mindMapFocusedViewBox.js";
 
-import type {
-  MindMapDocumentData,
-  MindMapNode,
-} from "./formats/MindMapAdapter";
-
 /** Remove broken embedded fonts from exported SVG thumbnails. */
 export function sanitizeThumbnailSvg(svgMarkup: string): string {
   return svgMarkup
@@ -33,6 +28,33 @@ function escapeXmlAttr(value: string): string {
 
 function getSvgOpenTag(svgMarkup: string): string {
   return svgMarkup.match(/<svg\b[^>]*>/i)?.[0] ?? "";
+}
+
+function decodeBase64Utf8(payload: string): string {
+  const binary = atob(payload);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new TextDecoder("utf-8").decode(bytes);
+}
+
+function decodeSvgDataUrl(value: string): string {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^data:image\/svg\+xml([^,]*),(.*)$/is);
+  if (!match) {
+    return value;
+  }
+  const meta = match[1] ?? "";
+  const payload = match[2] ?? "";
+  try {
+    if (/;base64/i.test(meta)) {
+      return decodeBase64Utf8(payload);
+    }
+    return decodeURIComponent(payload);
+  } catch {
+    return value;
+  }
 }
 
 function getSvgAttr(svgMarkup: string, name: string): string {
@@ -118,11 +140,41 @@ function deriveSvgBoundsViewBox(svgMarkup: string): string {
 
 function decodeXmlTextEntities(value: string): string {
   return value
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex: string) =>
+      String.fromCodePoint(Number.parseInt(hex, 16)),
+    )
+    .replace(/&#(\d+);/g, (_, dec: string) =>
+      String.fromCodePoint(Number.parseInt(dec, 10)),
+    )
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&amp;/g, "&")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'");
+}
+
+function hasCjk(text: string): boolean {
+  return /[\u4e00-\u9fff]/.test(text);
+}
+
+/** Recover UTF-8 text that was previously mis-decoded as Latin-1 (common thumbnail mojibake). */
+function repairMojibakeUtf8(value: string): string {
+  if (!value || hasCjk(value)) {
+    return value;
+  }
+  if (!/[\u0080-\u024f]/.test(value)) {
+    return value;
+  }
+  try {
+    const bytes = Uint8Array.from(value, (char) => char.charCodeAt(0) & 0xff);
+    const repaired = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    if (hasCjk(repaired)) {
+      return repaired;
+    }
+  } catch {
+    // not recoverable mojibake
+  }
+  return value;
 }
 
 function escapeXmlText(value: string): string {
@@ -133,14 +185,16 @@ function escapeXmlText(value: string): string {
 }
 
 export function mindMapRichTextToPlainText(value: string): string {
-  return decodeXmlTextEntities(value)
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p\s*>/gi, "\n")
-    .replace(/<[^>]*>/g, "")
-    .replace(/\u00a0/g, " ")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{2,}/g, "\n")
-    .trim();
+  return repairMojibakeUtf8(
+    decodeXmlTextEntities(value)
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/p\s*>/gi, "\n")
+      .replace(/<[^>]*>/g, "")
+      .replace(/\u00a0/g, " ")
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n{2,}/g, "\n")
+      .trim(),
+  );
 }
 
 function normalizeMindMapTextNodes(svgMarkup: string): string {
@@ -153,6 +207,17 @@ function normalizeMindMapTextNodes(svgMarkup: string): string {
   );
 }
 
+function repairMindMapForeignObjectText(svgMarkup: string): string {
+  return svgMarkup.replace(
+    /(<foreignObject\b[^>]*>)([\s\S]*?)(<\/foreignObject>)/gi,
+    (_match, open: string, inner: string, close: string) =>
+      `${open}${inner.replace(
+        />([^<>]+)</g,
+        (_textMatch: string, text: string) => `>${repairMojibakeUtf8(text)}<`,
+      )}${close}`,
+  );
+}
+
 function hasClassToken(markup: string, className: string): boolean {
   const classValue = markup.match(/\bclass="([^"]*)"/i)?.[1] ?? "";
   return classValue.split(/\s+/).includes(className);
@@ -160,6 +225,16 @@ function hasClassToken(markup: string, className: string): boolean {
 
 const DEFAULT_MINDMAP_ROOT_SIZE = { width: 154, height: 45 };
 const MINDMAP_THUMB_NORMALIZED_ATTR = "data-excal-mindmap-thumb-normalized";
+const MINDMAP_THUMB_NORMALIZED_VERSION = "1";
+const MINDMAP_THUMB_SOURCE_ATTR = "data-excal-thumb-source";
+const LEGACY_MINDMAP_THUMB_SOURCE_ATTR = "data-excal-mindmap-thumb-source";
+
+function isMindMapThumbNormalized(svgMarkup: string): boolean {
+  return (
+    getSvgAttr(svgMarkup, MINDMAP_THUMB_NORMALIZED_ATTR) ===
+    MINDMAP_THUMB_NORMALIZED_VERSION
+  );
+}
 
 interface Bounds {
   x: number;
@@ -256,13 +331,84 @@ function parseMindMapPathShapeBounds(markup: string): Bounds | null {
   };
 }
 
+function unionBounds(a: Bounds, b: Bounds): Bounds {
+  const minX = Math.min(a.x, b.x);
+  const minY = Math.min(a.y, b.y);
+  const maxX = Math.max(a.x + a.width, b.x + b.width);
+  const maxY = Math.max(a.y + a.height, b.y + b.height);
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY,
+  };
+}
+
+/** 收起子节点时节点后方的小圆球（smm-expand-btn），缩略图需保留。 */
+function getMindMapNodeExpandBtnBounds(nodeMarkup: string): Bounds | null {
+  const expandTagMatch = nodeMarkup.match(
+    /<g\b[^>]*\bclass="[^"]*\bsmm-expand-btn\b[^"]*"[^>]*>/i,
+  );
+  if (!expandTagMatch || expandTagMatch.index === undefined) {
+    return null;
+  }
+  const position = parseTranslate(expandTagMatch[0]) ?? { x: 0, y: 0 };
+  const sliceStart = expandTagMatch.index;
+  const sliceEnd = nodeMarkup.indexOf("</g>", sliceStart);
+  const expandMarkup = nodeMarkup.slice(
+    sliceStart,
+    sliceEnd >= 0 ? sliceEnd : sliceStart + 400,
+  );
+  const circleMatch = expandMarkup.match(/<circle\b[^>]*>/i);
+  if (!circleMatch) {
+    const size = 18;
+    return {
+      x: position.x,
+      y: position.y - size / 2,
+      width: size,
+      height: size,
+    };
+  }
+  const circle = circleMatch[0];
+  const r = getNumberAttr(circle, "r");
+  const cx = Number.parseFloat(getStringAttr(circle, "cx") || "0");
+  const cy = Number.parseFloat(getStringAttr(circle, "cy") || "0");
+  if (r) {
+    return {
+      x: position.x + cx - r,
+      y: position.y + cy - r,
+      width: r * 2,
+      height: r * 2,
+    };
+  }
+  const width = getNumberAttr(circle, "width") ?? 18;
+  const height = getNumberAttr(circle, "height") ?? width;
+  return {
+    x: position.x + cx - width / 2,
+    y: position.y + cy - height / 2,
+    width,
+    height,
+  };
+}
+
+function getMindMapNodeContentBounds(nodeMarkup: string): Bounds | null {
+  const shapeBounds = getMindMapNodeShapeBounds(nodeMarkup);
+  const expandBounds = getMindMapNodeExpandBtnBounds(nodeMarkup);
+  if (shapeBounds && expandBounds) {
+    return unionBounds(shapeBounds, expandBounds);
+  }
+  return shapeBounds ?? expandBounds;
+}
+
 function getMindMapNodeShapeBounds(markup: string): Bounds | null {
   const pathBounds = parseMindMapPathShapeBounds(markup);
   if (pathBounds) {
     return pathBounds;
   }
 
-  const rects = [...markup.matchAll(/<rect\b[^>]*>/gi)].map((match) => match[0]);
+  const rects = [...markup.matchAll(/<rect\b[^>]*>/gi)].map(
+    (match) => match[0],
+  );
   const rect =
     rects.find((item) => hasClassToken(item, "smm-node-shape")) ??
     rects.find(
@@ -292,7 +438,9 @@ function getMindMapNodeShapeBounds(markup: string): Bounds | null {
 function getMindMapNodeOpenTags(
   svgMarkup: string,
 ): { index: number; markup: string }[] {
-  return [...svgMarkup.matchAll(/<g\b[^>]*\bclass="[^"]*smm-node[^"]*"[^>]*>/gi)]
+  return [
+    ...svgMarkup.matchAll(/<g\b[^>]*\bclass="[^"]*smm-node[^"]*"[^>]*>/gi),
+  ]
     .filter((match) => hasClassToken(match[0], "smm-node"))
     .map((match) => ({
       index: match.index ?? 0,
@@ -312,7 +460,7 @@ function parseMindMapNodeBounds(svgMarkup: string): Bounds[] {
       nodeOpenTag.index,
       nextNodeOpenTag?.index ?? svgMarkup.length,
     );
-    const shapeBounds = getMindMapNodeShapeBounds(nodeMarkup);
+    const shapeBounds = getMindMapNodeContentBounds(nodeMarkup);
     bounds.push({
       x: position.x + container.x + (shapeBounds?.x ?? 0),
       y: position.y + container.y + (shapeBounds?.y ?? 0),
@@ -406,8 +554,7 @@ function removeElementByClassAt(
   const openEnd = openMatch.index + openMatch[0].length;
   if (/\/>\s*$/i.test(openMatch[0])) {
     return {
-      svg:
-        svgMarkup.slice(0, openMatch.index) + svgMarkup.slice(openEnd),
+      svg: svgMarkup.slice(0, openMatch.index) + svgMarkup.slice(openEnd),
       removed: true,
     };
   }
@@ -489,7 +636,7 @@ function removeMindMapEditOverlays(svgMarkup: string): string {
   let svg = removeElementsByClass(svgMarkup, "smm-hover-node");
   svg = removeMindMapNodeControls(svg);
   svg = removeElementsByClass(svg, "smm-quick-create-child-btn");
-  svg = removeElementsByClass(svg, "smm-expand-btn");
+  // 保留 smm-expand-btn：收起子节点时节点后方的小圆球，与 Web 列表缩略图一致。
   svg = removeElementsByClass(svg, "smm-other-container");
   svg = removeElementsByClass(svg, "smm-outer-frame-container");
   svg = removeMindMapExportFooter(svg);
@@ -504,7 +651,23 @@ function removeMindMapEditOverlays(svgMarkup: string): string {
   });
 }
 
-export function normalizeMindMapThumbnailSvg(svgMarkup: string): string {
+/** Decode native iframe export (raw SVG or data:image/svg+xml URL) for list cards. */
+export function decodeMindMapThumbnailPayload(payload: unknown): string | null {
+  if (typeof payload !== "string" || !payload.trim()) {
+    return null;
+  }
+  const decoded = decodeSvgDataUrl(payload.trim());
+  if (!decoded.includes("<svg")) {
+    return null;
+  }
+  return normalizeMindMapThumbnailSvg(decoded, { source: "native" });
+}
+
+export function normalizeMindMapThumbnailSvg(
+  svgMarkup: string,
+  opts?: { source?: "native" },
+): string {
+  svgMarkup = decodeSvgDataUrl(svgMarkup);
   const originalLength = svgMarkup.length;
   const originalViewBox = getSvgAttr(svgMarkup, "viewBox") || null;
   const originalSvgSize = {
@@ -534,6 +697,7 @@ export function normalizeMindMapThumbnailSvg(svgMarkup: string): string {
   svg = normalizeMindMapTextNodes(svg);
   const isMindMapSvg = /class="smm-container"/.test(svg);
   if (isMindMapSvg) {
+    svg = repairMindMapForeignObjectText(svg);
     svg = cropMindMapViewBox(svg);
   }
   const croppedViewBox = getSvgAttr(svg, "viewBox") || null;
@@ -562,45 +726,81 @@ export function normalizeMindMapThumbnailSvg(svgMarkup: string): string {
       svgOpenTag: getSvgOpenTag(svg).slice(0, 300),
     });
   }
-  svg = setOrAddSvgAttr(svg, MINDMAP_THUMB_NORMALIZED_ATTR, "1");
+  svg = setOrAddSvgAttr(
+    svg,
+    MINDMAP_THUMB_NORMALIZED_ATTR,
+    MINDMAP_THUMB_NORMALIZED_VERSION,
+  );
+  if (opts?.source) {
+    svg = markMindMapThumbnailSource(svg, opts.source);
+  }
   return svg;
 }
 
-type MindMapThumbnailNode = {
-  depth: number;
-  order: number;
-  parentOrder: number | null;
-  label: string;
-  width: number;
-  height: number;
-};
-
-function collectMindMapThumbnailNodes(
-  node: MindMapNode,
-  depth: number,
-  parentOrder: number | null,
-  nodes: MindMapThumbnailNode[],
-): void {
-  const label = mindMapRichTextToPlainText(node.data.text) || "Untitled";
-  const order = nodes.length;
-  nodes.push({
-    depth,
-    order,
-    parentOrder,
-    label,
-    width: clamp(48 + label.length * 12, 120, 260),
-    height: 44,
-  });
-  for (const child of node.children ?? []) {
-    collectMindMapThumbnailNodes(child, depth + 1, order, nodes);
+export function markMindMapThumbnailSource(
+  svgMarkup: string,
+  source: "native",
+): string {
+  if (!/<svg\b/i.test(svgMarkup)) {
+    return svgMarkup;
   }
+  let svg = setOrAddSvgAttr(
+    svgMarkup,
+    MINDMAP_THUMB_SOURCE_ATTR,
+    `mindmap-${source}`,
+  );
+  svg = setOrAddSvgAttr(svg, "data-excal-filelist-thumb", "1");
+  if (!/\bdata-excal-thumb-bg\s*=/i.test(svg)) {
+    svg = setOrAddSvgAttr(svg, "data-excal-thumb-bg", "#ffffff");
+  }
+  return svg;
 }
 
-function buildMindMapThumbnailPath(node: MindMapThumbnailNode): string {
-  return `M0 0L${node.width} 0L${node.width} ${node.height}L0 ${node.height}Z`;
+export function isNativeMindMapThumbnailSvg(
+  svgMarkup: string | null | undefined,
+): boolean {
+  if (!svgMarkup) {
+    return false;
+  }
+  const source = getSvgAttr(svgMarkup, MINDMAP_THUMB_SOURCE_ATTR);
+  const legacySource = getSvgAttr(svgMarkup, LEGACY_MINDMAP_THUMB_SOURCE_ATTR);
+  if (source === "mindmap-native" || legacySource === "native") {
+    return true;
+  }
+  if (source === "mindmap-schematic" || legacySource === "schematic") {
+    return false;
+  }
+  if (
+    /\bdata-excal-filelist-thumb\s*=/i.test(svgMarkup) &&
+    /class="[^"]*\bsmm-container\b[^"]*"/i.test(svgMarkup) &&
+    /<rect\b[^>]*class="[^"]*\bsmm-node-shape\b/i.test(svgMarkup)
+  ) {
+    return false;
+  }
+  // native export 通常带 matrix 变换；示意缩略图用固定坐标
+  return /transform="matrix\(/i.test(svgMarkup);
 }
 
-function withFileListThumbnailAttrs(svgMarkup: string, background: string): string {
+/** Session cache we can show before content hash is bound (native mindmap / excalidraw export). */
+export function isTrustedWarmLocalThumbnailSvg(
+  svgMarkup: string | null | undefined,
+): boolean {
+  if (!svgMarkup || !thumbnailSvgHasVisibleContent(svgMarkup)) {
+    return false;
+  }
+  if (isNativeMindMapThumbnailSvg(svgMarkup)) {
+    return true;
+  }
+  if (/class="[^"]*\bsmm-container\b[^"]*"/i.test(svgMarkup)) {
+    return false;
+  }
+  return /\bdata-excal-filelist-thumb\s*=/i.test(svgMarkup);
+}
+
+export function withFileListThumbnailAttrs(
+  svgMarkup: string,
+  background: string,
+): string {
   if (/\bdata-excal-filelist-thumb\s*=/i.test(svgMarkup)) {
     return svgMarkup;
   }
@@ -612,73 +812,7 @@ function withFileListThumbnailAttrs(svgMarkup: string, background: string): stri
   );
 }
 
-export async function buildMindMapThumbnailSvg(
-  data: MindMapDocumentData,
-): Promise<string> {
-  const nodes: MindMapThumbnailNode[] = [];
-  collectMindMapThumbnailNodes(data.root, 0, null, nodes);
-
-  const xGap = 210;
-  const yGap = 82;
-  const padding = 48;
-  const positions = nodes.map((node) => ({
-    x: padding + node.depth * xGap,
-    y: padding + node.order * yGap,
-  }));
-  const maxRight = Math.max(
-    ...nodes.map((node, index) => positions[index].x + node.width),
-  );
-  const maxBottom = Math.max(
-    ...nodes.map((node, index) => positions[index].y + node.height),
-  );
-  const width = Math.max(420, maxRight + padding);
-  const height = Math.max(240, maxBottom + padding);
-  const background = "#ffffff";
-
-  const links = nodes
-    .filter((node) => node.parentOrder !== null)
-    .map((node) => {
-      const fromNode = nodes[node.parentOrder!];
-      const from = positions[node.parentOrder!];
-      const to = positions[node.order];
-      const x1 = from.x + fromNode.width;
-      const y1 = from.y + fromNode.height / 2;
-      const x2 = to.x;
-      const y2 = to.y + node.height / 2;
-      const midX = x1 + (x2 - x1) / 2;
-      return `<path d="M${x1} ${y1}C${midX} ${y1},${midX} ${y2},${x2} ${y2}" fill="none" stroke="#8b9bb4" stroke-width="2"/>`;
-    })
-    .join("");
-
-  const renderedNodes = nodes
-    .map((node, index) => {
-      const { x, y } = positions[index];
-      const fill = node.depth === 0 ? "#4f8cff" : "#ffffff";
-      const stroke = node.depth === 0 ? "#4f8cff" : "#d0d7e2";
-      const textFill = node.depth === 0 ? "#ffffff" : "#1f2937";
-      return (
-        `<g class="smm-node" transform="matrix(1,0,0,1,${x},${y})">` +
-        `<path class="smm-node-shape" d="${buildMindMapThumbnailPath(
-          node,
-        )}" fill="${fill}" stroke="${stroke}" stroke-width="2"></path>` +
-        `<text x="24" y="28" fill="${textFill}" font-size="16" font-family="Arial, sans-serif">${escapeXmlText(
-          node.label,
-        )}</text>` +
-        "</g>"
-      );
-    })
-    .join("");
-
-  const raw =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
-    `<rect width="${width}" height="${height}" fill="${background}"/>` +
-    `<g class="smm-container">${links}${renderedNodes}</g>` +
-    "</svg>";
-
-  return withFileListThumbnailAttrs(normalizeMindMapThumbnailSvg(raw), background);
-}
-
-function viewBackgroundFromSceneAppState(appState: unknown): string {
+export function viewBackgroundFromSceneAppState(appState: unknown): string {
   if (!appState || typeof appState !== "object") {
     return "#ffffff";
   }
@@ -733,9 +867,9 @@ function expandThumbnailSvgToMinimumViewport(
     return out;
   }
   const endOpen = openMatch.index + openMatch[0].length;
-  const rect = `<rect x="${expanded.x}" y="${expanded.y}" width="${expanded.width}" height="${expanded.height}" fill="${escapeXmlAttr(
-    background,
-  )}"/>`;
+  const rect = `<rect x="${expanded.x}" y="${expanded.y}" width="${
+    expanded.width
+  }" height="${expanded.height}" fill="${escapeXmlAttr(background)}"/>`;
   return out.slice(0, endOpen) + rect + out.slice(endOpen);
 }
 
@@ -774,19 +908,28 @@ export function extractThumbBg(svgMarkup: string): string {
   return svgMarkup.match(/\bdata-excal-thumb-bg="([^"]*)"/i)?.[1] ?? "#ffffff";
 }
 
+export function thumbnailSvgHasVisibleContent(svgMarkup: string): boolean {
+  const withoutDefs = svgMarkup.replace(/<defs\b[\s\S]*?<\/defs>/gi, "");
+  if (
+    /<(?:path|polygon|ellipse|circle|line|polyline|text|image)\b/i.test(
+      withoutDefs,
+    )
+  ) {
+    return true;
+  }
+  return [...withoutDefs.matchAll(/<rect\b/gi)].length > 1;
+}
+
 /**
  * 列表卡片内：保持 SVG 原始宽高比，以 xMidYMid meet 居中显示在 5/3 预览区内。
  * 留白区域由父容器背景色（与画布底色一致，见 extractThumbBg）填充，确保四周留白均等。
  * 父级 `overflow: hidden` + 圆角负责裁切。
  */
 export function patchThumbnailSvgForCard(svgMarkup: string): string {
-  const withoutEmbeddedFonts =
-    new RegExp(`\\b${MINDMAP_THUMB_NORMALIZED_ATTR}\\s*=\\s*"1"`, "i").test(
-      svgMarkup,
-    )
-      ? svgMarkup
-      : normalizeMindMapThumbnailSvg(svgMarkup);
-  const patched = withoutEmbeddedFonts.replace(
+  const normalized = isMindMapThumbNormalized(svgMarkup)
+    ? svgMarkup
+    : normalizeMindMapThumbnailSvg(svgMarkup);
+  return normalized.replace(
     /(<svg\b)([^>]*)(>)/i,
     (_match, open: string, attrs: string, close: string) => {
       const cleaned = attrs
@@ -796,20 +939,4 @@ export function patchThumbnailSvgForCard(svgMarkup: string): string {
       return `${open}${cleaned} preserveAspectRatio="xMidYMid meet" width="100%" height="100%"${close}`;
     },
   );
-  if (/class="smm-container"/.test(withoutEmbeddedFonts)) {
-    debugMindMapThumbnail("patch for card", {
-      rawViewBox: getSvgAttr(svgMarkup, "viewBox") || null,
-      normalizedViewBox: getSvgAttr(withoutEmbeddedFonts, "viewBox") || null,
-      patchedViewBox: getSvgAttr(patched, "viewBox") || null,
-      patchedPreserveAspectRatio:
-        getSvgAttr(patched, "preserveAspectRatio") || null,
-      patchedSvgSize: {
-        width: getSvgAttr(patched, "width") || null,
-        height: getSvgAttr(patched, "height") || null,
-      },
-      rawLen: svgMarkup.length,
-      patchedLen: patched.length,
-    });
-  }
-  return patched;
 }

@@ -1,14 +1,43 @@
-import { FileSyncState } from "./FileSyncState";
+import { readStoredFileModificationState } from "./fileModificationState";
 import { isNewDocumentHash } from "./documentHash";
 import { isLocalDraftFileId } from "./localDraftFileId";
-import { hasRecoverableLocalDraft } from "./localDraftSessions";
+
+export type EditorHomeNavPlan =
+  | { action: "navigate" }
+  | { action: "prompt-leave" };
+
+/**
+ * 离开编辑器返回主页的唯一决策入口。
+ * 读取 {@link readStoredFileModificationState}，不在 UI 层做二次推断。
+ */
+export function resolveEditorHomeNavPlan(
+  fileId: string,
+  opts?: { kind?: string | null },
+): EditorHomeNavPlan {
+  if (isLocalDraftFileId(fileId)) {
+    return { action: "prompt-leave" };
+  }
+  if (readStoredFileModificationState(fileId, opts?.kind).shouldPromptOnLeave) {
+    return { action: "prompt-leave" };
+  }
+  return { action: "navigate" };
+}
 
 /** 离开编辑器返回主页时，是否应先弹出「保存 / 不保存」对话框。 */
-export function shouldPromptEditorHomeNavDialog(fileId: string): boolean {
-  if (isLocalDraftFileId(fileId)) {
-    return hasRecoverableLocalDraft(fileId);
-  }
-  return FileSyncState.hasUnsavedChanges(fileId);
+export function shouldPromptEditorHomeNavDialog(
+  fileId: string,
+  kind?: string | null,
+): boolean {
+  return resolveEditorHomeNavPlan(fileId, { kind }).action === "prompt-leave";
+}
+
+/** exit 保存后是否可继续离开（并行保存已清 dirty 时仍放行）。 */
+export function shouldNavigateAfterExitSave(
+  saved: boolean,
+  fileId: string | null,
+  kind?: string | null,
+): boolean {
+  return saved || (!!fileId && !shouldPromptEditorHomeNavDialog(fileId, kind));
 }
 
 /**

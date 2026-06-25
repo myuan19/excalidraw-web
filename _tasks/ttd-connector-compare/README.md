@@ -11,7 +11,7 @@ bash _tasks/ttd-connector-compare/run.sh
 ## 三列对比
 
 | 列 | 含义 |
-|----|------|
+| --- | --- |
 | ① Git 原始 | 最后一次提交 `6ceb8fa0` 的 `common.ts`：仅 `convertToExcalidrawElements`，**无**后处理（保留 Mermaid 自带 `roundness`） |
 | ② 直角参考 | 去掉 `roundness`，保留 Mermaid 原始折点走线 |
 | ③ 当前工作区 | 共线简化 + 标准圆弧 fillet（自适应 4–7 采样） |

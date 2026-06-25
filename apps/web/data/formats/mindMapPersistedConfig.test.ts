@@ -133,18 +133,15 @@ describe("MindMapAdapter config hygiene", () => {
   const root = { data: { text: "<p>主题</p>" }, children: [] };
 
   it("repairs polluted config on migrate (editor and embed load path)", () => {
-    const migrated = MindMapAdapter.migrate(
-      {
-        root,
-        layout: "logicalStructure",
-        config: {
-          maxNodeImageStorageBytes: 8388608,
-          outerFramePaddingX: 0,
-          outerFramePaddingY: 0,
-        },
+    const migrated = MindMapAdapter.parse({
+      root,
+      layout: "logicalStructure",
+      config: {
+        maxNodeImageStorageBytes: 8388608,
+        outerFramePaddingX: 0,
+        outerFramePaddingY: 0,
       },
-      1,
-    );
+    });
     expect(migrated.config).toBeUndefined();
   });
 

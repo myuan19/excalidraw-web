@@ -1,5 +1,7 @@
 import { RequestError } from "@excalidraw/excalidraw/errors";
 
+import { apiTransport } from "./apiTransport";
+
 import type {
   LLMMessage,
   TTTDDialog,
@@ -11,10 +13,13 @@ export type AIProxyFeature =
   | "icon-tag"
   | "mindmap-chat";
 
-async function readJsonError(res: Response): Promise<string> {
-  const text = await res.text();
+async function readJsonErrorFromBody(
+  status: number,
+  bodyText: string,
+): Promise<string> {
+  const text = bodyText;
   if (!text) {
-    return `HTTP ${res.status}`;
+    return `HTTP ${status}`;
   }
   try {
     const parsed = JSON.parse(text);
@@ -33,6 +38,7 @@ export async function streamAIChat(opts: {
   systemPrompt?: string;
   temperature?: number;
 }): Promise<TTTDDialog.OnTextSubmitRetValue> {
+  // Desktop: fetch 走 editorhub:// 协议代理到内部 loopback，保留流式 body。
   const response = await fetch("/api/ai/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -49,7 +55,10 @@ export async function streamAIChat(opts: {
   if (!response.ok) {
     return {
       error: new RequestError({
-        message: await readJsonError(response),
+        message: await readJsonErrorFromBody(
+          response.status,
+          await response.text(),
+        ),
         status: response.status,
       }),
     };
@@ -130,21 +139,26 @@ export async function requestAIVision(opts: {
   textContext?: string;
   signal?: AbortSignal;
 }): Promise<{ content: string }> {
-  const response = await fetch("/api/ai/vision", {
+  const response = await apiTransport.request({
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    path: "/api/ai/vision",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
     body: JSON.stringify({
       feature: opts.feature,
       imageDataUrl: opts.imageDataUrl,
       textContext: opts.textContext,
     }),
-    signal: opts.signal,
   });
 
-  if (!response.ok) {
-    throw new Error(await readJsonError(response));
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(
+      await readJsonErrorFromBody(response.status, response.bodyText),
+    );
   }
-  const json = await response.json();
+  const json = JSON.parse(response.bodyText);
   const content = json.choices?.[0]?.message?.content?.trim() || "";
   if (!content) {
     throw new Error("Invalid response from model");

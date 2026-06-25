@@ -46,6 +46,8 @@ export function measureRichTextContent({
   })
   div.style.lineHeight = 1.2
   div.innerHTML = html
+  // 强制同步布局，避免在隐藏 iframe / 离屏测量时读到 0 宽。
+  void div.offsetHeight
   const measuredEl = div.children[0]
   if (!measuredEl) {
     return { width: 0, height: 0, contentEl: null, fingerprint: '0' }
@@ -57,9 +59,10 @@ export function measureRichTextContent({
   } else {
     measuredEl.style.width = ''
   }
+  void measuredEl.offsetHeight
   let { width, height } = measuredEl.getBoundingClientRect()
   const plainTextLength = (measuredEl.textContent || '').trim().length
-  if (width <= 0 && plainTextLength > 0) {
+  if (width <= 1 && plainTextLength > 0) {
     // 测量容器瞬时不可见（如祖先 display:none / 布局未刷新）时返回 0 宽，
     // 若直接使用会让 foreignObject 以 1px 宽渲染、节点文本不可见，
     // 直到下一次重渲染才恢复。以字号估算宽度兜底，并留日志定位根因。
@@ -69,6 +72,14 @@ export function measureRichTextContent({
       connected: !!measuredEl.isConnected
     })
     width = Math.min(plainTextLength * fallbackFontSize, maxWidth)
+  }
+  if (height <= 1 && plainTextLength > 0) {
+    mindMapDebugLog('mindmap-richtext-measure', 'collapsed height fallback', {
+      plainTextLength,
+      rawHeight: height,
+      connected: !!measuredEl.isConnected
+    })
+    height = Math.ceil(fallbackFontSize * 1.2)
   }
   if (height <= 0) {
     height = Math.ceil(fallbackFontSize * 1.2)

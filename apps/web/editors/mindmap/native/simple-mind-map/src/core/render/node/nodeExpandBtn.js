@@ -208,7 +208,10 @@ function hideExpandBtn() {
   let { isActive, expand } = this.getData()
   if (!isActive && expand) {
     setTimeout(() => {
-      this.removeExpandBtn()
+      const { isActive: latestIsActive, expand: latestExpand } = this.getData()
+      if (!latestIsActive && latestExpand) {
+        this.removeExpandBtn()
+      }
     }, 0)
   }
 }

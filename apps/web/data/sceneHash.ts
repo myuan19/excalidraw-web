@@ -1,14 +1,28 @@
 import type { ForkSceneSnapshot } from "./forkFileTypes";
 
 /**
- * Stable fingerprint for scene content.
+ * Content-identity authority for documents.
  *
- * Strips `appState.name` before hashing so that file-name changes (managed by
- * the server `files` table, not the canvas) never cause a hash mismatch.
+ * Every "is this modified?" decision funnels through {@link hashSceneSnapshot} /
+ * {@link hashDocumentSnapshot}: the live editor (`EditorShell.handleChange`), the
+ * load/baseline paths (`initializeExcalidrawScene`, `loadEditorServerFile`),
+ * saves, remote/cross-tab apply, the draft cache and the thumbnail pipeline all
+ * establish or compare baselines via these fingerprints. Those producers hand us
+ * RAW scenes — the baseline paths in particular hash the server/cache payload
+ * with its appState untouched — so this module is the single place that can
+ * define what counts as document content.
  *
- * Uses plain `JSON.stringify` with sorted keys for determinism — avoids a
- * static import of `@excalidraw/excalidraw` which would pull the entire editor
- * into the initial bundle.
+ * It is therefore the authority, not a fallback: stripping transient appState
+ * here (see {@link CONTENT_APP_STATE_KEYS}) is what keeps a freshly-loaded
+ * baseline and a live edit in agreement no matter which entry point produced
+ * them. Cleaning at any one producer (e.g. the editor's capture boundary) only
+ * governs what gets *persisted*; it cannot guarantee identity across producers.
+ *
+ * Determinism: plain `JSON.stringify` over sorted keys. We deliberately avoid a
+ * static import of `@excalidraw/excalidraw` so this module — loaded with the
+ * initial file-list bundle — never drags in the editor. The key projection below
+ * is instead kept in lock-step with Excalidraw by a contract test
+ * (`sceneHash.contract.test.ts`).
  */
 export function hashSceneSnapshot(data: ForkSceneSnapshot | unknown): string {
   if (!data || typeof data !== "object") {
@@ -24,8 +38,7 @@ export function hashSceneSnapshot(data: ForkSceneSnapshot | unknown): string {
 /**
  * Stable fingerprint for any managed document payload.
  *
- * Legacy Excalidraw scene payloads keep the existing scene hash semantics.
- * Managed Excalidraw documents still ignore `data.appState.name`, and managed
+ * Legacy Excalidraw scene payloads ignore UI-only appState, and managed
  * MindMap documents ignore `data.view` because viewport position is local UI
  * state rather than document content.
  */
@@ -40,6 +53,29 @@ export function hashDocumentSnapshot(data: unknown): string {
   }
 }
 
+/**
+ * The appState Excalidraw persists as document content — the `export`/`server`
+ * projection of its `APP_STATE_STORAGE_CONF` (both views coincide on these
+ * keys). Everything else — `openMenu`, `openPopup`, `openSidebar`, selection,
+ * scroll/zoom, `activeTool` and the other current-item UI defaults — is
+ * transient UI state that must NOT affect document identity; otherwise merely
+ * opening the hamburger menu or selecting an element would flag the file as
+ * modified.
+ *
+ * This is a local copy (the module stays free of the editor bundle — see file
+ * header). `sceneHash.contract.test.ts` asserts it stays identical to
+ * `cleanAppStateForExport`/`clearAppStateForDatabase` over `getDefaultAppState()`,
+ * so an upstream change to the persisted set fails the test instead of silently
+ * degrading dirty detection.
+ */
+export const CONTENT_APP_STATE_KEYS = [
+  "viewBackgroundColor",
+  "gridSize",
+  "gridStep",
+  "gridModeEnabled",
+  "lockedMultiSelections",
+] as const;
+
 function toSceneHashPayload(data: ForkSceneSnapshot | unknown): {
   elements: unknown;
   appState: unknown;
@@ -50,13 +86,22 @@ function toSceneHashPayload(data: ForkSceneSnapshot | unknown): {
     appState?: unknown;
     files?: unknown;
   };
-  let appState = o.appState;
-  if (appState && typeof appState === "object" && "name" in appState) {
-    const { name: _stripped, ...rest } = appState as Record<string, unknown>;
-    appState = rest;
+
+  const contentAppState: Record<string, unknown> = {};
+  if (o.appState && typeof o.appState === "object") {
+    const source = o.appState as Record<string, unknown>;
+    for (const key of CONTENT_APP_STATE_KEYS) {
+      if (source[key] !== undefined) {
+        contentAppState[key] = source[key];
+      }
+    }
   }
 
-  return { elements: o.elements, appState, files: o.files ?? {} };
+  return {
+    elements: o.elements,
+    appState: contentAppState,
+    files: o.files ?? {},
+  };
 }
 
 function isManagedDocument(value: unknown): value is {

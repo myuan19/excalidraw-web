@@ -1,0 +1,317 @@
+:root {
+  --desktop-titlebar-height: var(--nb-desktop-titlebar-h);
+}
+
+@import "../styles/shell/shellChrome.scss";
+
+.desktop-titlebar {
+  @include shell-chrome-bar;
+  display: flex;
+  align-items: stretch;
+  flex: 0 0 var(--desktop-titlebar-height);
+  height: var(--desktop-titlebar-height);
+  min-height: var(--desktop-titlebar-height);
+  background: var(--nb-shell-chrome-bg);
+  color: var(--nb-text);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.desktop-titlebar__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex: 0 0 auto;
+  padding: 0 0.75rem;
+  -webkit-app-region: drag;
+  pointer-events: none;
+}
+
+.desktop-titlebar__icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+  border-radius: 0.25rem;
+}
+
+.desktop-titlebar__title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  color: var(--nb-text, #1e293b);
+}
+
+.desktop-titlebar__drag {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  padding-left: 0.25rem;
+  -webkit-app-region: drag;
+}
+
+/* ─── Inline Tabs ─── */
+
+.titlebar-tabs__wrapper {
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 100%;
+  position: relative;
+}
+
+.titlebar-tabs__wrapper--dragging,
+.titlebar-tabs__wrapper--dragging .titlebar-tabs {
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-tabs {
+  gap: var(--nb-space-1);
+}
+
+.titlebar-tabs__tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  flex: 0 1 auto;
+  min-width: calc(var(--nb-unit) * 34);
+  max-width: calc(var(--nb-unit) * 96);
+  height: calc(var(--nb-unit) * 14);
+  padding: 0 var(--nb-space-4) 0 var(--nb-space-5);
+  border-radius: var(--nb-radius-sm, 0.375rem);
+  background: transparent;
+  color: var(--nb-text-muted, rgba(30, 41, 59, 0.62));
+  font-size: var(--nb-font-caption, 0.75rem);
+  transition: background 0.12s, color 0.12s, box-shadow 0.12s,
+    transform 0.12s ease-out;
+  touch-action: none;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-tabs__tab--home {
+  flex: 0 0 var(--nb-shell-tab-home-w);
+  width: var(--nb-shell-tab-home-w);
+  min-width: var(--nb-shell-tab-home-w);
+  max-width: var(--nb-shell-tab-home-w);
+}
+
+.titlebar-tabs__tab--home .titlebar-tabs__label {
+  flex: 0 1 auto;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.titlebar-tabs__tab:hover {
+  background: var(--nb-fill-hover, rgba(14, 165, 233, 0.07));
+  color: var(--nb-text, #1e293b);
+}
+
+.titlebar-tabs__tab--active {
+  background: var(--nb-surface, #ffffff);
+  color: var(--nb-text, #111827);
+  box-shadow: 0 0.5px 1px var(--nb-shadow-ink, rgba(0, 0, 0, 0.05)),
+    0 1px 2px var(--nb-shadow-ink, rgba(0, 0, 0, 0.03));
+}
+
+.titlebar-tabs__tab--active:hover {
+  background: var(--nb-surface, #ffffff);
+}
+
+/* 未保存 Tab：仅标题前小黄点，无外圈描边（与 Web 文件卡角标同色） */
+.titlebar-tabs__dot {
+  flex: 0 0 auto;
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 9999px;
+  background: var(--nb-warning, #f59e0b);
+}
+
+.titlebar-tabs__tab--unsaved.titlebar-tabs__tab--active {
+  box-shadow: 0 0.5px 1px var(--nb-shadow-ink, rgba(0, 0, 0, 0.05)),
+    0 1px 2px var(--nb-shadow-ink, rgba(0, 0, 0, 0.03));
+}
+
+.titlebar-tabs__tab--unsaved.titlebar-tabs__tab--active:hover {
+  box-shadow: 0 0.5px 1px var(--nb-shadow-ink, rgba(0, 0, 0, 0.05)),
+    0 1px 2px var(--nb-shadow-ink, rgba(0, 0, 0, 0.03));
+}
+
+/* Dragged tab follows the pointer 1:1; no transition so it never lags. */
+.titlebar-tabs__tab--dragging {
+  opacity: 0.92;
+  z-index: 2;
+  transform: translateX(var(--titlebar-tab-drag-x, 0px));
+  transition: none;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12), 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+/* Siblings slide to open a gap; transform transition gives the smooth glide. */
+.titlebar-tabs__tab--shifting {
+  transform: translateX(var(--titlebar-tab-shift-x, 0px));
+  transition: transform 0.16s ease;
+}
+
+.titlebar-tabs__activate {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 100%;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-tabs__activate svg {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.titlebar-tabs__tab--active .titlebar-tabs__activate svg {
+  opacity: 1;
+}
+
+.titlebar-tabs__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.75rem;
+}
+
+.titlebar-tabs__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  margin-left: 0.125rem;
+  border: 0;
+  border-radius: var(--nb-radius-sm, 0.25rem);
+  background: transparent;
+  color: var(--nb-text-muted, rgba(30, 41, 59, 0.62));
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s, color 0.1s;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-tabs__tab:hover .titlebar-tabs__close,
+.titlebar-tabs__tab--active .titlebar-tabs__close {
+  opacity: 1;
+}
+
+.titlebar-tabs__close:hover {
+  background: var(--nb-fill-hover-strong, rgba(14, 165, 233, 0.11));
+  color: var(--nb-text, #1e293b);
+}
+
+/* 首页没有关闭按钮，保留半个关闭位，避免选中首页时过空或坍塌 */
+.titlebar-tabs__close-placeholder {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: var(--nb-shell-tab-home-trailing-affordance-w);
+  height: var(--nb-space-8);
+  pointer-events: none;
+}
+
+.titlebar-tabs__tab--unsaved .titlebar-tabs__close {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.titlebar-tabs__tab--unsaved:hover .titlebar-tabs__close {
+  visibility: visible;
+  pointer-events: auto;
+  opacity: 1;
+}
+
+/* ─── Window controls ─── */
+
+.desktop-titlebar__controls {
+  display: flex;
+  align-items: stretch;
+  flex: 0 0 auto;
+  -webkit-app-region: no-drag;
+}
+
+.desktop-titlebar__control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  border: none;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+
+  svg {
+    width: 0.75rem;
+    height: 0.75rem;
+  }
+
+  &:hover {
+    background: var(--nb-shell-overlay, rgba(15, 23, 42, 0.06));
+  }
+
+  &:active {
+    background: var(--nb-shell-overlay-strong, rgba(15, 23, 42, 0.1));
+  }
+}
+
+.desktop-titlebar__control--close:hover {
+  background: #e81123;
+  color: #ffffff;
+}
+
+.desktop-titlebar__control--close:active {
+  background: #bf0f1d;
+  color: #ffffff;
+}
+
+/* ─── Shell layout ─── */
+
+.app-shell--desktop {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 100%;
+}
+
+.app-shell--desktop__body {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.app-shell--desktop .filelist__sidebar-brand {
+  display: none;
+}
+
+.app-shell--desktop .filelist__sidebar-scroll {
+  padding: var(--nb-nav-spacing-panel-y) var(--nb-nav-spacing-panel-x);
+}
+
+.app-shell--desktop .editor-platform-shell,
+.app-shell--desktop .editor-platform-shell__content {
+  min-height: 0;
+  height: 100%;
+}
+
+.app-shell--desktop .mindmap-editor {
+  height: 100%;
+}
+
+.app-shell--desktop .mindmap-editor__native-frame {
+  height: 100%;
+}

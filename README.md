@@ -38,7 +38,7 @@ _logs/        Local runtime logs (gitignored)
 Yarn workspaces、TypeScript、ESLint、Vitest、Prettier、Husky 等只能从仓库根读取，**不能**下沉到子目录。
 
 | 文件 | 用途 |
-|------|------|
+| --- | --- |
 | `package.json` / `yarn.lock` | Workspace 根与依赖锁 |
 | `tsconfig.json` | 全仓 TypeScript 基线 |
 | `vitest.config.mts` | 单元测试 |
@@ -53,7 +53,7 @@ Yarn workspaces、TypeScript、ESLint、Vitest、Prettier、Husky 等只能从�
 本地开发数据放在仓库根目录 **`_dev_data/`**（单独目录，不混在 `apps/web/`/`server/` 源码树里）：
 
 | 场景 | 路径 |
-|------|------|
+| --- | --- |
 | **本地开发（默认）** | `<repo>/_dev_data/` |
 | **自定义** | `.env.development.local` 中 `EXCALIDRAW_DATA_DIR`（相对路径相对仓库根） |
 | **Docker 部署** | 宿主机 `/opt/editorhub-web/data` → 容器 `/var/lib/excalidraw` |
@@ -92,11 +92,11 @@ yarn docker:full              # deploy/docker-compose.full.yml
 ## Commands
 
 | Command | Description |
-|---------|-------------|
+| --- | --- |
 | `yarn start` | Vite dev server (apps/web/) |
 | `yarn build` | Production frontend build |
-| `yarn start:desktop -- --workspace <dir>` | Open the Electron desktop app with a local workspace |
-| `yarn start:desktop:server -- --workspace <dir>` | Server-only desktop API debugging |
+| `yarn start:desktop` | Electron app — `editorhub://app` UI, file API via IPC (no fixed localhost port) |
+| `yarn start:desktop:server` | API-only debugging on a fixed port (no Electron window) |
 | `yarn build:desktop` | Build Web assets and Windows installer + portable desktop app |
 | `yarn build:desktop:pack` | Build unpacked Electron app |
 | `yarn test:typecheck` | TypeScript check |

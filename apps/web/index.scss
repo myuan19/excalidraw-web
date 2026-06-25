@@ -1,11 +1,20 @@
 @import "../../packages/excalidraw/css/variables.module.scss";
 @import "./styles/notionUiTokens.scss";
+@import "./styles/unsavedStatusDot.scss";
 
 .excalidraw {
-  --color-primary-contrast-offset: var(--nb-primary-chubb-offset);
+  /* 编辑器内部保持 Excalidraw 紫色对比色，不跟随外壳天蓝 token */
+  --color-primary-contrast-offset: #625ee0;
 
   &.theme--dark {
-    --color-primary-contrast-offset: var(--nb-primary-chubb-offset-dark);
+    --color-primary-contrast-offset: #726dff;
+  }
+
+  /* Align main-menu chrome with web: keep hint arrow from bleeding over open menu */
+  .App-menu_top__left:has([data-testid="dropdown-menu"]) {
+    .welcome-screen-decor-hint--menu {
+      display: none;
+    }
   }
 
   .footer-center {
@@ -128,4 +137,37 @@
       color: var(--nb-on-primary-dark-contrast) !important;
     }
   }
+}
+
+.debug-mode-trigger {
+  position: fixed;
+  right: 12px;
+  bottom: 10px;
+  z-index: 20;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #64748b;
+  font: 11px/1.4 var(--ui-font, system-ui, sans-serif);
+  cursor: default;
+  user-select: none;
+  backdrop-filter: blur(8px);
+}
+
+.debug-mode-trigger.is-enabled {
+  border-color: rgba(37, 99, 235, 0.3);
+  background: rgba(239, 246, 255, 0.92);
+  color: #1d4ed8;
+}
+
+.debug-mode-trigger__badge {
+  border-radius: 999px;
+  padding: 1px 5px;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 600;
 }

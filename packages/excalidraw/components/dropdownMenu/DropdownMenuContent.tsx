@@ -24,6 +24,7 @@ const MenuContent = ({
    */
   onSelect?: (event: Event) => void;
   style?: React.CSSProperties;
+  align?: "start" | "center" | "end";
 }) => {
   const device = useDevice();
   const menuRef = useRef<HTMLDivElement>(null);

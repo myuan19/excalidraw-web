@@ -59,11 +59,31 @@ export function buildMindMapSaveStatusMessage(
   };
 }
 
+export function parseMindMapThumbnailPayload(payload: unknown): {
+  revision?: number;
+  thumbnail: string;
+} | null {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+  const record = payload as Record<string, unknown>;
+  if (typeof record.thumbnail !== "string" || !record.thumbnail.trim()) {
+    return null;
+  }
+  return {
+    thumbnail: record.thumbnail,
+    revision:
+      typeof record.revision === "number" ? record.revision : undefined,
+  };
+}
+
 export function parseMindMapSavePayload(payload: unknown): {
   mindMapData: MindMapDocumentData;
   thumbnail?: string | null;
   requestId?: string | null;
   revision?: number;
+  userEdit: boolean;
+  reason?: string;
 } | null {
   if (!payload || typeof payload !== "object") {
     return null;
@@ -86,6 +106,8 @@ export function parseMindMapSavePayload(payload: unknown): {
             : undefined,
       revision:
         typeof record.revision === "number" ? record.revision : undefined,
+      userEdit: record.userEdit === true,
+      reason: typeof record.reason === "string" ? record.reason : undefined,
     };
   } catch {
     return null;

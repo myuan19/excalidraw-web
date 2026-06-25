@@ -226,7 +226,7 @@ export default {
     window.addEventListener('resize', this.computeToolbarShowThrottle)
     this.$bus.$on('lang_change', this.computeToolbarShowThrottle)
     window.addEventListener('beforeunload', this.onUnload)
-    this.$bus.$on('node_note_dblclick', this.onNodeNoteDblclick)
+    this.$bus.$on('node_note_click', this.onNodeNoteClick)
   },
   beforeDestroy() {
     this.$bus.$off('write_local_file', this.onWriteLocalFile)
@@ -234,7 +234,7 @@ export default {
     window.removeEventListener('resize', this.computeToolbarShowThrottle)
     this.$bus.$off('lang_change', this.computeToolbarShowThrottle)
     window.removeEventListener('beforeunload', this.onUnload)
-    this.$bus.$off('node_note_dblclick', this.onNodeNoteDblclick)
+    this.$bus.$off('node_note_click', this.onNodeNoteClick)
   },
   methods: {
     onHostSaveStatus(status = {}) {
@@ -506,8 +506,10 @@ export default {
       }
     },
 
-    onNodeNoteDblclick(node, e) {
-      e.stopPropagation()
+    onNodeNoteClick(node, e) {
+      if (e && typeof e.stopPropagation === 'function') {
+        e.stopPropagation()
+      }
       this.$bus.$emit('showNodeNote', node)
     }
   }

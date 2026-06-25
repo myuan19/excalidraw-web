@@ -1,12 +1,15 @@
 import { mkdirSync } from "fs";
+
 import { createStream } from "rotating-file-stream";
 
+import { createLogSessionId, sessionLogBasename } from "../config/logNaming.js";
 import {
-  createLogSessionId,
-  formatLogTimestamp,
-  sessionLogBasename,
-} from "../config/logNaming.js";
-import { isFileLogEnabled, logRotateOptions, resolveLogDir } from "../config/logDir.js";
+  isFileLogEnabled,
+  logRotateOptions,
+  resolveLogDir,
+} from "../config/logDir.js";
+import { formatDebugEvent } from "../../lib/logger/core.js";
+
 import { parseByteSize, pruneLogFiles } from "./logPrune.js";
 
 /** @typedef {import("../../lib/logger/core.js").LogEntry} LogEntry */
@@ -14,12 +17,7 @@ import { parseByteSize, pruneLogFiles } from "./logPrune.js";
 const logSessionId = createLogSessionId();
 
 function formatLine(entry) {
-  const lvl = entry.level.toUpperCase().padEnd(5);
-  const src = `${entry.source}:${entry.module}`;
-  const data = entry.data ? ` ${JSON.stringify(entry.data)}` : "";
-  const sid = entry.sid ? ` sid=${entry.sid}` : "";
-  const ts = formatLogTimestamp(new Date(entry.ts));
-  return `${ts} [${lvl}] [${src}] ${entry.msg}${data}${sid}\n`;
+  return `${formatDebugEvent(entry)}\n`;
 }
 
 /**
@@ -52,7 +50,9 @@ function openRotatingStream(basename, filter) {
   const stream = createStream(basename, streamOpts);
 
   stream.on("error", (err) => {
-    process.stderr.write(`[log] rotating stream error (${basename}): ${err.message}\n`);
+    process.stderr.write(
+      `[log] rotating stream error (${basename}): ${err.message}\n`,
+    );
   });
 
   /** @type {import("../../lib/logger/core.js").LogTransport} */
@@ -70,12 +70,14 @@ function openRotatingStream(basename, filter) {
 
 let _serverTransport = null;
 let _clientTransport = null;
+let _mergedTransport = null;
 let _sessionMeta = null;
 
 function pruneLogDirectory(logDir) {
   const opts = logRotateOptions();
   const serverBasename = sessionLogBasename("server", logSessionId);
   const clientBasename = sessionLogBasename("client", logSessionId);
+  const mergedBasename = sessionLogBasename("merged", logSessionId);
   const maxTotalBytes = parseByteSize(opts.maxTotalSize);
 
   const serverPrune = pruneLogFiles(logDir, {
@@ -90,11 +92,22 @@ function pruneLogDirectory(logDir) {
     maxTotalBytes,
     maxFileCount: opts.maxSessionFiles,
   });
+  const mergedPrune = pruneLogFiles(logDir, {
+    prefix: "merged",
+    protectBasenames: [mergedBasename],
+    maxTotalBytes,
+    maxFileCount: opts.maxSessionFiles,
+  });
 
   return {
     serverBasename,
     clientBasename,
-    removed: [...serverPrune.removed, ...clientPrune.removed],
+    mergedBasename,
+    removed: [
+      ...serverPrune.removed,
+      ...clientPrune.removed,
+      ...mergedPrune.removed,
+    ],
   };
 }
 
@@ -130,6 +143,17 @@ export function getClientFileTransport() {
   return _clientTransport;
 }
 
+export function getMergedFileTransport() {
+  if (!isFileLogEnabled()) {
+    return null;
+  }
+  if (!_mergedTransport) {
+    const basename = sessionLogBasename("merged", logSessionId);
+    _mergedTransport = openRotatingStream(basename);
+  }
+  return _mergedTransport;
+}
+
 export function initFileLogTransports() {
   const logDir = resolveLogDir();
   if (!isFileLogEnabled() || !logDir) {
@@ -140,12 +164,14 @@ export function initFileLogTransports() {
   const prune = pruneLogDirectory(logDir);
   getServerFileTransport();
   getClientFileTransport();
+  getMergedFileTransport();
 
   _sessionMeta = {
     logDir,
     sessionId: logSessionId,
     serverLog: prune.serverBasename,
     clientLog: prune.clientBasename,
+    mergedLog: prune.mergedBasename,
     removedOldLogs: prune.removed,
     rotateSize: logRotateOptions().size,
     maxTotalSize: logRotateOptions().maxTotalSize,

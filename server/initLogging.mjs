@@ -9,6 +9,7 @@ if (session) {
     sessionId: session.sessionId,
     serverLog: session.serverLog,
     clientLog: session.clientLog,
+    mergedLog: session.mergedLog,
     rotateSize: session.rotateSize,
     maxTotalSize: session.maxTotalSize,
     removedOldLogs: session.removedOldLogs.length,

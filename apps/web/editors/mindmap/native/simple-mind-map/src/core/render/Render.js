@@ -29,6 +29,7 @@ import {
   checkNodeListIsEqual,
   createSmmFormatData,
   checkSmmFormatData,
+  restoreSmmClipboardImages,
   checkIsNodeStyleDataKey,
   formatGetNodeGeneralization,
   sortNodeList,
@@ -36,7 +37,8 @@ import {
   checkClipboardReadEnable,
   isNodeNotNeedRenderData,
   getRenderTreeFromHistorySnapshot,
-  fitPastedImageSizeToNodeText
+  fitPastedImageSizeToNodeText,
+  mindMapDebugLog
 } from '../../utils'
 import {
   createNodeInvalidationState,
@@ -117,11 +119,14 @@ class Render {
     this.nodeInvalidation = createNodeInvalidationState()
     // 渲染代际登记（renderGeneration字段由orchestrator初始化并独占维护）
     this.renderOrchestrator = createRenderOrchestrator(this)
-    this.pendingInsertEditNodes = []
+    this.pendingInsertEditRequest = null
+    this.pendingInsertEditToken = 0
+    this.pendingInsertEditPromise = null
     // 文本编辑框，需要再bindEvent之前实例化，否则单击事件只能触发隐藏文本编辑框，而无法保存文本修改
     this.textEdit = new TextEdit(this)
     // 当前复制的数据
     this.beingCopyData = null
+    this.beingCopyImgMap = null
     // 节点高亮框
     this.highlightBoxNode = null
     this.highlightBoxNodeStyle = null
@@ -299,24 +304,51 @@ class Render {
     })
   }
 
-  // 只记录uid：全量重建会替换节点实例，兑现时再解析最新实例
+  // 只保留最新插入节点：全量重建会替换节点实例，兑现时再解析最新实例。
   queueOpenAfterInsert(node) {
     if (!node || !node.uid) {
       return
     }
-    if (!this.pendingInsertEditNodes.includes(node.uid)) {
-      this.pendingInsertEditNodes.push(node.uid)
+    this.pendingInsertEditRequest = {
+      uid: node.uid,
+      token: ++this.pendingInsertEditToken
     }
   }
 
   flushPendingInsertEdits() {
-    const pending = this.pendingInsertEditNodes.splice(0)
-    pending.forEach(uid => {
-      const node = this.findNodeByUid(uid)
-      if (node) {
-        this.textEdit.openAfterInsert(node)
+    const request = this.pendingInsertEditRequest
+    this.pendingInsertEditRequest = null
+    if (!request || request.token !== this.pendingInsertEditToken) {
+      return
+    }
+    const node = this.findNodeByUid(request.uid)
+    if (node) {
+      const opened = this.textEdit.openAfterInsert(node, request.token)
+      if (opened && typeof opened.then === 'function') {
+        this.pendingInsertEditPromise = Promise.resolve(opened).finally(() => {
+          if (request.token === this.pendingInsertEditToken) {
+            this.pendingInsertEditPromise = null
+          }
+        })
+        return this.pendingInsertEditPromise
       }
-    })
+      if (opened === undefined && this.textEdit.isShowTextEdit()) {
+        this.pendingInsertEditPromise = new Promise(resolve => {
+          const finish = () => resolve()
+          if (window.requestAnimationFrame) {
+            window.requestAnimationFrame(() => window.requestAnimationFrame(finish))
+          } else {
+            window.setTimeout(finish, 0)
+          }
+        }).finally(() => {
+          if (request.token === this.pendingInsertEditToken) {
+            this.pendingInsertEditPromise = null
+          }
+        })
+        return this.pendingInsertEditPromise
+      }
+    }
+    return false
   }
 
   // 强制渲染节点，不考虑是否在画布可视区域内
@@ -1405,20 +1437,50 @@ class Render {
   }
 
   // 复制节点
+  getClipboardImgMap() {
+    const imgMap =
+      (this.renderTree && this.renderTree.data && this.renderTree.data.imgMap) ||
+      null
+    return imgMap ? simpleDeepClone(imgMap) || imgMap : null
+  }
+
+  restoreClipboardData(data, imgMap) {
+    const cloned = simpleDeepClone(data)
+    return restoreSmmClipboardImages(cloned || data, imgMap)
+  }
+
   copy() {
     this.beingCopyData = this.copyNode()
+    this.beingCopyImgMap = this.getClipboardImgMap()
     if (!this.beingCopyData) return
+    const payload = createSmmFormatData(
+      this.beingCopyData,
+      this.beingCopyImgMap
+    )
+    mindMapDebugLog('mindmap-clipboard', 'copy nodes', {
+      nodeCount: this.beingCopyData.length,
+      hasImgMap: !!payload.imgMap,
+      imgMapCount: payload.imgMap ? Object.keys(payload.imgMap).length : 0
+    })
     if (!this.mindMap.opt.disabledClipboard) {
-      setDataToClipboard(createSmmFormatData(this.beingCopyData))
+      setDataToClipboard(payload)
     }
   }
 
   // 剪切节点
   cut() {
+    const imgMap = this.getClipboardImgMap()
     this.mindMap.execCommand('CUT_NODE', copyData => {
       this.beingCopyData = copyData
+      this.beingCopyImgMap = imgMap
+      const payload = createSmmFormatData(copyData, this.beingCopyImgMap)
+      mindMapDebugLog('mindmap-clipboard', 'cut nodes', {
+        nodeCount: copyData.length,
+        hasImgMap: !!payload.imgMap,
+        imgMapCount: payload.imgMap ? Object.keys(payload.imgMap).length : 0
+      })
       if (!this.mindMap.opt.disabledClipboard) {
-        setDataToClipboard(createSmmFormatData(copyData))
+        setDataToClipboard(payload)
       }
     })
   }
@@ -1464,6 +1526,10 @@ class Render {
         let img = res.img || null
         // 存在文本，则创建子节点
         if (text) {
+          mindMapDebugLog('mindmap-clipboard', 'paste text payload', {
+            textLength: text.length,
+            startsWithSmm: /^\s*\{/.test(text)
+          })
           // 判断粘贴的是否是simple-mind-map的数据
           let smmData = null
           let useDefault = true
@@ -1471,14 +1537,22 @@ class Render {
           if (this.mindMap.opt.customHandleClipboardText) {
             try {
               const res = await this.mindMap.opt.customHandleClipboardText(text)
-              if (!isUndef(res)) {
+              if (!isUndef(res) && res !== '') {
                 useDefault = false
                 const checkRes = checkSmmFormatData(res)
                 if (checkRes.isSmm) {
-                  smmData = checkRes.data
+                  smmData = this.restoreClipboardData(
+                    checkRes.data,
+                    checkRes.imgMap
+                  )
                 } else {
                   text = checkRes.data
                 }
+              } else {
+                mindMapDebugLog(
+                  'mindmap-clipboard',
+                  'custom clipboard handler skipped'
+                )
               }
             } catch (error) {
               errorHandler(
@@ -1491,12 +1565,18 @@ class Render {
           if (useDefault) {
             const checkRes = checkSmmFormatData(text)
             if (checkRes.isSmm) {
-              smmData = checkRes.data
+              smmData = this.restoreClipboardData(
+                checkRes.data,
+                checkRes.imgMap
+              )
             } else {
               text = checkRes.data
             }
           }
           if (smmData) {
+            mindMapDebugLog('mindmap-clipboard', 'paste smm nodes', {
+              nodeCount: Array.isArray(smmData) ? smmData.length : 1
+            })
             this.mindMap.execCommand(
               'INSERT_MULTI_CHILD_NODE',
               [],
@@ -1584,7 +1664,16 @@ class Render {
       // 禁用剪贴板或不支持剪贴板时
       // 粘贴画布内的节点数据
       if (this.beingCopyData) {
-        this.mindMap.execCommand('PASTE_NODE', this.beingCopyData)
+        mindMapDebugLog('mindmap-clipboard', 'paste memory nodes', {
+          nodeCount: Array.isArray(this.beingCopyData)
+            ? this.beingCopyData.length
+            : 1,
+          hasImgMap: !!this.beingCopyImgMap
+        })
+        this.mindMap.execCommand(
+          'PASTE_NODE',
+          this.restoreClipboardData(this.beingCopyData, this.beingCopyImgMap)
+        )
       }
     }
   }

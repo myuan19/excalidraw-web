@@ -97,7 +97,7 @@ const handlePositionChange: DragInputCallbackType<"x" | "y"> = ({
         };
       }
 
-      mutateElement(element, {
+      mutateElement(element, elementsMap, {
         crop: nextCrop,
       });
 
@@ -115,7 +115,7 @@ const handlePositionChange: DragInputCallbackType<"x" | "y"> = ({
       y: clamp(crop.y + changeInY, 0, crop.naturalHeight - crop.height),
     };
 
-    mutateElement(element, {
+    mutateElement(element, elementsMap, {
       crop: nextCrop,
     });
 

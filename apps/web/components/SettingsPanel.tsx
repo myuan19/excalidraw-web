@@ -13,11 +13,20 @@ import {
 } from "../data/aiConfig";
 import {
   AUTO_SAVE_IDLE_SEC_OPTIONS,
+  CHECKPOINT_INTERVAL_MIN_OPTIONS,
   type AppSettings,
   getAppSettings,
   updateAppSettings,
   subscribeAppSettings,
 } from "../data/appSettings";
+import {
+  getDebugCapability,
+  loadDebugCapability,
+  subscribeDebugCapability,
+} from "../data/debugCapability";
+import { apiTransport } from "../data/apiTransport";
+import { isDesktopEditorHub } from "../lib/runtimePlatform";
+import { resolveDefaultDataDirectoryPath } from "../data/mappedFolderClient";
 
 import "./SettingsPanel.scss";
 
@@ -40,9 +49,17 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [showExcalidrawKey, setShowExcalidrawKey] = useState(false);
   const [showMindMapKey, setShowMindMapKey] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [openLogsStatus, setOpenLogsStatus] = useState<string | null>(null);
+  const [defaultDataDirectoryStatus, setDefaultDataDirectoryStatus] = useState<
+    string | null
+  >(null);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<"general" | "ai">("general");
+  const [debugCapability, setDebugCapability] = useState(getDebugCapability);
   const { mounted, active, onDrawerTransitionEnd } = useDrawerTransition(open);
+  const isDesktop = isDesktopEditorHub();
+  const showCheckpointSettings = !isDesktop;
+  const showDebugLoggingControl = debugCapability.allowed;
 
   useEffect(() => {
     if (!mounted) {
@@ -75,6 +92,13 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   }, []);
 
   useEffect(() => {
+    void loadDebugCapability();
+    return subscribeDebugCapability(() => {
+      setDebugCapability(getDebugCapability());
+    });
+  }, []);
+
+  useEffect(() => {
     if (!mounted) {
       return;
     }
@@ -100,11 +124,81 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   }, [aiConfig]);
 
   const handleAppSettingChange = useCallback(
-    (key: keyof AppSettings, value: boolean | number) => {
-      updateAppSettings({ [key]: value });
+    <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
+      updateAppSettings({ [key]: value } as Pick<AppSettings, K>);
     },
     [],
   );
+
+  const handleOpenLogs = useCallback(async () => {
+    setOpenLogsStatus(null);
+    try {
+      if (isDesktopEditorHub()) {
+        const response = await apiTransport.request({
+          method: "POST",
+          path: "/api/logs/open",
+          headers: { Accept: "application/json" },
+        });
+        if (response.status < 200 || response.status >= 300) {
+          let message = `打开日志失败 (${response.status})`;
+          try {
+            const body = JSON.parse(response.bodyText) as { error?: string };
+            if (body?.error) {
+              message = body.error;
+            }
+          } catch {
+            // ignore parse errors
+          }
+          throw new Error(message);
+        }
+        return;
+      }
+      const base = (import.meta.env.VITE_APP_API_BASE ?? "").replace(/\/$/, "");
+      const response = await fetch(`${base}/api/logs/open`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw new Error(body?.error ?? `打开日志失败 (${response.status})`);
+      }
+    } catch (error) {
+      setOpenLogsStatus(error instanceof Error ? error.message : String(error));
+    }
+  }, []);
+
+  const handleChooseDefaultDataDirectory = useCallback(async () => {
+    setDefaultDataDirectoryStatus(null);
+    try {
+      const picked = await window.editorHubDesktop?.pickFolder?.();
+      if (!picked) {
+        return;
+      }
+      handleAppSettingChange("defaultDataDirectoryPath", picked);
+      setDefaultDataDirectoryStatus("已更新默认数据目录");
+    } catch (error) {
+      setDefaultDataDirectoryStatus(
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }, [handleAppSettingChange]);
+
+  const handleOpenDefaultDataDirectory = useCallback(async () => {
+    setDefaultDataDirectoryStatus(null);
+    try {
+      const absPath = await resolveDefaultDataDirectoryPath();
+      const result = await window.editorHubDesktop?.openPath?.(absPath);
+      if (result && result !== "") {
+        throw new Error(result);
+      }
+      setDefaultDataDirectoryStatus("已在文件管理器中打开");
+    } catch (error) {
+      setDefaultDataDirectoryStatus(
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }, []);
 
   const overlayDismiss = useStrictOverlayDismiss(onClose);
 
@@ -173,60 +267,40 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
         <div className="settings-panel__body">
           {activeTab === "general" && (
-            <div className="settings-panel__section">
-              <h3>自动保存</h3>
-              <div className="settings-panel__option">
-                <div className="settings-panel__option-text">
-                  <span className="settings-panel__option-label">
-                    切换后台时自动保存
-                  </span>
-                  <span className="settings-panel__option-desc">
-                    当页面切换到后台或失去焦点时，自动将当前编辑内容保存到服务器（仅对已入库文件生效）
-                  </span>
+            <>
+              <div className="settings-panel__section">
+                <h3>自动保存</h3>
+                <div className="settings-panel__option">
+                  <div className="settings-panel__option-text">
+                    <span className="settings-panel__option-label">
+                      自动保存
+                    </span>
+                    <span className="settings-panel__option-desc">
+                      开启后离开编辑器时自动保存并退出，无需手动确认。
+                    </span>
+                  </div>
+                  <label className="settings-panel__toggle">
+                    <input
+                      type="checkbox"
+                      checked={appSettings.autoSaveEnabled}
+                      onChange={(e) =>
+                        handleAppSettingChange(
+                          "autoSaveEnabled",
+                          e.target.checked,
+                        )
+                      }
+                    />
+                    <span className="settings-panel__toggle-track" />
+                  </label>
                 </div>
-                <label className="settings-panel__toggle">
-                  <input
-                    type="checkbox"
-                    checked={appSettings.autoSaveOnBlur}
-                    onChange={(e) =>
-                      handleAppSettingChange("autoSaveOnBlur", e.target.checked)
-                    }
-                  />
-                  <span className="settings-panel__toggle-track" />
-                </label>
-              </div>
-              <div className="settings-panel__option">
-                <div className="settings-panel__option-text">
-                  <span className="settings-panel__option-label">
-                    空闲自动保存
-                  </span>
-                  <span className="settings-panel__option-desc">
-                    停止编辑一段时间后自动保存到服务器，同一次打开期间会覆盖上一次自动存档（仅对已入库文件生效）
-                  </span>
-                </div>
-                <label className="settings-panel__toggle">
-                  <input
-                    type="checkbox"
-                    checked={appSettings.autoSaveEnabled}
-                    onChange={(e) =>
-                      handleAppSettingChange(
-                        "autoSaveEnabled",
-                        e.target.checked,
-                      )
-                    }
-                  />
-                  <span className="settings-panel__toggle-track" />
-                </label>
-              </div>
-              {appSettings.autoSaveEnabled && (
-                <>
+                {appSettings.autoSaveEnabled && (
                   <div className="settings-panel__option settings-panel__option--sub">
                     <div className="settings-panel__option-text">
                       <span className="settings-panel__option-label">
                         空闲等待时间
                       </span>
                       <span className="settings-panel__option-desc">
-                        停止编辑后等待多久触发保存
+                        停止编辑后自动触发保存（需先开启自动保存）。
                       </span>
                     </div>
                     <select
@@ -242,7 +316,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     >
                       {AUTO_SAVE_IDLE_SEC_OPTIONS.map((sec) => (
                         <option key={sec} value={sec}>
-                          {sec < 60
+                          {sec === 0
+                            ? "不触发"
+                            : sec < 60
                             ? `${sec} 秒`
                             : sec === 60
                             ? "1 分钟"
@@ -255,32 +331,139 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                       ))}
                     </select>
                   </div>
-                  <div className="settings-panel__option settings-panel__option--sub">
+                )}
+                {showCheckpointSettings && (
+                  <div className="settings-panel__option">
                     <div className="settings-panel__option-text">
                       <span className="settings-panel__option-label">
-                        离开自动保存
+                        checkpoint 间隔
                       </span>
                       <span className="settings-panel__option-desc">
-                        切换文件、返回列表或最近访问时，若有未保存更改则自动保存后再离开（仅对已入库文件生效）
+                        每次保存到 latest 时检查；距离上次 checkpoint
+                        超过该间隔才创建新 checkpoint
+                      </span>
+                    </div>
+                    <select
+                      className="settings-panel__select"
+                      value={appSettings.checkpointIntervalMin}
+                      onChange={(e) => {
+                        handleAppSettingChange(
+                          "checkpointIntervalMin",
+                          Number(e.target.value),
+                        );
+                        e.currentTarget.blur();
+                      }}
+                    >
+                      {CHECKPOINT_INTERVAL_MIN_OPTIONS.map((min) => (
+                        <option key={min} value={min}>
+                          {min < 60
+                            ? `${min} 分钟`
+                            : min === 60
+                            ? "1 小时"
+                            : `${min / 60} 小时`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+              {isDesktop ? (
+                <div className="settings-panel__section">
+                  <h3>数据目录</h3>
+                  <div className="settings-panel__option settings-panel__option--path-setting">
+                    <div className="settings-panel__option-text">
+                      <span className="settings-panel__option-label">
+                        默认数据目录
+                      </span>
+                      <span className="settings-panel__option-desc">
+                        在“本地目录”根视图新建或导入内容时，默认保存到这个本地文件夹
+                      </span>
+                    </div>
+                    <div className="settings-panel__path-row">
+                      <span
+                        className="settings-panel__path"
+                        title={appSettings.defaultDataDirectoryPath}
+                      >
+                        {appSettings.defaultDataDirectoryPath}
+                      </span>
+                      <div className="settings-panel__option-actions">
+                        <button
+                          type="button"
+                          className="settings-panel__btn-secondary"
+                          onClick={handleOpenDefaultDataDirectory}
+                        >
+                          打开文件夹
+                        </button>
+                        <button
+                          type="button"
+                          className="settings-panel__btn-secondary settings-panel__btn-secondary--accent"
+                          onClick={handleChooseDefaultDataDirectory}
+                        >
+                          选择文件夹
+                        </button>
+                      </div>
+                    </div>
+                    {defaultDataDirectoryStatus ? (
+                      <span className="settings-panel__option-desc settings-panel__option-desc--status">
+                        {defaultDataDirectoryStatus}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+              <div className="settings-panel__section">
+                <h3>日志</h3>
+                {showDebugLoggingControl ? (
+                  <div className="settings-panel__option">
+                    <div className="settings-panel__option-text">
+                      <span className="settings-panel__option-label">
+                        调试日志
+                      </span>
+                      <span className="settings-panel__option-desc">
+                        记录操作、保存和缓存诊断
                       </span>
                     </div>
                     <label className="settings-panel__toggle">
                       <input
                         type="checkbox"
-                        checked={appSettings.autoSaveOnExit}
+                        checked={appSettings.debugLoggingMode !== "off"}
                         onChange={(e) =>
                           handleAppSettingChange(
-                            "autoSaveOnExit",
-                            e.target.checked,
+                            "debugLoggingMode",
+                            (e.target.checked
+                              ? "basic"
+                              : "off") as AppSettings["debugLoggingMode"],
                           )
                         }
                       />
                       <span className="settings-panel__toggle-track" />
                     </label>
                   </div>
-                </>
-              )}
-            </div>
+                ) : null}
+                <div className="settings-panel__option">
+                  <div className="settings-panel__option-text">
+                    <span className="settings-panel__option-label">
+                      打开日志
+                    </span>
+                    <span className="settings-panel__option-desc">
+                      打开本次启动日志。
+                    </span>
+                    {openLogsStatus ? (
+                      <span className="settings-panel__option-desc">
+                        {openLogsStatus}
+                      </span>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    className="settings-panel__btn-secondary"
+                    onClick={handleOpenLogs}
+                  >
+                    打开日志
+                  </button>
+                </div>
+              </div>
+            </>
           )}
 
           {activeTab === "ai" && (

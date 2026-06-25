@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  patchFileListTreeCacheSavedFile,
   patchFileListTreeCacheThumbnailMissing,
   readFileListTreeCache,
   writeFileListTreeCache,
@@ -48,5 +49,42 @@ describe("fileListSessionCache", () => {
       false,
     );
     expect(readFileListTreeCache()?.files[0].has_thumbnail).toBe(true);
+  });
+
+  it("patches saved file metadata after a successful save", () => {
+    writeFileListTreeCache({
+      folders: [],
+      files: [
+        mockFile({
+          id: "file-1",
+          name: "旧名",
+          content_sha256: "sha-old",
+          version: 1,
+          has_thumbnail: false,
+        }),
+      ],
+    });
+
+    expect(
+      patchFileListTreeCacheSavedFile("file-1", {
+        name: "新名",
+        kind: "mindmap",
+        has_thumbnail: true,
+        content_sha256: "sha-new",
+        version: 2,
+        updated_at: "2026-06-22T00:00:00.000Z",
+      }),
+    ).toBe(true);
+
+    expect(readFileListTreeCache()?.files[0]).toMatchObject({
+      id: "file-1",
+      name: "新名",
+      kind: "mindmap",
+      has_thumbnail: true,
+      content_sha256: "sha-new",
+      version: 2,
+      updated_at: "2026-06-22T00:00:00.000Z",
+    });
+    expect(sessionStorage.getItem("excalidraw-filelist-tree-etag-v1")).toBeNull();
   });
 });

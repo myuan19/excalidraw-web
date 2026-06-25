@@ -1,35 +1,102 @@
 import React, { useCallback, useEffect, useState } from "react";
 
-import { ServerSync, type ArchiveEntry } from "../data/ServerSync";
-import { useFileDraftStatus } from "../hooks/useFileDraftStatus";
 import { isAutoSaveLabel } from "../data/autoSaveSession";
+import { getCheckpointLabelText } from "../data/checkpointPolicy";
+import {
+  evaluateArchiveCoverage,
+  evaluateManualArchiveGate,
+  type FileModificationState,
+} from "../data/fileModificationState";
+import { ServerSync, type ArchiveEntry } from "../data/ServerSync";
+import type { SaveResult } from "../data/saveQueue";
 
-import "./ExcalToolbar.scss";
+import {
+  useFileDraftStatus,
+  type FileDraftStatus,
+} from "../hooks/useFileDraftStatus";
+import { useShellTheme } from "../hooks/useShellTheme";
+
+import {
+  ArchivePanelPrompt,
+  type ArchivePanelPromptChoice,
+  type ArchivePanelPromptMode,
+} from "./ArchivePanelPrompt";
+
+import "./ArchivePanel.scss";
 
 interface ArchivePanelProps {
   fileId: string;
+  onSave: () => void | Promise<void | SaveResult | boolean>;
+  onArchive: () => Promise<boolean>;
   onAfterRestore: () => void | Promise<void>;
   onClose: () => void;
+  /** 读取当前编辑态（与离开守卫、同步徽章同一套 evaluate 入口）。 */
+  readCurrentModificationState: () => FileModificationState;
+  saving?: boolean;
 }
 
 function formatVersionTime(iso: string): string {
   try {
     const d = new Date(iso);
     const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
+      d.getDate(),
+    )} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   } catch {
     return iso;
   }
 }
 
+function getArchiveBadgeText(label: string): string {
+  if (isAutoSaveLabel(label)) {
+    return "旧自动保存";
+  }
+  return getCheckpointLabelText(label);
+}
+
+function getCurrentVersionStatusLabel(status: FileDraftStatus): string {
+  if (status === "draft") {
+    return "未同步";
+  }
+  if (status === "synced") {
+    return "已同步";
+  }
+  return "";
+}
+
+function getCurrentVersionStatusHint(status: FileDraftStatus): string | null {
+  if (status === "draft") {
+    return "本地内容与服务器版本不一致";
+  }
+  if (status === "synced") {
+    return "本地内容与服务器版本一致";
+  }
+  return null;
+}
+
 export const ArchivePanel: React.FC<ArchivePanelProps> = ({
   fileId,
+  onSave,
+  onArchive,
   onAfterRestore,
   onClose,
+  readCurrentModificationState,
+  saving = false,
 }) => {
   const [versions, setVersions] = useState<ArchiveEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const { unsaved, label: draftStatusLabel } = useFileDraftStatus(fileId);
+  const [actionLabel, setActionLabel] = useState<"save" | "archive" | null>(
+    null,
+  );
+  const [panelBusy, setPanelBusy] = useState(false);
+  const [promptMode, setPromptMode] = useState<ArchivePanelPromptMode | null>(
+    null,
+  );
+  const { status: draftStatus, unsaved } = useFileDraftStatus(fileId);
+  const { shellTheme } = useShellTheme();
+  const currentStatusLabel = getCurrentVersionStatusLabel(draftStatus);
+  const currentStatusHint = getCurrentVersionStatusHint(draftStatus);
+  const actionsDisabled = saving || panelBusy || actionLabel !== null;
 
   const refresh = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -60,113 +127,334 @@ export const ArchivePanel: React.FC<ArchivePanelProps> = ({
   useEffect(() => {
     const onSaved = () => void refresh({ silent: true });
     window.addEventListener("excalidraw-server-saved", onSaved);
-    return () =>
-      window.removeEventListener("excalidraw-server-saved", onSaved);
+    return () => window.removeEventListener("excalidraw-server-saved", onSaved);
   }, [refresh]);
 
-  const handleRestore = async (archiveId: string) => {
-    if (
-      !window.confirm("将画布替换为该历史版本？当前未保存的编辑将丢失。")
-    ) {
-      return;
-    }
+  const readArchiveGate = () =>
+    evaluateManualArchiveGate(
+      fileId,
+      readCurrentModificationState(),
+      versions,
+    );
+
+  const canRestoreWithoutArchivePrompt = () =>
+    evaluateArchiveCoverage(fileId, readCurrentModificationState(), versions)
+      .canRestoreWithoutArchivePrompt;
+
+  const executeArchive = async (): Promise<boolean> => {
+    setActionLabel("archive");
     try {
-      await ServerSync.restoreArchive(fileId, archiveId);
-      await onAfterRestore();
-    } catch (e: any) {
-      alert(`恢复失败：${e.message}`);
+      const ok = await onArchive();
+      if (ok) {
+        await refresh({ silent: true });
+      }
+      return ok;
+    } finally {
+      setActionLabel(null);
     }
   };
 
-  return (
-    <div
-      className="nb-history-overlay"
-      role="presentation"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
+  const continueManualArchiveAfterSave = async () => {
+    await refresh({ silent: true });
+    const gate = readArchiveGate();
+    if (gate === "prompt-duplicate") {
+      setPromptMode({ type: "archive-duplicate" });
+      return;
+    }
+    if (gate === "archive") {
+      await executeArchive();
+    }
+  };
+
+  const runManualArchiveGate = async () => {
+    const gate = readArchiveGate();
+    if (gate === "save-first") {
+      setPromptMode({ type: "archive-save" });
+      return;
+    }
+    if (gate === "prompt-duplicate") {
+      setPromptMode({ type: "archive-duplicate" });
+      return;
+    }
+    await executeArchive();
+  };
+
+  const handleSave = async () => {
+    if (actionsDisabled) {
+      return;
+    }
+    setActionLabel("save");
+    try {
+      await onSave();
+    } finally {
+      setActionLabel(null);
+    }
+  };
+
+  const handleArchive = async () => {
+    if (actionsDisabled) {
+      return;
+    }
+    await runManualArchiveGate();
+  };
+
+  const performRestore = async (archiveId: string) => {
+    await ServerSync.restoreArchive(fileId, archiveId, {
+      backupCurrent: false,
+    });
+    await onAfterRestore();
+    await refresh({ silent: true });
+  };
+
+  const handleRestoreClick = async (archiveId: string) => {
+    if (actionsDisabled) {
+      return;
+    }
+    if (canRestoreWithoutArchivePrompt()) {
+      setPanelBusy(true);
+      try {
+        await performRestore(archiveId);
+      } catch (e: any) {
+        alert(`恢复失败：${e.message}`);
+      } finally {
+        setPanelBusy(false);
+      }
+      return;
+    }
+    setPromptMode({ type: "restore", archiveId });
+  };
+
+  const handlePromptChoice = async (choice: ArchivePanelPromptChoice) => {
+    if (!promptMode || choice === "cancel") {
+      setPromptMode(null);
+      return;
+    }
+
+    if (promptMode.type === "archive-save") {
+      if (choice !== "yes") {
+        setPromptMode(null);
+        return;
+      }
+      setPanelBusy(true);
+      try {
+        setActionLabel("save");
+        const saveResult = await onSave();
+        setActionLabel(null);
+        if (
+          saveResult &&
+          typeof saveResult === "object" &&
+          !saveResult.saved &&
+          !saveResult.skipped
+        ) {
+          return;
         }
-      }}
-    >
-      <div
-        className="nb-history-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="nb-history-title"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="nb-history-header">
-          <span id="nb-history-title">历史版本</span>
-          <button
-            type="button"
-            className="nb-history-close"
-            onClick={onClose}
-            aria-label="关闭"
-          >
-            ×
-          </button>
-        </div>
-        <div className="nb-history-list">
-          {/* 本地草稿 — 始终显示在最上方 */}
-          <div className="nb-history-item nb-history-item--local">
-            <span className="nb-history-time" style={{ fontWeight: 600 }}>
-              本地草稿
-            </span>
-            <span
-              className={
-                unsaved
-                  ? "nb-history-badge nb-history-badge--unsaved"
-                  : "nb-history-badge nb-history-badge--synced"
-              }
+        setPromptMode(null);
+        await continueManualArchiveAfterSave();
+      } finally {
+        setActionLabel(null);
+        setPanelBusy(false);
+      }
+      return;
+    }
+
+    if (promptMode.type === "archive-duplicate") {
+      if (choice !== "yes") {
+        setPromptMode(null);
+        return;
+      }
+      setPanelBusy(true);
+      try {
+        const ok = await executeArchive();
+        if (ok) {
+          setPromptMode(null);
+        }
+      } finally {
+        setPanelBusy(false);
+      }
+      return;
+    }
+
+    if (promptMode.type === "delete") {
+      if (choice !== "yes") {
+        setPromptMode(null);
+        return;
+      }
+      setPanelBusy(true);
+      try {
+        await ServerSync.deleteArchive(fileId, promptMode.archiveId);
+        await refresh({ silent: true });
+        setPromptMode(null);
+      } catch (e: any) {
+        alert(`删除失败：${e.message}`);
+      } finally {
+        setPanelBusy(false);
+      }
+      return;
+    }
+
+    setPanelBusy(true);
+    try {
+      if (choice === "yes") {
+        const archived = await executeArchive();
+        if (!archived) {
+          return;
+        }
+      }
+      await performRestore(promptMode.archiveId);
+      setPromptMode(null);
+    } catch (e: any) {
+      alert(`恢复失败：${e.message}`);
+    } finally {
+      setPanelBusy(false);
+    }
+  };
+
+  const handleDeleteClick = (archiveId: string) => {
+    if (actionsDisabled) {
+      return;
+    }
+    setPromptMode({ type: "delete", archiveId });
+  };
+
+  return (
+    <>
+      <div className={`shell-dialog-host theme--${shellTheme}`}>
+        <div
+          className="nb-history-overlay"
+          role="presentation"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              onClose();
+            }
+          }}
+        >
+        <div
+          className="nb-history-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="nb-history-title"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="nb-history-header">
+            <span id="nb-history-title">存档</span>
+            <button
+              type="button"
+              className="nb-history-close"
+              onClick={onClose}
+              aria-label="关闭"
             >
-              {draftStatusLabel}
-            </span>
+              ×
+            </button>
           </div>
-
-          {loading && (
-            <div className="nb-history-item">
-              <span className="nb-history-time">加载中…</span>
-            </div>
-          )}
-
-          {!loading && versions.length === 0 && (
-            <div className="nb-history-item">
-              <span className="nb-history-time">暂无服务器版本</span>
-            </div>
-          )}
-
-          {!loading &&
-            versions.map((a, i) => (
-              <div key={a.id} className="nb-history-item">
-                <div className="nb-history-info">
-                  <span
-                    className="nb-history-time"
-                    style={i === 0 ? { fontWeight: 600 } : undefined}
-                  >
-                    {i === 0 ? "最新提交" : formatVersionTime(a.created_at)}
-                    {isAutoSaveLabel(a.label) && (
-                      <span className="nb-history-badge nb-history-badge--auto">
-                        自动保存
-                      </span>
-                    )}
-                  </span>
-                  {i === 0 && (
-                    <span className="nb-history-sub">
-                      {formatVersionTime(a.created_at)}
+          <div className="nb-history-list">
+            <div className="nb-history-item nb-history-item--current">
+              <div className="nb-history-info">
+                <span className="nb-history-time" style={{ fontWeight: 600 }}>
+                  当前版本
+                </span>
+                {currentStatusLabel ? (
+                  <div className="nb-history-sync-status">
+                    <span
+                      className={
+                        unsaved
+                          ? "nb-history-badge nb-history-badge--unsaved"
+                          : "nb-history-badge nb-history-badge--synced"
+                      }
+                    >
+                      {currentStatusLabel}
                     </span>
-                  )}
-                </div>
+                    {currentStatusHint ? (
+                      <span className="nb-history-sync-hint">
+                        {currentStatusHint}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+              <div className="nb-history-actions">
                 <button
                   type="button"
-                  className="nb-history-restore"
-                  onClick={() => void handleRestore(a.id)}
+                  className="nb-history-action"
+                  disabled={actionsDisabled}
+                  onClick={() => void handleSave()}
                 >
-                  恢复
+                  {actionLabel === "save" ? "保存中..." : "保存"}
+                </button>
+                <button
+                  type="button"
+                  className="nb-history-action nb-history-archive"
+                  disabled={actionsDisabled}
+                  onClick={() => void handleArchive()}
+                >
+                  {actionLabel === "archive" ? "存档中..." : "存档"}
                 </button>
               </div>
-            ))}
+            </div>
+
+            {loading && (
+              <div className="nb-history-item nb-history-item--message">
+                <span className="nb-history-time">加载中...</span>
+              </div>
+            )}
+
+            {!loading && versions.length > 0 && (
+              <div className="nb-history-section-label">已归档版本</div>
+            )}
+
+            {!loading && versions.length === 0 && (
+              <div className="nb-history-item nb-history-item--message">
+                <span className="nb-history-time">暂无已归档版本</span>
+              </div>
+            )}
+
+            {!loading &&
+              versions.map((archive) => {
+                const badgeText = getArchiveBadgeText(archive.label);
+                return (
+                  <div key={archive.id} className="nb-history-item">
+                    <div className="nb-history-info">
+                      <span
+                        className="nb-history-time"
+                        title={formatVersionTime(archive.created_at)}
+                      >
+                        {formatVersionTime(archive.created_at)}
+                      </span>
+                      {badgeText ? (
+                        <span className="nb-history-badge nb-history-badge--auto">
+                          {badgeText}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="nb-history-actions">
+                      <button
+                        type="button"
+                        className="nb-history-action nb-history-restore"
+                        disabled={actionsDisabled}
+                        onClick={() => void handleRestoreClick(archive.id)}
+                      >
+                        恢复
+                      </button>
+                      <button
+                        type="button"
+                        className="nb-history-action nb-history-delete"
+                        disabled={actionsDisabled}
+                        onClick={() => handleDeleteClick(archive.id)}
+                      >
+                        删除
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
         </div>
       </div>
-    </div>
+      </div>
+      <ArchivePanelPrompt
+        mode={promptMode}
+        busy={panelBusy || actionLabel !== null}
+        onChoice={(choice) => void handlePromptChoice(choice)}
+      />
+    </>
   );
 };

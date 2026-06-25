@@ -109,7 +109,7 @@ const handleDimensionChange: DragInputCallbackType<
           };
         }
 
-        mutateElement(element, {
+        mutateElement(element, elementsMap, {
           crop: nextCrop,
           width: nextCrop.width / (crop.naturalWidth / uncroppedWidth),
           height: nextCrop.height / (crop.naturalHeight / uncroppedHeight),
@@ -140,7 +140,7 @@ const handleDimensionChange: DragInputCallbackType<
         height: nextCropHeight,
       };
 
-      mutateElement(element, {
+      mutateElement(element, elementsMap, {
         crop: nextCrop,
         width: nextCrop.width / (crop.naturalWidth / uncroppedWidth),
         height: nextCrop.height / (crop.naturalHeight / uncroppedHeight),
@@ -172,8 +172,8 @@ const handleDimensionChange: DragInputCallbackType<
         nextHeight,
         latestElement,
         origElement,
-        elementsMap,
         originalElementsMap,
+        scene,
         property === "width" ? "e" : "s",
         {
           shouldMaintainAspectRatio: keepAspectRatio,
@@ -219,8 +219,8 @@ const handleDimensionChange: DragInputCallbackType<
       nextHeight,
       latestElement,
       origElement,
-      elementsMap,
       originalElementsMap,
+      scene,
       property === "width" ? "e" : "s",
       {
         shouldMaintainAspectRatio: keepAspectRatio,

@@ -1,6 +1,7 @@
 import type { ActionManager } from "../../actions/manager";
 import type { Action } from "../../actions/types";
 import type { UIAppState } from "../../types";
+import type { ExcalidrawElement } from "../../element/types";
 
 export type CommandPaletteItem = {
   label: string;
@@ -12,7 +13,12 @@ export type CommandPaletteItem = {
    * (deburred name + keywords)
    */
   haystack?: string;
-  icon?: React.ReactNode | ((appState: UIAppState) => React.ReactNode);
+  icon?:
+    | React.ReactNode
+    | ((
+        appState: UIAppState,
+        elements: readonly ExcalidrawElement[],
+      ) => React.ReactNode);
   category: string;
   order?: number;
   predicate?: boolean | Action["predicate"];

@@ -33,7 +33,7 @@ export interface EditorPlugin {
   /** Omit `kind` in `#file=` hashes when opening this editor. */
   omitKindInHash?: boolean;
 
-  adapter: DocumentFormatAdapter;
+  adapter: DocumentFormatAdapter<any>;
 
   loadEditorShell: () => Promise<{ default: ComponentType }>;
   loadEmbedViewer?: () => Promise<{ default: ComponentType<any> }>;

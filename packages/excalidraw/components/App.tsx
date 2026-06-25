@@ -5585,6 +5585,7 @@ class App extends React.Component<AppProps, AppState> {
     tool: ({ type: ToolType } | { type: "custom"; customType: string }) & {
       locked?: boolean;
       fromSelection?: boolean;
+      insertOnCanvasDirectly?: boolean;
     },
     keepSelection = false,
   ) => {

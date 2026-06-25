@@ -1,7 +1,10 @@
+import { traceUserAction } from "../lib/userTrace";
+
 export const RECENT_FILES_KEY = "editorhub-recent-files-v1";
 export const RECENT_FILES_CHANGE_EVENT = "editorhub-recent-files-change";
+export const RECENT_PATH_PREFIX = "path:";
 
-const RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const RECENT_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
 
 export type RecentFileEntry = {
   id: string;
@@ -58,6 +61,69 @@ export function recordRecentFileAccess(fileId: string): void {
     ...readEntries().filter((entry) => entry.id !== fileId),
   ];
   writeEntries(next);
+  traceUserAction(
+    "file-list",
+    "recordRecentFileAccess",
+    { id8: fileId.slice(0, 12) },
+    "ok",
+  );
+}
+
+/**
+ * 本地草稿正式保存后：一次性移除 draft/path 旧条目并置顶 catalog 文件 id，
+ * 避免最近列表先后出现草稿卡与正式卡。
+ */
+export function promoteRecentCatalogFile(
+  draftId: string | null | undefined,
+  catalogFileId: string,
+): void {
+  if (!catalogFileId) {
+    return;
+  }
+  const now = new Date().toISOString();
+  const next = [
+    { id: catalogFileId, accessedAt: now },
+    ...readEntries().filter((entry) => {
+      if (entry.id === catalogFileId) {
+        return false;
+      }
+      if (draftId && entry.id === draftId) {
+        return false;
+      }
+      return true;
+    }),
+  ];
+  writeEntries(next);
+  traceUserAction(
+    "file-list",
+    "promoteRecentCatalogFile",
+    {
+      draftId8: draftId?.slice(0, 12) ?? null,
+      catalogId8: catalogFileId.slice(0, 8),
+    },
+    "ok",
+  );
+}
+
+export function isRecentPathEntry(id: string): boolean {
+  return id.startsWith(RECENT_PATH_PREFIX);
+}
+
+export function toRecentPathEntryId(absPath: string): string {
+  return `${RECENT_PATH_PREFIX}${absPath}`;
+}
+
+export function getRecentPathFromEntryId(id: string): string | null {
+  return isRecentPathEntry(id) ? id.slice(RECENT_PATH_PREFIX.length) : null;
+}
+
+/** Desktop：按绝对路径写入最近列表。 */
+export function recordRecentFilePath(absPath: string): void {
+  const normalized = absPath.trim();
+  if (!normalized) {
+    return;
+  }
+  recordRecentFileAccess(toRecentPathEntryId(normalized));
 }
 
 export function getRecentFileEntries(): RecentFileEntry[] {

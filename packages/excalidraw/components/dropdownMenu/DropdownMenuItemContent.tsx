@@ -6,11 +6,13 @@ const MenuItemContent = ({
   icon,
   shortcut,
   children,
+  badge,
 }: {
   icon?: JSX.Element;
   shortcut?: string;
   textStyle?: React.CSSProperties;
   children: React.ReactNode;
+  badge?: React.ReactNode;
 }) => {
   const device = useDevice();
   return (
@@ -19,6 +21,7 @@ const MenuItemContent = ({
       <div style={textStyle} className="dropdown-menu-item__text">
         {children}
       </div>
+      {badge && <div className="dropdown-menu-item__badge">{badge}</div>}
       {shortcut && !device.editor.isMobile && (
         <div className="dropdown-menu-item__shortcut">{shortcut}</div>
       )}

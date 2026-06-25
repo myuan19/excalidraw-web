@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   useApp,
   useAppProps,
+  useDevice,
   useExcalidrawActionManager,
   useExcalidrawSetAppState,
 } from "../App";
@@ -181,6 +182,7 @@ function CommandPaletteInner({
   const uiAppState = useUIAppState();
   const setAppState = useExcalidrawSetAppState();
   const appProps = useAppProps();
+  const device = useDevice();
   const actionManager = useExcalidrawActionManager();
 
   const [lastUsed, setLastUsed] = useAtom(lastUsedPaletteItem);
@@ -471,7 +473,7 @@ function CommandPaletteInner({
 
           const letter =
             key && capitalizeString(typeof key === "string" ? key : key[0]);
-          const shortcut = letter || numericKey;
+          const shortcut = letter || numericKey || undefined;
 
           const command: CommandPaletteItem = {
             label: t(`toolBar.${value}`),
@@ -830,7 +832,7 @@ function CommandPaletteInner({
         ref={inputRef}
       />
 
-      {!app.device.viewport.isMobile && (
+      {!device.viewport.isMobile && (
         <div className="shortcuts-wrapper">
           <CommandShortcutHint shortcut="↑↓">
             {t("commandPalette.shortcuts.select")}
@@ -864,7 +866,7 @@ function CommandPaletteInner({
               onClick={(event) => executeCommand(lastUsed, event)}
               disabled={!isCommandAvailable(lastUsed)}
               onMouseMove={() => setCurrentCommand(lastUsed)}
-              showShortcut={!app.device.viewport.isMobile}
+              showShortcut={!device.viewport.isMobile}
               appState={uiAppState}
             />
           </div>
@@ -882,7 +884,7 @@ function CommandPaletteInner({
                     isSelected={command.label === currentCommand?.label}
                     onClick={(event) => executeCommand(command, event)}
                     onMouseMove={() => setCurrentCommand(command)}
-                    showShortcut={!app.device.viewport.isMobile}
+                    showShortcut={!device.viewport.isMobile}
                     appState={uiAppState}
                   />
                 ))}
@@ -941,7 +943,7 @@ const CommandItem = ({
           <InlineIcon
             icon={
               typeof command.icon === "function"
-                ? command.icon(appState)
+                ? command.icon(appState, [])
                 : command.icon
             }
           />

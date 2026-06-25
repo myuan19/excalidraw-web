@@ -1,3 +1,109 @@
-.dropdown-menu {
-  display: contents;
+.excalidraw {
+  .dropdown-menu {
+    z-index: 1;
+
+    // The main menu (hamburger) must float over the canvas + selected-shape
+    // actions, exactly like the web build where radix-ui positions the menu as
+    // an overlay. Without this it renders in normal flow and pushes the
+    // selected-shape properties panel below it downwards.
+    &.main-menu:not(.dropdown-menu--mobile) {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      margin-top: 0.25rem;
+      z-index: var(--zIndex-ui-main-menu);
+    }
+  }
+
+  .dropdown-menu-container {
+    display: flex;
+    flex-direction: column;
+    min-width: 13rem;
+    max-width: min(18rem, calc(100vw - 2rem));
+    max-height: calc(100vh - 3rem);
+    overflow-y: auto;
+    gap: 0.125rem;
+  }
+
+  .dropdown-menu-item-base {
+    box-sizing: border-box;
+    display: grid;
+    grid-template-columns: 1.25rem minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    min-height: 2rem;
+    padding: 0.375rem 0.5rem;
+    border: 0;
+    border-radius: var(--border-radius-md);
+    background: none;
+    color: var(--color-on-surface);
+    font-family: var(--ui-font);
+    font-size: 0.875rem;
+    line-height: 1.25;
+    text-align: start;
+    text-decoration: none;
+    cursor: pointer;
+    user-select: none;
+
+    &:hover,
+    &--hovered,
+    &--selected {
+      background: var(--button-hover-bg);
+      color: var(--color-on-surface);
+      text-decoration: none;
+    }
+
+    &:disabled {
+      cursor: default;
+      opacity: 0.5;
+    }
+  }
+
+  .dropdown-menu-item-bare,
+  .dropdown-menu-item-custom {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dropdown-menu-item__icon,
+  .dropdown-menu__submenu-trigger-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    height: 1rem;
+    color: currentColor;
+
+    svg {
+      width: 1rem;
+      height: 1rem;
+    }
+  }
+
+  .dropdown-menu-item__text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dropdown-menu-item__shortcut {
+    color: var(--color-text-secondary);
+    font-size: 0.75rem;
+    white-space: nowrap;
+  }
+
+  .dropdown-menu-group {
+    display: contents;
+  }
+
+  .dropdown-menu-group-title {
+    margin: 0.5rem 0.5rem 0.25rem;
+    color: var(--color-text-secondary);
+    font-size: 0.75rem;
+  }
+
+  .dropdown-menu__submenu-trigger {
+    grid-template-columns: 1.25rem minmax(0, 1fr) 1rem;
+  }
 }

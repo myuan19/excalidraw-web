@@ -47,4 +47,16 @@ describe("Editor platform sidebar travel bounds", () => {
       "visibleDraftStatus === \"draft\" ? \"editor-bridge--unsaved\" : \"\"",
     );
   });
+
+  it("adjusts panel height and recent flyout offset when desktop hides web-only actions", () => {
+    expect(source).toContain("sidebarPanelMetrics");
+    expect(source).toContain("DESKTOP_HIDDEN_PANEL_ACTION_ROWS = 2");
+    expect(source).toContain("DESKTOP_ACTIONS_BEFORE_RECENT = 1");
+  });
+
+  it("keys recent flyout thumbnail cache by draft/sync hash", () => {
+    expect(source).toContain("function getRecentThumbCacheKey(file: ServerFile)");
+    expect(source).toContain("buildThumbnailDraftSlot(file)");
+    expect(source).toContain("thumbSvgCacheRef.current[thumbCacheKey]");
+  });
 });

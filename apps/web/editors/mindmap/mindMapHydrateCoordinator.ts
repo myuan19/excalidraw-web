@@ -11,6 +11,7 @@ import type { MindMapSaveDocument } from "./mindMapDraftState";
 export type MindMapHydrateDraftPushContext = {
   isSaveResponse: boolean;
   hydrating: boolean;
+  userEdit?: boolean;
 };
 
 export type MindMapHydrateDraftPushResult = {
@@ -59,16 +60,23 @@ export function createMindMapHydrateCoordinator(): MindMapHydrateCoordinator {
         anchor: session?.anchor ?? null,
         incoming,
         isSaveResponse: ctx.isSaveResponse,
+        userEdit: ctx.userEdit,
       });
 
       const document = decision.updateHostDocument
         ? incoming
         : (session?.document ?? currentLatest ?? incoming);
 
-      const shouldExtendSettle = ctx.hydrating && !ctx.isSaveResponse;
+      const isUserEdit = ctx.userEdit === true;
+      const shouldExtendSettle =
+        ctx.hydrating && !ctx.isSaveResponse && !isUserEdit;
       const shouldAdoptBaseline =
-        ctx.hydrating && !ctx.isSaveResponse && decision.adoptBaseline;
-      const shouldMarkChanged = !ctx.hydrating && !ctx.isSaveResponse;
+        ctx.hydrating &&
+        !ctx.isSaveResponse &&
+        !isUserEdit &&
+        decision.adoptBaseline;
+      const shouldMarkChanged =
+        !ctx.isSaveResponse && (!ctx.hydrating || isUserEdit);
 
       return {
         document,

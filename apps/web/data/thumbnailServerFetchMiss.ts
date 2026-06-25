@@ -75,6 +75,15 @@ export function clearThumbnailServerMiss(fileId: string): void {
   persistMisses();
 }
 
+export function clearAllThumbnailServerMisses(): void {
+  hydrateMisses();
+  if (misses.size === 0) {
+    return;
+  }
+  misses.clear();
+  persistMisses();
+}
+
 /** 文件列表变更时移除过期或 hash 已变的登记 */
 export function pruneThumbnailServerMisses(
   hashByFileId: Record<string, string | null>,
@@ -94,9 +103,19 @@ export function pruneThumbnailServerMisses(
 
 export function shouldFetchServerThumbnail(
   fileId: string,
-  file: { has_thumbnail?: boolean; content_sha256?: string | null },
+  file: {
+    has_thumbnail?: boolean;
+    content_sha256?: string | null;
+    health?: string;
+    corrupt?: boolean;
+  },
 ): boolean {
-  if (!file.has_thumbnail || isLocalDraftFileId(fileId)) {
+  if (
+    file.health === "corrupt" ||
+    file.corrupt ||
+    !file.has_thumbnail ||
+    isLocalDraftFileId(fileId)
+  ) {
     return false;
   }
   return !isThumbnailServerMiss(fileId, file.content_sha256);

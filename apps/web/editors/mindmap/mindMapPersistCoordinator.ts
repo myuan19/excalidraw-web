@@ -2,6 +2,11 @@ import { FileSyncState } from "../../data/FileSyncState";
 import { isLocalDraftFileId } from "../../data/localDraftFileId";
 import { hashDocumentSnapshot } from "../../data/sceneHash";
 import { clearTabFileDirty } from "../../data/tabFileDirtyState";
+import {
+  readMindMapTraceFileState,
+  summarizeMindMapTraceDocument,
+  traceMindMapOperation,
+} from "../../data/mindMapOperationTrace";
 import { noteMindMapPersistedSnapshot } from "./mindMapPersistedSnapshot";
 import { toMindMapLocalCacheRecord } from "./mindMapLocalCacheRecord";
 import {
@@ -20,8 +25,19 @@ export function recordMindMapPersisted(
   opts?: { serverContentSha256?: string },
 ): void {
   if (isLocalDraftFileId(fileId)) {
+    traceMindMapOperation("persistCoordinator.skipLocalDraft", {
+      fileId8: fileId.slice(0, 8),
+      document: summarizeMindMapTraceDocument(document),
+      fileState: readMindMapTraceFileState(fileId),
+    });
     return;
   }
+  traceMindMapOperation("persistCoordinator.record.start", {
+    fileId8: fileId.slice(0, 8),
+    serverContentSha256: opts?.serverContentSha256 ?? null,
+    document: summarizeMindMapTraceDocument(document),
+    fileStateBefore: readMindMapTraceFileState(fileId),
+  });
   noteMindMapPersistedSnapshot(fileId, document);
   const existing = FileSyncState.getLocalCache(fileId);
   const serverSha =
@@ -38,6 +54,11 @@ export function recordMindMapPersisted(
   }
   FileSyncState.clearLocalEditTime(fileId);
   clearTabFileDirty(fileId);
+  traceMindMapOperation("persistCoordinator.record.after", {
+    fileId8: fileId.slice(0, 8),
+    serverContentSha256: opts?.serverContentSha256 ?? null,
+    fileStateAfter: readMindMapTraceFileState(fileId),
+  });
   debugMindMapPersist("recordMindMapPersisted", {
     fileId8: fileId.slice(0, 8),
     serverSha8: opts?.serverContentSha256?.slice(0, 8) ?? null,

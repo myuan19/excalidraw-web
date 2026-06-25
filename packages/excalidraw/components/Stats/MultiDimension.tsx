@@ -70,31 +70,30 @@ const resizeElementInGroup = (
   origElement: ExcalidrawElement,
   elementsMap: NonDeletedSceneElementsMap,
   originalElementsMap: ElementsMap,
+  scene: Scene,
 ) => {
   const updates = getResizedUpdates(anchorX, anchorY, scale, origElement);
 
-  mutateElement(latestElement, updates, false);
+  mutateElement(latestElement, elementsMap, updates);
   const boundTextElement = getBoundTextElement(
     origElement,
     originalElementsMap,
   );
   if (boundTextElement) {
     const newFontSize = boundTextElement.fontSize * scale;
-    updateBoundElements(latestElement, elementsMap, {
-      newSize: { width: updates.width, height: updates.height },
-    });
+    updateBoundElements(latestElement, scene);
     const latestBoundTextElement = elementsMap.get(boundTextElement.id);
     if (latestBoundTextElement && isTextElement(latestBoundTextElement)) {
       mutateElement(
         latestBoundTextElement,
+        elementsMap,
         {
           fontSize: newFontSize,
         },
-        false,
       );
       handleBindTextResize(
         latestElement,
-        elementsMap,
+        scene,
         property === "width" ? "e" : "s",
         true,
       );
@@ -113,6 +112,7 @@ const resizeGroup = (
   originalElements: ExcalidrawElement[],
   elementsMap: NonDeletedSceneElementsMap,
   originalElementsMap: ElementsMap,
+  scene: Scene,
 ) => {
   // keep aspect ratio for groups
   if (property === "width") {
@@ -136,6 +136,7 @@ const resizeGroup = (
       origElement,
       elementsMap,
       originalElementsMap,
+      scene,
     );
   }
 };
@@ -189,6 +190,7 @@ const handleDimensionChange: DragInputCallbackType<
           originalElements,
           elementsMap,
           originalElementsMap,
+          scene,
         );
       } else {
         const [el] = elementsInUnit;
@@ -230,8 +232,8 @@ const handleDimensionChange: DragInputCallbackType<
             nextHeight,
             latestElement,
             origElement,
-            elementsMap,
             originalElementsMap,
+            scene,
             property === "width" ? "e" : "s",
             {
               shouldInformMutation: false,
@@ -296,6 +298,7 @@ const handleDimensionChange: DragInputCallbackType<
         originalElements,
         elementsMap,
         originalElementsMap,
+        scene,
       );
     } else {
       const [el] = elementsInUnit;
@@ -333,8 +336,8 @@ const handleDimensionChange: DragInputCallbackType<
           nextHeight,
           latestElement,
           origElement,
-          elementsMap,
           originalElementsMap,
+          scene,
           property === "width" ? "e" : "s",
           {
             shouldInformMutation: false,

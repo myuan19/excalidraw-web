@@ -1,9 +1,11 @@
-import { readStoredLocalDraftModified } from "./fileModificationState";
+import { readStoredFileModificationState } from "./fileModificationState";
 import { FileSyncState } from "./FileSyncState";
 import { isLocalDraftFileId } from "./localDraftFileId";
 import { recordRecentFileAccess, removeRecentFileEntry } from "./recentFiles";
 
 import type { ServerFile } from "./ServerSync";
+
+export type LocalDraftSaveTarget = "native" | "catalog";
 
 export interface LocalDraftSessionRecord {
   id: string;
@@ -16,6 +18,8 @@ export interface LocalDraftSessionRecord {
    * 未设置（undefined）表示离开保存时需选择文件夹。
    */
   folder_id?: string | null;
+  /** 「最近」中新建的草稿走系统保存对话框，不使用目录树选择器。 */
+  save_target?: LocalDraftSaveTarget;
 }
 
 const INDEX_KEY = "editorhub-local-draft-index-v1";
@@ -60,8 +64,8 @@ export function hasRecoverableLocalDraft(fileId: string): boolean {
   if (!isLocalDraftFileId(fileId)) {
     return false;
   }
-  const meta = LocalDraftSessions.get(fileId);
-  return readStoredLocalDraftModified(fileId, meta?.kind);
+  const kind = LocalDraftSessions.get(fileId)?.kind;
+  return readStoredFileModificationState(fileId, kind).shouldPromptOnLeave;
 }
 
 export const LocalDraftSessions = {
@@ -89,14 +93,13 @@ export const LocalDraftSessions = {
     writeIndex(next);
   },
 
-  touch(fileId: string, name?: string) {
+  touch(fileId: string) {
     const existing = readIndex().find((item) => item.id === fileId);
     if (!existing) {
       return;
     }
     this.upsert({
       ...existing,
-      name: name?.trim() || existing.name,
       updated_at: new Date().toISOString(),
     });
   },
@@ -124,11 +127,15 @@ export function draftSessionToServerFile(
 }
 
 /** 本地草稿产生未保存编辑时：更新索引并进入「最近」。 */
-export function notifyLocalDraftEdited(fileId: string, name?: string): void {
+export function notifyLocalDraftEdited(fileId: string): void {
   if (!isLocalDraftFileId(fileId)) {
     return;
   }
-  LocalDraftSessions.touch(fileId, name);
+  const existing = LocalDraftSessions.get(fileId);
+  if (!existing) {
+    return;
+  }
+  LocalDraftSessions.touch(fileId);
   recordRecentFileAccess(fileId);
 }
 

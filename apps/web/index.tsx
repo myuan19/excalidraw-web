@@ -2,8 +2,12 @@ import { createRoot } from "react-dom/client";
 
 import ExcalidrawApp from "./App";
 import { initGlobalErrorCapture } from "./lib/logger";
+import { installUserTraceGlobals } from "./lib/userTrace";
+import { bootResourceTrace } from "./lib/resourceTrace";
 
 initGlobalErrorCapture();
+installUserTraceGlobals();
+bootResourceTrace();
 
 window.__EXCALIDRAW_SHA__ = import.meta.env.VITE_APP_GIT_SHA;
 

@@ -198,8 +198,8 @@ $verticalBreakpoint: 861px;
 
     &--resend-source {
       .chat-message__content {
-        box-shadow:
-          0 0 0 2px color-mix(in srgb, var(--color-primary) 38%, transparent),
+        box-shadow: 0 0 0 2px
+            color-mix(in srgb, var(--color-primary) 38%, transparent),
           var(--chat-msg-shadow);
       }
     }

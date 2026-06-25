@@ -2,86 +2,236 @@
  * POST /api/logs — batched browser log entries → stdout + _dev_data/logs/client.log
  * Disable: LOG_CLIENT_INGEST=0 or EXCALIDRAW_CLIENT_LOG=0
  */
-import express from "express";
-import { createLogger, _transports } from "../lib/logger.js";
-import { isClientLogIngestEnabled, truncStr } from "../logger.js";
+import { existsSync } from "node:fs";
+import path from "node:path";
 
-const router = express.Router();
+import express from "express";
+
+import { sanitizeLogRecord } from "../../lib/logger/core.js";
+import {
+  getLatestDesktopOpLogPath,
+  writeDesktopClientLog,
+} from "../lib/desktopOpLog.js";
+import { createLogger, _transports } from "../lib/logger.js";
+import {
+  isClientLogIngestEnabled,
+  isDebugLogAllowed,
+  truncStr,
+} from "../logger.js";
+
 const log = createLogger({ module: "ingest" });
 
-const VALID_LEVELS = new Set(["debug", "info", "warn", "error"]);
+function logCollectorEvent(level, event, message, fields) {
+  log.event(level, `collector.ingest.${event}`, message, { fields });
+}
+
+const VALID_LEVELS = new Set([
+  "trace",
+  "debug",
+  "info",
+  "warn",
+  "error",
+  "critical",
+]);
 const MAX_ENTRIES_PER_BATCH = 100;
 const MAX_MSG_LEN = 4000;
 const MAX_DATA_LEN = 2048;
+const MAX_EVENT_LEN = 120;
+const MAX_CONTEXT_VALUE_LEN = 120;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_BATCHES = 60;
 
-function sanitizeData(data) {
-  if (!data || typeof data !== "object" || Array.isArray(data)) return undefined;
-  const out = {};
-  for (const [k, v] of Object.entries(data)) {
-    if (typeof v === "string") {
-      out[k] = truncStr(v, MAX_DATA_LEN);
-    } else if (typeof v === "number" || typeof v === "boolean" || v === null) {
-      out[k] = v;
-    } else {
-      try {
-        out[k] = truncStr(JSON.stringify(v), MAX_DATA_LEN);
-      } catch {
-        out[k] = "[unserializable]";
-      }
-    }
-  }
-  return out;
+const rateBuckets = new Map();
+
+function rateLimitKey(req) {
+  return req.ip || req.headers["x-forwarded-for"] || "unknown";
 }
 
-router.post("/", (req, res) => {
-  if (!isClientLogIngestEnabled()) {
-    return res.status(204).send();
+function isRateLimited(req) {
+  const now = Date.now();
+  const key = rateLimitKey(req);
+  const current = rateBuckets.get(key);
+  if (!current || now - current.windowStart >= RATE_LIMIT_WINDOW_MS) {
+    rateBuckets.set(key, { windowStart: now, count: 1 });
+    return false;
   }
+  current.count += 1;
+  return current.count > RATE_LIMIT_MAX_BATCHES;
+}
 
-  const { entries } = req.body;
-  if (!Array.isArray(entries)) {
-    return res.status(400).json({ error: "entries array required" });
+function sanitizeData(data) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return undefined;
   }
+  return sanitizeLogRecord(data, { maxStringLength: MAX_DATA_LEN });
+}
 
-  const batch = entries
-    .slice(0, MAX_ENTRIES_PER_BATCH)
-    .filter((raw) => raw && typeof raw === "object")
-    .sort((a, b) =>
-      String(typeof a.ts === "string" ? a.ts : "").localeCompare(
-        String(typeof b.ts === "string" ? b.ts : ""),
-      ),
-    );
-  let written = 0;
-
-  for (const raw of batch) {
-    if (!raw.msg || typeof raw.msg !== "string") continue;
-
-    const entry = {
-      ts: typeof raw.ts === "string" ? raw.ts.slice(0, 64) : new Date().toISOString(),
-      level: VALID_LEVELS.has(raw.level) ? raw.level : "info",
-      source: "client",
-      module: typeof raw.module === "string" ? raw.module.slice(0, 64) : "unknown",
-      msg: truncStr(raw.msg, MAX_MSG_LEN),
-    };
-
-    const data = sanitizeData(raw.data);
-    if (data) entry.data = data;
-    if (typeof raw.sid === "string") entry.sid = raw.sid.slice(0, 48);
-    if (typeof raw.ua === "string") entry.ua = truncStr(raw.ua, 120);
-
-    for (const t of _transports) {
-      try { t.write(entry); } catch { /* */ }
+function sanitizeContext(context) {
+  if (!context || typeof context !== "object" || Array.isArray(context)) {
+    return undefined;
+  }
+  const sanitized = sanitizeLogRecord(context, {
+    maxStringLength: MAX_CONTEXT_VALUE_LEN,
+  });
+  const out = {};
+  for (const [key, value] of Object.entries(sanitized ?? {})) {
+    if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean" ||
+      value === null
+    ) {
+      out[key] = value;
     }
-    written++;
   }
+  return Object.keys(out).length ? out : undefined;
+}
 
-  log.debug("batch ingested", {
-    received: batch.length,
-    written,
-    ip: req.ip,
+export function createLogsRouter({
+  openLocalPath,
+  showLocalItemInFolder,
+} = {}) {
+  const router = express.Router();
+
+  router.post("/open", async (_req, res) => {
+    const latestLog = getLatestDesktopOpLogPath();
+    if (!latestLog) {
+      return res.status(404).json({ error: "log path not available" });
+    }
+    if (existsSync(latestLog) && typeof showLocalItemInFolder === "function") {
+      try {
+        await showLocalItemInFolder(latestLog);
+        return res.json({ ok: true, path: latestLog });
+      } catch (error) {
+        return res.status(500).json({
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    if (typeof openLocalPath !== "function") {
+      return res.status(501).json({ error: "open logs not available" });
+    }
+    try {
+      const target = existsSync(latestLog)
+        ? latestLog
+        : path.dirname(latestLog);
+      const result = await openLocalPath(target);
+      if (typeof result === "string" && result) {
+        return res.status(500).json({ error: result });
+      }
+      return res.json({ ok: true, path: target });
+    } catch (error) {
+      return res.status(500).json({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   });
 
-  return res.status(204).send();
-});
+  router.post("/", (req, res) => {
+    const debugMode = req.body?.debugMode === true;
+    if (!isDebugLogAllowed() || !debugMode || !isClientLogIngestEnabled()) {
+      return res.status(204).send();
+    }
+    if (isRateLimited(req)) {
+      logCollectorEvent("warn", "rate_limited", "batch rate limited", {
+        ip: req.ip,
+        debugMode,
+      });
+      return res.status(429).json({ error: "log ingest rate limited" });
+    }
 
-export default router;
+    const { entries } = req.body;
+    if (!Array.isArray(entries)) {
+      return res.status(400).json({ error: "entries array required" });
+    }
+
+    const dropped = Math.max(0, entries.length - MAX_ENTRIES_PER_BATCH);
+    const batch = entries
+      .slice(0, MAX_ENTRIES_PER_BATCH)
+      .filter((raw) => raw && typeof raw === "object")
+      .sort((a, b) =>
+        String(typeof a.ts === "string" ? a.ts : "").localeCompare(
+          String(typeof b.ts === "string" ? b.ts : ""),
+        ),
+      );
+    let written = 0;
+
+    for (const raw of batch) {
+      if (!raw.msg || typeof raw.msg !== "string") {
+        continue;
+      }
+
+      const entry = {
+        ts:
+          typeof raw.ts === "string"
+            ? raw.ts.slice(0, 64)
+            : new Date().toISOString(),
+        level: VALID_LEVELS.has(raw.level) ? raw.level : "info",
+        source: "client",
+        component:
+          typeof raw.component === "string" ? raw.component.slice(0, 16) : "FE",
+        module:
+          typeof raw.module === "string" ? raw.module.slice(0, 64) : "unknown",
+        event:
+          typeof raw.event === "string"
+            ? truncStr(raw.event, MAX_EVENT_LEN)
+            : undefined,
+        msg: truncStr(raw.msg, MAX_MSG_LEN),
+      };
+
+      const data = sanitizeData(raw.data);
+      if (data) {
+        entry.data = data;
+      }
+      const fields = sanitizeData(raw.fields);
+      if (fields) {
+        entry.fields = fields;
+      }
+      const context = sanitizeContext(raw.context);
+      if (context) {
+        entry.context = context;
+      }
+      if (typeof raw.sourceLocation === "string") {
+        entry.sourceLocation = truncStr(raw.sourceLocation, 160);
+      }
+      if (typeof raw.sequence === "number" && Number.isFinite(raw.sequence)) {
+        entry.sequence = raw.sequence;
+      }
+      if (typeof raw.sid === "string") {
+        entry.sid = raw.sid.slice(0, 48);
+      }
+      if (typeof raw.ua === "string") {
+        entry.ua = truncStr(raw.ua, 120);
+      }
+      entry.fields = {
+        ...(entry.data ?? {}),
+        ...(entry.fields ?? {}),
+        debugMode: true,
+      };
+
+      for (const t of _transports) {
+        try {
+          t.write(entry);
+        } catch {
+          // ignore transport failure
+        }
+      }
+      writeDesktopClientLog(entry);
+      written++;
+    }
+
+    logCollectorEvent("debug", "batch_ingested", "batch ingested", {
+      received: batch.length,
+      dropped,
+      written,
+      ip: req.ip,
+      debugMode,
+    });
+
+    return res.status(204).send();
+  });
+
+  return router;
+}
+
+export default createLogsRouter();

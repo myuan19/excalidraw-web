@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 
+import { apiTransport } from "./apiTransport";
 import { fetchThumbnailSvgForCard } from "./fetchThumbnailSvgForCard";
 
 describe("fetchThumbnailSvgForCard", () => {
@@ -7,41 +8,44 @@ describe("fetchThumbnailSvgForCard", () => {
     vi.restoreAllMocks();
   });
 
-  it("allows immutable hash thumbnail requests to use the browser cache", async () => {
-    const fetchMock = vi.fn(async () => ({
-      ok: true,
+  it("allows immutable hash thumbnail requests to use cache-friendly headers", async () => {
+    const requestMock = vi.spyOn(apiTransport, "request").mockResolvedValue({
       status: 200,
-      headers: new Headers({ "content-type": "image/svg+xml" }),
-      text: async () => "<svg></svg>",
-    }));
-    vi.stubGlobal("fetch", fetchMock);
+      headers: { "content-type": "image/svg+xml" },
+      bodyText: "<svg></svg>",
+    });
 
     await fetchThumbnailSvgForCard("/api/files/file-1/thumbnail?h=sha", {
       id8: "file-1",
     });
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/files/file-1/thumbnail?h=sha",
-      expect.objectContaining({ cache: "force-cache" }),
-    );
+    expect(requestMock).toHaveBeenCalledWith({
+      method: "GET",
+      path: "/api/files/file-1/thumbnail?h=sha",
+      headers: expect.objectContaining({
+        Accept: "image/svg+xml,text/plain,*/*;q=0.8,*/*;q=0.1",
+        "Cache-Control": "max-age=31536000",
+      }),
+    });
   });
 
   it("keeps non-hashed thumbnail requests uncached", async () => {
-    const fetchMock = vi.fn(async () => ({
-      ok: true,
+    const requestMock = vi.spyOn(apiTransport, "request").mockResolvedValue({
       status: 200,
-      headers: new Headers({ "content-type": "image/svg+xml" }),
-      text: async () => "<svg></svg>",
-    }));
-    vi.stubGlobal("fetch", fetchMock);
+      headers: { "content-type": "image/svg+xml" },
+      bodyText: "<svg></svg>",
+    });
 
     await fetchThumbnailSvgForCard("/api/files/file-1/thumbnail", {
       id8: "file-1",
     });
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/files/file-1/thumbnail",
-      expect.objectContaining({ cache: "no-store" }),
-    );
+    expect(requestMock).toHaveBeenCalledWith({
+      method: "GET",
+      path: "/api/files/file-1/thumbnail",
+      headers: expect.objectContaining({
+        "Cache-Control": "no-store",
+      }),
+    });
   });
 });

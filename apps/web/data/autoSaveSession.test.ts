@@ -1,10 +1,34 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  clearDeferredAutoSave,
   isAutoSaveEligibleFile,
   isAutoSaveLabel,
-  resolveAutoSaveArchiveLabel,
+  notifyEdit,
+  rearmDeferredAutoSave,
+  registerAutoSaveTrigger,
 } from "./autoSaveSession";
+import {
+  AUTO_SAVE_IDLE_SEC_OPTIONS,
+  getAppSettings,
+  isAutoSaveOnExitActive,
+  isIdleAutoSaveActive,
+  updateAppSettings,
+} from "./appSettings";
+import { CHECKPOINT_LABELS, resolveCheckpointPolicy } from "./checkpointPolicy";
+
+beforeEach(() => {
+  window.location.hash = "";
+  updateAppSettings({
+    autoSaveEnabled: false,
+    autoSaveIdleSec: 10,
+    checkpointIntervalMin: 30,
+  });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("isAutoSaveEligibleFile", () => {
   it("only allows persisted server file ids", () => {
@@ -18,21 +42,145 @@ describe("isAutoSaveEligibleFile", () => {
   });
 });
 
-describe("resolveAutoSaveArchiveLabel", () => {
-  it("labels idle and visibility saves as automatic archive entries", () => {
-    const idleLabel = resolveAutoSaveArchiveLabel("auto");
-    const visibilityLabel = resolveAutoSaveArchiveLabel("visibility");
-
-    expect(idleLabel).toBeTruthy();
-    expect(visibilityLabel).toBeTruthy();
-    expect(isAutoSaveLabel(idleLabel ?? "")).toBe(true);
-    expect(isAutoSaveLabel(visibilityLabel ?? "")).toBe(true);
+describe("checkpoint policy", () => {
+  it("uses interval checkpoints for manual saves", () => {
+    expect(resolveCheckpointPolicy("toolbar")).toEqual({
+      mode: "interval",
+      intervalMinutes: 30,
+      label: CHECKPOINT_LABELS.interval,
+    });
+    expect(resolveCheckpointPolicy("hotkey")).toEqual({
+      mode: "interval",
+      intervalMinutes: 30,
+      label: CHECKPOINT_LABELS.interval,
+    });
   });
 
-  it("keeps user initiated saves as normal history entries", () => {
-    expect(resolveAutoSaveArchiveLabel("toolbar")).toBeUndefined();
-    expect(resolveAutoSaveArchiveLabel("hotkey")).toBeUndefined();
-    expect(resolveAutoSaveArchiveLabel("home")).toBeUndefined();
-    expect(resolveAutoSaveArchiveLabel("sidebar")).toBeUndefined();
+  it("does not checkpoint automatic or visibility saves when auto-save is disabled", () => {
+    updateAppSettings({ autoSaveEnabled: false, checkpointIntervalMin: 20 });
+
+    expect(resolveCheckpointPolicy("auto")).toEqual({ mode: "none" });
+    expect(resolveCheckpointPolicy("visibility")).toEqual({ mode: "none" });
+    expect(resolveCheckpointPolicy("thumbnail")).toEqual({ mode: "none" });
+    expect(resolveCheckpointPolicy("home")).toEqual({
+      mode: "interval",
+      intervalMinutes: 20,
+      label: CHECKPOINT_LABELS.interval,
+    });
+  });
+
+  it("uses the configured interval for latest saves when auto-save is enabled", () => {
+    updateAppSettings({ autoSaveEnabled: true, checkpointIntervalMin: 60 });
+
+    const intervalPolicy = {
+      mode: "interval" as const,
+      intervalMinutes: 60,
+      label: CHECKPOINT_LABELS.interval,
+    };
+
+    expect(resolveCheckpointPolicy("auto")).toEqual(intervalPolicy);
+    expect(resolveCheckpointPolicy("visibility")).toEqual({ mode: "none" });
+    expect(resolveCheckpointPolicy("thumbnail")).toEqual({ mode: "none" });
+    expect(resolveCheckpointPolicy("home")).toEqual(intervalPolicy);
+    expect(isAutoSaveLabel("auto:legacy")).toBe(true);
+  });
+});
+
+describe("auto-save settings semantics", () => {
+  it("can disable idle saves while keeping exit saves enabled", () => {
+    expect(AUTO_SAVE_IDLE_SEC_OPTIONS).toContain(0);
+
+    updateAppSettings({ autoSaveEnabled: false });
+    expect(isAutoSaveOnExitActive()).toBe(false);
+    expect(isIdleAutoSaveActive()).toBe(false);
+
+    updateAppSettings({ autoSaveEnabled: true, autoSaveIdleSec: 0 });
+    expect(getAppSettings().autoSaveIdleSec).toBe(0);
+    expect(isAutoSaveOnExitActive()).toBe(true);
+    expect(isIdleAutoSaveActive()).toBe(false);
+
+    updateAppSettings({ autoSaveEnabled: true, autoSaveIdleSec: 5 });
+    expect(isAutoSaveOnExitActive()).toBe(true);
+    expect(isIdleAutoSaveActive()).toBe(true);
+  });
+});
+
+describe("idle timer settings refresh", () => {
+  it("restarts the pending idle timer when autoSaveIdleSec changes", () => {
+    vi.useFakeTimers();
+    updateAppSettings({ autoSaveEnabled: true, autoSaveIdleSec: 10 });
+    const trigger = vi.fn();
+    const unregister = registerAutoSaveTrigger(trigger);
+    window.location.hash = "#file=a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+
+    notifyEdit();
+    vi.advanceTimersByTime(5_000);
+    updateAppSettings({ autoSaveIdleSec: 60 });
+
+    vi.advanceTimersByTime(10_000);
+    expect(trigger).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(50_000);
+    expect(trigger).toHaveBeenCalledTimes(1);
+
+    unregister();
+  });
+
+  it("clears the pending idle timer when idle auto-save is disabled", () => {
+    vi.useFakeTimers();
+    updateAppSettings({ autoSaveEnabled: true, autoSaveIdleSec: 10 });
+    const trigger = vi.fn();
+    const unregister = registerAutoSaveTrigger(trigger);
+    window.location.hash = "#file=a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+
+    notifyEdit();
+    updateAppSettings({ autoSaveIdleSec: 0 });
+
+    vi.advanceTimersByTime(15_000);
+    expect(trigger).not.toHaveBeenCalled();
+
+    unregister();
+  });
+
+  it("rearms deferred auto-save through the idle timer", () => {
+    vi.useFakeTimers();
+    updateAppSettings({ autoSaveEnabled: true, autoSaveIdleSec: 10 });
+    let shouldDefer = true;
+    const trigger = vi.fn(() => {
+      if (shouldDefer) {
+        shouldDefer = false;
+        return "deferred" as const;
+      }
+      return undefined;
+    });
+    const unregister = registerAutoSaveTrigger(trigger);
+    window.location.hash = "#file=a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+
+    notifyEdit();
+    vi.advanceTimersByTime(10_000);
+    expect(trigger).toHaveBeenCalledTimes(1);
+
+    expect(rearmDeferredAutoSave()).toBe(true);
+    vi.advanceTimersByTime(9_999);
+    expect(trigger).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    expect(trigger).toHaveBeenCalledTimes(2);
+
+    unregister();
+  });
+
+  it("can clear a deferred auto-save without rearming it", () => {
+    vi.useFakeTimers();
+    updateAppSettings({ autoSaveEnabled: true, autoSaveIdleSec: 10 });
+    const unregister = registerAutoSaveTrigger(() => "deferred");
+    window.location.hash = "#file=a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+
+    notifyEdit();
+    vi.advanceTimersByTime(10_000);
+    clearDeferredAutoSave();
+
+    expect(rearmDeferredAutoSave()).toBe(false);
+
+    unregister();
   });
 });

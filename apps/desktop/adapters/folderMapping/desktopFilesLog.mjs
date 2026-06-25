@@ -12,6 +12,71 @@ function shortId(id) {
   return typeof id === "string" && id.length > 8 ? `${id.slice(0, 8)}…` : id;
 }
 
+function normalizeMindMapText(text) {
+  return String(text ?? "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getMindMapRoot(data) {
+  if (!data || typeof data !== "object") {
+    return null;
+  }
+  if (data.kind === "mindmap" && data.data && typeof data.data === "object") {
+    return data.data.root ?? null;
+  }
+  return data.root ?? null;
+}
+
+function countMindMapNodes(node) {
+  if (!node || typeof node !== "object") {
+    return 0;
+  }
+  const children = Array.isArray(node.children) ? node.children : [];
+  return 1 + children.reduce((sum, child) => sum + countMindMapNodes(child), 0);
+}
+
+function flattenMindMapNodes(node, path = ["root"], out = []) {
+  if (!node || typeof node !== "object" || out.length >= 500) {
+    return out;
+  }
+  const children = Array.isArray(node.children) ? node.children : [];
+  out.push({
+    path: path.join("."),
+    text: normalizeMindMapText(node.data?.text).slice(0, 120),
+    rawTextLen: String(node.data?.text ?? "").length,
+    richText: node.data?.richText === true,
+    childCount: children.length,
+  });
+  children.forEach((child, index) => {
+    if (out.length < 500) {
+      flattenMindMapNodes(child, [...path, String(index)], out);
+    }
+  });
+  return out;
+}
+
+function summarizeMindMapData(data) {
+  const root = getMindMapRoot(data);
+  if (!root || typeof root !== "object") {
+    return null;
+  }
+  const children = Array.isArray(root.children) ? root.children : [];
+  const nodeCount = countMindMapNodes(root);
+  return {
+    nodeCount,
+    rootText: normalizeMindMapText(root.data?.text).slice(0, 120),
+    rootRawTextLen: String(root.data?.text ?? "").length,
+    rootChildCount: children.length,
+    firstChildTexts: children
+      .slice(0, 12)
+      .map((child) => normalizeMindMapText(child.data?.text).slice(0, 80)),
+    flatNodesTruncated: nodeCount > 500,
+  };
+}
+
 export function logFilesRequest(req, res, startedAt) {
   if (!isDesktopDebugEnabled()) {
     return;
@@ -48,7 +113,9 @@ export function summarizePutBody(body) {
   const hasData = Object.prototype.hasOwnProperty.call(body, "data");
   const hasThumb = Object.prototype.hasOwnProperty.call(body, "thumbnail");
   const elementCount =
-    hasData && Array.isArray(body.data?.elements) ? body.data.elements.length : null;
+    hasData && Array.isArray(body.data?.elements)
+      ? body.data.elements.length
+      : null;
   const fileKeysCount =
     hasData && body.data?.files && typeof body.data.files === "object"
       ? Object.keys(body.data.files).length
@@ -61,10 +128,17 @@ export function summarizePutBody(body) {
     thumbLen:
       typeof body.thumbnail === "string" ? body.thumbnail.length : undefined,
     clearThumb: body.thumbnail === null,
-    archiveLabel: body.archiveLabel ? truncDesktopStr(String(body.archiveLabel), 80) : "",
+    archiveLabel: body.archiveLabel
+      ? truncDesktopStr(String(body.archiveLabel), 80)
+      : "",
+    checkpointPolicyMode:
+      body.checkpointPolicy && typeof body.checkpointPolicy === "object"
+        ? body.checkpointPolicy.mode ?? null
+        : null,
     elementCount,
     fileKeysCount,
     kind: body.data?.kind ?? body.data?.type ?? undefined,
+    mindMap: summarizeMindMapData(body.data),
   };
 }
 

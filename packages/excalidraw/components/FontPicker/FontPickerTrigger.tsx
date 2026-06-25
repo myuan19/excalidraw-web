@@ -8,14 +8,20 @@ import { isDefaultFont } from "./FontPicker";
 
 interface FontPickerTriggerProps {
   selectedFontFamily: FontFamilyValues | null;
+  isOpened?: boolean;
+  compactMode?: boolean;
 }
 
 export const FontPickerTrigger = ({
   selectedFontFamily,
+  isOpened = false,
+  compactMode = false,
 }: FontPickerTriggerProps) => {
   const isTriggerActive = useMemo(
-    () => Boolean(selectedFontFamily && !isDefaultFont(selectedFontFamily)),
-    [selectedFontFamily],
+    () =>
+      isOpened ||
+      Boolean(selectedFontFamily && !isDefaultFont(selectedFontFamily)),
+    [isOpened, selectedFontFamily],
   );
 
   return (
@@ -29,6 +35,14 @@ export const FontPickerTrigger = ({
           className="properties-trigger"
           testId={"font-family-show-fonts"}
           active={isTriggerActive}
+          style={
+            compactMode
+              ? {
+                  width: "2rem",
+                  height: "2rem",
+                }
+              : undefined
+          }
           // no-op
           onClick={() => {}}
         />

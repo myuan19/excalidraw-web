@@ -263,11 +263,39 @@ export default class TextEdit {
   }
 
   // 新建节点渲染完成后进入编辑（不经由用户指针事件）
-  openAfterInsert(node) {
-    if (this.mindMap.opt.readonly || this.isShowTextEdit()) {
+  openAfterInsert(node, insertEditToken = null) {
+    if (this.mindMap.opt.readonly) {
+      return false
+    }
+    let targetNode = node
+    if (this.isShowTextEdit()) {
+      this.hideEditTextBox()
+      targetNode = this.renderer.findNodeByUid(node.uid) || node
+      if (this.isShowTextEdit()) {
+        return false
+      }
+    }
+    return this.show({ node: targetNode, isInserting: true, insertEditToken })
+  }
+
+  selectAllAfterInsert(node) {
+    selectAllInput(this.textEditNode)
+    const restore = () => {
+      if (
+        this.currentNode === node &&
+        this.isShowTextEdit() &&
+        this.textEditNode
+      ) {
+        selectAllInput(this.textEditNode)
+      }
+    }
+    if (window.requestAnimationFrame) {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(restore)
+      })
       return
     }
-    this.show({ node, isInserting: true })
+    window.setTimeout(restore, 0)
   }
 
   // 显示文本编辑框
@@ -279,7 +307,8 @@ export default class TextEdit {
     isInserting = false,
     isFromKeyDown = false,
     isFromScale = false,
-    useClickPosition = false
+    useClickPosition = false,
+    insertEditToken = null
   }) {
     const showVersion = this.textEditShowVersion
     // 使用了自定义节点内容那么不响应编辑事件
@@ -324,7 +353,8 @@ export default class TextEdit {
       isInserting,
       isFromKeyDown,
       isFromScale,
-      useClickPosition
+      useClickPosition,
+      insertEditToken
     }
     if (this.mindMap.richText) {
       this.mindMap.richText.showEditText(params)
@@ -375,7 +405,8 @@ export default class TextEdit {
     isInserting,
     isFromKeyDown,
     isFromScale,
-    useClickPosition
+    useClickPosition,
+    insertEditToken
   }) {
     if (this.showTextEdit) return
     const {
@@ -527,7 +558,11 @@ export default class TextEdit {
     if (useClickPosition && e && !isInserting) {
       this.focusInputAtMouseEvent(e)
     } else if (isInserting || (selectTextOnEnterEditText && !isFromKeyDown)) {
-      selectAllInput(this.textEditNode)
+      if (isInserting) {
+        this.selectAllAfterInsert(node, insertEditToken)
+      } else {
+        selectAllInput(this.textEditNode)
+      }
     } else {
       focusInput(this.textEditNode)
     }

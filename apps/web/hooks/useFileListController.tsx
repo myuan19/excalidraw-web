@@ -13,33 +13,41 @@ import {
 } from "@excalidraw/common";
 import {
   applyMainSiteDocumentBranding,
-  editorIconForKind,
   HOME_APP_TITLE,
   MAIN_SITE_ICON,
 } from "../lib/appBranding";
-import { useShellTheme } from "./useShellTheme";
+import { shellThemeClassName, useShellTheme } from "./useShellTheme";
 import { createLogger, logFileListOpen } from "../lib/logger";
+import { traceResourceOp, traceTreeStateApply } from "../lib/resourceTrace";
 import {
   devDebug,
   isDevDebugChannelEnabled,
   isFileListFolderDndDebugEnabled,
+  isFileListLayoutDebugEnabled,
+  isFileListThumbnailDebugEnabled,
 } from "../lib/devDebug";
+import { traceFileOpen, id8 } from "../lib/interactionDebugTrace";
+import { isDesktopEditorHub } from "../lib/runtimePlatform";
+import { readFileDraftStatus } from "./useFileDraftStatus";
 import {
   readFileListTreeCache,
   writeFileListTreeCache,
+  patchFileListTreeCacheSavedFile,
 } from "../data/fileListSessionCache";
 import { FileSyncState } from "../data/FileSyncState";
 import { onCrossTabFileSaved } from "../data/crossTabFileSync";
 import { resolveFileCardThumbDisplay } from "../data/fileCardThumbDisplay";
-import { chooseFileCardThumbnail } from "../data/fileCardThumbnail";
+import { chooseFileCardThumbnailForFile } from "../data/resolveFileCardThumbnail";
+import { formatImportErrorMessage } from "../data/importExcalidrawScene";
 import {
-  formatImportErrorMessage,
-} from "../data/importExcalidrawScene";
-import { LocalThumbnailCache, LOCAL_THUMB_UPDATED_EVENT } from "../data/localThumbnailCache";
+  LocalThumbnailCache,
+  LOCAL_THUMB_UPDATED_EVENT,
+} from "../data/localThumbnailCache";
 import { detectImportCandidateKinds } from "../data/detectImportCandidates";
 import { FileCardThumb } from "../components/FileCardThumb";
 import { EditorKindDialog, NewFileDialog } from "../components/NewFileDialog";
 import { SaveNewDocumentDialog } from "../components/PromoteTempFileDialog";
+import type { DiskFolderPickResult } from "../components/saveDialogUtils";
 import { bootstrapLocalDraftSession } from "../data/bootstrapLocalDraftSession";
 import { discardLocalDraftSession } from "../data/discardLocalDraftSession";
 import { downloadLocalDraftFile } from "../data/downloadLocalDraftFile";
@@ -53,14 +61,65 @@ import {
 } from "../data/localDraftSessions";
 import {
   getRecentFileEntries,
+  getRecentPathFromEntryId,
+  isRecentPathEntry,
   RECENT_FILES_CHANGE_EVENT,
   recordRecentFileAccess,
+  recordRecentFilePath,
+  removeRecentFileEntry,
+  toRecentPathEntryId,
 } from "../data/recentFiles";
+import {
+  addMappedFolderRoot,
+  ensureDefaultDataDirectoryMapped,
+  resolveDefaultDataDirectoryPath,
+} from "../data/mappedFolderClient";
+import { readDroppedFileAbsPaths } from "../lib/droppedFilePath";
+import {
+  fileAwaitingNativeThumbnail,
+  generateRecentPathThumbnails,
+  persistTrackedFileThumbnail,
+  trackCatalogPathsToRecent,
+} from "../data/trackCatalogPathsToRecent";
+import {
+  clearNativeThumbnailPending,
+  markNativeThumbnailPending,
+  subscribeNativeThumbnailPending,
+} from "../data/nativeThumbnailPending";
+import {
+  clearThumbnailSavePending,
+  markThumbnailSavePending,
+  subscribeThumbnailSavePending,
+} from "../data/thumbnailSavePending";
 import { editorRegistry } from "../editors";
 import type { EditorPlugin } from "../editors/types";
+import { openEditorFileTab } from "../shell/editorTabNavigation";
+import {
+  deriveCatalogScanNoticeForRuntime,
+  findDefaultDataDirectoryFolderId,
+} from "../data/desktopCatalogPolicy";
+import {
+  fingerprintCatalogListing,
+  mergeExpandedFolderState,
+} from "../data/fileTreeSync";
+import {
+  cancelDebouncedFileListRefresh,
+  clearFileListIncrementalSaveSkip,
+  scheduleDebouncedFileListRefresh,
+  shouldSkipSilentTreeRefreshAfterIncrementalSave,
+  markFileListIncrementalSave,
+} from "../data/fileListRefreshCoordinator";
+import {
+  FILE_LIST_INCREMENTAL_APPLY_EVENT,
+  mergeServerFilePatch,
+  readFileListIncrementalPatch,
+  type FileListIncrementalPatch,
+} from "../data/fileListIncrementalPatch";
 import {
   ServerSync,
   type FileOrderItem,
+  type FileTreeResponse,
+  type MappingRootResult,
   type ServerFile,
   type ServerFolder,
 } from "../data/ServerSync";
@@ -70,20 +129,37 @@ import {
   subscribeAIConfig,
 } from "../data/aiConfig";
 import { computeThumbFetchAllowIds } from "../data/thumbCoverage";
+import { buildThumbnailDraftSlot } from "../data/thumbnailLifecycle";
 import { EmbedTokenManager } from "../components/EmbedTokenManager";
+import { DocumentPreviewDialog } from "../components/DocumentPreviewDialog";
+import { FileListToastStack } from "../components/FileListToastStack";
+import { ImportDestinationDialog } from "../components/ImportDestinationDialog";
 import { SettingsPanel } from "../components/SettingsPanel";
+import {
+  WEB_CATALOG_CAPABILITIES,
+  isCorruptCatalogFile,
+  parseCatalogCapabilities,
+  type CatalogCapabilities,
+} from "../data/catalogCapabilities";
 
-import { pruneThumbnailServerMisses } from "../data/thumbnailServerFetchMiss";
+import {
+  clearAllThumbnailServerMisses,
+  clearThumbnailServerMiss,
+  pruneThumbnailServerMisses,
+} from "../data/thumbnailServerFetchMiss";
+import { isNativeMindMapThumbnailSvg } from "../data/thumbnailSvg";
 import { useThumbnailPipeline } from "./useThumbnailPipeline";
 
 import "../components/FileList.scss";
+import "../components/fileListDialogHost.scss";
 
 const logList = createLogger({ module: "fileList" });
-const logThumb = createLogger({ module: "thumbnail" });
 const logPipe = createLogger({ module: "thumbPipeline" });
 
-
-function getDebugSvgAttr(svgMarkup: string | null, name: string): string | null {
+function getDebugSvgAttr(
+  svgMarkup: string | null,
+  name: string,
+): string | null {
   if (!svgMarkup) {
     return null;
   }
@@ -94,26 +170,39 @@ function getDebugSvgAttr(svgMarkup: string | null, name: string): string | null 
   );
 }
 
-function isFileListThumbnailDebugEnabled(): boolean {
-  if (isDevDebugChannelEnabled("file-list")) {
-    return true;
+function fileThumbnailCacheKey(
+  file: Pick<ServerFile, "content_sha256" | "updated_at">,
+): string | null {
+  const contentSha = file.content_sha256 ?? null;
+  if (!contentSha) {
+    return null;
   }
-  try {
-    return localStorage.getItem("excalidraw-filelist-thumbnail-debug") === "1";
-  } catch {
-    return false;
-  }
+  return `${contentSha}:${file.updated_at ?? ""}`;
 }
 
-function isFileListLayoutDebugEnabled(): boolean {
-  if (isDevDebugChannelEnabled("file-list")) {
-    return true;
-  }
-  try {
-    return localStorage.getItem("excalidraw-filelist-layout-debug") === "1";
-  } catch {
-    return false;
-  }
+function stripKnownDocumentExtension(name: string): string {
+  return (
+    name.match(
+      /^(.*?)(?:\.excalidraw\.json|\.mindmap\.json|\.excalidraw|\.smm)$/i,
+    )?.[1] ?? name
+  );
+}
+
+function recentPathAfterRename(
+  absPath: string,
+  name: string,
+  kind: string | null | undefined,
+): string {
+  const extension =
+    absPath.match(
+      /(\.excalidraw\.json|\.mindmap\.json|\.excalidraw|\.smm)$/i,
+    )?.[0] ?? (kind === "mindmap" ? ".smm" : ".excalidraw");
+  const separatorIndex = Math.max(
+    absPath.lastIndexOf("/"),
+    absPath.lastIndexOf("\\"),
+  );
+  const dir = separatorIndex >= 0 ? absPath.slice(0, separatorIndex + 1) : "";
+  return `${dir}${stripKnownDocumentExtension(name)}${extension}`;
 }
 
 function debugFileListThumbnail(
@@ -126,8 +215,62 @@ function debugFileListThumbnail(
   devDebug("file-list", `renderFileCard ${label}`, data);
 }
 
+function summarizeFileListTreeForDebug(tree: {
+  folders?: ServerFolder[];
+  files?: ServerFile[];
+  scan?: { state?: string | null; pass?: string | null; running?: boolean };
+}) {
+  const folders = tree.folders ?? [];
+  const files = tree.files ?? [];
+  return {
+    folders: folders.length,
+    files: files.length,
+    rootFolders: folders.filter((folder) => folderParentId(folder) == null)
+      .length,
+    mappingRoots: folders.filter((folder) => folder.is_mapping_root).length,
+    pendingFiles: files.filter(
+      (file) => file.health === "pending" || file.scan_pending,
+    ).length,
+    corruptFiles: files.filter((file) => isCorruptCatalogFile(file)).length,
+    mindmaps: files.filter((file) => editorRegistry.resolveKind(file.kind) === "mindmap")
+      .length,
+    withThumb: files.filter((file) => file.has_thumbnail).length,
+    withSha: files.filter((file) => file.content_sha256).length,
+    scanState: tree.scan?.state ?? null,
+    scanPass: tree.scan?.pass ?? null,
+    scanRunning: tree.scan?.running ?? null,
+  };
+}
+
 function roundedNumber(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function readLayoutDebugNumber(
+  data: Record<string, unknown> | null | undefined,
+  key: string,
+): number | null {
+  const value = data?.[key];
+  return typeof value === "number" ? value : null;
+}
+
+function layoutFrameDelta(
+  previous: Record<string, unknown> | null | undefined,
+  current: Record<string, unknown> | null | undefined,
+): Record<string, number> {
+  const deltas: Record<string, number> = {};
+  for (const key of ["x", "y", "width", "height"]) {
+    const before = readLayoutDebugNumber(previous, key);
+    const after = readLayoutDebugNumber(current, key);
+    if (before === null || after === null) {
+      continue;
+    }
+    const delta = roundedNumber(after - before);
+    if (Math.abs(delta) > 0.5) {
+      deltas[key] = delta;
+    }
+  }
+  return deltas;
 }
 
 function layoutRect(el: Element | null): Record<string, unknown> | null {
@@ -150,7 +293,9 @@ function layoutRect(el: Element | null): Record<string, unknown> | null {
   };
 }
 
-function computedLayoutInfo(el: Element | null): Record<string, unknown> | null {
+function computedLayoutInfo(
+  el: Element | null,
+): Record<string, unknown> | null {
   if (!el) {
     return null;
   }
@@ -167,7 +312,82 @@ function computedLayoutInfo(el: Element | null): Record<string, unknown> | null 
   };
 }
 
-function findThumbNode(root: HTMLElement | null, fileId: string | null): HTMLElement | null {
+function topbarElementLayoutInfo(el: Element | null): Record<string, unknown> | null {
+  if (!el) {
+    return null;
+  }
+  const style = window.getComputedStyle(el);
+  const base = layoutRect(el);
+  if (!base) {
+    return null;
+  }
+  return {
+    ...base,
+    cssHeight: style.height,
+    cssMinHeight: style.minHeight,
+    lineHeight: style.lineHeight,
+    flexWrap: style.flexWrap,
+    alignItems: style.alignItems,
+    alignSelf: style.alignSelf,
+    flexShrink: style.flexShrink,
+    flexGrow: style.flexGrow,
+    gap: style.gap,
+    paddingTop: style.paddingTop,
+    paddingBottom: style.paddingBottom,
+    borderBottomWidth: style.borderBottomWidth,
+    boxSizing: style.boxSizing,
+    overflowX: style.overflowX,
+    overflowY: style.overflowY,
+  };
+}
+
+function collectTopbarLayoutDebug(topbar: HTMLElement | null): Record<string, unknown> | null {
+  if (!topbar) {
+    return null;
+  }
+  const pick = (selector: string) =>
+    topbarElementLayoutInfo(topbar.querySelector(selector));
+  const breadcrumbs = topbar.querySelector(".filelist__breadcrumbs");
+  const breadcrumbStyle = breadcrumbs
+    ? window.getComputedStyle(breadcrumbs)
+    : null;
+
+  return {
+    topbar: topbarElementLayoutInfo(topbar),
+    pathbar: pick(".filelist__pathbar"),
+    breadcrumbs: breadcrumbs
+      ? {
+          ...topbarElementLayoutInfo(breadcrumbs),
+          segmentCount: breadcrumbs.querySelectorAll("button").length,
+          textContentLength: breadcrumbs.textContent?.trim().length ?? 0,
+          hasHorizontalOverflow:
+            breadcrumbs.scrollWidth > breadcrumbs.clientWidth + 1,
+          scrollWidth: breadcrumbs.scrollWidth,
+          clientWidth: breadcrumbs.clientWidth,
+          lineHeight: breadcrumbStyle?.lineHeight,
+        }
+      : null,
+    pathbarLabel: pick(".filelist__pathbar-label"),
+    topbarActions: pick(".filelist__topbar-actions"),
+    viewModeToggle: pick(".filelist__view-mode-toggle"),
+    searchWrap: pick(".filelist__search-wrap"),
+    searchInput: pick(".filelist__search"),
+    sort: pick(".filelist__sort"),
+    sortSelect: pick(".filelist__sort select"),
+    topbarImport: pick(".filelist__topbar-import"),
+    flTopbarControlH: window
+      .getComputedStyle(topbar)
+      .getPropertyValue("--fl-topbar-control-h")
+      .trim(),
+    viewportWidth: roundedNumber(window.innerWidth),
+    viewportHeight: roundedNumber(window.innerHeight),
+  };
+}
+
+function findThumbNode(
+  root: HTMLElement | null,
+  fileId: string | null,
+): HTMLElement | null {
   if (!root || !fileId) {
     return null;
   }
@@ -196,7 +416,7 @@ function debugFolderDnd(label: string, data: Record<string, unknown>): void {
 }
 
 export interface FileListProps {
-  onOpenFile: (file: { id: string; kind?: string }) => void;
+  onOpenFile: (file: { id: string; kind?: string; name?: string }) => void;
   onReady?: () => void;
 }
 
@@ -204,11 +424,85 @@ type SortKey = "updated_at" | "created_at" | "name";
 type FolderDraft =
   | { mode: "create"; parentId: string | null }
   | { mode: "rename"; folder: ServerFolder };
+type FolderContextMenuState = {
+  folder: ServerFolder;
+  x: number;
+  y: number;
+} | null;
 
 const ROOT_ID: string | null = null;
 
 type SidebarView = "recent" | "all";
+
+type SceneFilesIntent =
+  | { type: "track-recent" }
+  | { type: "import"; folderId: string }
+  | { type: "import-needs-folder" };
+
+function normalizeStoredFolderId(raw: string | null): string | null {
+  if (!raw || raw === "__ALL__") {
+    return null;
+  }
+  return raw;
+}
+
+function isSelectedFolderId(
+  folderId: string | null | undefined,
+  foldersById: Map<string, ServerFolder>,
+): folderId is string {
+  return typeof folderId === "string" && foldersById.has(folderId);
+}
+
+/** 最近 → 无固定目录；本地目录视图 → 仅已选中的具体文件夹。 */
+function resolveSidebarTargetFolderId(
+  sidebarView: SidebarView,
+  currentFolderId: string | null,
+  foldersById: Map<string, ServerFolder>,
+): string | null {
+  if (sidebarView !== "all") {
+    return null;
+  }
+  return isSelectedFolderId(currentFolderId, foldersById)
+    ? currentFolderId
+    : null;
+}
+
+function resolveSceneFilesIntent(
+  sidebarView: SidebarView,
+  currentFolderId: string | null,
+  foldersById: Map<string, ServerFolder>,
+  override?: SceneFilesIntent,
+): SceneFilesIntent {
+  if (override) {
+    return override;
+  }
+  if (
+    sidebarView === "all" &&
+    isSelectedFolderId(currentFolderId, foldersById)
+  ) {
+    return { type: "import", folderId: currentFolderId };
+  }
+  if (sidebarView === "all") {
+    return { type: "import-needs-folder" };
+  }
+  return { type: "track-recent" };
+}
+
+function sceneDropOverlayLabel(intent: SceneFilesIntent): string {
+  if (intent.type === "track-recent") {
+    return "松手打开";
+  }
+  return "松手导入";
+}
+
 const SIDEBAR_VIEW_STORAGE_KEY = "editorhub-filelist-sidebar-view";
+/** 开启时仅列出当前文件夹直属文件（不含子文件夹内文件）。 */
+const FLAT_FOLDER_VIEW_STORAGE_KEY = "excalidraw-filelist-flat-view";
+const FLAT_FOLDER_VIEW_LABEL = "只看直属文件";
+/** Desktop 本地目录根视图：开启时仅显示默认数据目录及其子目录中的文件。 */
+const DEFAULT_DATA_DIRECTORY_ONLY_STORAGE_KEY =
+  "excalidraw-filelist-default-data-dir-only";
+const DEFAULT_DATA_DIRECTORY_ONLY_LABEL = "只看默认目录";
 
 const FILELIST_SCENE_IMPORT_INPUT_ID = "filelist-scene-import-input";
 const FILE_IMPORT_CONCURRENCY = 3;
@@ -222,7 +516,9 @@ function sanitizeFileBaseName(name: string): string {
 }
 
 /** 从拖放/多选里筛出可能导入的文档：扩展名 或 典型 MIME。不再「无 type 就全收」，免杂文件进导入。 */
-const IMPORTABLE_NAME = /\.(excalidraw|excalidrawlib|smm|txt|json|png|svg|jpe?g)$/i;
+const IMPORTABLE_NAME =
+  /\.(excalidraw|excalidrawlib|smm|txt|json|png|svg|jpe?g)$/i;
+
 function takeImportableFilesFromList(fileList: FileList | File[]): File[] {
   return Array.from(fileList).filter(
     (f) =>
@@ -237,7 +533,9 @@ function takeImportableFilesFromList(fileList: FileList | File[]): File[] {
 }
 
 /** 多文件导入中途失败时回滚；返回**未能**删除的 id（或网络失败）。 */
-async function rollbackCreatedImportFiles(createdIds: string[]): Promise<string[]> {
+async function rollbackCreatedImportFiles(
+  createdIds: string[],
+): Promise<string[]> {
   const failed: string[] = [];
   for (const id of createdIds) {
     try {
@@ -277,7 +575,18 @@ function folderParentId(folder: ServerFolder): string | null {
   return folder.parent_id ?? null;
 }
 
-function compareManual(a: { sort_index?: number; name: string }, b: { sort_index?: number; name: string }) {
+/** Mapping roots always render as top-level siblings in the sidebar tree. */
+function folderTreeParentId(folder: ServerFolder): string | null {
+  if (folder.is_mapping_root) {
+    return null;
+  }
+  return folder.parent_id ?? null;
+}
+
+function compareManual(
+  a: { sort_index?: number; name: string },
+  b: { sort_index?: number; name: string },
+) {
   const ai = a.sort_index ?? 0;
   const bi = b.sort_index ?? 0;
   if (ai !== bi) {
@@ -303,6 +612,7 @@ function iconPath(
     | "edit"
     | "download"
     | "delete"
+    | "removeRecent"
     | "menu"
     | "sort"
     | "move"
@@ -315,11 +625,9 @@ function iconPath(
   const paths = {
     folder:
       "M10 4l2 2h8c1.1 0 2 .9 2 2v10c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h6z",
-    file:
-      "M6 2h8l4 4v16H6V2zm7 1.5V7h3.5",
+    file: "M6 2h8l4 4v16H6V2zm7 1.5V7h3.5",
     grid: "M3 3h7v7H3V3zm11 0h7v7h-7V3zM3 14h7v7H3v-7zm11 0h7v7h-7v-7z",
-    home:
-      "M12 3l9 8h-2v9h-5v-6h-4v6H5v-9H3l9-8z",
+    home: "M12 3l9 8h-2v9h-5v-6h-4v6H5v-9H3l9-8z",
     clock:
       "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 2a8 8 0 1 1 0 16 8 8 0 0 1 0-16zm.5 3v5.25l4.25 2.52-.75 1.23-5-2.98V7h1.5z",
     excalidraw:
@@ -334,12 +642,14 @@ function iconPath(
     ai: "M12 2l1.5 5L18 5l-2 4.5 5 1.5-5 1.5L18 17l-4.5-2L12 20l-1.5-5L6 17l2-4.5L3 11l5-1.5L6 5l4.5 2L12 2z",
     edit: "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z",
     download: "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z",
-    delete: "M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z",
+    delete:
+      "M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z",
+    removeRecent:
+      "M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z",
     menu: "M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z",
     sort: "M7 4h10v2H7V4zm-3 7h16v2H4v-2zm5 7h6v2H9v-2z",
     drag: "M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z",
-    move:
-      "M4 12l4-4v3h3v2H8v3l-4-4zM12 7l2 2h7c1.1 0 2 .9 2 2v9H12V7z",
+    move: "M4 12l4-4v3h3v2H8v3l-4-4zM12 7l2 2h7c1.1 0 2 .9 2 2v9H12V7z",
     embed:
       "M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0L19.2 12l-4.6-4.6L16 6l6 6-6 6-1.4-1.4z",
     settings:
@@ -446,6 +756,17 @@ function buildFolderPath(
   return path;
 }
 
+function expandFolderAncestorIds(
+  folderId: string,
+  foldersById: Map<string, ServerFolder>,
+): Record<string, boolean> {
+  return Object.fromEntries(
+    buildFolderPath(folderId, foldersById)
+      .slice(0, -1)
+      .map((folder) => [folder.id, true]),
+  );
+}
+
 function getInitialFileListStateFromCache(): {
   files: ServerFile[];
   folders: ServerFolder[];
@@ -464,14 +785,7 @@ function getInitialFileListStateFromCache(): {
 
 export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const { shellTheme, toggleShellTheme } = useShellTheme();
-  const handleOpenFile = useCallback(
-    (opts: { id: string; kind: string }) => {
-      recordRecentFileAccess(opts.id);
-      onOpenFile(opts);
-    },
-    [onOpenFile],
-  );
-
+  const showWebOnlyFileActions = !isDesktopEditorHub();
   useEffect(() => {
     purgeLegacyTempArtifacts();
     applyMainSiteDocumentBranding();
@@ -480,14 +794,17 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const initialList = getInitialFileListStateFromCache();
   const [files, setFiles] = useState<ServerFile[]>(initialList.files);
   const [folders, setFolders] = useState<ServerFolder[]>(initialList.folders);
-  const [currentFolderId, setCurrentFolderIdRaw] = useState<string | null>(() => {
-    try {
-      const saved = sessionStorage.getItem("excalidraw-filelist-folder");
-      return saved || ROOT_ID;
-    } catch {
-      return ROOT_ID;
-    }
-  });
+  const [currentFolderId, setCurrentFolderIdRaw] = useState<string | null>(
+    () => {
+      try {
+        return normalizeStoredFolderId(
+          sessionStorage.getItem("excalidraw-filelist-folder"),
+        );
+      } catch {
+        return null;
+      }
+    },
+  );
   const setCurrentFolderId = useCallback((id: string | null) => {
     setCurrentFolderIdRaw(id);
     try {
@@ -496,12 +813,17 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       } else {
         sessionStorage.removeItem("excalidraw-filelist-folder");
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }, []);
   const [sidebarView, setSidebarViewRaw] = useState<SidebarView>(() => {
     try {
-      const saved = sessionStorage.getItem(SIDEBAR_VIEW_STORAGE_KEY);
-      return saved === "all" ? "all" : "recent";
+      const savedView = sessionStorage.getItem(SIDEBAR_VIEW_STORAGE_KEY);
+      const savedFolder = normalizeStoredFolderId(
+        sessionStorage.getItem("excalidraw-filelist-folder"),
+      );
+      return savedView === "all" && savedFolder ? "all" : "recent";
     } catch {
       return "recent";
     }
@@ -515,14 +837,30 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     }
   }, []);
   const [recentRevision, setRecentRevision] = useState(0);
-  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
-  const [allFilesTreeExpanded, setAllFilesTreeExpanded] = useState(true);
+  const [recentPathCatalogFiles, setRecentPathCatalogFiles] = useState<
+    Record<string, ServerFile>
+  >({});
+  const [recentPathResolveFailed, setRecentPathResolveFailed] = useState<
+    Record<string, true>
+  >({});
+  const [expandedFolders, setExpandedFolders] = useState<
+    Record<string, boolean>
+  >({});
+  // Move dialog reuses the sidebar tree pattern but with its own expand state so
+  // it starts fully collapsed and expands one level at a time (lazy children).
+  const [moveDialogExpandedFolders, setMoveDialogExpandedFolders] = useState<
+    Record<string, boolean>
+  >({});
+  const [allFilesTreeExpanded, setAllFilesTreeExpanded] = useState(false);
   const [mobileTreeOpen, setMobileTreeOpen] = useState(false);
   const [loading, setLoading] = useState(initialList.loading);
   const [error, setError] = useState<string | null>(null);
   const [importNotice, setImportNotice] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
-  const [fetchedThumbs, setFetchedThumbs] = useState<Record<string, string>>({});
+  const [fileDropHoverActive, setFileDropHoverActive] = useState(false);
+  const [fetchedThumbs, setFetchedThumbs] = useState<Record<string, string>>(
+    {},
+  );
   const [, setThumbnailMissRevision] = useState(0);
   const fetchedThumbsRef = useRef(fetchedThumbs);
   fetchedThumbsRef.current = fetchedThumbs;
@@ -535,33 +873,109 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const thumbObserverRef = useRef<IntersectionObserver | null>(null);
   const thumbNodeMap = useRef<Map<string, HTMLElement>>(new Map());
   const sidebarRef = useRef<HTMLElement | null>(null);
+  const topbarRef = useRef<HTMLElement | null>(null);
   const mainRef = useRef<HTMLDivElement | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
+  const topbarHeightRef = useRef<number | null>(null);
   const pendingLayoutDebugRef = useRef<{
     label: string;
     data: Record<string, unknown>;
   } | null>(null);
+  const topbarFrameTraceFrameRef = useRef<number | null>(null);
   const previousFetchedThumbIdsRef = useRef<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const suppressNextCardOpenRef = useRef<string | null>(null);
   const [folderDraft, setFolderDraft] = useState<FolderDraft | null>(null);
+  const [folderDeleteTarget, setFolderDeleteTarget] =
+    useState<ServerFolder | null>(null);
+  const [folderDeleteBusy, setFolderDeleteBusy] = useState(false);
+  const [fileDeleteTarget, setFileDeleteTarget] = useState<ServerFile | null>(
+    null,
+  );
+  const [fileDeleteBusy, setFileDeleteBusy] = useState(false);
+
+  const dismissFolderDeleteDialog = useCallback(() => {
+    if (folderDeleteBusy) {
+      return;
+    }
+    setFolderDeleteTarget(null);
+  }, [folderDeleteBusy]);
+  const dismissFileDeleteDialog = useCallback(() => {
+    if (fileDeleteBusy) {
+      return;
+    }
+    setFileDeleteTarget(null);
+  }, [fileDeleteBusy]);
   const [folderNameValue, setFolderNameValue] = useState("");
+  const [folderContextMenu, setFolderContextMenu] =
+    useState<FolderContextMenuState>(null);
   const [syncVersion, setSyncVersion] = useState(0);
   const [sortKey, setSortKeyRaw] = useState<SortKey>(() => {
     try {
       const saved = localStorage.getItem("excalidraw-filelist-sort");
-      if (saved === "updated_at" || saved === "created_at" || saved === "name") {
+      if (
+        saved === "updated_at" ||
+        saved === "created_at" ||
+        saved === "name"
+      ) {
         return saved;
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     return "updated_at";
   });
   const setSortKey = useCallback((key: SortKey) => {
     setSortKeyRaw(key);
-    try { localStorage.setItem("excalidraw-filelist-sort", key); } catch { /* ignore */ }
+    try {
+      localStorage.setItem("excalidraw-filelist-sort", key);
+    } catch {
+      /* ignore */
+    }
   }, []);
+  const [flatFolderView, setFlatFolderViewRaw] = useState(() => {
+    try {
+      const saved = localStorage.getItem(FLAT_FOLDER_VIEW_STORAGE_KEY);
+      if (saved === "0") {
+        return false;
+      }
+    } catch {
+      /* ignore */
+    }
+    return true;
+  });
+  const setFlatFolderView = useCallback((flat: boolean) => {
+    setFlatFolderViewRaw(flat);
+    try {
+      localStorage.setItem(FLAT_FOLDER_VIEW_STORAGE_KEY, flat ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  const [defaultDataDirectoryOnlyView, setDefaultDataDirectoryOnlyViewRaw] =
+    useState(() => {
+      try {
+        return localStorage.getItem(DEFAULT_DATA_DIRECTORY_ONLY_STORAGE_KEY) === "1";
+      } catch {
+        return false;
+      }
+    });
+  const setDefaultDataDirectoryOnlyView = useCallback((enabled: boolean) => {
+    setDefaultDataDirectoryOnlyViewRaw(enabled);
+    try {
+      localStorage.setItem(
+        DEFAULT_DATA_DIRECTORY_ONLY_STORAGE_KEY,
+        enabled ? "1" : "0",
+      );
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  const [defaultDataDirectoryFolderId, setDefaultDataDirectoryFolderId] =
+    useState<string | null>(null);
+  const defaultDataDirectoryFolderIdRef = useRef<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [aiDotOk, setAiDotOk] = useState(false);
   const [newFileDialogOpen, setNewFileDialogOpen] = useState(false);
@@ -570,16 +984,46 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const formalCreateInFlightRef = useRef(false);
   const folderCreateInFlightRef = useRef(false);
   const [importKindDialogOpen, setImportKindDialogOpen] = useState(false);
-  const [importKindPlugins, setImportKindPlugins] = useState<EditorPlugin[]>([]);
-  const [importPickerFileName, setImportPickerFileName] = useState<string | null>(
-    null,
+  const [importKindPlugins, setImportKindPlugins] = useState<EditorPlugin[]>(
+    [],
   );
+  const [importPickerFileName, setImportPickerFileName] = useState<
+    string | null
+  >(null);
+  const [importFolderPickerOpen, setImportFolderPickerOpen] = useState(false);
+  const [importFolderPickerFiles, setImportFolderPickerFiles] = useState<File[]>(
+    [],
+  );
+  const [importFolderPickerTargetId, setImportFolderPickerTargetId] = useState<
+    string | null
+  >(null);
   const importQueueRef = useRef<File[]>([]);
   const pendingImportFileRef = useRef<File | null>(null);
+  const pendingImportFilesRef = useRef<File[]>([]);
 
   const [moveDialogFile, setMoveDialogFile] = useState<ServerFile | null>(null);
-  const [moveTargetFolderId, setMoveTargetFolderId] = useState<string | null>(null);
+  const [moveTargetFolderId, setMoveTargetFolderId] = useState<string | null>(
+    null,
+  );
   const [embedFile, setEmbedFile] = useState<ServerFile | null>(null);
+  const [previewFile, setPreviewFile] = useState<ServerFile | null>(null);
+  const [mappingBusy, setMappingBusy] = useState(false);
+  const [catalogScanNotice, setCatalogScanNotice] = useState<string | null>(
+    null,
+  );
+  const [catalogCapabilities, setCatalogCapabilities] =
+    useState<CatalogCapabilities>(
+      isDesktopEditorHub()
+        ? {
+            folderMapping: true,
+            addMappedFolder: true,
+            archivesEnabled: false,
+          }
+        : WEB_CATALOG_CAPABILITIES,
+    );
+  const [sidebarFileDropTargetId, setSidebarFileDropTargetId] = useState<
+    string | "__ROOT__" | "__RECENT__" | null
+  >(null);
 
   /** Sidebar: folder reorder / reparent via HTML5 drag (handle only). */
   const [draggingFolderId, setDraggingFolderId] = useState<string | null>(null);
@@ -597,10 +1041,19 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   }, []);
 
   const dismissFolderDraft = useCallback(() => setFolderDraft(null), []);
-  const dismissNewFileDialog = useCallback(() => setNewFileDialogOpen(false), []);
+  const dismissNewFileDialog = useCallback(
+    () => setNewFileDialogOpen(false),
+    [],
+  );
   const dismissMoveDialog = useCallback(() => setMoveDialogFile(null), []);
   const dismissMobileTree = useCallback(() => setMobileTreeOpen(false), []);
   const folderDraftOverlayDismiss = useStrictOverlayDismiss(dismissFolderDraft);
+  const folderDeleteOverlayDismiss = useStrictOverlayDismiss(
+    dismissFolderDeleteDialog,
+  );
+  const fileDeleteOverlayDismiss = useStrictOverlayDismiss(
+    dismissFileDeleteDialog,
+  );
   const newFileOverlayDismiss = useStrictOverlayDismiss(dismissNewFileDialog);
   const moveDialogOverlayDismiss = useStrictOverlayDismiss(dismissMoveDialog);
   const mobileTreeBackdropDismiss = useStrictOverlayDismiss(dismissMobileTree);
@@ -611,8 +1064,14 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     window.addEventListener(LOCAL_DRAFT_SESSIONS_CHANGE_EVENT, bumpRecent);
     window.addEventListener("excalidraw-file-list-refresh", bumpRecent);
     window.addEventListener("excalidraw-file-sync-state", bumpRecent);
-    const unsubCrossTab = onCrossTabFileSaved(() => {
-      window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
+    const unsubCrossTab = onCrossTabFileSaved((fileId, contentSha256, version) => {
+      if (contentSha256) {
+        patchFileListTreeCacheSavedFile(fileId, {
+          content_sha256: contentSha256,
+          version: version ?? undefined,
+        });
+        markFileListIncrementalSave(fileId);
+      }
       window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
     });
     return () => {
@@ -625,6 +1084,91 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   }, []);
 
   useEffect(() => {
+    if (!isDesktopEditorHub()) {
+      return undefined;
+    }
+    const paths = getRecentFileEntries()
+      .map((entry) => getRecentPathFromEntryId(entry.id))
+      .filter((value): value is string => !!value);
+    if (paths.length === 0) {
+      devDebug("file-list", "[DEBUG] recent-paths | clear no paths", {
+        recentRevision,
+      });
+      setRecentPathCatalogFiles({});
+      setRecentPathResolveFailed({});
+      return undefined;
+    }
+    let cancelled = false;
+    void (async () => {
+      const next: Record<string, ServerFile> = {};
+      const failures: { path: string; message: string; status?: number }[] = [];
+      devDebug("file-list", "[DEBUG] recent-paths | resolve start", {
+        recentRevision,
+        paths: paths.length,
+      });
+      for (const absPath of paths) {
+        try {
+          const resolved = await ServerSync.resolveCatalogFileByPath(absPath);
+          next[absPath] = resolved.file;
+          devDebug("file-list", "[DEBUG] recent-paths | resolved", {
+            recentRevision,
+            pathTail: absPath.slice(-120),
+            id: resolved.file.id,
+            kind: resolved.file.kind,
+            health: resolved.file.health ?? null,
+            hasThumb: !!resolved.file.has_thumbnail,
+            contentSha: resolved.file.content_sha256 ?? null,
+          });
+        } catch (error) {
+          failures.push({
+            path: absPath,
+            message: error instanceof Error ? error.message : String(error),
+            status:
+              typeof (error as { status?: unknown })?.status === "number"
+                ? ((error as { status?: number }).status)
+                : undefined,
+          });
+          // Stale recent path entries are omitted from the sidebar list.
+        }
+      }
+      if (!cancelled) {
+        devDebug("file-list", "[DEBUG] recent-paths | apply", {
+          recentRevision,
+          resolved: Object.keys(next).length,
+          failures: failures.map((failure) => ({
+            pathTail: failure.path.slice(-120),
+            message: failure.message.slice(0, 200),
+            status: failure.status ?? null,
+          })),
+        });
+        setRecentPathCatalogFiles((prev) => {
+          const merged: Record<string, ServerFile> = {};
+          for (const absPath of paths) {
+            if (next[absPath]) {
+              merged[absPath] = next[absPath];
+            } else if (prev[absPath]) {
+              merged[absPath] = prev[absPath];
+            }
+          }
+          return merged;
+        });
+        setRecentPathResolveFailed(() => {
+          const failed: Record<string, true> = {};
+          for (const absPath of paths) {
+            if (!next[absPath]) {
+              failed[absPath] = true;
+            }
+          }
+          return failed;
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [recentRevision, files]);
+
+  useEffect(() => {
     const syncAiDot = () => setAiDotOk(isAIConfigured());
     ensureAIConfigLoaded().then(syncAiDot).catch(syncAiDot);
     return subscribeAIConfig(syncAiDot);
@@ -633,7 +1177,10 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   useEffect(() => {
     const nextHashes: Record<string, string | null> = {};
     for (const file of files) {
-      nextHashes[file.id] = file.content_sha256 ?? null;
+      nextHashes[file.id] = fileThumbnailCacheKey(file);
+    }
+    for (const file of Object.values(recentPathCatalogFiles)) {
+      nextHashes[file.id] = fileThumbnailCacheKey(file);
     }
     fileThumbHashByIdRef.current = nextHashes;
     pruneThumbnailServerMisses(nextHashes);
@@ -653,7 +1200,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       }
       return changed ? next : prev;
     });
-  }, [files]);
+  }, [files, recentPathCatalogFiles]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -686,20 +1233,23 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     };
   }, []);
 
-  const thumbRefCallback = useCallback((node: HTMLElement | null, fileId: string) => {
-    if (!node) {
-      const prev = thumbNodeMap.current.get(fileId);
-      if (prev && thumbObserverRef.current) {
-        thumbObserverRef.current.unobserve(prev);
+  const thumbRefCallback = useCallback(
+    (node: HTMLElement | null, fileId: string) => {
+      if (!node) {
+        const prev = thumbNodeMap.current.get(fileId);
+        if (prev && thumbObserverRef.current) {
+          thumbObserverRef.current.unobserve(prev);
+        }
+        thumbNodeMap.current.delete(fileId);
+        return;
       }
-      thumbNodeMap.current.delete(fileId);
-      return;
-    }
-    thumbNodeMap.current.set(fileId, node);
-    if (thumbObserverRef.current) {
-      thumbObserverRef.current.observe(node);
-    }
-  }, []);
+      thumbNodeMap.current.set(fileId, node);
+      if (thumbObserverRef.current) {
+        thumbObserverRef.current.observe(node);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     const bump = () => setSyncVersion((n) => n + 1);
@@ -708,21 +1258,34 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     window.addEventListener(LOCAL_THUMB_UPDATED_EVENT, bump);
     window.addEventListener(LOCAL_DRAFT_SESSIONS_CHANGE_EVENT, bump);
     window.addEventListener("storage", bump);
+    const unsubscribePending = subscribeNativeThumbnailPending(bump);
+    const unsubscribeSavePending = subscribeThumbnailSavePending(bump);
     return () => {
       window.removeEventListener("excalidraw-file-sync-state", bump);
       window.removeEventListener("excalidraw-server-saved", bump);
       window.removeEventListener(LOCAL_THUMB_UPDATED_EVENT, bump);
       window.removeEventListener(LOCAL_DRAFT_SESSIONS_CHANGE_EVENT, bump);
       window.removeEventListener("storage", bump);
+      unsubscribePending();
+      unsubscribeSavePending();
     };
   }, []);
 
   const inflightRef = useRef<AbortController | null>(null);
+  const inflightPromiseRef = useRef<Promise<FileTreeResponse | undefined> | null>(
+    null,
+  );
   const refreshSeqRef = useRef(0);
+  const catalogListingFingerprintRef = useRef<string | null>(null);
+  const latestCatalogTreeRef = useRef<FileTreeResponse | null>(null);
   const filesRef = useRef(files);
   filesRef.current = files;
   const currentFolderIdRef = useRef(currentFolderId);
   currentFolderIdRef.current = currentFolderId;
+  const sidebarViewRef = useRef(sidebarView);
+  sidebarViewRef.current = sidebarView;
+  const flatFolderViewRef = useRef(flatFolderView);
+  flatFolderViewRef.current = flatFolderView;
 
   const invalidateInflightRefresh = useCallback(() => {
     refreshSeqRef.current += 1;
@@ -736,52 +1299,179 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     return new Map(folders.map((folder) => [folder.id, folder]));
   }, [folders]);
 
+  const isLocalDirectoryRoot = useMemo(
+    () =>
+      sidebarView === "all" &&
+      !isSelectedFolderId(currentFolderId, foldersById),
+    [sidebarView, currentFolderId, foldersById],
+  );
+
+  const isFolderUnderMappedRoot = useCallback(
+    (folder: ServerFolder): boolean => {
+      let current: ServerFolder | undefined = folder;
+      const seen = new Set<string>();
+      while (current && !seen.has(current.id)) {
+        if (current.is_mapping_root) {
+          return true;
+        }
+        seen.add(current.id);
+        current = current.parent_id
+          ? foldersById.get(current.parent_id)
+          : undefined;
+      }
+      return false;
+    },
+    [foldersById],
+  );
+
+  const applyCatalogTree = useCallback((tree: FileTreeResponse): boolean => {
+    latestCatalogTreeRef.current = tree;
+    const listingFingerprint = fingerprintCatalogListing(tree);
+    const scanNotice = deriveCatalogScanNoticeForRuntime(
+      tree.scan,
+      tree,
+      isDesktopEditorHub(),
+    );
+    if (listingFingerprint === catalogListingFingerprintRef.current) {
+      setCatalogScanNotice((prev) => (prev === scanNotice ? prev : scanNotice));
+      traceResourceOp("filelist", "applyCatalogTree", "skip", {
+        reason: "listing-fingerprint-unchanged",
+      });
+      return false;
+    }
+    catalogListingFingerprintRef.current = listingFingerprint;
+    setFolders(tree.folders);
+    setFiles(tree.files);
+    traceResourceOp("filelist", "applyCatalogTree", "ok", {
+      folders: tree.folders.length,
+      files: tree.files.length,
+      scanRunning: tree.scan?.running ?? false,
+    });
+    traceTreeStateApply({
+      folders: tree.folders.length,
+      files: tree.files.length,
+      scanRunning: tree.scan?.running ?? false,
+    });
+    setCatalogCapabilities(parseCatalogCapabilities(tree.capabilities));
+    setCatalogScanNotice(scanNotice);
+    setExpandedFolders((prev) => mergeExpandedFolderState(prev, tree.folders));
+    for (const f of tree.files) {
+      if (f.content_sha256) {
+        FileSyncState.setServerHash(f.id, f.content_sha256);
+      }
+      if (
+        FileSyncState.getSyncState(f.id) === "draft" &&
+        !FileSyncState.getLocalEditTime(f.id)
+      ) {
+        logList.debug(`clearing stale draft hash for ${f.id.slice(0, 8)}`);
+        FileSyncState.clearHashStateForFile(f.id);
+      }
+    }
+    writeFileListTreeCache(tree);
+    return true;
+  }, []);
+
   const refresh = useCallback(
-    async (options?: { silent?: boolean; noErrorOnFailure?: boolean }) => {
+    async (options?: {
+      silent?: boolean;
+      noErrorOnFailure?: boolean;
+    }): Promise<FileTreeResponse | undefined> => {
       if (inflightRef.current) {
+        if (options?.silent && inflightPromiseRef.current) {
+          devDebug("file-list", "[DEBUG] refresh | coalesce silent inflight", {
+            silent: true,
+          });
+          return inflightPromiseRef.current;
+        }
+        devDebug("file-list", "[DEBUG] refresh | abort previous", {
+          nextSeq: refreshSeqRef.current + 1,
+          silent: !!options?.silent,
+        });
         inflightRef.current.abort();
       }
       const seq = ++refreshSeqRef.current;
       const ac = new AbortController();
       inflightRef.current = ac;
+      const promise = (async (): Promise<FileTreeResponse | undefined> => {
       try {
         if (!options?.silent) {
           setLoading(true);
         }
         logList.debug("refresh start");
+        traceResourceOp("filelist", "refresh", "start", {
+          seq,
+          silent: !!options?.silent,
+        });
+        devDebug("file-list", "[DEBUG] refresh | start", {
+          seq,
+          silent: !!options?.silent,
+          noErrorOnFailure: !!options?.noErrorOnFailure,
+          currentFolderId: currentFolderIdRef.current,
+        });
         const tree = await ServerSync.listFileTree({ signal: ac.signal });
         if (ac.signal.aborted || seq !== refreshSeqRef.current) {
+          devDebug("file-list", "[DEBUG] refresh | ignored stale result", {
+            seq,
+            currentSeq: refreshSeqRef.current,
+            aborted: ac.signal.aborted,
+            tree: summarizeFileListTreeForDebug(tree),
+          });
           return;
         }
-        setFolders(tree.folders);
-        setFiles(tree.files);
-        setExpandedFolders((prev) => {
-          const next = { ...prev };
-          for (const folder of tree.folders) {
-            if (next[folder.id] === undefined) {
-              next[folder.id] = true;
-            }
-          }
-          return next;
-        });
-        for (const f of tree.files) {
-          if (f.content_sha256) {
-            FileSyncState.setServerHash(f.id, f.content_sha256);
-          }
-          if (
-            FileSyncState.getSyncState(f.id) === "draft" &&
-            !FileSyncState.getLocalEditTime(f.id)
-          ) {
-            logList.debug(`clearing stale draft hash for ${f.id.slice(0, 8)}`);
-            FileSyncState.clearHashStateForFile(f.id);
-          }
+        const listingFingerprint = fingerprintCatalogListing(tree);
+        latestCatalogTreeRef.current = tree;
+        const scanNotice = deriveCatalogScanNoticeForRuntime(
+          tree.scan,
+          tree,
+          isDesktopEditorHub(),
+        );
+        if (listingFingerprint === catalogListingFingerprintRef.current) {
+          devDebug("file-list", "[DEBUG] refresh | skip unchanged listing", {
+            seq,
+            listingFingerprint,
+            scanNotice,
+            tree: summarizeFileListTreeForDebug(tree),
+          });
+          setCatalogScanNotice((prev) =>
+            prev === scanNotice ? prev : scanNotice,
+          );
+          logList.debug("refresh skipped apply (listing unchanged)");
+          traceResourceOp("filelist", "refresh", "skip", {
+            seq,
+            reason: "listing-unchanged",
+            elapsedMs: undefined,
+          });
+          onReady?.();
+          return tree;
         }
+        devDebug("file-list", "[DEBUG] refresh | apply tree", {
+          seq,
+          listingFingerprint,
+          tree: summarizeFileListTreeForDebug(tree),
+          currentFolderId: currentFolderIdRef.current,
+          currentFolderStillExists: currentFolderIdRef.current
+            ? tree.folders.some((folder) => folder.id === currentFolderIdRef.current)
+            : true,
+        });
+        applyCatalogTree(tree);
+        traceResourceOp("filelist", "refresh", "ok", {
+          seq,
+          folders: tree.folders.length,
+          files: tree.files.length,
+          scanRunning: tree.scan?.running ?? false,
+        });
         // Use ref to read latest currentFolderId without it being a dep,
         // preventing unwanted re-fetches when folder navigation triggers a
         // setCurrentFolderId here (which would create a dep-change loop).
         const fid = currentFolderIdRef.current;
         if (fid && !tree.folders.some((f) => f.id === fid)) {
-          setCurrentFolderId(ROOT_ID);
+          devDebug("file-list", "[DEBUG] refresh | current folder missing", {
+            seq,
+            missingFolderId: fid,
+            tree: summarizeFileListTreeForDebug(tree),
+          });
+          setSidebarView("recent");
+          setCurrentFolderId(null);
         }
         logList.debug("refresh done", {
           folders: tree.folders.length,
@@ -791,19 +1481,34 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         });
         setError(null);
         setImportNotice(null);
-        writeFileListTreeCache(tree);
         onReady?.();
+        return tree;
       } catch (e: any) {
         if (ac.signal.aborted || seq !== refreshSeqRef.current) {
-          return;
+          traceResourceOp("filelist", "refresh", "skip", {
+            seq,
+            reason: ac.signal.aborted ? "aborted" : "stale-seq",
+          });
+          devDebug("file-list", "[DEBUG] refresh | ignored error", {
+            seq,
+            currentSeq: refreshSeqRef.current,
+            aborted: ac.signal.aborted,
+            message: e?.message ?? String(e),
+          });
+          return undefined;
         }
         logList.debug("refresh error", e);
+        traceResourceOp("filelist", "refresh", "fail", {
+          seq,
+          message: e?.message ?? String(e),
+        });
         if (options?.noErrorOnFailure) {
           onReady?.();
           throw e;
         }
         setError(e.message || "Failed to load files");
         onReady?.();
+        return undefined;
       } finally {
         // Always reset loading for non-silent requests, even if the request was
         // aborted mid-flight — otherwise loading stays stuck at true when an
@@ -814,24 +1519,126 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         if (inflightRef.current === ac) {
           inflightRef.current = null;
         }
+        if (inflightPromiseRef.current === promise) {
+          inflightPromiseRef.current = null;
+        }
       }
+      })();
+      inflightPromiseRef.current = promise;
+      return promise;
     },
-    [onReady],
+    [applyCatalogTree, onReady],
   );
 
-  useEffect(() => {
-    const onListRefresh = () => {
-      logList.debug("excalidraw-file-list-refresh -> refresh(silent)");
-      void refresh({ silent: true });
-    };
-    window.addEventListener("excalidraw-file-list-refresh", onListRefresh);
-    return () =>
-      window.removeEventListener("excalidraw-file-list-refresh", onListRefresh);
+  const runSilentRefresh = useCallback(() => {
+    if (shouldSkipSilentTreeRefreshAfterIncrementalSave()) {
+      traceResourceOp("filelist", "refresh", "skip", {
+        reason: "incremental-save-window",
+      });
+      devDebug("file-list", "[DEBUG] refresh | skip incremental-save window");
+      return;
+    }
+    logList.debug("excalidraw-file-list-refresh -> refresh(silent)");
+    void refresh({ silent: true, noErrorOnFailure: true });
   }, [refresh]);
+
+  const scheduleSilentRefresh = useCallback(() => {
+    scheduleDebouncedFileListRefresh(runSilentRefresh);
+  }, [runSilentRefresh]);
+
+  useEffect(() => {
+    const onListRefresh = () => scheduleSilentRefresh();
+    window.addEventListener("excalidraw-file-list-refresh", onListRefresh);
+    return () => {
+      window.removeEventListener("excalidraw-file-list-refresh", onListRefresh);
+      cancelDebouncedFileListRefresh();
+    };
+  }, [scheduleSilentRefresh]);
+
+  useEffect(() => {
+    if (!folderContextMenu) {
+      return undefined;
+    }
+    const close = () => {
+      setFolderContextMenu(null);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        close();
+      }
+    };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [folderContextMenu]);
+
+  useEffect(() => {
+    if (!importNotice) {
+      return;
+    }
+    const timer = window.setTimeout(() => setImportNotice(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [importNotice]);
 
   useEffect(() => {
     void refresh({ silent: !!readFileListTreeCache() });
   }, [refresh]);
+
+  useEffect(() => {
+    if (!isDesktopEditorHub() || !catalogCapabilities.folderMapping) {
+      return;
+    }
+    return ServerSync.subscribeCatalogChanges(() => {
+      clearFileListIncrementalSaveSkip();
+      scheduleSilentRefresh();
+    });
+  }, [catalogCapabilities.folderMapping, scheduleSilentRefresh]);
+
+  useEffect(() => {
+    if (
+      !isDesktopEditorHub() ||
+      !catalogCapabilities.folderMapping ||
+      !catalogScanNotice
+    ) {
+      return undefined;
+    }
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = () => {
+      void ServerSync.getCatalogScanStatus()
+        .then((scan) => {
+          if (cancelled) {
+            return;
+          }
+          const notice = deriveCatalogScanNoticeForRuntime(
+            scan,
+            latestCatalogTreeRef.current,
+            true,
+          );
+          setCatalogScanNotice(notice);
+          if (notice) {
+            timer = setTimeout(poll, 2500);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            timer = setTimeout(poll, 4000);
+          }
+        });
+    };
+    timer = setTimeout(poll, 2500);
+    return () => {
+      cancelled = true;
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
+  }, [catalogCapabilities.folderMapping, catalogScanNotice]);
 
   const currentPath = useMemo(
     () => buildFolderPath(currentFolderId, foldersById),
@@ -839,29 +1646,14 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   );
 
   const draftStateById = useMemo(() => {
-    const slotFor = (fileId: string) => {
-      const syncState = FileSyncState.getSyncState(fileId);
-      const preferLocalThumb =
-        isLocalDraftFileId(fileId) || syncState === "draft";
-      return {
-        syncState,
-        baseHash: FileSyncState.getBaselineHash(fileId),
-        draftHash: FileSyncState.getDraftHash(fileId),
-        localDraftThumb: preferLocalThumb
-          ? LocalThumbnailCache.get(fileId)
-          : null,
-      };
-    };
-    const byId: Record<
-      string,
-      ReturnType<typeof slotFor>
-    > = {};
+    const slotFor = (file: ServerFile) => buildThumbnailDraftSlot(file);
+    const byId: Record<string, ReturnType<typeof slotFor>> = {};
     for (const f of files) {
-      byId[f.id] = slotFor(f.id);
+      byId[f.id] = slotFor(f);
     }
     for (const draft of LocalDraftSessions.listIndexed()) {
       if (!byId[draft.id]) {
-        byId[draft.id] = slotFor(draft.id);
+        byId[draft.id] = slotFor(draftSessionToServerFile(draft));
       }
     }
     return byId;
@@ -882,6 +1674,16 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     [currentFolderId, folders],
   );
 
+  const isBrowsingSubfolder = useMemo(
+    () => isSelectedFolderId(currentFolderId, foldersById),
+    [currentFolderId, foldersById],
+  );
+
+  const defaultDataDirectoryDescendantIds = useMemo(
+    () => getDescendantFolderIds(defaultDataDirectoryFolderId, folders),
+    [defaultDataDirectoryFolderId, folders],
+  );
+
   const filesById = useMemo(() => {
     const map = new Map<string, ServerFile>();
     for (const file of files) {
@@ -893,29 +1695,66 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     return map;
   }, [files, recentRevision]);
 
+  const handleOpenFile = useCallback(
+    (opts: { id: string; kind: string }) => {
+      const file = filesById.get(opts.id);
+      traceFileOpen("clickCard", {
+        fileId8: id8(opts.id),
+        kind: opts.kind,
+        name: file?.name ?? null,
+        syncState: file ? readFileDraftStatus(opts.id) : null,
+        corrupt: file ? isCorruptCatalogFile(file) : false,
+      });
+      devDebug("app", "handleOpenFile", {
+        id8: opts.id.slice(0, 20),
+        kind: opts.kind,
+      });
+      recordRecentFileAccess(opts.id);
+      if (isCorruptCatalogFile(file)) {
+        traceFileOpen("clickCard", { fileId8: id8(opts.id), reason: "corrupt-preview" }, "branch");
+        if (file) {
+          setPreviewFile(file);
+        }
+        return;
+      }
+      traceFileOpen("clickCard", { fileId8: id8(opts.id), kind: opts.kind }, "ok");
+      onOpenFile({ ...opts, name: file?.name });
+    },
+    [filesById, onOpenFile],
+  );
+
   const recentDisplayFiles = useMemo(() => {
     const resolved: ServerFile[] = [];
+    const seenIds = new Set<string>();
     for (const entry of getRecentFileEntries()) {
-      if (isLocalDraftFileId(entry.id)) {
-        const file =
+      let file: ServerFile | null = null;
+      if (isRecentPathEntry(entry.id)) {
+        const absPath = getRecentPathFromEntryId(entry.id);
+        file = absPath ? recentPathCatalogFiles[absPath] ?? null : null;
+      } else if (isLocalDraftFileId(entry.id)) {
+        file =
           filesById.get(entry.id) ??
           (LocalDraftSessions.get(entry.id)
-            ? draftSessionToServerFile(
-                LocalDraftSessions.get(entry.id)!,
-              )
+            ? draftSessionToServerFile(LocalDraftSessions.get(entry.id)!)
             : null);
-        if (file) {
-          resolved.push(file);
-        }
-        continue;
+      } else {
+        file = filesById.get(entry.id) ?? null;
       }
-      const file = filesById.get(entry.id);
-      if (file) {
+      if (file && !seenIds.has(file.id)) {
+        seenIds.add(file.id);
         resolved.push(file);
       }
     }
     return resolved;
-  }, [filesById, recentRevision]);
+  }, [filesById, recentPathCatalogFiles, recentRevision]);
+
+  const recentCatalogFileIdToAbsPath = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const [absPath, file] of Object.entries(recentPathCatalogFiles)) {
+      map[file.id] = absPath;
+    }
+    return map;
+  }, [recentPathCatalogFiles]);
 
   const filteredFiles = useMemo(() => {
     let list =
@@ -930,6 +1769,8 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
               ...recentDisplayFiles,
               ...files.filter((f) => !isLocalDraftFileId(f.id)),
             ]
+          : sidebarView === "all"
+          ? files.filter((f) => !isLocalDraftFileId(f.id))
           : files;
       const seen = new Set<string>();
       list = [];
@@ -946,7 +1787,30 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
           return false;
         }
         const fid = f.folder_id ?? null;
-        return fid === currentFolderId || descendantFolderIds.has(fid as string);
+        if (isLocalDirectoryRoot) {
+          if (isDesktopEditorHub()) {
+            if (!defaultDataDirectoryOnlyView) {
+              return true;
+            }
+            if (!defaultDataDirectoryFolderId) {
+              return false;
+            }
+            return (
+              fid === defaultDataDirectoryFolderId ||
+              defaultDataDirectoryDescendantIds.has(fid as string)
+            );
+          }
+          if (flatFolderView) {
+            return fid === currentFolderId;
+          }
+          return true;
+        }
+        if (flatFolderView) {
+          return fid === currentFolderId;
+        }
+        return (
+          fid === currentFolderId || descendantFolderIds.has(fid as string)
+        );
       });
     }
     const sorted = [...list];
@@ -969,9 +1833,15 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     return sorted;
   }, [
     currentFolderId,
+    defaultDataDirectoryDescendantIds,
+    defaultDataDirectoryFolderId,
+    defaultDataDirectoryOnlyView,
     descendantFolderIds,
     effectiveUpdatedAt,
     files,
+    flatFolderView,
+    foldersById,
+    isLocalDirectoryRoot,
     recentDisplayFiles,
     searchQuery,
     sidebarView,
@@ -981,6 +1851,10 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const collectLayoutDebugData = useCallback(
     (data: Record<string, unknown> = {}) => {
       const sidebar = sidebarRef.current;
+      const titlebar = document.querySelector(".desktop-titlebar");
+      const appShell = document.querySelector(".app-shell--desktop");
+      const appShellBody = document.querySelector(".app-shell--desktop__body");
+      const workspace = topbarRef.current?.closest(".filelist__workspace") ?? null;
       const main = mainRef.current;
       const grid = gridRef.current;
       const rootRow = sidebar?.querySelector(".filelist__tree-root") ?? null;
@@ -997,10 +1871,17 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         currentFolderId: currentFolderIdRef.current ?? "__ROOT__",
         currentFolderName: currentFolderIdRef.current
           ? foldersById.get(currentFolderIdRef.current)?.name ?? null
-          : "所有文件",
+          : "本地目录",
+        sidebarView: sidebarViewRef.current,
+        flatFolderView: flatFolderViewRef.current,
         files: files.length,
         filteredFiles: filteredFiles.length,
         fetchedThumbs: Object.keys(fetchedThumbsRef.current).length,
+        topbarLayout: collectTopbarLayoutDebug(topbarRef.current),
+        desktopTitlebar: computedLayoutInfo(titlebar),
+        appShell: computedLayoutInfo(appShell),
+        appShellBody: computedLayoutInfo(appShellBody),
+        workspace: computedLayoutInfo(workspace),
         sidebar: computedLayoutInfo(sidebar),
         main: computedLayoutInfo(main),
         grid: computedLayoutInfo(grid),
@@ -1029,6 +1910,15 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     });
     return () => window.cancelAnimationFrame(raf);
   });
+
+  useEffect(() => {
+    return () => {
+      if (topbarFrameTraceFrameRef.current !== null) {
+        window.cancelAnimationFrame(topbarFrameTraceFrameRef.current);
+        topbarFrameTraceFrameRef.current = null;
+      }
+    };
+  }, []);
 
   useLayoutEffect(() => {
     const currentIds = Object.keys(fetchedThumbs);
@@ -1067,9 +1957,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
 
       setFetchedThumbs((prev) => {
         const next =
-          typeof nextState === "function"
-            ? nextState(prev)
-            : nextState;
+          typeof nextState === "function" ? nextState(prev) : nextState;
         const prevIds = new Set(Object.keys(prev));
         const nextIds = Object.keys(next);
         const newThumbIds = nextIds.filter((id) => !prevIds.has(id));
@@ -1093,8 +1981,165 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     [collectLayoutDebugData],
   );
 
+  const queueTopbarLayoutDebug = useCallback(
+    (label: string, data: Record<string, unknown> = {}) => {
+      if (!isFileListLayoutDebugEnabled()) {
+        return;
+      }
+      pendingLayoutDebugRef.current = { label, data };
+    },
+    [],
+  );
+
+  const traceTopbarLayoutFrames = useCallback(
+    (label: string, data: Record<string, unknown> = {}) => {
+      if (!isFileListLayoutDebugEnabled()) {
+        return;
+      }
+      if (topbarFrameTraceFrameRef.current !== null) {
+        window.cancelAnimationFrame(topbarFrameTraceFrameRef.current);
+        topbarFrameTraceFrameRef.current = null;
+      }
+
+      const maxFrames = 10;
+      let frame = 0;
+      let previous = collectLayoutDebugData({
+        ...data,
+        frameIndex: frame,
+        traceLabel: label,
+      });
+      debugFileListLayout(`${label} topbar frame trace start`, previous);
+
+      const tick = () => {
+        frame += 1;
+        const current = collectLayoutDebugData({
+          ...data,
+          frameIndex: frame,
+          traceLabel: label,
+        });
+        const previousTopbar =
+          (previous.topbarLayout as { topbar?: Record<string, unknown> } | null)
+            ?.topbar ?? null;
+        const currentTopbar =
+          (current.topbarLayout as { topbar?: Record<string, unknown> } | null)
+            ?.topbar ?? null;
+        const topbarDelta = layoutFrameDelta(previousTopbar, currentTopbar);
+        const bodyDelta = layoutFrameDelta(
+          previous.appShellBody as Record<string, unknown> | null,
+          current.appShellBody as Record<string, unknown> | null,
+        );
+        const workspaceDelta = layoutFrameDelta(
+          previous.workspace as Record<string, unknown> | null,
+          current.workspace as Record<string, unknown> | null,
+        );
+
+        if (
+          Object.keys(topbarDelta).length > 0 ||
+          Object.keys(bodyDelta).length > 0 ||
+          Object.keys(workspaceDelta).length > 0
+        ) {
+          debugFileListLayout("topbar frame changed", {
+            ...current,
+            previousTopbar,
+            topbarDelta,
+            bodyDelta,
+            workspaceDelta,
+          });
+        }
+
+        previous = current;
+        if (frame < maxFrames) {
+          topbarFrameTraceFrameRef.current = window.requestAnimationFrame(tick);
+          return;
+        }
+        topbarFrameTraceFrameRef.current = null;
+        debugFileListLayout("topbar frame trace end", current);
+      };
+
+      topbarFrameTraceFrameRef.current = window.requestAnimationFrame(tick);
+    },
+    [collectLayoutDebugData],
+  );
+
+  useLayoutEffect(() => {
+    if (!isFileListLayoutDebugEnabled()) {
+      return;
+    }
+    const data = {
+      trigger: "navigation-state",
+      sidebarView,
+      currentFolderId: currentFolderId ?? "__ROOT__",
+      breadcrumbSegments: currentPath.length,
+      breadcrumbLabels: currentPath.map((folder) => folder.name),
+      flatFolderView,
+      hasError: Boolean(error),
+      hasImportNotice: Boolean(importNotice),
+    };
+    debugFileListLayout(
+      "topbar navigation state commit",
+      collectLayoutDebugData(data),
+    );
+    traceTopbarLayoutFrames("topbar navigation state", data);
+    const raf = window.requestAnimationFrame(() => {
+      debugFileListLayout(
+        "topbar navigation state next frame",
+        collectLayoutDebugData(data),
+      );
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [
+    collectLayoutDebugData,
+    currentFolderId,
+    currentPath,
+    error,
+    flatFolderView,
+    importNotice,
+    sidebarView,
+    traceTopbarLayoutFrames,
+  ]);
+
+  useLayoutEffect(() => {
+    if (!isFileListLayoutDebugEnabled()) {
+      return;
+    }
+    const topbar = topbarRef.current;
+    if (!topbar) {
+      return;
+    }
+
+    topbarHeightRef.current = topbar.getBoundingClientRect().height;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const nextHeight = entry.contentRect.height;
+        const previousHeight = topbarHeightRef.current;
+        if (
+          previousHeight == null ||
+          Math.abs(nextHeight - previousHeight) <= 0.5
+        ) {
+          topbarHeightRef.current = nextHeight;
+          continue;
+        }
+        debugFileListLayout(
+          "topbar height changed",
+          collectLayoutDebugData({
+            trigger: "ResizeObserver",
+            previousHeight: roundedNumber(previousHeight),
+            nextHeight: roundedNumber(nextHeight),
+            delta: roundedNumber(nextHeight - previousHeight),
+            sidebarView: sidebarViewRef.current,
+            currentFolderId: currentFolderIdRef.current ?? "__ROOT__",
+            flatFolderView: flatFolderViewRef.current,
+          }),
+        );
+        topbarHeightRef.current = nextHeight;
+      }
+    });
+    observer.observe(topbar);
+    return () => observer.disconnect();
+  }, [collectLayoutDebugData, currentFolderId, sidebarView]);
+
   /**
-   * 当前视图所有文件均参与缩略图拉取/生成，包括嵌套子文件夹中的文件。
+   * 当前视图内的文件均参与缩略图拉取/生成，包括嵌套子文件夹中的文件。
    * thumbCoverage 机制（visibleIds ∪ 前 N 条）已通过 IntersectionObserver 控制优先级。
    */
   const thumbLoadScopeFiles = useMemo(() => filteredFiles, [filteredFiles]);
@@ -1122,44 +2167,398 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     onThumbnailServerMiss,
   });
 
+  const clearFetchedThumbForFile = useCallback((fileId: string) => {
+    clearThumbnailServerMiss(fileId);
+    thumbFetchingRef.current.delete(fileId);
+    delete fetchedThumbHashByIdRef.current[fileId];
+    setFetchedThumbsWithLayoutDebug((prev) => {
+      if (!(fileId in prev)) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[fileId];
+      return next;
+    });
+  }, []);
+
+  const applySavedFileListMetadata = useCallback(
+    (
+      fileId: string,
+      detail?: {
+        contentSha256?: string | null;
+        version?: number | null;
+        updatedAt?: string | null;
+      },
+    ): boolean => {
+      const cachePatch = readFileListIncrementalPatch(fileId);
+      const eventPatch: FileListIncrementalPatch = {};
+      if (detail?.contentSha256) {
+        eventPatch.content_sha256 = detail.contentSha256;
+      }
+      if (typeof detail?.version === "number") {
+        eventPatch.version = detail.version;
+      }
+      if (detail?.updatedAt) {
+        eventPatch.updated_at = detail.updatedAt;
+      }
+      const mergedPatch: FileListIncrementalPatch = {
+        ...(cachePatch ?? {}),
+        ...eventPatch,
+      };
+      if (!cachePatch && Object.keys(mergedPatch).length === 0) {
+        return false;
+      }
+      let applied = false;
+      setFiles((prev) => {
+        const index = prev.findIndex((file) => file.id === fileId);
+        if (index === -1) {
+          return prev;
+        }
+        applied = true;
+        const next = [...prev];
+        next[index] = mergeServerFilePatch(prev[index], mergedPatch);
+        return next;
+      });
+      if (!applied) {
+        return false;
+      }
+      if (detail?.contentSha256) {
+        clearFetchedThumbForFile(fileId);
+      }
+      const cached = readFileListTreeCache();
+      if (cached) {
+        latestCatalogTreeRef.current = cached;
+        catalogListingFingerprintRef.current = fingerprintCatalogListing(cached);
+      }
+      traceResourceOp("filelist", "incrementalApply", "ok", {
+        fileId8: fileId.slice(0, 8),
+      });
+      setRecentRevision((value) => value + 1);
+      return true;
+    },
+    [clearFetchedThumbForFile],
+  );
+
+  useEffect(() => {
+    const onServerSaved = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        id?: string;
+        contentSha256?: string | null;
+        version?: number | null;
+        updatedAt?: string | null;
+        skipped?: boolean;
+      }>).detail;
+      traceFileOpen("serverSaved", {
+        fileId8: id8(detail?.id),
+        sha8: detail?.contentSha256?.slice(0, 8) ?? null,
+        skipped: detail?.skipped ?? false,
+      }, "ok");
+      const fileId = detail?.id;
+      if (!fileId) {
+        scheduleSilentRefresh();
+        return;
+      }
+      if (
+        applySavedFileListMetadata(fileId, {
+          contentSha256: detail?.contentSha256 ?? null,
+          version: detail?.version ?? null,
+          updatedAt: detail?.updatedAt ?? null,
+        })
+      ) {
+        return;
+      }
+      scheduleSilentRefresh();
+    };
+    const onIncrementalApply = (event: Event) => {
+      const fileId = (event as CustomEvent<{ fileId?: string }>).detail?.fileId;
+      if (!fileId) {
+        return;
+      }
+      applySavedFileListMetadata(fileId);
+    };
+    window.addEventListener("excalidraw-server-saved", onServerSaved);
+    window.addEventListener(
+      FILE_LIST_INCREMENTAL_APPLY_EVENT,
+      onIncrementalApply,
+    );
+    return () => {
+      window.removeEventListener("excalidraw-server-saved", onServerSaved);
+      window.removeEventListener(
+        FILE_LIST_INCREMENTAL_APPLY_EVENT,
+        onIncrementalApply,
+      );
+    };
+  }, [applySavedFileListMetadata, scheduleSilentRefresh]);
+
+  const nativeListThumbInFlightRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!isDesktopEditorHub()) {
+      return;
+    }
+    const candidates = thumbLoadScopeFiles.filter((file) => {
+      if (!thumbFetchAllowIds.has(file.id)) {
+        return false;
+      }
+      if (editorRegistry.resolveKind(file.kind) !== "mindmap") {
+        return false;
+      }
+      if (nativeListThumbInFlightRef.current.has(file.id)) {
+        return false;
+      }
+      if (FileSyncState.hasUnsavedChanges(file.id)) {
+        return false;
+      }
+      if (!fileAwaitingNativeThumbnail(file)) {
+        return false;
+      }
+      if (!file.has_thumbnail) {
+        return true;
+      }
+      const fetchedThumb = fetchedThumbsRef.current[file.id];
+      return !!fetchedThumb && !isNativeMindMapThumbnailSvg(fetchedThumb);
+    });
+    if (candidates.length === 0) {
+      return;
+    }
+    const candidateIds = candidates.map((file) => file.id);
+    devDebug("thumbnail-pipeline", "[DEBUG] native-list-thumb | queue", {
+      count: candidates.length,
+      ids: candidates.map((file) => file.id.slice(0, 8)),
+      names: candidates.map((file) => file.name).slice(0, 8),
+    });
+    markNativeThumbnailPending(candidateIds);
+    let cancelled = false;
+    for (const file of candidates) {
+      nativeListThumbInFlightRef.current.add(file.id);
+      void persistTrackedFileThumbnail(file)
+        .then((updated) => {
+          if (cancelled || !updated.has_thumbnail) {
+            return;
+          }
+          const localThumb =
+            LocalThumbnailCache.getForContent(
+              updated.id,
+              updated.content_sha256,
+            ) ?? LocalThumbnailCache.get(updated.id);
+          setFiles((prev) =>
+            prev.map((item) => (item.id === updated.id ? updated : item)),
+          );
+          if (localThumb) {
+            fetchedThumbHashByIdRef.current[updated.id] =
+              fileThumbnailCacheKey(updated);
+            setFetchedThumbsWithLayoutDebug((prev) => ({
+              ...prev,
+              [updated.id]: localThumb,
+            }));
+          }
+          devDebug("thumbnail-pipeline", "[DEBUG] native-list-thumb | ok", {
+            id: updated.id,
+            id8: updated.id.slice(0, 8),
+            hasThumb: !!updated.has_thumbnail,
+            contentSha: updated.content_sha256 ?? null,
+            localThumbLen: localThumb?.length ?? 0,
+          });
+        })
+        .catch((error: unknown) => {
+          devDebug("thumbnail-pipeline", "[DEBUG] native-list-thumb | error", {
+            id: file.id,
+            id8: file.id.slice(0, 8),
+            message: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+          });
+        })
+        .finally(() => {
+          nativeListThumbInFlightRef.current.delete(file.id);
+          clearNativeThumbnailPending([file.id]);
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    fetchedThumbs,
+    setFetchedThumbsWithLayoutDebug,
+    thumbFetchAllowIds,
+    thumbLoadScopeFiles,
+  ]);
+
   const openNewFileDialog = useCallback(() => {
     setNewFileDialogOpen(true);
   }, []);
 
+  const sidebarTargetFolderId = useMemo(
+    () =>
+      resolveSidebarTargetFolderId(sidebarView, currentFolderId, foldersById),
+    [sidebarView, currentFolderId, foldersById],
+  );
+
   const newDocumentFolderId = useMemo((): string | null | undefined => {
-    if (sidebarView !== "all") {
+    if (sidebarView !== "all" && !isDesktopEditorHub()) {
       return undefined;
     }
-    return currentFolderId;
-  }, [sidebarView, currentFolderId]);
+    return sidebarTargetFolderId;
+  }, [sidebarTargetFolderId, sidebarView]);
 
-  const importTargetFolderId = useMemo(() => {
-    return sidebarView === "all" ? currentFolderId : null;
-  }, [sidebarView, currentFolderId]);
+  const importTargetFolderId = sidebarTargetFolderId;
+
+  const ensureDefaultDataDirectoryFolderId = useCallback(async () => {
+    if (!isDesktopEditorHub() || !isLocalDirectoryRoot) {
+      return null;
+    }
+    setMappingBusy(true);
+    try {
+      const result = await ensureDefaultDataDirectoryMapped();
+      const folderId = result?.folder?.id ?? null;
+      if (!folderId || !result) {
+        throw new Error("无法映射默认目录");
+      }
+      defaultDataDirectoryFolderIdRef.current = folderId;
+      setDefaultDataDirectoryFolderId(folderId);
+      if (result.tree) {
+        applyCatalogTree(result.tree);
+      }
+      return folderId;
+    } finally {
+      setMappingBusy(false);
+    }
+  }, [applyCatalogTree, isLocalDirectoryRoot]);
+
+  const resolveDefaultDataDirectoryFolderId = useCallback(async () => {
+    if (!isDesktopEditorHub()) {
+      return null;
+    }
+    const cached = defaultDataDirectoryFolderIdRef.current;
+    if (cached && foldersById.has(cached)) {
+      return cached;
+    }
+    const absPath = await resolveDefaultDataDirectoryPath();
+    const tree = latestCatalogTreeRef.current;
+    if (tree) {
+      const fromTree = findDefaultDataDirectoryFolderId(tree.folders, absPath);
+      if (fromTree) {
+        defaultDataDirectoryFolderIdRef.current = fromTree;
+        setDefaultDataDirectoryFolderId(fromTree);
+        return fromTree;
+      }
+    }
+    setMappingBusy(true);
+    try {
+      const result = await ensureDefaultDataDirectoryMapped();
+      const folderId = result?.folder?.id ?? null;
+      if (folderId) {
+        defaultDataDirectoryFolderIdRef.current = folderId;
+        setDefaultDataDirectoryFolderId(folderId);
+      }
+      if (result?.tree) {
+        applyCatalogTree(result.tree);
+      }
+      return folderId;
+    } finally {
+      setMappingBusy(false);
+    }
+  }, [applyCatalogTree, foldersById]);
+
+  useEffect(() => {
+    if (!isDesktopEditorHub() || !defaultDataDirectoryOnlyView) {
+      return;
+    }
+    let cancelled = false;
+    void resolveDefaultDataDirectoryFolderId()
+      .then((folderId) => {
+        if (!cancelled) {
+          setDefaultDataDirectoryFolderId(folderId);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDefaultDataDirectoryFolderId(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [defaultDataDirectoryOnlyView, resolveDefaultDataDirectoryFolderId]);
+
+  const gridListKey = useMemo(
+    () =>
+      `${sidebarView}:${currentFolderId ?? "root"}:${sortKey}:${searchQuery.trim()}:${flatFolderView ? "flat" : "nested"}:${defaultDataDirectoryOnlyView ? "default-dir" : "all-dir"}`,
+    [currentFolderId, defaultDataDirectoryOnlyView, flatFolderView, searchQuery, sidebarView, sortKey],
+  );
+
+  const GRID_ENTER_ANIM_MS = 280;
+  const [gridEnterAnimate, setGridEnterAnimate] = useState(true);
+  useLayoutEffect(() => {
+    setGridEnterAnimate(true);
+    const timer = window.setTimeout(
+      () => setGridEnterAnimate(false),
+      GRID_ENTER_ANIM_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [gridListKey]);
+
+  useEffect(() => {
+    setVisibleThumbIds(new Set());
+  }, [
+    currentFolderId,
+    defaultDataDirectoryOnlyView,
+    flatFolderView,
+    sidebarView,
+  ]);
 
   const openNewDocument = useCallback(
     (kind: string) => {
-      const folderOpts =
-        newDocumentFolderId !== undefined
-          ? { folderId: newDocumentFolderId }
-          : undefined;
-      void bootstrapLocalDraftSession(kind, folderOpts).then(({ id }) => {
-        window.location.hash = editorRegistry.buildFileHash(id, kind);
+      devDebug("api-sync", "openNewDocument | start", {
+        kind,
+        folderId: newDocumentFolderId ?? null,
+        sidebarView,
       });
+      void (async () => {
+        const resolvedFolderId =
+          typeof newDocumentFolderId === "string" &&
+          newDocumentFolderId.length > 0
+            ? newDocumentFolderId
+            : isLocalDirectoryRoot
+            ? await ensureDefaultDataDirectoryFolderId()
+            : null;
+        const bootstrapOpts =
+          sidebarView === "recent"
+            ? { saveTarget: "native" as const, folderId: null }
+            : resolvedFolderId
+            ? {
+                folderId: resolvedFolderId,
+                saveTarget: "catalog" as const,
+              }
+            : undefined;
+        return bootstrapLocalDraftSession(kind, bootstrapOpts);
+      })()
+        .then(({ id }) => {
+          const hash = editorRegistry.buildFileHash(id, kind);
+          devDebug("api-sync", "openNewDocument | navigate", {
+            id8: id.slice(0, 20),
+            hash,
+          });
+          void openEditorFileTab({
+            fileId: id,
+            kind,
+            title: defaultNameForDocumentKind(kind),
+          });
+        })
+        .catch((err) => {
+          devDebug("api-sync", "openNewDocument | failed", {
+            message: err instanceof Error ? err.message : String(err),
+          });
+          setError(err instanceof Error ? err.message : String(err));
+        });
     },
-    [newDocumentFolderId],
+    [ensureDefaultDataDirectoryFolderId, isLocalDirectoryRoot, newDocumentFolderId, sidebarView],
   );
 
   const commitNewDocumentPick = useCallback(
     (kind: string) => {
       setNewFileDialogOpen(false);
-      if (sidebarView === "all") {
-        setFormalCreateKind(kind);
-        return;
-      }
       openNewDocument(kind);
     },
-    [openNewDocument, sidebarView],
+    [openNewDocument],
   );
 
   const dismissFormalCreateDialog = useCallback(() => {
@@ -1176,39 +2575,57 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       if (!kind || formalCreateInFlightRef.current) {
         return;
       }
+      const resolvedFolderId =
+        folderId ??
+        (isLocalDirectoryRoot
+          ? await ensureDefaultDataDirectoryFolderId()
+          : null);
+      if (!resolvedFolderId) {
+        setError("请选择保存位置");
+        return;
+      }
       formalCreateInFlightRef.current = true;
       setFormalCreateSaving(true);
+      devDebug("api-sync", "commitFormalCreate | start", {
+        kind,
+        name,
+        folderId: resolvedFolderId,
+      });
       try {
         const plugin = editorRegistry.getByKind(kind);
         if (!plugin?.createFile) {
           throw new Error(`无法创建 ${kind} 文档`);
         }
-        const { id } = await plugin.createFile({ name, folderId });
+        const { id } = await plugin.createFile({
+          name,
+          folderId: resolvedFolderId,
+        });
+        devDebug("api-sync", "commitFormalCreate | ok", {
+          id8: id.slice(0, 8),
+          kind,
+        });
         recordRecentFileAccess(id);
         setFormalCreateKind(null);
-        window.location.hash = editorRegistry.buildFileHash(id, kind);
+        void openEditorFileTab({
+          fileId: id,
+          kind,
+          title: name,
+        });
         window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
         await refresh({ silent: true, noErrorOnFailure: true });
       } catch (err: unknown) {
         const message =
           err instanceof Error ? err.message : String(err ?? "创建失败");
+        devDebug("api-sync", "commitFormalCreate | failed", { message });
+        setFormalCreateKind(null);
         setError(message);
       } finally {
         formalCreateInFlightRef.current = false;
         setFormalCreateSaving(false);
       }
     },
-    [formalCreateKind, refresh],
+    [ensureDefaultDataDirectoryFolderId, formalCreateKind, isLocalDirectoryRoot, refresh],
   );
-
-  const openMoveDialog = useCallback((e: React.MouseEvent, f: ServerFile) => {
-    e.stopPropagation();
-    if (isLocalDraftFileId(f.id)) {
-      return;
-    }
-    setMoveDialogFile(f);
-    setMoveTargetFolderId(f.folder_id ?? null);
-  }, []);
 
   const commitMove = useCallback(async () => {
     if (!moveDialogFile) {
@@ -1230,31 +2647,44 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   }, [moveDialogFile, moveTargetFolderId, refresh]);
 
   const importCreatedIdsRef = useRef<string[]>([]);
+  const activeImportTargetFolderIdRef = useRef<string | null | undefined>(
+    undefined,
+  );
+  const postImportSelectFolderIdRef = useRef<string | null | undefined>(
+    undefined,
+  );
 
   const importOneFileWithKind = useCallback(
     async (file: File, kind: string) => {
       if (file.size > EDITOR_MAX_IMAGE_FILE_BYTES) {
         throw new Error(
-          `「${file.name}」超过 ${formatEditorMaxImageFileSizeMb()} 上限，无法导入。`,
+          `「${
+            file.name
+          }」超过 ${formatEditorMaxImageFileSizeMb()} 上限，无法导入。`,
         );
       }
       const plugin = editorRegistry.getByKind(kind);
       if (!plugin?.importFile) {
-        throw new Error(
-          `无法使用所选编辑器导入「${file.name}」。`,
-        );
+        throw new Error(`无法使用所选编辑器导入「${file.name}」。`);
       }
       logList.debug("import start", {
         name: file.name,
         type: file.type,
         size: file.size,
         kind,
-        folderId: importTargetFolderId,
+        folderId:
+          activeImportTargetFolderIdRef.current === undefined
+            ? importTargetFolderId
+            : activeImportTargetFolderIdRef.current,
       });
+      const targetFolderId =
+        activeImportTargetFolderIdRef.current === undefined
+          ? importTargetFolderId
+          : activeImportTargetFolderIdRef.current;
       const { id } = await plugin.importFile({
         file,
         fileName: sanitizeFileBaseName(file.name),
-        folderId: importTargetFolderId,
+        folderId: targetFolderId,
       });
       importCreatedIdsRef.current.push(id);
     },
@@ -1268,94 +2698,135 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     if (createdIds.length === 0) {
       return;
     }
+    for (const id of createdIds) {
+      clearThumbnailServerMiss(id);
+      thumbFetchingRef.current.delete(id);
+      delete fetchedThumbHashByIdRef.current[id];
+    }
+    setFetchedThumbs((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const id of createdIds) {
+        if (id in next) {
+          delete next[id];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
     try {
       await refresh({ silent: true, noErrorOnFailure: true });
       setImportNotice(null);
+      const selectAfterImport = postImportSelectFolderIdRef.current;
+      if (selectAfterImport !== undefined) {
+        setSidebarView("all");
+        setCurrentFolderId(selectAfterImport);
+        setMobileTreeOpen(false);
+      }
     } catch {
       setImportNotice(
         `已导入 ${createdIds.length} 个文件，但列表未能自动更新。请刷新本页以查看最新文件。`,
       );
+    } finally {
+      activeImportTargetFolderIdRef.current = undefined;
+      postImportSelectFolderIdRef.current = undefined;
     }
   }, [refresh]);
 
-  const processImportQueue = useCallback(async function processImportQueue() {
-    try {
-      while (importQueueRef.current.length > 0) {
-        const queue = importQueueRef.current;
-        const batch = queue.slice(0, FILE_IMPORT_CONCURRENCY);
-        const detectedBatch = await Promise.all(
-          batch.map(async (file) => ({
-            file,
-            kinds: await detectImportCandidateKinds(file),
-          })),
-        );
-        const firstPickerIndex = detectedBatch.findIndex(
-          ({ kinds }) => kinds.length > 1,
-        );
-        const autoImportEntries =
-          firstPickerIndex >= 0
-            ? detectedBatch.slice(0, firstPickerIndex)
-            : detectedBatch;
+  const processImportQueue = useCallback(
+    async function processImportQueue() {
+      try {
+        while (importQueueRef.current.length > 0) {
+          const queue = importQueueRef.current;
+          const batch = queue.slice(0, FILE_IMPORT_CONCURRENCY);
+          const detectedBatch = await Promise.all(
+            batch.map(async (file) => ({
+              file,
+              kinds: await detectImportCandidateKinds(file),
+            })),
+          );
+          const firstPickerIndex = detectedBatch.findIndex(
+            ({ kinds }) => kinds.length > 1,
+          );
+          const autoImportEntries =
+            firstPickerIndex >= 0
+              ? detectedBatch.slice(0, firstPickerIndex)
+              : detectedBatch;
 
-        for (const { file, kinds } of autoImportEntries) {
-          if (kinds.length === 0) {
-            throw new Error(
-              `无法识别「${file.name}」的文档格式，请确认它是 ${editorRegistry.importableEditorNames()} 文件。`,
+          for (const { file, kinds } of autoImportEntries) {
+            if (kinds.length === 0) {
+              throw new Error(
+                `无法识别「${
+                  file.name
+                }」的文档格式，请确认它是 ${editorRegistry.importableEditorNames()} 文件。`,
+              );
+            }
+          }
+
+          if (autoImportEntries.length > 0) {
+            const results = await Promise.allSettled(
+              autoImportEntries.map(({ file, kinds }) =>
+                importOneFileWithKind(file, kinds[0]!),
+              ),
             );
+            const failed = results.find(
+              (result): result is PromiseRejectedResult =>
+                result.status === "rejected",
+            );
+            if (failed) {
+              throw failed.reason;
+            }
+            importQueueRef.current = queue.slice(autoImportEntries.length);
+          }
+
+          if (firstPickerIndex >= 0) {
+            const { file, kinds } = detectedBatch[firstPickerIndex]!;
+            const plugins = kinds
+              .map((k) => editorRegistry.getByKind(k))
+              .filter((p): p is EditorPlugin => !!p?.importFile);
+            pendingImportFileRef.current = file;
+            setImportPickerFileName(file.name);
+            setImportKindPlugins(plugins);
+            setImportKindDialogOpen(true);
+            setImporting(false);
+            return;
           }
         }
-
-        if (autoImportEntries.length > 0) {
-          const results = await Promise.allSettled(
-            autoImportEntries.map(({ file, kinds }) =>
-              importOneFileWithKind(file, kinds[0]!),
-            ),
-          );
-          const failed = results.find(
-            (result): result is PromiseRejectedResult =>
-              result.status === "rejected",
-          );
-          if (failed) {
-            throw failed.reason;
-          }
-          importQueueRef.current = queue.slice(autoImportEntries.length);
+        await finishImportBatch();
+      } catch (e: unknown) {
+        logList.debug("import error", e);
+        const createdIds = [...importCreatedIdsRef.current];
+        const failedDeletes = await rollbackCreatedImportFiles(createdIds);
+        importCreatedIdsRef.current = [];
+        importQueueRef.current = [];
+        activeImportTargetFolderIdRef.current = undefined;
+        postImportSelectFolderIdRef.current = undefined;
+        let msg = formatImportErrorMessage(e);
+        if (failedDeletes.length > 0) {
+          msg += ` 另：有 ${failedDeletes.length} 个已创建项未能从服务器自动删除，请刷新列表后检查并手动删除重复或空白文件。`;
         }
-
-        if (firstPickerIndex >= 0) {
-          const { file, kinds } = detectedBatch[firstPickerIndex]!;
-          const plugins = kinds
-            .map((k) => editorRegistry.getByKind(k))
-            .filter((p): p is EditorPlugin => !!p?.importFile);
-          pendingImportFileRef.current = file;
-          setImportPickerFileName(file.name);
-          setImportKindPlugins(plugins);
-          setImportKindDialogOpen(true);
-          setImporting(false);
-          return;
-        }
+        setImportNotice(null);
+        setError(msg);
+        setImporting(false);
       }
-      await finishImportBatch();
-    } catch (e: unknown) {
-      logList.debug("import error", e);
-      const createdIds = [...importCreatedIdsRef.current];
-      const failedDeletes = await rollbackCreatedImportFiles(createdIds);
-      importCreatedIdsRef.current = [];
-      importQueueRef.current = [];
-      let msg = formatImportErrorMessage(e);
-      if (failedDeletes.length > 0) {
-        msg += ` 另：有 ${failedDeletes.length} 个已创建项未能从服务器自动删除，请刷新列表后检查并手动删除重复或空白文件。`;
-      }
-      setImportNotice(null);
-      setError(msg);
-      setImporting(false);
-    }
-  }, [finishImportBatch, importOneFileWithKind]);
+    },
+    [finishImportBatch, importOneFileWithKind],
+  );
 
-  const importDocumentFiles = useCallback(
-    async (fileList: File[]) => {
+  const startImportWithTarget = useCallback(
+    async (
+      fileList: File[],
+      targetFolderId: string | null,
+      opts?: { selectTargetAfterImport?: boolean },
+    ) => {
       if (fileList.length === 0) {
         return;
       }
+      activeImportTargetFolderIdRef.current = targetFolderId;
+      postImportSelectFolderIdRef.current = opts?.selectTargetAfterImport
+        ? targetFolderId
+        : undefined;
+      clearAllThumbnailServerMisses();
       setImporting(true);
       setError(null);
       setImportNotice(null);
@@ -1388,6 +2859,8 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         const failedDeletes = await rollbackCreatedImportFiles(createdIds);
         importCreatedIdsRef.current = [];
         importQueueRef.current = [];
+        activeImportTargetFolderIdRef.current = undefined;
+        postImportSelectFolderIdRef.current = undefined;
         let msg = formatImportErrorMessage(e);
         if (failedDeletes.length > 0) {
           msg += ` 另：有 ${failedDeletes.length} 个已创建项未能从服务器自动删除，请刷新列表后检查并手动删除重复或空白文件。`;
@@ -1411,6 +2884,8 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         await rollbackCreatedImportFiles(createdIds);
         importCreatedIdsRef.current = [];
       }
+      activeImportTargetFolderIdRef.current = undefined;
+      postImportSelectFolderIdRef.current = undefined;
       setImporting(false);
     })();
   }, []);
@@ -1419,17 +2894,264 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     dismissImportKindDialog,
   );
 
-  const onSceneImportInputChange = (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
+  const applySceneFilesViewSwitch = useCallback(
+    (intent: SceneFilesIntent) => {
+      if (intent.type === "track-recent") {
+        setSidebarView("recent");
+        setMobileTreeOpen(false);
+        return;
+      }
+      if (intent.type === "import-needs-folder") {
+        setSidebarView("all");
+        setCurrentFolderId(null);
+        setMobileTreeOpen(false);
+        return;
+      }
+      setSidebarView("all");
+      setMobileTreeOpen(false);
+      setCurrentFolderId(intent.folderId);
+      setAllFilesTreeExpanded(true);
+      setExpandedFolders((prev) => ({
+        ...prev,
+        ...expandFolderAncestorIds(intent.folderId, foldersById),
+      }));
+    },
+    [foldersById, setCurrentFolderId, setSidebarView],
+  );
+
+  const openImportFolderPicker = useCallback((fileList: File[]) => {
+    pendingImportFilesRef.current = fileList;
+    setImportFolderPickerFiles(fileList);
+    setImportFolderPickerTargetId(null);
+    setImportFolderPickerOpen(true);
+  }, []);
+
+  const dismissImportFolderPicker = useCallback(() => {
+    setImportFolderPickerOpen(false);
+    setImportFolderPickerTargetId(null);
+    setImportFolderPickerFiles([]);
+    pendingImportFilesRef.current = [];
+  }, []);
+
+  const handleImportDialogPickFiles = useCallback((fileList: File[]) => {
+    const next = takeImportableFilesFromList(fileList);
+    if (next.length === 0) {
+      setError(
+        "未识别到可导入的文档文件（如 .excalidraw、.smm、.json、.png、.svg）。",
+      );
+      return;
+    }
+    pendingImportFilesRef.current = next;
+    setImportFolderPickerFiles(next);
+  }, []);
+
+  const commitImportFolderPicker = useCallback(async () => {
+    const targetFolderId = importFolderPickerTargetId;
+    if (!targetFolderId) {
+      return;
+    }
+    const fileList = [...pendingImportFilesRef.current];
+    dismissImportFolderPicker();
+    setSidebarView("all");
+    setCurrentFolderId(targetFolderId);
+    setAllFilesTreeExpanded(true);
+    setExpandedFolders((prev) => ({
+      ...prev,
+      ...expandFolderAncestorIds(targetFolderId, foldersById),
+    }));
+    setMobileTreeOpen(false);
+    await startImportWithTarget(fileList, targetFolderId, {
+      selectTargetAfterImport: true,
+    });
+  }, [
+    dismissImportFolderPicker,
+    foldersById,
+    importFolderPickerTargetId,
+    setCurrentFolderId,
+    setSidebarView,
+    startImportWithTarget,
+  ]);
+
+  const importFolderPickerOverlayDismiss = useStrictOverlayDismiss(
+    dismissImportFolderPicker,
+  );
+
+  const handleSceneFiles = useCallback(
+    async (fileList: File[], opts?: { intent?: SceneFilesIntent }) => {
+      const next = takeImportableFilesFromList(fileList);
+      if (next.length === 0) {
+        setError(
+          "未识别到可导入的文档文件（如 .excalidraw、.smm、.json、.png、.svg）。",
+        );
+        return;
+      }
+      const intent = resolveSceneFilesIntent(
+        sidebarView,
+        currentFolderId,
+        foldersById,
+        opts?.intent,
+      );
+      applySceneFilesViewSwitch(intent);
+
+      try {
+        if (intent.type === "track-recent") {
+          if (!isDesktopEditorHub() || !catalogCapabilities.folderMapping) {
+            setError("「最近」仅支持在桌面版通过文件路径添加外部文件。");
+            return;
+          }
+          const absPaths = readDroppedFileAbsPaths(next);
+          if (absPaths.length === 0) {
+            setError("无法获取文件路径，请从文件管理器拖入或使用桌面版。");
+            return;
+          }
+          clearAllThumbnailServerMisses();
+          setError(null);
+          setImportNotice(null);
+          devDebug("file-list", "[DEBUG] recent-track | start", {
+            paths: absPaths.map((item) => item.slice(-160)),
+            sidebarView,
+            currentFolderId,
+          });
+          const { tracked, errors, filesByPath } =
+            await trackCatalogPathsToRecent(absPaths);
+          devDebug("file-list", "[DEBUG] recent-track | result", {
+            tracked,
+            errors,
+            files: Object.entries(filesByPath).map(([absPath, file]) => ({
+              pathTail: absPath.slice(-160),
+              id: file.id,
+              kind: file.kind,
+              health: file.health ?? null,
+              hasThumb: !!file.has_thumbnail,
+              contentSha: file.content_sha256 ?? null,
+            })),
+          });
+          if (Object.keys(filesByPath).length > 0) {
+            setRecentPathCatalogFiles((prev) => ({ ...prev, ...filesByPath }));
+          }
+          setRecentRevision((value) => value + 1);
+          if (tracked === 0) {
+            setError(errors[0] ?? "无法添加到最近");
+            return;
+          }
+          if (errors.length > 0) {
+            setImportNotice(
+              `已添加 ${tracked} 个文件；${errors.length} 个失败：${errors[0]}`,
+            );
+          }
+          void generateRecentPathThumbnails(filesByPath)
+            .then((updated) => {
+              devDebug("file-list", "[DEBUG] recent-track | thumbnails done", {
+                updated: Object.entries(updated).map(([absPath, file]) => ({
+                  pathTail: absPath.slice(-160),
+                  id: file.id,
+                  kind: file.kind,
+                  hasThumb: !!file.has_thumbnail,
+                  contentSha: file.content_sha256 ?? null,
+                })),
+              });
+              if (Object.keys(updated).length === 0) {
+                return;
+              }
+              setRecentPathCatalogFiles((prev) => ({ ...prev, ...updated }));
+              setRecentRevision((value) => value + 1);
+            })
+            .catch((error: unknown) => {
+              logList.debug("recent thumbnail generation failed", error);
+            });
+          return;
+        }
+
+        if (intent.type === "import-needs-folder") {
+          if (isLocalDirectoryRoot) {
+            const folderId = await ensureDefaultDataDirectoryFolderId();
+            if (folderId) {
+              await startImportWithTarget(next, folderId, {
+                selectTargetAfterImport: true,
+              });
+              return;
+            }
+          }
+          openImportFolderPicker(next);
+          return;
+        }
+
+        await startImportWithTarget(next, intent.folderId, {
+          selectTargetAfterImport: true,
+        });
+      } catch (error: unknown) {
+        logList.debug("scene files action failed", error);
+        setError(
+          error instanceof Error ? error.message : "处理拖入文件失败，请重试。",
+        );
+      }
+    },
+    [
+      applySceneFilesViewSwitch,
+      catalogCapabilities.folderMapping,
+      currentFolderId,
+      ensureDefaultDataDirectoryFolderId,
+      foldersById,
+      isLocalDirectoryRoot,
+      openImportFolderPicker,
+      startImportWithTarget,
+    ],
+  );
+
+  const workspaceDropIntent = useMemo(
+    () => resolveSceneFilesIntent(sidebarView, currentFolderId, foldersById),
+    [sidebarView, currentFolderId, foldersById],
+  );
+
+  const workspaceDropOverlayLabel = useMemo(
+    () => sceneDropOverlayLabel(workspaceDropIntent),
+    [workspaceDropIntent],
+  );
+
+  const onSceneImportInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.files;
     const picked = raw ? Array.from(raw) : [];
     e.target.value = "";
     if (picked.length === 0) {
       return;
     }
-    void importDocumentFiles(picked);
+    void handleSceneFiles(picked);
   };
+
+  const clearFileDropHover = useCallback(() => {
+    setFileDropHoverActive(false);
+  }, []);
+
+  const onFileListImportDragEnter = useCallback(
+    (e: React.DragEvent) => {
+      if (importing) {
+        return;
+      }
+      if (draggingFolderId || e.dataTransfer.types?.includes(FOLDER_DND_MIME)) {
+        return;
+      }
+      if (!e.dataTransfer.types?.includes("Files")) {
+        return;
+      }
+      setSidebarFileDropTargetId(null);
+      setFileDropHoverActive(true);
+    },
+    [draggingFolderId, importing],
+  );
+
+  const onFileListImportDragLeave = useCallback(
+    (e: React.DragEvent) => {
+      if (importing || draggingFolderId) {
+        return;
+      }
+      const related = e.relatedTarget;
+      if (related instanceof Node && e.currentTarget.contains(related)) {
+        return;
+      }
+      clearFileDropHover();
+    },
+    [clearFileDropHover, draggingFolderId, importing],
+  );
 
   /** 覆盖左侧树 + 右侧主区；与文件夹内拖移区分 */
   const onFileListImportDragOver = useCallback(
@@ -1445,48 +3167,55 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       }
       e.preventDefault();
       e.dataTransfer.dropEffect = "copy";
+      setFileDropHoverActive(true);
     },
     [importing, draggingFolderId],
   );
 
   const onFileListImportDrop = useCallback(
     (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      clearFileDropHover();
       if (importing) {
         return;
       }
       if (draggingFolderId || e.dataTransfer.types?.includes(FOLDER_DND_MIME)) {
         return;
       }
-      e.preventDefault();
       const { files } = e.dataTransfer;
       if (!files?.length) {
+        setError("未能读取拖入的文件，请重试。");
         return;
       }
-      const next = takeImportableFilesFromList(files);
-      if (next.length === 0) {
-        setError(
-          "未识别到可导入的文档文件（如 .excalidraw、.smm、.json、.png、.svg）。",
-        );
-        return;
-      }
-      void importDocumentFiles(next);
+
+      void handleSceneFiles(Array.from(files));
     },
-    [importing, draggingFolderId, importDocumentFiles],
+    [
+      clearFileDropHover,
+      draggingFolderId,
+      handleSceneFiles,
+      importing,
+    ],
   );
 
-  const handleDelete = async (
-    e: React.MouseEvent,
-    id: string,
-    name: string,
-  ) => {
+  const handleDelete = (e: React.MouseEvent, file: ServerFile) => {
     e.stopPropagation();
-    if (!window.confirm(`确定删除「${name}」？`)) {
+    setFileDeleteTarget(file);
+  };
+
+  const confirmDeleteFile = async () => {
+    const file = fileDeleteTarget;
+    if (!file || fileDeleteBusy) {
       return;
     }
+    const { id } = file;
+    setFileDeleteBusy(true);
     try {
       if (isLocalDraftFileId(id)) {
         await discardLocalDraftSession(id);
         await refresh({ silent: true });
+        setFileDeleteTarget(null);
         return;
       }
       await ServerSync.deleteFile(id);
@@ -1499,13 +3228,54 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         return n;
       });
       thumbFetchingRef.current.delete(id);
-      logPipe.debug("delete: cleared thumb state + fetching ref", {
-        id8: id.slice(0, 8),
+      if (file.origin === "external") {
+        const recentPath = Object.entries(recentPathCatalogFiles).find(
+          ([, trackedFile]) => trackedFile.id === id,
+        )?.[0];
+        if (recentPath) {
+          removeRecentFileEntry(toRecentPathEntryId(recentPath));
+          setRecentPathCatalogFiles((prev) => {
+            const next = { ...prev };
+            delete next[recentPath];
+            return next;
+          });
+          setRecentRevision((value) => value + 1);
+        }
+      }
+      invalidateInflightRefresh();
+      setFiles((prev) => {
+        const next = prev.filter((item) => item.id !== id);
+        writeFileListTreeCache({ folders: foldersRef.current, files: next });
+        return next;
       });
-      await refresh({ silent: true });
-    } catch (err: any) {
-      setError(err.message);
+      setFileDeleteTarget(null);
+      void refresh({ silent: true, noErrorOnFailure: true }).catch(() => {
+        // Background reconcile; optimistic state already applied.
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+    } finally {
+      setFileDeleteBusy(false);
     }
+  };
+
+  const handleRemoveFromRecent = (e: React.MouseEvent, file: ServerFile) => {
+    e.stopPropagation();
+    const recentPath = Object.entries(recentPathCatalogFiles).find(
+      ([, trackedFile]) => trackedFile.id === file.id,
+    )?.[0];
+    if (recentPath) {
+      removeRecentFileEntry(toRecentPathEntryId(recentPath));
+      setRecentPathCatalogFiles((prev) => {
+        const next = { ...prev };
+        delete next[recentPath];
+        return next;
+      });
+    } else {
+      removeRecentFileEntry(file.id);
+    }
+    setRecentRevision((value) => value + 1);
   };
 
   const handleDownload = async (
@@ -1548,67 +3318,166 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     const trimmed = renameValue.trim();
     if (trimmed) {
       try {
+        const currentFile = filesRef.current.find((file) => file.id === id);
+        const normalizedName = stripKnownDocumentExtension(trimmed).trim();
+        let renamedDisplayName = normalizedName || trimmed;
+        const duplicate = currentFile
+          ? filesRef.current.some(
+              (file) =>
+                file.id !== id &&
+                (file.folder_id ?? null) ===
+                  (currentFile.folder_id ?? null) &&
+                editorRegistry.resolveKind(file.kind) ===
+                  editorRegistry.resolveKind(currentFile.kind) &&
+                file.name.toLocaleLowerCase() ===
+                  normalizedName.toLocaleLowerCase(),
+            )
+          : false;
+        if (duplicate) {
+          setError("文件名已存在");
+          setRenamingId(null);
+          return;
+        }
         if (isLocalDraftFileId(id)) {
           const existing = LocalDraftSessions.get(id);
           if (existing) {
             LocalDraftSessions.upsert({
               ...existing,
-              name: trimmed,
+              name: normalizedName || trimmed,
               updated_at: new Date().toISOString(),
             });
           }
           setRecentRevision((n) => n + 1);
         } else {
-          await ServerSync.renameFile(id, trimmed);
-          setFiles((prev) =>
-            prev.map((f) => (f.id === id ? { ...f, name: trimmed } : f)),
+          const renamed = await ServerSync.renameFile(
+            id,
+            normalizedName || trimmed,
           );
+          const actualName = renamed.name || normalizedName || trimmed;
+          renamedDisplayName = actualName;
+          const recentPath = Object.entries(recentPathCatalogFiles).find(
+            ([, trackedFile]) => trackedFile.id === id,
+          )?.[0];
+          setFiles((prev) =>
+            prev.map((f) => (f.id === id ? { ...f, name: actualName } : f)),
+          );
+          if (recentPath && renamed.origin === "external") {
+            const nextPath = recentPathAfterRename(
+              recentPath,
+              actualName,
+              renamed.kind,
+            );
+            removeRecentFileEntry(toRecentPathEntryId(recentPath));
+            recordRecentFilePath(nextPath);
+            setRecentPathCatalogFiles((prev) => {
+              const next = { ...prev };
+              delete next[recentPath];
+              next[nextPath] = renamed;
+              return next;
+            });
+            setRecentRevision((value) => value + 1);
+          }
         }
         window.dispatchEvent(
           new CustomEvent("excalidraw-file-renamed", {
-            detail: { id, name: trimmed },
+            detail: { id, name: renamedDisplayName },
           }),
         );
       } catch (err: any) {
-        setError(err.message);
+        const message = err.message ?? "重命名失败";
+        setError(message);
+        setRenamingId(null);
+        return;
       }
     }
     setRenamingId(null);
   };
 
-  const selectFolder = (folderId: string | null) => {
+  const selectFolder = (folderId: string) => {
+    if (sidebarView === "all" && currentFolderId === folderId) {
+      setMobileTreeOpen(false);
+      return;
+    }
     setSidebarView("all");
     if (isFileListLayoutDebugEnabled()) {
       const data = {
+        trigger: "selectFolder",
         fromFolderId: currentFolderId ?? "__ROOT__",
         fromFolderName: currentFolderId
           ? foldersById.get(currentFolderId)?.name ?? null
-          : "所有文件",
+          : "本地目录",
         toFolderId: folderId ?? "__ROOT__",
-        toFolderName: folderId ? foldersById.get(folderId)?.name ?? null : "所有文件",
+        toFolderName: folderId
+          ? foldersById.get(folderId)?.name ?? null
+          : "本地目录",
         visibleThumbs: visibleThumbIds.size,
+        breadcrumbSegments: folderId
+          ? (() => {
+              const segments: string[] = [];
+              let cursor: string | null = folderId;
+              while (cursor) {
+                const folder = foldersById.get(cursor);
+                if (!folder) {
+                  break;
+                }
+                segments.unshift(folder.name);
+                cursor = folder.parent_id;
+              }
+              return segments.length;
+            })()
+          : 0,
       };
-      pendingLayoutDebugRef.current = {
-        label: "after selectFolder layout",
-        data,
-      };
+      queueTopbarLayoutDebug("after selectFolder topbar layout", data);
       debugFileListLayout(
         "before selectFolder setState",
         collectLayoutDebugData(data),
       );
+      traceTopbarLayoutFrames("selectFolder", data);
     }
     setCurrentFolderId(folderId);
+    setExpandedFolders((prev) => ({
+      ...prev,
+      ...expandFolderAncestorIds(folderId, foldersById),
+    }));
     setMobileTreeOpen(false);
   };
 
-  const startCreateFolder = (parentId: string | null) => {
-    setFolderDraft({ mode: "create", parentId });
-    setFolderNameValue("新建文件夹");
-  };
-
   const startRenameFolder = (folder: ServerFolder) => {
+    setFolderContextMenu(null);
     setFolderDraft({ mode: "rename", folder });
     setFolderNameValue(folder.name);
+  };
+
+  const startCreateFolderInParent = (folder: ServerFolder) => {
+    setFolderContextMenu(null);
+    const parentId = folder.id;
+    let name = "新建文件夹";
+    let suffix = 1;
+    const siblingNames = new Set(
+      folders
+        .filter((item) => folderParentId(item) === parentId)
+        .map((item) => item.name),
+    );
+    while (siblingNames.has(name)) {
+      name = `新建文件夹 (${suffix})`;
+      suffix += 1;
+    }
+    setFolderNameValue(name);
+    setFolderDraft({ mode: "create", parentId });
+    setExpandedFolders((prev) => ({ ...prev, [parentId]: true }));
+  };
+
+  const openFolderContextMenu = (
+    event: React.MouseEvent,
+    folder: ServerFolder,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setFolderContextMenu({
+      folder,
+      x: event.clientX,
+      y: event.clientY,
+    });
   };
 
   const commitFolderDraft = async () => {
@@ -1630,7 +3499,9 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         });
         const created = await ServerSync.createFolder(name, parentId);
         const siblingIds = [
-          ...getOrderedFolderChildIds(parentId).filter((id) => id !== created.id),
+          ...getOrderedFolderChildIds(parentId).filter(
+            (id) => id !== created.id,
+          ),
           created.id,
         ];
         debugFolderDnd("create folder reorder", {
@@ -1657,7 +3528,22 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         }));
         setCurrentFolderId(created.id);
       } else {
-        const updated = await ServerSync.renameFolder(folderDraft.folder.id, name);
+        const normalizedParent = folderTreeParentId(folderDraft.folder);
+        const duplicate = folders.some(
+          (folder) =>
+            folder.id !== folderDraft.folder.id &&
+            folderTreeParentId(folder) === normalizedParent &&
+            folder.name.toLocaleLowerCase() === name.toLocaleLowerCase(),
+        );
+        if (duplicate) {
+          setError("文件夹名称已存在");
+          setFolderDraft(null);
+          return;
+        }
+        const updated = await ServerSync.renameFolder(
+          folderDraft.folder.id,
+          name,
+        );
         invalidateInflightRefresh();
         setFolders((prev) => {
           const next = prev.map((folder) =>
@@ -1678,17 +3564,29 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     }
   };
 
-  const deleteFolder = async (folder: ServerFolder) => {
-    if (
-      !window.confirm(
-        `删除文件夹 "${folder.name}"? 文件会移动到根目录，子文件夹会被删除。`,
-      )
-    ) {
+  const deleteFolder = (folder: ServerFolder) => {
+    setFolderContextMenu(null);
+    setFolderDeleteTarget(folder);
+  };
+
+  const confirmDeleteFolder = async () => {
+    const folder = folderDeleteTarget;
+    if (!folder || folderDeleteBusy) {
       return;
     }
+    const isMappedRoot = !!folder.is_mapping_root;
+    setFolderDeleteBusy(true);
     try {
-      await ServerSync.deleteFolder(folder.id);
+      const result = await ServerSync.deleteFolder(folder.id);
       invalidateInflightRefresh();
+      if (
+        isMappedRoot &&
+        result?.scan &&
+        result.scan.state === "idle" &&
+        !result.scan.running
+      ) {
+        setCatalogScanNotice(null);
+      }
       setFolders((prev) => {
         const next = prev.filter((item) => item.id !== folder.id);
         writeFileListTreeCache({ folders: next, files: filesRef.current });
@@ -1697,11 +3595,31 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       if (currentFolderId === folder.id) {
         setCurrentFolderId(ROOT_ID);
       }
+      setFolderDeleteTarget(null);
       void refresh({ silent: true, noErrorOnFailure: true }).catch(() => {
         // Background reconcile; optimistic state already applied.
       });
     } catch (err: any) {
       setError(err.message);
+    } finally {
+      setFolderDeleteBusy(false);
+    }
+  };
+
+  const openLocalFolder = async (folder: ServerFolder) => {
+    setFolderContextMenu(null);
+    try {
+      await ServerSync.openLocalFolder(folder.id);
+    } catch (err: any) {
+      setError(err.message ?? "打开本地文件夹失败");
+    }
+  };
+
+  const openLocalFile = async (file: ServerFile) => {
+    try {
+      await ServerSync.openLocalFile(file.id);
+    } catch (err: any) {
+      setError(err.message ?? "打开文件位置失败");
     }
   };
 
@@ -1710,19 +3628,141 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const getOrderedFolderChildIds = useCallback(
     (parentId: string | null) =>
       folders
-        .filter((f) => folderParentId(f) === parentId)
+        .filter((f) => folderTreeParentId(f) === parentId)
         .sort(compareManual)
         .map((f) => f.id),
     [folders],
   );
+
+  const applyMappingRootResult = useCallback(
+    (
+      result: MappingRootResult,
+      options: { activateLocalDirectory?: boolean } = {},
+    ): string | null => {
+      devDebug("file-list", "[DEBUG] mapping-root | apply result", {
+        folderId: result.folder?.id ?? null,
+        folderName: result.folder?.name ?? null,
+        absPathTail: result.mappingRoot?.absPath?.slice(-160) ?? null,
+        tree: summarizeFileListTreeForDebug(result.tree),
+        scanState: result.scan?.state ?? result.tree.scan?.state ?? null,
+        scanPass: result.scan?.pass ?? result.tree.scan?.pass ?? null,
+      });
+      if (options.activateLocalDirectory ?? true) {
+        setSidebarView("all");
+        setAllFilesTreeExpanded(true);
+      }
+      setFolders(result.tree.folders);
+      setFiles(result.tree.files);
+      setCatalogCapabilities(
+        parseCatalogCapabilities(result.tree.capabilities),
+      );
+      if (result.tree.scan?.state === "running" || result.tree.scan?.running) {
+        setCatalogScanNotice("正在后台索引本地文件夹，文件会陆续出现…");
+      } else if (result.tree.scan?.state === "error") {
+        setCatalogScanNotice(
+          result.tree.scan.error ?? "本地文件夹索引失败",
+        );
+      } else {
+        setCatalogScanNotice(null);
+      }
+      writeFileListTreeCache(result.tree);
+      const folderId = result.folder?.id ?? null;
+      if (folderId) {
+        setExpandedFolders((prev) => ({ ...prev, [folderId]: true }));
+      }
+      setError(null);
+      return folderId;
+    },
+    [],
+  );
+
+  const addMappedFolder = useCallback(async () => {
+    if (!catalogCapabilities.addMappedFolder || mappingBusy) {
+      return;
+    }
+    setMappingBusy(true);
+    try {
+      const result = await addMappedFolderRoot();
+      if (!result) {
+        return;
+      }
+      const folderId = applyMappingRootResult(result);
+      if (folderId) {
+        setCurrentFolderId(folderId);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setMappingBusy(false);
+    }
+  }, [
+    applyMappingRootResult,
+    catalogCapabilities.addMappedFolder,
+    mappingBusy,
+  ]);
+
+  const pickMappedFolderForSaveDialog = useCallback(async (): Promise<
+    DiskFolderPickResult | null
+  > => {
+    if (!catalogCapabilities.addMappedFolder || mappingBusy) {
+      return null;
+    }
+    setMappingBusy(true);
+    try {
+      const result = await addMappedFolderRoot();
+      if (!result?.folder?.id) {
+        return null;
+      }
+      applyMappingRootResult(result);
+      return {
+        folderId: result.folder.id,
+        absPath: result.mappingRoot.absPath,
+      };
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return null;
+    } finally {
+      setMappingBusy(false);
+    }
+  }, [
+    applyMappingRootResult,
+    catalogCapabilities.addMappedFolder,
+    mappingBusy,
+  ]);
+
+  const pickMappedFolderForDialog = useCallback(async (): Promise<
+    string | null
+  > => {
+    if (!catalogCapabilities.addMappedFolder || mappingBusy) {
+      return null;
+    }
+    setMappingBusy(true);
+    try {
+      const result = await addMappedFolderRoot();
+      if (!result) {
+        return null;
+      }
+      return applyMappingRootResult(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return null;
+    } finally {
+      setMappingBusy(false);
+    }
+  }, [
+    applyMappingRootResult,
+    catalogCapabilities.addMappedFolder,
+    mappingBusy,
+  ]);
 
   const quickCreateFolder = useCallback(async () => {
     if (folderCreateInFlightRef.current) {
       return;
     }
     folderCreateInFlightRef.current = true;
-    const parentId =
-      currentFolderId === ROOT_ID ? null : currentFolderId;
+    const parentId = isSelectedFolderId(currentFolderId, foldersById)
+      ? currentFolderId
+      : null;
     let name = "新建文件夹";
     let suffix = 1;
     const siblingNames = new Set(
@@ -1789,6 +3829,17 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       if (sourceId === targetId) {
         return false;
       }
+      const source = foldersById.get(sourceId);
+      if (source?.is_mapping_root) {
+        if (targetId === "__ROOT__") {
+          return mode === "into";
+        }
+        if (mode === "into") {
+          return false;
+        }
+        const target = foldersById.get(targetId);
+        return !!target && folderTreeParentId(target) === null;
+      }
       const underSource = getDescendantFolderIds(sourceId, folders);
       if (mode === "into") {
         return !underSource.has(targetId);
@@ -1839,12 +3890,16 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
           mode,
         });
         if (targetId === "__ROOT__") {
-          const ids = getOrderedFolderChildIds(ROOT_ID).filter((id) => id !== sourceId);
+          const ids = getOrderedFolderChildIds(ROOT_ID).filter(
+            (id) => id !== sourceId,
+          );
           ids.push(sourceId);
           await ServerSync.saveOrder(ROOT_ID, toItems(ids));
         } else if (mode === "into") {
           const parentId = targetId;
-          const ids = getOrderedFolderChildIds(parentId).filter((id) => id !== sourceId);
+          const ids = getOrderedFolderChildIds(parentId).filter(
+            (id) => id !== sourceId,
+          );
           ids.push(sourceId);
           await ServerSync.saveOrder(parentId, toItems(ids));
           setExpandedFolders((prev) => ({ ...prev, [parentId]: true }));
@@ -1871,7 +3926,11 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
           });
           await ServerSync.saveOrder(parentId, toItems(ordered));
         }
-        debugFolderDnd("apply drop done", { sourceId8: sourceId.slice(0, 8), targetId, mode });
+        debugFolderDnd("apply drop done", {
+          sourceId8: sourceId.slice(0, 8),
+          targetId,
+          mode,
+        });
         await refresh({ silent: true });
       } catch (err: any) {
         debugFolderDnd("apply drop failed", {
@@ -1883,16 +3942,14 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         setError(err.message ?? "文件夹移动失败");
       }
     },
-    [
-      foldersById,
-      getOrderedFolderChildIds,
-      isValidFolderDrop,
-      refresh,
-    ],
+    [foldersById, getOrderedFolderChildIds, isValidFolderDrop, refresh],
   );
 
   const isFolderListDrag = (e: React.DragEvent) =>
     !!draggingFolderId || e.dataTransfer.types.includes(FOLDER_DND_MIME);
+
+  const isSidebarFileDrop = (e: React.DragEvent) =>
+    !isFolderListDrag(e) && e.dataTransfer.types.includes("Files");
 
   const readFolderDragSourceId = (e: React.DragEvent): string | null => {
     if (draggingFolderId) {
@@ -1925,10 +3982,10 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       e.altKey && !(nearTop || nearBottom)
         ? ["into", "before", "after"]
         : nearTop || nearBottom
-          ? ratio < 0.5
-            ? ["before", "after"]
-            : ["after", "before"]
-          : ["before", "after", "into"];
+        ? ratio < 0.5
+          ? ["before", "after"]
+          : ["after", "before"]
+        : ["before", "after", "into"];
     for (const mode of modes) {
       if (isValidFolderDrop(src, folderId, mode)) {
         e.dataTransfer.dropEffect = "move";
@@ -1965,11 +4022,19 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     setDraggingFolderId(folderId);
     debugFolderDnd("drag start", {
       sourceId8: folderId.slice(0, 8),
-      hint: "localStorage excalidraw-filelist-folder-dnd-debug=1",
     });
   };
 
   const onFolderRowDragOver = (e: React.DragEvent, folder: ServerFolder) => {
+    if (isSidebarFileDrop(e)) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = "copy";
+      clearFileDropHover();
+      setSidebarFileDropTargetId(folder.id);
+      setFolderDropInd({ targetId: folder.id, mode: "into" });
+      return;
+    }
     if (!isFolderListDrag(e)) {
       return;
     }
@@ -1978,6 +4043,21 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   };
 
   const onFolderRowDrop = (e: React.DragEvent, folder: ServerFolder) => {
+    if (isSidebarFileDrop(e)) {
+      e.preventDefault();
+      e.stopPropagation();
+      setSidebarFileDropTargetId(null);
+      setFolderDropInd(null);
+      const { files } = e.dataTransfer;
+      if (!files?.length) {
+        setError("未能读取拖入的文件，请重试。");
+        return;
+      }
+      void handleSceneFiles(Array.from(files), {
+        intent: { type: "import", folderId: folder.id },
+      });
+      return;
+    }
     if (!isFolderListDrag(e)) {
       return;
     }
@@ -2047,26 +4127,61 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       });
       return;
     }
-    debugFolderDnd("root drop", { sourceId8: sourceId.slice(0, 8), mode: "into" });
+    debugFolderDnd("root drop", {
+      sourceId8: sourceId.slice(0, 8),
+      mode: "into",
+    });
     void applyFolderDrop(sourceId, "__ROOT__", "into");
+  };
+
+  const onRecentRowDragOver = (e: React.DragEvent) => {
+    if (!isSidebarFileDrop(e)) {
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "copy";
+    clearFileDropHover();
+    setSidebarFileDropTargetId("__RECENT__");
+  };
+
+  const onRecentRowDrop = (e: React.DragEvent) => {
+    if (!isSidebarFileDrop(e)) {
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    setSidebarFileDropTargetId(null);
+    const { files } = e.dataTransfer;
+    if (!files?.length) {
+      setError("未能读取拖入的文件，请重试。");
+      return;
+    }
+    void handleSceneFiles(Array.from(files), {
+      intent: { type: "track-recent" },
+    });
   };
 
   // ── Render helpers ──
 
   const renderFolderTree = (parentId: string | null, depth = 0) => {
     const children = folders
-      .filter((folder) => folderParentId(folder) === parentId)
+      .filter((folder) => folderTreeParentId(folder) === parentId)
       .sort(compareManual);
     return children.map((folder) => {
-      const hasChildren = folders.some((f) => folderParentId(f) === folder.id);
-      const expanded = expandedFolders[folder.id] ?? true;
-      const active = currentFolderId === folder.id;
+      const hasChildren = folders.some(
+        (f) => folderTreeParentId(f) === folder.id,
+      );
+      const expanded = expandedFolders[folder.id] ?? false;
+      const active =
+        sidebarView === "all" && currentFolderId === folder.id;
       const isDragging = draggingFolderId === folder.id;
       const ind = folderDropIndicator;
-      const showBefore =
-        ind?.targetId === folder.id && ind.mode === "before";
+      const showBefore = ind?.targetId === folder.id && ind.mode === "before";
       const showAfter = ind?.targetId === folder.id && ind.mode === "after";
-      const showInto = ind?.targetId === folder.id && ind.mode === "into";
+      const showInto =
+        (ind?.targetId === folder.id && ind.mode === "into") ||
+        sidebarFileDropTargetId === folder.id;
       return (
         <div key={folder.id} className="filelist__tree-node">
           <div
@@ -2090,10 +4205,9 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
                 .filter(Boolean)
                 .join(" ")}
               style={
-                depth > 0
-                  ? { paddingLeft: `${depth * 0.75}rem` }
-                  : undefined
+                depth > 0 ? { paddingLeft: `${depth * 0.75}rem` } : undefined
               }
+              onContextMenu={(e) => openFolderContextMenu(e, folder)}
             >
               <span
                 className="filelist__tree-drag-handle"
@@ -2107,13 +4221,15 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
               <button
                 type="button"
                 className="filelist__tree-toggle"
-                onClick={() =>
+                onClick={(event) => {
+                  event.stopPropagation();
                   setExpandedFolders((prev) => ({
                     ...prev,
                     [folder.id]: !expanded,
-                  }))
-                }
+                  }));
+                }}
                 aria-label={expanded ? "折叠文件夹" : "展开文件夹"}
+                aria-expanded={hasChildren ? expanded : undefined}
               >
                 {hasChildren && (
                   <span
@@ -2133,22 +4249,6 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
                 <Icon type="folder" size={16} />
                 <span>{folder.name}</span>
               </button>
-              <button
-                type="button"
-                className="filelist__tree-action"
-                title="重命名文件夹"
-                onClick={() => startRenameFolder(folder)}
-              >
-                <Icon type="edit" size={14} />
-              </button>
-              <button
-                type="button"
-                className="filelist__tree-action filelist__tree-action--danger"
-                title="删除文件夹"
-                onClick={() => void deleteFolder(folder)}
-              >
-                <Icon type="delete" size={14} />
-              </button>
             </div>
           </div>
           {expanded && renderFolderTree(folder.id, depth + 1)}
@@ -2157,127 +4257,228 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     });
   };
 
-  const selectAllFilesView = useCallback(() => {
-    setSidebarView("all");
-    selectFolder(ROOT_ID);
-    setAllFilesTreeExpanded(true);
-  }, [selectFolder, setSidebarView]);
+  const renderFolderContextMenu = () => {
+    if (!folderContextMenu) {
+      return null;
+    }
+    const folder = folderContextMenu.folder;
+    const canOpenLocalFolder = isFolderUnderMappedRoot(folder);
+    return (
+      <div
+        className="filelist__folder-context-menu"
+        role="menu"
+        style={{
+          left: folderContextMenu.x,
+          top: folderContextMenu.y,
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        {canOpenLocalFolder ? (
+          <button
+            type="button"
+            role="menuitem"
+            className="filelist__folder-context-menu-item"
+            onClick={() => void openLocalFolder(folder)}
+          >
+            <Icon type="folder" size={15} />
+            <span>打开本地文件夹</span>
+          </button>
+        ) : null}
+        <button
+          type="button"
+          role="menuitem"
+          className="filelist__folder-context-menu-item"
+          onClick={() => startCreateFolderInParent(folder)}
+        >
+          <Icon type="plus" size={15} />
+          <span>新建文件夹</span>
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          className="filelist__folder-context-menu-item"
+          onClick={() => startRenameFolder(folder)}
+        >
+          <Icon type="edit" size={15} />
+          <span>重命名文件夹</span>
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          className="filelist__folder-context-menu-item filelist__folder-context-menu-item--danger"
+          onClick={() => void deleteFolder(folder)}
+        >
+          <Icon type="delete" size={15} />
+          <span>{folder.is_mapping_root ? "移除映射" : "删除文件夹"}</span>
+        </button>
+      </div>
+    );
+  };
 
   const toggleAllFilesTree = useCallback(() => {
     setAllFilesTreeExpanded((open) => !open);
   }, []);
 
+  const selectLocalDirectoryView = useCallback(() => {
+    if (isFileListLayoutDebugEnabled()) {
+      const data = {
+        trigger: "selectLocalDirectoryView",
+        fromSidebarView: sidebarViewRef.current,
+        fromFolderId: currentFolderIdRef.current ?? "__ROOT__",
+      };
+      queueTopbarLayoutDebug("after selectLocalDirectoryView topbar layout", data);
+      debugFileListLayout(
+        "before selectLocalDirectoryView setState",
+        collectLayoutDebugData(data),
+      );
+      traceTopbarLayoutFrames("selectLocalDirectoryView", data);
+    }
+    setSidebarView("all");
+    setCurrentFolderId(null);
+    setMobileTreeOpen(false);
+  }, [
+    collectLayoutDebugData,
+    queueTopbarLayoutDebug,
+    setCurrentFolderId,
+    setSidebarView,
+    traceTopbarLayoutFrames,
+  ]);
+
   const renderSidebarNav = () => (
-      <nav className="filelist__sidebar-menu" aria-label="文件列表分区">
+    <nav className="filelist__sidebar-menu" aria-label="文件列表分区">
+      <div
+        className={[
+          "filelist__sidebar-menu-row",
+          sidebarView === "recent"
+            ? "filelist__sidebar-menu-row--active"
+            : "",
+          sidebarFileDropTargetId === "__RECENT__"
+            ? "filelist__sidebar-menu-row--drop-into"
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        onDragOver={onRecentRowDragOver}
+        onDrop={onRecentRowDrop}
+      >
         <button
           type="button"
           className={[
             "filelist__sidebar-menu-item",
-            sidebarView === "recent" ? "filelist__sidebar-menu-item--active" : "",
+            sidebarView === "recent"
+              ? "filelist__sidebar-menu-item--active"
+              : "",
           ]
             .filter(Boolean)
             .join(" ")}
-          onClick={() => setSidebarView("recent")}
+          onClick={() => {
+            if (isFileListLayoutDebugEnabled()) {
+              const data = {
+                trigger: "sidebarView-recent",
+                fromSidebarView: sidebarViewRef.current,
+                fromFolderId: currentFolderIdRef.current ?? "__ROOT__",
+              };
+              queueTopbarLayoutDebug("after sidebarView recent topbar layout", data);
+              debugFileListLayout(
+                "before sidebarView recent setState",
+                collectLayoutDebugData(data),
+              );
+            }
+            setSidebarView("recent");
+          }}
         >
           <span className="filelist__sidebar-menu-icon" aria-hidden>
             <Icon type="clock" size={18} />
           </span>
           <span className="filelist__sidebar-menu-label">最近</span>
         </button>
+      </div>
 
-        <div className="filelist__sidebar-divider" role="separator" />
+      <div className="filelist__sidebar-divider" role="separator" />
 
-        <div className="filelist__sidebar-section">
-          <div
+      <div className="filelist__sidebar-section">
+        <div
+          className={[
+            "filelist__sidebar-menu-row",
+            isLocalDirectoryRoot
+              ? "filelist__sidebar-menu-row--active"
+              : "",
+            folderDropIndicator?.targetId === "__ROOT__" &&
+            folderDropIndicator.mode === "into"
+              ? "filelist__sidebar-menu-row--drop-into"
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          onDragOver={onRootRowDragOver}
+          onDrop={onRootRowDrop}
+        >
+          <button
+            type="button"
             className={[
-              "filelist__sidebar-menu-row",
-              sidebarView === "all" && currentFolderId === ROOT_ID
-                ? "filelist__sidebar-menu-row--active"
-                : "",
-              folderDropIndicator?.targetId === "__ROOT__" &&
-              folderDropIndicator.mode === "into"
-                ? "filelist__sidebar-menu-row--drop-into"
+              "filelist__sidebar-menu-item",
+              isLocalDirectoryRoot
+                ? "filelist__sidebar-menu-item--active"
                 : "",
             ]
               .filter(Boolean)
               .join(" ")}
-            onDragOver={onRootRowDragOver}
-            onDrop={onRootRowDrop}
+            onClick={selectLocalDirectoryView}
           >
-            <button
-              type="button"
+            <span className="filelist__sidebar-menu-icon" aria-hidden>
+              <Icon type="home" size={18} />
+            </span>
+            <span className="filelist__sidebar-menu-label">本地目录</span>
+          </button>
+          <button
+            type="button"
+            className="filelist__sidebar-menu-chevron"
+            aria-expanded={allFilesTreeExpanded}
+            aria-label={
+              allFilesTreeExpanded ? "收起文件夹" : "展开文件夹"
+            }
+            onClick={toggleAllFilesTree}
+          >
+            <span
               className={[
-                "filelist__sidebar-menu-item",
-                sidebarView === "all" && currentFolderId === ROOT_ID
-                  ? "filelist__sidebar-menu-item--active"
+                "filelist__sidebar-menu-chevron-icon",
+                allFilesTreeExpanded
+                  ? "filelist__sidebar-menu-chevron-icon--open"
                   : "",
               ]
                 .filter(Boolean)
                 .join(" ")}
-              onClick={selectAllFilesView}
             >
-              <span className="filelist__sidebar-menu-icon" aria-hidden>
-                <Icon type="home" size={18} />
-              </span>
-              <span className="filelist__sidebar-menu-label">所有文件</span>
-            </button>
-            <button
-              type="button"
-              className="filelist__sidebar-menu-chevron"
-              aria-expanded={
-                sidebarView === "all" && allFilesTreeExpanded
-              }
-              aria-label={
-                sidebarView === "all" && allFilesTreeExpanded
-                  ? "收起文件夹"
-                  : "展开文件夹"
-              }
-              onClick={(event) => {
-                event.stopPropagation();
-                if (sidebarView !== "all") {
-                  setSidebarView("all");
-                  selectFolder(currentFolderId ?? ROOT_ID);
-                  setAllFilesTreeExpanded(true);
-                  return;
-                }
-                toggleAllFilesTree();
-              }}
-            >
-              <span
-                className={[
-                  "filelist__sidebar-menu-chevron-icon",
-                  sidebarView === "all" && allFilesTreeExpanded
-                    ? "filelist__sidebar-menu-chevron-icon--open"
-                    : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-              >
-                <Icon type="chevron" size={16} />
-              </span>
-            </button>
-          </div>
-
-          {sidebarView === "all" && allFilesTreeExpanded ? (
-            <div className="filelist__sidebar-subtree">
-              <button
-                type="button"
-                className="filelist__sidebar-subtree-action"
-                onClick={() => void quickCreateFolder()}
-              >
-                <Icon type="plus" size={14} />
-                <span>新建文件夹</span>
-              </button>
-              <div className="filelist__tree filelist__tree--nested">
-                {renderFolderTree(ROOT_ID)}
-              </div>
-            </div>
-          ) : null}
+              <Icon type="chevron" size={16} />
+            </span>
+          </button>
         </div>
-      </nav>
+
+        {allFilesTreeExpanded ? (
+          <div className="filelist__sidebar-subtree">
+            <div className="filelist__tree filelist__tree--nested">
+              {renderFolderTree(ROOT_ID)}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </nav>
   );
 
-  const renderTopbarImport = () => (
+  const renderSceneImportControl = () => {
+    const isRecentOpen = sidebarView === "recent";
+    const actionLabel = importing
+      ? isRecentOpen
+        ? "打开中…"
+        : "导入中…"
+      : isRecentOpen
+      ? "打开"
+      : "导入";
+    const actionTitle = isRecentOpen
+      ? `打开 ${editorRegistry.importableEditorNames()} 文档并添加到最近`
+      : `导入 ${editorRegistry.importableEditorNames()} 文档`;
+    return (
     <label
       className={[
         "filelist__topbar-import",
@@ -2289,11 +4490,11 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         .join(" ")}
       aria-disabled={importing || undefined}
       aria-busy={importing || undefined}
-      title={`导入 ${editorRegistry.importableEditorNames()} 文档`}
+      title={actionTitle}
     >
       <span className="filelist__import-scene-facade">
         <Icon type="upload" size={18} />
-        {importing ? "导入中…" : "导入"}
+        {actionLabel}
       </span>
       <input
         id={FILELIST_SCENE_IMPORT_INPUT_ID}
@@ -2307,7 +4508,124 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         tabIndex={-1}
       />
     </label>
-  );
+    );
+  };
+
+  const renderTopbarViewModeToggle = () => {
+    const showDefaultDataDirectoryToggle =
+      sidebarView === "all" && isLocalDirectoryRoot && isDesktopEditorHub();
+    const showFlatFolderToggle =
+      sidebarView === "all" &&
+      (isBrowsingSubfolder || !isDesktopEditorHub());
+
+    if (showDefaultDataDirectoryToggle) {
+      return (
+        <button
+          type="button"
+          className={[
+            "filelist__view-mode-toggle",
+            defaultDataDirectoryOnlyView
+              ? "filelist__view-mode-toggle--active"
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          aria-pressed={defaultDataDirectoryOnlyView}
+          aria-label={
+            defaultDataDirectoryOnlyView
+              ? "只看默认目录：仅显示默认数据目录中的文件"
+              : "显示全部本地目录中的文件"
+          }
+          title={
+            defaultDataDirectoryOnlyView
+              ? "当前只看默认目录；点击后显示全部本地目录"
+              : "当前显示全部本地目录；点击后只看默认目录"
+          }
+          onClick={() =>
+            setDefaultDataDirectoryOnlyView(!defaultDataDirectoryOnlyView)
+          }
+        >
+          {DEFAULT_DATA_DIRECTORY_ONLY_LABEL}
+        </button>
+      );
+    }
+
+    if (showFlatFolderToggle) {
+      return (
+        <button
+          type="button"
+          className={[
+            "filelist__view-mode-toggle",
+            flatFolderView ? "filelist__view-mode-toggle--active" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          aria-pressed={flatFolderView}
+          aria-label={
+            flatFolderView
+              ? "只看直属文件：仅显示当前文件夹直属文件"
+              : "已包含子文件夹内文件"
+          }
+          title={
+            flatFolderView
+              ? "当前只看直属文件；点击后包含子文件夹"
+              : "当前包含子文件夹内文件；点击后只看直属文件"
+          }
+          onClick={() => setFlatFolderView(!flatFolderView)}
+        >
+          {FLAT_FOLDER_VIEW_LABEL}
+        </button>
+      );
+    }
+
+    return null;
+  };
+
+  const renderTopbarImport = () => renderSceneImportControl();
+
+  const renderLocalDirectoryHub = () => {
+    const openFolderLabel = catalogCapabilities.addMappedFolder
+      ? mappingBusy
+        ? "添加中…"
+        : catalogScanNotice
+        ? "索引中…"
+        : "添加本地目录"
+      : "新建文件夹";
+    return (
+      <div className="filelist__local-hub">
+        <div className="filelist__local-hub-icon-wrap">
+          <Icon type="home" size={64} />
+        </div>
+        <h2 className="filelist__local-hub-title">本地目录</h2>
+        <p className="filelist__local-hub-desc">
+          添加本地文件夹以浏览与管理文件，或新建文档。
+        </p>
+        <div className="filelist__local-hub-actions">
+          <button
+            type="button"
+            className="filelist__local-hub-btn filelist__new-btn"
+            onClick={() => openNewFileDialog()}
+          >
+            <Icon type="plus" size={18} />
+            <span>新建</span>
+          </button>
+          <button
+            type="button"
+            className="filelist__local-hub-btn filelist__import-scene-btn"
+            disabled={mappingBusy}
+            onClick={() =>
+              void (catalogCapabilities.addMappedFolder
+                ? addMappedFolder()
+                : quickCreateFolder())
+            }
+          >
+            <Icon type="folder" size={18} />
+            <span>{openFolderLabel}</span>
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   const renderSidebarTools = () => (
     <div className="filelist__sidebar-tools">
@@ -2337,15 +4655,25 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     </div>
   );
 
-  const renderSidebar = () => (
-    <aside
-      className="filelist__sidebar filelist__sidebar--nav"
-      ref={sidebarRef}
-    >
+  const renderSidebarBrand = () =>
+    !isDesktopEditorHub() ? (
       <div className="filelist__sidebar-brand">
         <ImageIcon src={MAIN_SITE_ICON} alt="" size={22} />
         <span className="filelist__sidebar-brand-title">{HOME_APP_TITLE}</span>
       </div>
+    ) : null;
+
+  const renderSidebar = () => (
+    <aside
+      className={[
+        "filelist__sidebar filelist__sidebar--nav",
+        isDesktopEditorHub() ? "filelist__sidebar--desktop" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      ref={sidebarRef}
+    >
+      {renderSidebarBrand()}
       <div className="filelist__sidebar-scroll">
         {renderSidebarNav()}
         {renderSidebarTools()}
@@ -2376,23 +4704,28 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     const state = draftStateById[f.id];
     const syncState = state?.syncState ?? "synced";
     const preferLocalThumb = isBrowserDraft || syncState === "draft";
-    const localDraftThumb =
-      state?.localDraftThumb ??
-      (preferLocalThumb ? LocalThumbnailCache.get(f.id) : null);
-    const localThumb = preferLocalThumb ? localDraftThumb : null;
+    const localDraftThumb = state?.localDraftThumb ?? null;
+    const localThumb = localDraftThumb;
+    const fetchedThumbContentSha =
+      syncState === "draft" && fetchedThumbs[f.id]
+        ? (fetchedThumbHashByIdRef.current[f.id] ?? f.content_sha256 ?? null)
+        : fetchedThumbHashByIdRef.current[f.id] === fileThumbnailCacheKey(f)
+          ? f.content_sha256 ?? null
+          : null;
     const shouldUseDraftPreview = preferLocalThumb;
-    const thumbnailChoice = chooseFileCardThumbnail({
-      syncState,
-      preferLocalThumb,
-      localThumb,
-      fetchedThumb: fetchedThumbs[f.id] ?? null,
-    });
+    const thumbnailChoice = chooseFileCardThumbnailForFile(
+      f.id,
+      f,
+      fetchedThumbs[f.id] ?? null,
+      fetchedThumbContentSha,
+    );
     const thumbSvg = thumbnailChoice.thumbSvg;
     const kind = editorRegistry.resolveKind(f.kind);
     const thumbDisplay = resolveFileCardThumbDisplay(
       f.id,
       f,
       fetchedThumbs[f.id] ?? null,
+      fetchedThumbContentSha,
     );
     const cardThumbSvg = thumbDisplay.cardThumbSvg;
     if (syncState === "draft" || !thumbSvg) {
@@ -2411,7 +4744,11 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         finalSource: thumbnailChoice.finalSource,
       });
     }
-    if (kind === "mindmap" && cardThumbSvg && isFileListThumbnailDebugEnabled()) {
+    if (
+      kind === "mindmap" &&
+      cardThumbSvg &&
+      isFileListThumbnailDebugEnabled()
+    ) {
       debugFileListThumbnail("mindmap thumbnail svg", {
         id: f.id,
         id8: f.id.slice(0, 8),
@@ -2446,6 +4783,27 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     }
     const q = searchQuery.trim();
     const thumbLoading = thumbDisplay.thumbLoading;
+    const thumbSwitchLoading = thumbDisplay.thumbSwitchLoading;
+    const isRecentView = sidebarView === "recent";
+    const recentAbsPath = isRecentView
+      ? recentCatalogFileIdToAbsPath[f.id]
+      : undefined;
+    const recentPathStaleOnDisk =
+      !!recentAbsPath && !!recentPathResolveFailed[recentAbsPath];
+    const cardBadge =
+      thumbSwitchLoading
+        ? null
+        : thumbDisplay.badge === "draft" || recentPathStaleOnDisk
+          ? "draft"
+          : thumbDisplay.badge;
+    const canLocateFile =
+      !isBrowserDraft &&
+      isDesktopEditorHub() &&
+      catalogCapabilities.folderMapping;
+    const canMoveFileBetweenFolders =
+      !isRecentView &&
+      !isBrowserDraft &&
+      catalogCapabilities.folderMapping;
     return (
       <div
         key={f.id}
@@ -2478,55 +4836,110 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
           kind={kind}
           cardThumbSvg={cardThumbSvg}
           thumbLoading={thumbLoading}
-          badge={thumbDisplay.badge}
+          thumbSwitchLoading={thumbSwitchLoading}
+          thumbBlank={thumbDisplay.thumbBlank}
+          badge={cardBadge}
           thumbBg={thumbDisplay.thumbBg}
           ref={(node: HTMLDivElement | null) => thumbRefCallback(node, f.id)}
           data-thumb-file-id={f.id}
         >
           <div className="filelist__card-actions">
-            <button
-              className="filelist__card-action"
-              title="重命名"
-              onPointerDown={() => suppressNextCardOpen(f.id)}
-              onClick={(e) => startRename(e, f.id, f.name)}
-            >
-              <Icon type="edit" size={16} />
-            </button>
-            {!isBrowserDraft ? (
-              <button
-                className="filelist__card-action"
-                title="移动到文件夹"
-                onClick={(e) => openMoveDialog(e, f)}
-              >
-                <Icon type="move" size={16} />
-              </button>
-            ) : null}
-            {!isBrowserDraft ? (
-              <button
-                className="filelist__card-action"
-                title="嵌入到网页"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setEmbedFile(f);
-                }}
-              >
-                <Icon type="embed" size={16} />
-              </button>
-            ) : null}
-            <button
-              className="filelist__card-action"
-              title="下载"
-              onClick={(e) => handleDownload(e, f.id, f.name)}
-            >
-              <Icon type="download" size={16} />
-            </button>
-            <button
-              className="filelist__card-action filelist__card-action--danger"
-              title="删除"
-              onClick={(e) => handleDelete(e, f.id, f.name)}
-            >
-              <Icon type="delete" size={16} />
-            </button>
+            {!isRecentView ? (
+              <>
+                <button
+                  className="filelist__card-action"
+                  title="重命名"
+                  onPointerDown={() => suppressNextCardOpen(f.id)}
+                  onClick={(e) => startRename(e, f.id, f.name)}
+                >
+                  <Icon type="edit" size={16} />
+                </button>
+                {canMoveFileBetweenFolders ? (
+                  <button
+                    className="filelist__card-action"
+                    title="移动位置"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMoveDialogExpandedFolders({});
+                      setMoveDialogFile(f);
+                      setMoveTargetFolderId(f.folder_id ?? null);
+                    }}
+                  >
+                    <Icon type="move" size={16} />
+                  </button>
+                ) : null}
+                {!isBrowserDraft && showWebOnlyFileActions ? (
+                  <button
+                    className="filelist__card-action"
+                    title="嵌入到网页"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEmbedFile(f);
+                    }}
+                  >
+                    <Icon type="embed" size={16} />
+                  </button>
+                ) : null}
+                {canLocateFile ? (
+                  <button
+                    className="filelist__card-action"
+                    title="在文件管理器中显示"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void openLocalFile(f);
+                    }}
+                  >
+                    <Icon type="folder" size={16} />
+                  </button>
+                ) : !isBrowserDraft ? (
+                  <button
+                    className="filelist__card-action"
+                    title="下载"
+                    onClick={(e) => handleDownload(e, f.id, f.name)}
+                  >
+                    <Icon type="download" size={16} />
+                  </button>
+                ) : null}
+                <button
+                  className="filelist__card-action filelist__card-action--danger"
+                  title="删除"
+                  onClick={(e) => handleDelete(e, f)}
+                >
+                  <Icon type="delete" size={16} />
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  className="filelist__card-action"
+                  title="重命名"
+                  onPointerDown={() => suppressNextCardOpen(f.id)}
+                  onClick={(e) => startRename(e, f.id, f.name)}
+                >
+                  <Icon type="edit" size={16} />
+                </button>
+                <button
+                  className="filelist__card-action"
+                  title="在文件管理器中显示"
+                  disabled={!canLocateFile}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (canLocateFile) {
+                      void openLocalFile(f);
+                    }
+                  }}
+                >
+                  <Icon type="folder" size={16} />
+                </button>
+                <button
+                  className="filelist__card-action"
+                  title="移除"
+                  onClick={(e) => handleRemoveFromRecent(e, f)}
+                >
+                  <Icon type="removeRecent" size={16} />
+                </button>
+              </>
+            )}
           </div>
         </FileCardThumb>
         <div className="filelist__card-body">
@@ -2562,9 +4975,12 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
                 onPointerDown={() => suppressNextCardOpen(f.id)}
                 onClick={(e) => {
                   e.stopPropagation();
-                  logFileListOpen("card name click → startRename (same as rename button)", {
-                    fileId8: f.id.slice(0, 8),
-                  });
+                  logFileListOpen(
+                    "card name click → startRename (same as rename button)",
+                    {
+                      fileId8: f.id.slice(0, 8),
+                    },
+                  );
                   startRename(e, f.id, f.name);
                 }}
               >
@@ -2574,18 +4990,29 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
           </div>
           <div className="filelist__card-meta">
             <span>{new Date(effectiveUpdatedAt(f)).toLocaleString()}</span>
-            {(f.archive_count ?? 0) > 0 && (
-              <span className="filelist__card-badge">{f.archive_count} 存档</span>
-            )}
+            {catalogCapabilities.archivesEnabled &&
+            (f.archive_count ?? 0) > 0 ? (
+              <span className="filelist__card-badge">
+                {f.archive_count} 存档
+              </span>
+            ) : null}
           </div>
         </div>
       </div>
     );
   };
 
-  const showNewEntryCard = !searchQuery.trim();
+  const showNewEntryCard =
+    !searchQuery.trim() &&
+    (sidebarView === "recent" ||
+      isLocalDirectoryRoot ||
+      isSelectedFolderId(currentFolderId, foldersById));
+  const showLocalDirectoryHub = false;
   const empty =
-    !loading && filteredFiles.length === 0 && !showNewEntryCard;
+    !loading &&
+    filteredFiles.length === 0 &&
+    !showNewEntryCard &&
+    !showLocalDirectoryHub;
 
   /** Same nesting as sidebar tree: children under `parentId`, indent by `depth`. */
   const renderMoveTargetFolderTree = (
@@ -2602,45 +5029,123 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     return childFolders.map((folder) => {
       const isCurrent = currentF === folder.id;
       const isSelected = moveTargetFolderId === folder.id;
+      const hasChildren = folders.some(
+        (fo) => folderParentId(fo) === folder.id,
+      );
+      const expanded = moveDialogExpandedFolders[folder.id] ?? false;
       return (
         <div key={folder.id} className="filelist__move-tree-node">
-          <button
-            type="button"
-            className={[
-              "filelist__move-option",
-              isSelected ? "filelist__move-option--active" : "",
-              isCurrent ? "filelist__move-option--current" : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-            style={{ paddingLeft: `${0.75 + depth * 0.9}rem` }}
-            disabled={isCurrent}
-            onClick={() => setMoveTargetFolderId(folder.id)}
+          <div
+            className="filelist__move-tree-row"
+            style={
+              depth > 0 ? { paddingLeft: `${depth * 0.85}rem` } : undefined
+            }
           >
-            <Icon type="folder" size={16} />
-            <span className="filelist__move-option-label">
-              {folder.name}
-              {isCurrent ? "（当前位置）" : ""}
-            </span>
-          </button>
-          {renderMoveTargetFolderTree(folder.id, depth + 1)}
+            <button
+              type="button"
+              className="filelist__move-tree-toggle"
+              aria-label={expanded ? "折叠文件夹" : "展开文件夹"}
+              aria-expanded={hasChildren ? expanded : undefined}
+              disabled={!hasChildren}
+              onClick={() => {
+                if (!hasChildren) {
+                  return;
+                }
+                setMoveDialogExpandedFolders((prev) => ({
+                  ...prev,
+                  [folder.id]: !expanded,
+                }));
+              }}
+            >
+              {hasChildren ? (
+                <span
+                  className={`filelist__move-tree-chevron ${
+                    expanded ? "filelist__move-tree-chevron--open" : ""
+                  }`}
+                >
+                  <Icon type="chevron" size={14} />
+                </span>
+              ) : null}
+            </button>
+            <button
+              type="button"
+              className={[
+                "filelist__move-option",
+                isSelected ? "filelist__move-option--active" : "",
+                isCurrent ? "filelist__move-option--current" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              disabled={isCurrent}
+              onClick={() => setMoveTargetFolderId(folder.id)}
+            >
+              <Icon type="folder" size={16} />
+              <span className="filelist__move-option-label">
+                {folder.name}
+                {isCurrent ? "（当前位置）" : ""}
+              </span>
+            </button>
+          </div>
+          {expanded && hasChildren
+            ? renderMoveTargetFolderTree(folder.id, depth + 1)
+            : null}
         </div>
       );
     });
   };
 
-  const moveFileInAllFiles = moveDialogFile
-    ? (moveDialogFile.folder_id ?? null) === null
-    : false;
-  const moveTargetIsAllFiles = moveDialogFile
-    ? moveTargetFolderId === null
-    : false;
+
+  const fileListToasts = useMemo(() => {
+    const items: {
+      id: string;
+      message: string;
+      variant: "notice" | "error";
+      persistent?: boolean;
+    }[] = [];
+    if (catalogScanNotice) {
+      items.push({
+        id: "catalog-scan",
+        message: catalogScanNotice,
+        variant: "notice",
+        persistent: true,
+      });
+    }
+    if (importNotice) {
+      items.push({
+        id: "import-notice",
+        message: importNotice,
+        variant: "notice",
+      });
+    }
+    if (error) {
+      items.push({
+        id: "error",
+        message: error,
+        variant: "error",
+      });
+    }
+    return items;
+  }, [catalogScanNotice, error, importNotice]);
 
   return (
-    <div className={`filelist theme--${shellTheme}`}>
+    <div
+      className={[
+        "filelist",
+        shellThemeClassName(shellTheme),
+        isDesktopEditorHub() ? "filelist--desktop" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       {importing && (
         <div className="filelist__import-blocking" aria-busy>
-          <span>正在导入…</span>
+          <div className="filelist__import-card" role="status">
+            <span className="filelist__import-spinner" aria-hidden />
+            <span className="filelist__import-title">正在导入</span>
+            <span className="filelist__import-desc">
+              正在解析文件并生成预览，请稍候
+            </span>
+          </div>
         </div>
       )}
 
@@ -2648,17 +5153,20 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
 
       <div
         className="filelist__workspace"
+        onDragEnter={onFileListImportDragEnter}
+        onDragLeave={onFileListImportDragLeave}
         onDragOver={onFileListImportDragOver}
         onDrop={onFileListImportDrop}
       >
-        {importNotice && (
-          <div className="filelist__notice" role="status">
-            {importNotice}
+        {fileDropHoverActive && !importing ? (
+          <div className="filelist__drop-overlay" aria-hidden>
+            <span className="filelist__drop-overlay-label">
+              {workspaceDropOverlayLabel}
+            </span>
           </div>
-        )}
-        {error && <div className="filelist__error">{error}</div>}
+        ) : null}
 
-        <header className="filelist__topbar">
+        <header className="filelist__topbar" ref={topbarRef}>
           <button
             type="button"
             className="filelist__mobile-menu"
@@ -2673,9 +5181,23 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
                 <span className="filelist__pathbar-label">最近</span>
               ) : (
                 <>
-                  <button type="button" onClick={() => selectAllFilesView()}>
-                    所有文件
+                  <button type="button" onClick={() => selectLocalDirectoryView()}>
+                    本地目录
                   </button>
+                  {defaultDataDirectoryOnlyView &&
+                  isLocalDirectoryRoot &&
+                  defaultDataDirectoryFolderId ? (
+                    <>
+                      <span>/</span>
+                      <button
+                        type="button"
+                        onClick={() => selectFolder(defaultDataDirectoryFolderId)}
+                      >
+                        {foldersById.get(defaultDataDirectoryFolderId)?.name ??
+                          DEFAULT_DATA_DIRECTORY_ONLY_LABEL}
+                      </button>
+                    </>
+                  ) : null}
                   {currentPath.map((folder) => (
                     <React.Fragment key={folder.id}>
                       <span>/</span>
@@ -2692,6 +5214,9 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
             </div>
           </div>
           <div className="filelist__topbar-actions">
+            <div className="filelist__topbar-view-mode-slot shell-toolbar__slot">
+              {sidebarView === "all" ? renderTopbarViewModeToggle() : null}
+            </div>
             <div className="filelist__search-wrap">
               <span className="filelist__search-icon">
                 <Icon type="search" size={16} />
@@ -2737,6 +5262,8 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
                 </div>
               ))}
             </div>
+          ) : showLocalDirectoryHub ? (
+            renderLocalDirectoryHub()
           ) : empty ? (
             <div className="filelist__empty">
               <div className="filelist__empty-icon-wrap">
@@ -2746,15 +5273,20 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
                 {searchQuery
                   ? "没有匹配的文件"
                   : sidebarView === "recent"
-                    ? "最近 7 天内暂无打开记录"
-                    : "当前文件夹为空"}
+                  ? "最近 7 天内暂无打开记录"
+                  : "当前文件夹为空"}
               </p>
             </div>
           ) : (
             <div
-              className="filelist__grid"
+              className={[
+                "filelist__grid",
+                gridEnterAnimate ? "filelist__grid--animate-children" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
               ref={gridRef}
-              key={`${sidebarView}:${currentFolderId ?? "root"}:${sortKey}:${searchQuery.trim()}`}
+              key={gridListKey}
             >
               {showNewEntryCard ? renderNewEntryCard(0) : null}
               {filteredFiles.map((f, i) =>
@@ -2783,12 +5315,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
               </button>
             </div>
             <div className="filelist__mobile-sheet-sidebar">
-              <div className="filelist__sidebar-brand">
-                <ImageIcon src={MAIN_SITE_ICON} alt="" size={22} />
-                <span className="filelist__sidebar-brand-title">
-                  {HOME_APP_TITLE}
-                </span>
-              </div>
+              {renderSidebarBrand()}
               <div className="filelist__sidebar-scroll">
                 {renderSidebarNav()}
                 {renderSidebarTools()}
@@ -2797,6 +5324,8 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
           </div>
         </div>
       )}
+
+      {renderFolderContextMenu()}
 
       {folderDraft && (
         <div
@@ -2846,7 +5375,94 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         </div>
       )}
 
-      <SettingsPanel open={showSettings} onClose={() => setShowSettings(false)} />
+      {folderDeleteTarget ? (
+        <div
+          className={`filelist-dialog-host ${shellThemeClassName()} filelist__detail-overlay`}
+          role="alertdialog"
+          aria-modal
+          {...folderDeleteOverlayDismiss}
+        >
+          <div
+            className="filelist__detail-card filelist__folder-delete-dialog"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <h2 className="filelist__detail-title">
+              {folderDeleteTarget.is_mapping_root ? "移除映射" : "删除文件夹"}
+            </h2>
+            <p className="filelist__new-file-hint">
+              {folderDeleteTarget.is_mapping_root
+                ? `移除映射文件夹「${folderDeleteTarget.name}」？本地磁盘上的文件夹和文件不会被删除。`
+                : `删除文件夹「${folderDeleteTarget.name}」？文件会移动到根目录，子文件夹会被删除。`}
+            </p>
+            <div className="filelist__detail-actions filelist__detail-actions--destructive">
+              <button
+                type="button"
+                className="filelist__import-scene-btn"
+                autoFocus
+                disabled={folderDeleteBusy}
+                onClick={dismissFolderDeleteDialog}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="filelist__new-btn filelist__new-btn--danger"
+                disabled={folderDeleteBusy}
+                onClick={() => void confirmDeleteFolder()}
+              >
+                {folderDeleteBusy
+                  ? "处理中…"
+                  : folderDeleteTarget.is_mapping_root
+                  ? "移除映射"
+                  : "删除文件夹"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {fileDeleteTarget ? (
+        <div
+          className={`filelist-dialog-host ${shellThemeClassName()} filelist__detail-overlay`}
+          role="alertdialog"
+          aria-modal
+          {...fileDeleteOverlayDismiss}
+        >
+          <div
+            className="filelist__detail-card filelist__folder-delete-dialog"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <h2 className="filelist__detail-title">删除文件</h2>
+            <p className="filelist__new-file-hint">
+              确定删除「{fileDeleteTarget.name}」？
+            </p>
+            <div className="filelist__detail-actions filelist__detail-actions--destructive">
+              <button
+                type="button"
+                className="filelist__import-scene-btn"
+                autoFocus
+                disabled={fileDeleteBusy}
+                onClick={dismissFileDeleteDialog}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="filelist__new-btn filelist__new-btn--danger"
+                disabled={fileDeleteBusy}
+                onClick={() => void confirmDeleteFile()}
+              >
+                {fileDeleteBusy ? "处理中…" : "确定"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <SettingsPanel
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+      />
 
       <NewFileDialog
         open={newFileDialogOpen}
@@ -2864,9 +5480,17 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
             ? defaultNameForDocumentKind(formalCreateKind)
             : "未命名"
         }
-        presetFolderId={newDocumentFolderId}
+        documentKind={formalCreateKind ?? undefined}
+        presetFolderId={
+          typeof newDocumentFolderId === "string" &&
+          newDocumentFolderId.length > 0
+            ? newDocumentFolderId
+            : undefined
+        }
         title="新建文件"
-        hint="为文件命名后将在当前文件夹中创建。"
+        allowOpenLocalFolder={catalogCapabilities.addMappedFolder}
+        openLocalFolderBusy={mappingBusy}
+        onOpenLocalFolder={pickMappedFolderForSaveDialog}
         onClose={dismissFormalCreateDialog}
         onSave={commitFormalCreate}
       />
@@ -2900,28 +5524,11 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
               移动「{moveDialogFile.name}」
             </h2>
             <p className="filelist__new-file-hint">选择要移动到的文件夹</p>
-            <div className="filelist__move-list" role="list" aria-label="文件夹列表">
-              <div className="filelist__move-tree-node" role="listitem">
-                <button
-                  type="button"
-                  className={[
-                    "filelist__move-option",
-                    "filelist__move-option--root",
-                    moveTargetIsAllFiles ? "filelist__move-option--active" : "",
-                    moveFileInAllFiles ? "filelist__move-option--current" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  disabled={moveFileInAllFiles}
-                  onClick={() => setMoveTargetFolderId(null)}
-                >
-                  <Icon type="grid" size={16} />
-                  <span className="filelist__move-option-label">
-                    所有文件
-                    {moveFileInAllFiles ? "（当前位置）" : ""}
-                  </span>
-                </button>
-              </div>
+            <div
+              className="filelist__move-list"
+              role="list"
+              aria-label="文件夹列表"
+            >
               {renderMoveTargetFolderTree(ROOT_ID, 0)}
             </div>
             <div className="filelist__detail-actions">
@@ -2947,12 +5554,49 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         </div>
       )}
 
-      <EmbedTokenManager
-        fileId={embedFile?.id ?? ""}
-        fileName={embedFile?.name ?? ""}
-        open={!!embedFile}
-        onClose={() => setEmbedFile(null)}
+      {importFolderPickerOpen ? (
+        <ImportDestinationDialog
+          open={importFolderPickerOpen}
+          importing={importing}
+          mappingBusy={mappingBusy}
+          files={importFolderPickerFiles}
+          accept={editorRegistry.buildImportAccept()}
+          selectedFolderId={importFolderPickerTargetId}
+          showAddLocalFolder={catalogCapabilities.addMappedFolder}
+          overlayDismiss={importFolderPickerOverlayDismiss}
+          onSelectFolder={setImportFolderPickerTargetId}
+          onPickFiles={handleImportDialogPickFiles}
+          onAddLocalFolder={pickMappedFolderForDialog}
+          onConfirm={() => void commitImportFolderPicker()}
+          onCancel={dismissImportFolderPicker}
+        />
+      ) : null}
+
+      {showWebOnlyFileActions ? (
+        <EmbedTokenManager
+          fileId={embedFile?.id ?? ""}
+          fileName={embedFile?.name ?? ""}
+          open={!!embedFile}
+          onClose={() => setEmbedFile(null)}
+        />
+      ) : null}
+
+      <DocumentPreviewDialog
+        fileId={previewFile?.id ?? ""}
+        fileName={previewFile?.name ?? ""}
+        kind={previewFile?.kind ?? "mindmap"}
+        open={!!previewFile}
+        onClose={() => setPreviewFile(null)}
+      />
+
+      <FileListToastStack
+        items={fileListToasts}
+        onDismiss={(id) => {
+          if (id === "error") {
+            setError(null);
+          }
+        }}
       />
     </div>
   );
-};
+}

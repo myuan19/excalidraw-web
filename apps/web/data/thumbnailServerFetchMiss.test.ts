@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  clearAllThumbnailServerMisses,
   clearThumbnailServerMiss,
   isThumbnailServerMiss,
   markThumbnailServerMiss,
@@ -34,6 +35,14 @@ describe("thumbnailServerFetchMiss", () => {
     markThumbnailServerMiss("file-a", "sha-1");
     markThumbnailServerMiss("file-b", "sha-b");
     pruneThumbnailServerMisses({ "file-a": "sha-2" });
+    expect(isThumbnailServerMiss("file-a", "sha-1")).toBe(false);
+    expect(isThumbnailServerMiss("file-b", "sha-b")).toBe(false);
+  });
+
+  it("clears all registered thumbnail misses", () => {
+    markThumbnailServerMiss("file-a", "sha-1");
+    markThumbnailServerMiss("file-b", "sha-b");
+    clearAllThumbnailServerMisses();
     expect(isThumbnailServerMiss("file-a", "sha-1")).toBe(false);
     expect(isThumbnailServerMiss("file-b", "sha-b")).toBe(false);
   });

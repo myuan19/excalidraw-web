@@ -1,4 +1,3 @@
-import { CaptureUpdateAction } from "@excalidraw/excalidraw";
 import type {
   AppState,
   ExcalidrawImperativeAPI,
@@ -11,7 +10,12 @@ import {
   shouldFetchServerAfterCachedOpen,
   type EditorOpenPhase,
 } from "../../lib/editorOpenPhases";
+import {
+  applyServerFileSessionVersion,
+  supplementSessionVersionIfMissing,
+} from "../../data/documentSessionVersionSync";
 import { DeltaStorage } from "../../data/DeltaStorage";
+import { canonicalizeExcalidrawSceneFileName } from "../../data/excalidrawFileNameAuthority";
 import { FileSyncState } from "../../data/FileSyncState";
 import {
   clearForkBrowserScene,
@@ -21,12 +25,21 @@ import { isExcalidrawDraftDirty } from "../../data/draftDirty";
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
 import { hashSceneSnapshot } from "../../data/sceneHash";
 import { createBlankExcalidrawInitialScene } from "../../data/forkFileScene";
+import { getLocalDraftDisplayName } from "../../data/localDraftDisplayName";
 import { isLocalDraftFileId } from "../../data/localDraftFileId";
-import { restoreSceneAppState, restoreSceneElements } from "../../data/sceneRestore";
-import { LocalDraftSessions } from "../../data/localDraftSessions";
+import {
+  restoreSceneAppState,
+  restoreSceneElements,
+} from "../../data/sceneRestore";
 import { ServerSync } from "../../data/ServerSync";
+import { runRemoteFileApply } from "../../data/fileSyncOperationState";
 
-import type { ForkLocalCacheRecord, ForkSceneSnapshot } from "../../data/forkFileTypes";
+import { applyRemoteExcalidrawScene } from "./applyRemoteExcalidrawScene";
+
+import type {
+  ForkLocalCacheRecord,
+  ForkSceneSnapshot,
+} from "../../data/forkFileTypes";
 
 const logInit = createLogger({ module: "init.scene" });
 
@@ -49,10 +62,15 @@ function buildInitResult(
   data: ForkSceneSnapshot,
   overlay: Partial<AppState> | null,
 ): Pick<ExcalidrawInitSceneResult, "scene" | "hasBrowserViewport"> {
+  const restoredAppState = restoreSceneAppState(data.appState, overlay);
   return {
     scene: {
       elements: restoreSceneElements(data.elements),
-      appState: restoreSceneAppState(data.appState, overlay),
+      appState: {
+        ...restoredAppState,
+        openSidebar: null,
+        defaultSidebarDockedPreference: false,
+      },
       files: (data.files || {}) as BinaryFiles,
       ...(overlay ? {} : { scrollToContent: true }),
     },
@@ -65,15 +83,19 @@ async function loadLocalSnapshot(
   localRecord: ForkLocalCacheRecord,
   forkBrowserOverlay: Partial<AppState> | null,
 ): Promise<ExcalidrawInitSceneResult> {
-  const draftH = hashSceneSnapshot(localRecord);
+  const canonicalRecord = canonicalizeExcalidrawSceneFileName(
+    fileId,
+    localRecord,
+  );
+  const draftH = hashSceneSnapshot(canonicalRecord);
   const existingBaseline = FileSyncState.getBaselineHash(fileId);
   if (!existingBaseline) {
     FileSyncState.setBaselineHash(fileId, draftH);
   }
   FileSyncState.setDraftHash(fileId, draftH);
-  await DeltaStorage.restoreSnapshot(localRecord.deltas);
+  await DeltaStorage.restoreSnapshot(canonicalRecord.deltas);
   return {
-    ...buildInitResult(localRecord, forkBrowserOverlay),
+    ...buildInitResult(canonicalRecord, forkBrowserOverlay),
     isExternalScene: false,
     deferRemoteVerify: true,
   };
@@ -92,7 +114,8 @@ async function loadBlockingFromServer(
   }
 
   let serverData: ForkSceneSnapshot | null = null;
-  let serverRecord: Awaited<ReturnType<typeof ServerSync.getFile>> | null = null;
+  let serverRecord: Awaited<ReturnType<typeof ServerSync.getFile>> | null =
+    null;
   try {
     serverRecord = await ServerSync.getFile(fileId);
     if (serverRecord.data && typeof serverRecord.data === "object") {
@@ -103,11 +126,15 @@ async function loadBlockingFromServer(
   }
 
   if (localHasContent && !serverData && localRecord) {
-    const draftH = hashSceneSnapshot(localRecord);
+    const canonicalRecord = canonicalizeExcalidrawSceneFileName(
+      fileId,
+      localRecord,
+    );
+    const draftH = hashSceneSnapshot(canonicalRecord);
     FileSyncState.alignHashes(fileId, draftH);
-    await DeltaStorage.restoreSnapshot(localRecord.deltas);
+    await DeltaStorage.restoreSnapshot(canonicalRecord.deltas);
     return {
-      ...buildInitResult(localRecord, forkBrowserOverlay),
+      ...buildInitResult(canonicalRecord, forkBrowserOverlay),
       isExternalScene: false,
       deferRemoteVerify: false,
     };
@@ -128,10 +155,21 @@ async function loadBlockingFromServer(
       appState: mergedAppState,
       files: serverData.files,
       deltas: [],
+      meta: {
+        ...(serverRecord?.content_sha256
+          ? { serverContentSha256: serverRecord.content_sha256 }
+          : {}),
+        ...(typeof serverRecord?.version === "number"
+          ? { serverVersion: serverRecord.version }
+          : {}),
+      },
     });
     await DeltaStorage.restoreSnapshot([]);
     return {
-      ...buildInitResult({ ...serverData, appState: mergedAppState }, forkBrowserOverlay),
+      ...buildInitResult(
+        { ...serverData, appState: mergedAppState },
+        forkBrowserOverlay,
+      ),
       isExternalScene: false,
       deferRemoteVerify: false,
     };
@@ -158,8 +196,7 @@ export async function initializeExcalidrawScene(opts?: {
   if (isLocalDraftFileId(fileIdFromHash)) {
     let localRecord = FileSyncState.getLocalCache(fileIdFromHash);
     if (!localRecord) {
-      const label =
-        LocalDraftSessions.get(fileIdFromHash)?.name ?? "未命名";
+      const label = getLocalDraftDisplayName(fileIdFromHash);
       const initialScene = createBlankExcalidrawInitialScene(label);
       FileSyncState.setLocalCache(fileIdFromHash, {
         elements: initialScene.elements,
@@ -186,7 +223,9 @@ export async function initializeExcalidrawScene(opts?: {
   }
 
   const localRecord = FileSyncState.getLocalCache(fileIdFromHash);
-  const localElements = Array.isArray((localRecord as ForkSceneSnapshot | null)?.elements)
+  const localElements = Array.isArray(
+    (localRecord as ForkSceneSnapshot | null)?.elements,
+  )
     ? ((localRecord as ForkSceneSnapshot).elements as unknown[])
     : [];
   const localHasContent = localElements.length > 0;
@@ -195,7 +234,9 @@ export async function initializeExcalidrawScene(opts?: {
 
   if (localHasContent && localRecord) {
     onPhase?.(hasUnsavedChanges ? "restoring_draft" : "preparing_surface");
-    logInit.debug(`file=${fid8} → use LOCAL fast path, unsaved=${hasUnsavedChanges}`);
+    logInit.debug(
+      `file=${fid8} → use LOCAL fast path, unsaved=${hasUnsavedChanges}`,
+    );
     const result = await loadLocalSnapshot(
       fileIdFromHash,
       localRecord,
@@ -236,6 +277,7 @@ export async function initializeExcalidrawScene(opts?: {
 export async function verifyExcalidrawRemoteAfterCachedOpen(opts: {
   excalidrawAPI: ExcalidrawImperativeAPI;
   onPhase?: (phase: EditorOpenPhase) => void;
+  runRemoteSceneApply?: <T>(apply: () => Promise<T>) => Promise<T>;
 }): Promise<boolean> {
   const fileId = getFileIdFromHash();
   if (!fileId) {
@@ -251,11 +293,23 @@ export async function verifyExcalidrawRemoteAfterCachedOpen(opts: {
   const hasUnsavedChanges = FileSyncState.hasUnsavedChanges(fileId);
   opts.onPhase?.("checking_remote");
 
+  await supplementSessionVersionIfMissing(fileId, {
+    listFileHashes: () => ServerSync.listFileHashes(),
+    hasUnsavedChanges,
+    cachedServerSha:
+      FileSyncState.getServerHash(fileId) ??
+      FileSyncState.getLocalCache(fileId)?.meta?.serverContentSha256 ??
+      null,
+    reason: "verify-supplement",
+  });
+
   let remoteHash: string | null = null;
+  let remoteVersion: number | undefined;
   try {
     const hashes = await ServerSync.listFileHashes();
-    remoteHash =
-      hashes.find((entry) => entry.id === fileId)?.content_sha256 ?? null;
+    const remoteEntry = hashes.find((entry) => entry.id === fileId);
+    remoteHash = remoteEntry?.content_sha256 ?? null;
+    remoteVersion = remoteEntry?.version;
   } catch {
     opts.onPhase?.("ready");
     return false;
@@ -271,55 +325,29 @@ export async function verifyExcalidrawRemoteAfterCachedOpen(opts: {
     if (remoteHash) {
       FileSyncState.setServerHash(fileId, remoteHash);
     }
+    if (!hasUnsavedChanges) {
+      applyServerFileSessionVersion(fileId, remoteVersion, "verify-aligned");
+    }
     opts.onPhase?.("ready");
     return false;
   }
 
   opts.onPhase?.("background_sync");
+  const runRemoteSceneApply =
+    opts.runRemoteSceneApply ??
+    (<T>(apply: () => Promise<T>) => runRemoteFileApply(fileId, apply));
   try {
     const serverRecord = await ServerSync.getFile(fileId);
-    const serverData = serverRecord.data as ForkSceneSnapshot | undefined;
-    if (!serverData || typeof serverData !== "object") {
-      opts.onPhase?.("ready");
-      return false;
-    }
-
-    const mergedAppState = {
-      ...(serverData.appState ?? {}),
-      name: serverRecord.name ?? (serverData.appState as AppState)?.name ?? "",
-    };
-    const h = hashSceneSnapshot(serverData);
-    FileSyncState.alignHashes(fileId, h);
-    if (serverRecord.content_sha256) {
-      FileSyncState.setServerHash(fileId, serverRecord.content_sha256);
-    }
-    FileSyncState.setLocalCache(fileId, {
-      elements: serverData.elements,
-      appState: mergedAppState,
-      files: serverData.files,
-      deltas: [],
-    });
-    await DeltaStorage.restoreSnapshot([]);
-
-    const forkBrowserOverlay = readForkBrowserAppStateOverlay(fileId);
-    const { scene } = buildInitResult(
-      { ...serverData, appState: mergedAppState },
-      forkBrowserOverlay,
-    );
-    if (scene) {
-      opts.excalidrawAPI.updateScene({
-        elements: scene.elements,
-        appState: restoreSceneAppState(scene.appState ?? {}),
-        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    const apply = () =>
+      applyRemoteExcalidrawScene({
+        excalidrawAPI: opts.excalidrawAPI,
+        fileId,
+        serverFile: serverRecord,
+        preserveViewport: true,
       });
-      const sceneFiles = (scene.files ?? {}) as BinaryFiles;
-      if (Object.keys(sceneFiles).length > 0) {
-        opts.excalidrawAPI.addFiles(Object.values(sceneFiles));
-      }
-    }
-    window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
+    const applied = await runRemoteSceneApply(apply);
     opts.onPhase?.("ready");
-    return true;
+    return applied;
   } catch (err) {
     logInit.debug(`file=${fileId.slice(0, 8)} background verify failed`, err);
     opts.onPhase?.("ready");

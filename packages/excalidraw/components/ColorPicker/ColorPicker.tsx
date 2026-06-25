@@ -44,7 +44,7 @@ export const getColor = (color: string): string | null => {
 
 interface ColorPickerProps {
   type: ColorPickerType;
-  color: string;
+  color: string | null;
   onChange: (color: string) => void;
   label: string;
   elements: readonly ExcalidrawElement[];
@@ -81,7 +81,7 @@ const ColorPickerPopupContent = ({
     <div>
       <PickerHeading>{t("colorPicker.hexCode")}</PickerHeading>
       <ColorInput
-        color={color}
+        color={color ?? "transparent"}
         label={label}
         onChange={(color) => {
           onChange(color);
@@ -124,7 +124,7 @@ const ColorPickerPopupContent = ({
       {palette ? (
         <Picker
           palette={palette}
-          color={color}
+          color={color ?? "transparent"}
           onChange={(changedColor) => {
             onChange(changedColor);
           }}
@@ -213,7 +213,7 @@ export const ColorPicker = ({
     <div>
       <div role="dialog" aria-modal="true" className="color-picker-container">
         <TopPicks
-          activeColor={color}
+          activeColor={color ?? "transparent"}
           onChange={onChange}
           type={type}
           topPicks={topPicks}
@@ -226,7 +226,11 @@ export const ColorPicker = ({
           }}
         >
           {/* serves as an active color indicator as well */}
-          <ColorPickerTrigger color={color} label={label} type={type} />
+          <ColorPickerTrigger
+            color={color ?? "transparent"}
+            label={label}
+            type={type}
+          />
           {/* popup content */}
           {appState.openPopup === type && (
             <ColorPickerPopupContent

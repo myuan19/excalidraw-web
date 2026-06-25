@@ -10,7 +10,8 @@ import express from "express";
 import cors from "cors";
 
 import { createLogger } from "./lib/logger.js";
-import { isHttpTraceEnabled, truncStr } from "./logger.js";
+import { clientRequestContext } from "./lib/clientRequestContext.js";
+import { isDebugLogAllowed, isHttpTraceEnabled, truncStr } from "./logger.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -160,22 +161,33 @@ export async function createApp(options = {}) {
   const defaultRouters = includeDefaultRoutes ? await loadDefaultRouters() : {};
   const filesRouter = options.filesRouter ?? defaultRouters.filesRouter;
   const logsRouter =
-    defaultRouters.logsRouter ?? createUnavailableRouter("logs route");
+    options.logsRouter ??
+    defaultRouters.logsRouter ??
+    createUnavailableRouter("logs route");
   const libraryRouter =
-    defaultRouters.libraryRouter ?? createUnavailableRouter("library route");
+    options.libraryRouter ??
+    defaultRouters.libraryRouter ??
+    createUnavailableRouter("library route");
   const aiSettingsRouter =
+    options.aiSettingsRouter ??
     defaultRouters.aiSettingsRouter ??
     createUnavailableRouter("ai settings route");
   const aiPromptPresetsRouter =
+    options.aiPromptPresetsRouter ??
     defaultRouters.aiPromptPresetsRouter ??
     createUnavailableRouter("ai prompt presets route");
   const aiProxyRouter =
-    defaultRouters.aiProxyRouter ?? createUnavailableRouter("ai proxy route");
+    options.aiProxyRouter ??
+    defaultRouters.aiProxyRouter ??
+    createUnavailableRouter("ai proxy route");
   const mindMapAiRouter =
+    options.mindMapAiRouter ??
     defaultRouters.mindMapAiRouter ??
     createUnavailableRouter("mindmap ai route");
   const ttdChatsRouter =
-    defaultRouters.ttdChatsRouter ?? createUnavailableRouter("ttd chats route");
+    options.ttdChatsRouter ??
+    defaultRouters.ttdChatsRouter ??
+    createUnavailableRouter("ttd chats route");
   const embedTokenRouter =
     defaultRouters.embedTokenRouter ??
     createUnavailableRouter("embed token route");
@@ -198,6 +210,7 @@ export async function createApp(options = {}) {
       httpLog.info(`${req.method} ${req.originalUrl}`, {
         contentLength: cl ?? "(chunked/unknown)",
         ip: req.ip,
+        ...clientRequestContext(req),
       });
     }
     const t0 = Date.now();
@@ -213,6 +226,7 @@ export async function createApp(options = {}) {
         const ms = Date.now() - t0;
         const meta = {
           ms,
+          ...clientRequestContext(req),
           ...(traceAll && {
             ip: req.ip,
             ua: truncStr(req.headers["user-agent"] ?? "", 160),
@@ -240,6 +254,15 @@ export async function createApp(options = {}) {
   });
 
   app.get("/api/health", (_req, res) => res.json({ ok: true }));
+
+  app.get("/api/debug/capability", (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      debug: {
+        allowed: isDebugLogAllowed(),
+      },
+    });
+  });
 
   app.use("/api/logs", logsRouter);
 

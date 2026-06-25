@@ -1,0 +1,151 @@
+@import "../styles/shell/shellModal.scss";
+
+.editor-platform-shell #editor-platform-dialog-root,
+.editor-tab-cache-host #editor-platform-dialog-root {
+  .app-confirm-dialog-overlay {
+    @include shell-modal-overlay;
+    z-index: var(--nb-z-fork-home, 200000);
+    font-family: var(--nb-font-ui), system-ui, sans-serif;
+  }
+}
+
+.editor-platform-shell #editor-platform-dialog-root .app-confirm-dialog,
+.editor-tab-cache-host #editor-platform-dialog-root .app-confirm-dialog {
+  @include shell-modal-card;
+  max-width: 22rem;
+  width: 100%;
+  padding: var(--nb-space-8) var(--nb-space-10);
+}
+
+.editor-platform-shell #editor-platform-dialog-root .app-confirm-dialog h3,
+.editor-tab-cache-host #editor-platform-dialog-root .app-confirm-dialog h3 {
+  margin: 0 0 var(--nb-space-3);
+  font-size: var(--nb-font-body);
+  font-weight: 600;
+  color: var(--nb-text);
+}
+
+.editor-platform-shell #editor-platform-dialog-root .app-confirm-dialog__desc,
+.editor-tab-cache-host #editor-platform-dialog-root .app-confirm-dialog__desc {
+  margin: 0 0 var(--nb-space-7);
+  font-size: var(--nb-font-body-sm);
+  line-height: 1.5;
+  color: var(--nb-text-muted);
+  white-space: pre-line;
+}
+
+.editor-platform-shell
+  #editor-platform-dialog-root
+  .app-confirm-dialog__actions,
+.editor-tab-cache-host
+  #editor-platform-dialog-root
+  .app-confirm-dialog__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nb-space-3);
+}
+
+.editor-platform-shell #editor-platform-dialog-root .app-confirm-dialog__btn,
+.editor-tab-cache-host #editor-platform-dialog-root .app-confirm-dialog__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 2.375rem;
+  padding: var(--nb-space-3) var(--nb-space-5);
+  border-radius: var(--nb-radius-md);
+  font-size: var(--nb-font-body-sm);
+  font-weight: 500;
+  font-family: inherit;
+  border: var(--nb-border-width) solid transparent;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease,
+    opacity 0.15s ease;
+  box-sizing: border-box;
+}
+
+.editor-platform-shell
+  #editor-platform-dialog-root
+  .app-confirm-dialog__btn:disabled,
+.editor-tab-cache-host
+  #editor-platform-dialog-root
+  .app-confirm-dialog__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.editor-platform-shell
+  #editor-platform-dialog-root
+  .app-confirm-dialog__btn--primary,
+.editor-tab-cache-host
+  #editor-platform-dialog-root
+  .app-confirm-dialog__btn--primary {
+  background: var(--nb-primary-soft);
+  color: var(--nb-primary);
+  border: var(--nb-border-width) solid var(--nb-border-input);
+
+  &:hover:not(:disabled) {
+    background: var(--nb-blue-soft);
+    border-color: var(--nb-primary);
+  }
+}
+
+.editor-platform-shell
+  #editor-platform-dialog-root
+  .app-confirm-dialog__btn--danger,
+.editor-tab-cache-host
+  #editor-platform-dialog-root
+  .app-confirm-dialog__btn--danger {
+  background: var(--nb-surface-muted);
+  color: var(--nb-danger-foreground);
+  border-color: var(--nb-danger-border);
+
+  &:hover:not(:disabled) {
+    background: var(--nb-danger-soft-bg);
+    border-color: rgba(239, 68, 68, 0.25);
+  }
+}
+
+.editor-platform-shell
+  #editor-platform-dialog-root
+  .app-confirm-dialog__cancel,
+.editor-tab-cache-host
+  #editor-platform-dialog-root
+  .app-confirm-dialog__cancel {
+  display: block;
+  margin: var(--nb-space-5) auto 0;
+  padding: var(--nb-space-2) var(--nb-space-4);
+  background: transparent;
+  border: none;
+  font-size: var(--nb-font-caption);
+  color: var(--nb-text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  border-radius: var(--nb-radius-md);
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.editor-platform-shell
+  #editor-platform-dialog-root
+  .app-confirm-dialog__cancel:hover:not(:disabled),
+.editor-tab-cache-host
+  #editor-platform-dialog-root
+  .app-confirm-dialog__cancel:hover:not(:disabled) {
+  background: var(--nb-fill-hover);
+  color: var(--nb-text);
+}
+
+.editor-platform-shell.theme--dark
+  #editor-platform-dialog-root
+  .app-confirm-dialog__btn--danger,
+.editor-tab-cache-host.theme--dark
+  #editor-platform-dialog-root
+  .app-confirm-dialog__btn--danger {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--nb-danger-soft-text-dark);
+  border-color: rgba(248, 113, 113, 0.2);
+
+  &:hover:not(:disabled) {
+    background: rgba(248, 113, 113, 0.12);
+  }
+}

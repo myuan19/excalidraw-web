@@ -2,10 +2,10 @@
 
 The canvas engine lives in the **yarn workspace packages**, not under this folder:
 
-| Package | Path |
-|---------|------|
-| Main editor | `packages/excalidraw/` |
-| Internals | `packages/common`, `element`, `math`, `utils` |
+| Package     | Path                                          |
+| ----------- | --------------------------------------------- |
+| Main editor | `packages/excalidraw/`                        |
+| Internals   | `packages/common`, `element`, `math`, `utils` |
 
 Host integration (file open/save, fork toolbar, library, embed) is in `../EditorShell.tsx`.
 

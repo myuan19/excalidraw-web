@@ -11,12 +11,20 @@ import {
   peekAppShellPendingNavigation,
   runAppShellPendingNavigation,
 } from "./appShellNavigate";
+import {
+  createInitialEditorTabsState,
+  EDITOR_TABS_STORAGE_KEY,
+  openFileTab,
+  writeEditorTabsState,
+} from "./editorTabs";
 import { APP_SHELL_GO_HOME } from "./Sidebar";
+import { buildViewHash } from "./useAppView";
 
 describe("appShellNavigate", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     clearAppShellPendingNavigation();
+    sessionStorage.clear();
     window.location.hash = "";
   });
 
@@ -115,5 +123,25 @@ describe("appShellNavigate", () => {
     expect(window.location.hash).toBe(
       editorRegistry.buildFileHash("file-c", "excalidraw"),
     );
+  });
+
+  it("activates the home tab when pending navigation targets a file-list view", () => {
+    const skip = { current: false };
+    writeEditorTabsState(
+      openFileTab(createInitialEditorTabsState(), {
+        fileId: "file-a",
+        kind: "mindmap",
+        title: "A",
+      }),
+    );
+
+    applyAppShellPendingNavigation({ target: "files" }, skip, () => {});
+    runAppShellPendingNavigation(skip);
+
+    const tabs = JSON.parse(
+      sessionStorage.getItem(EDITOR_TABS_STORAGE_KEY) ?? "{}",
+    );
+    expect(window.location.hash).toBe(`#${buildViewHash("files")}`);
+    expect(tabs.activeTabId).toBe("home");
   });
 });

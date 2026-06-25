@@ -28,5 +28,12 @@ describe("mind-map index html normalization", () => {
     const out = normalizeMindMapIndexHtml(html);
     expect(out).not.toContain("?020435b0");
     expect(out).not.toContain('rel="preload"');
+    expect(out).toContain("window.externalPublicPath = './dist/'");
+  });
+
+  it("injects externalPublicPath when missing", () => {
+    const html = `<script>window.takeOverApp = true;</script>`;
+    const out = normalizeMindMapIndexHtml(html);
+    expect(out).toContain("window.externalPublicPath = './dist/'");
   });
 });

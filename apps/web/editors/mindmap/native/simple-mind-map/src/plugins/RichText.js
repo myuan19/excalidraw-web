@@ -856,7 +856,10 @@ class RichText {
   // 聚焦
   focus(start) {
     const len = this.quill.getLength()
-    this.quill.setSelection(typeof start === 'number' ? start : len, len)
+    const index = typeof start === 'number' ? start : len
+    const length = typeof start === 'number' ? Math.max(len - start, 0) : 0
+    this.quill.focus()
+    this.quill.setSelection(index, length)
   }
 
   focusAtMouseEvent(e) {

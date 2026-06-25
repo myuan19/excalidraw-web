@@ -15,14 +15,15 @@ describe("cross-tab file sync source contract", () => {
   it("keeps BroadcastChannel plumbing isolated from auto-save policy", () => {
     const crossTabSource = read("data/crossTabFileSync.ts");
     const autoSaveSource = read("data/autoSaveSession.ts");
-    const saveQueueSource = read("data/saveQueue.ts");
+    const serverSyncSource = read("data/ServerSync.ts");
     const fileListSource = read("hooks/useFileListController.tsx");
 
     expect(crossTabSource).toContain("new BroadcastChannel(CHANNEL_NAME)");
     expect(crossTabSource).toContain("broadcastFileSaved");
     expect(crossTabSource).toContain("onCrossTabFileSaved");
     expect(autoSaveSource).not.toContain("new BroadcastChannel");
-    expect(saveQueueSource).toContain('from "./crossTabFileSync"');
+    expect(serverSyncSource).toContain('from "./crossTabFileSync"');
+    expect(serverSyncSource).toContain("broadcastFileSaved(id");
     expect(fileListSource).toContain('from "../data/crossTabFileSync"');
   });
 
@@ -35,16 +36,21 @@ describe("cross-tab file sync source contract", () => {
     expect(remoteRefreshHook).toContain("onCrossTabFileSaved");
     expect(remoteRefreshHook).toContain("decideRemoteFileRefresh");
     expect(remoteRefreshHook).toContain("isTabFileDirty");
+    expect(remoteRefreshHook).toContain("promptServerUpdateConfirm");
+    expect(remoteRefreshHook).toContain("beginRemoteUpdatePrompt");
     expect(excalidrawShell).toContain("useRemoteFileRefresh");
-    expect(excalidrawShell).toContain("RemoteUpdateConfirmDialog");
-    expect(excalidrawShell).toContain("ServerSync.getFile(fid, { force: true })");
+    expect(excalidrawShell).not.toContain("RemoteUpdateConfirmDialog");
+    expect(excalidrawShell).toContain(
+      "loadEditorServerFile(fileId, { force: true })",
+    );
     expect(mindMapShell).toContain("useRemoteFileRefresh");
-    expect(mindMapShell).toContain("RemoteUpdateConfirmDialog");
+    expect(mindMapShell).not.toContain("RemoteUpdateConfirmDialog");
     expect(mindMapShell).toContain(
-      "ServerSync.getFile(fileId, { force: true })",
+      "loadEditorServerFile(fileId, { force: true })",
     );
     expect(mindMapShell).toContain("cross-tab-file-saved");
     expect(serverSyncSource).toContain("opts?: { force?: boolean }");
-    expect(serverSyncSource).toContain("priorHash && !opts?.force");
+    expect(serverSyncSource).toContain("priorHash && !force");
+    expect(serverSyncSource).toContain('cache: force ? "no-store" : "default"');
   });
 });

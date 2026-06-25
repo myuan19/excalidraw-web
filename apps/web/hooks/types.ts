@@ -1,4 +1,11 @@
-export type SaveToServerSource = "toolbar" | "hotkey" | "visibility" | "home" | "sidebar" | "auto";
+export type SaveToServerSource =
+  | "toolbar"
+  | "hotkey"
+  | "visibility"
+  | "home"
+  | "sidebar"
+  | "auto"
+  | "thumbnail";
 
 export type SaveToServerOptions = {
   source?: SaveToServerSource;

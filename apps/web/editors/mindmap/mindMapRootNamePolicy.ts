@@ -1,5 +1,8 @@
 import { DEFAULT_DOCUMENT_DISPLAY_NAME } from "../../data/defaultDocumentName";
-import { getMindMapRootText } from "../../data/formats/MindMapAdapter";
+import {
+  getMindMapRootPlainText,
+  getMindMapRootText,
+} from "../../data/formats/MindMapAdapter";
 
 import type { MindMapDocumentData } from "../../data/formats/MindMapAdapter";
 
@@ -12,53 +15,50 @@ function isDefaultDisplayName(name: string): boolean {
   return name === DEFAULT_DOCUMENT_DISPLAY_NAME;
 }
 
-/**
- * 打开文件时解析显示名：根节点已有非默认标题时，优先于过期的「未命名」列表缓存。
- */
+/** 打开文件时解析显示名：正式文件名与根节点标题相互独立。 */
 export function resolveMindMapOpenDisplayName(
   data: MindMapDocumentData,
   cachedName: string | null | undefined,
 ): string {
   const rootText = getMindMapRootText(data);
   const listName = String(cachedName ?? "").trim();
-  if (
-    rootText &&
-    !isDefaultDisplayName(rootText) &&
-    (!listName || isDefaultDisplayName(listName))
-  ) {
-    return rootText;
-  }
   if (listName) {
     return listName;
   }
   return rootText || DEFAULT_DOCUMENT_DISPLAY_NAME;
 }
 
+/** 正式文件保存时保留现有文件名，不再从根节点反推。 */
+export function resolveMindMapSaveDisplayName(
+  _data: MindMapDocumentData,
+  currentName: string | null | undefined,
+): string {
+  const name = String(currentName ?? "").trim();
+  return name || DEFAULT_DOCUMENT_DISPLAY_NAME;
+}
+
+/** local draft 首次保存时，可用首次编辑后的根节点标题作为初始文件名。 */
+export function resolveMindMapInitialSaveDisplayName(
+  data: MindMapDocumentData,
+  currentName: string | null | undefined,
+): string {
+  const name = String(currentName ?? "").trim();
+  if (name && !isDefaultDisplayName(name)) {
+    return name;
+  }
+  const rootPlainText = getMindMapRootPlainText(data);
+  if (rootPlainText && !isDefaultDisplayName(rootPlainText)) {
+    return rootPlainText;
+  }
+  return name || DEFAULT_DOCUMENT_DISPLAY_NAME;
+}
+
 /**
- * hydrate settle 结束时对齐根节点标题与文件显示名。
- * 默认显示名过期时以根节点为准，否则以文件显示名为准写回画布。
+ * 文件名和 MindMap 根节点只在创建初始值时有关联；保存后互相独立。
  */
 export function reconcileMindMapRootAndFileName(
-  displayName: string,
-  rootText: string,
+  _displayName: string,
+  _rootPlainText: string,
 ): MindMapRootNameReconcileAction {
-  const name = String(displayName || "").trim();
-  const root = String(rootText || "").trim();
-  if (!root && !name) {
-    return { kind: "noop" };
-  }
-  if (root === name) {
-    return { kind: "noop" };
-  }
-  if (
-    isDefaultDisplayName(name) &&
-    root &&
-    !isDefaultDisplayName(root)
-  ) {
-    return { kind: "promote-root-to-file", name: root };
-  }
-  if (!name) {
-    return { kind: "noop" };
-  }
-  return { kind: "push-file-to-root", text: name };
+  return { kind: "noop" };
 }

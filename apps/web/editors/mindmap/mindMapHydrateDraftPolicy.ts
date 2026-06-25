@@ -21,6 +21,7 @@ export type MindMapHydrateDraftDecision = {
   updateHostDocument: boolean;
   reason:
     | "save-response"
+    | "user-edit"
     | "no-anchor"
     | "anchor-hash-match"
     | "rich-text-preserving"
@@ -57,12 +58,21 @@ export function explainHydrateDraftDecision(opts: {
   anchor: MindMapHydrateAnchor | null;
   incoming: MindMapSaveDocument;
   isSaveResponse: boolean;
+  userEdit?: boolean;
 }): MindMapHydrateDraftDecision {
   if (opts.isSaveResponse) {
     return {
       adoptBaseline: true,
       updateHostDocument: true,
       reason: "save-response",
+    };
+  }
+
+  if (opts.userEdit === true) {
+    return {
+      adoptBaseline: false,
+      updateHostDocument: true,
+      reason: "user-edit",
     };
   }
 

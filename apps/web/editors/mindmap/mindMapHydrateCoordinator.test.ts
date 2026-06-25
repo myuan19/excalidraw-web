@@ -73,6 +73,36 @@ describe("mindMapHydrateCoordinator", () => {
     expect(result.shouldExtendSettle).toBe(true);
   });
 
+  it("treats user-edit draft pushes during hydrate as real changes", () => {
+    const anchor = anchorDoc();
+    const edited = MindMapAdapter.toDocument({
+      ...anchor.data,
+      root: {
+        ...anchor.data.root,
+        children: [
+          ...(anchor.data.root.children ?? []),
+          {
+            data: { text: "<p><span>first child</span></p>", richText: true },
+            children: [],
+          },
+        ],
+      },
+    });
+    coordinator.beginSession(anchor);
+
+    const result = coordinator.handleDraftPush(edited, anchor, {
+      isSaveResponse: false,
+      hydrating: true,
+      userEdit: true,
+    });
+
+    expect(result.decision.reason).toBe("user-edit");
+    expect(result.document).toBe(edited);
+    expect(result.shouldAdoptBaseline).toBe(false);
+    expect(result.shouldMarkChanged).toBe(true);
+    expect(result.shouldExtendSettle).toBe(false);
+  });
+
   it("save-response always marks changed path off and skips extend settle", () => {
     const anchor = anchorDoc();
     const incoming = regressedDoc();

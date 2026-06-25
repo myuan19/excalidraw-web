@@ -5,6 +5,7 @@ import { createLogger } from "../lib/logger";
 import { FileEditDirty } from "../data/fileEditDirty";
 import { FileSyncState } from "../data/FileSyncState";
 import { evaluateCurrentFileModificationState } from "../data/fileModificationState";
+import { canonicalizeExcalidrawSceneFileName } from "../data/excalidrawFileNameAuthority";
 import { LocalData } from "../data/LocalData";
 import { getFileIdFromHash } from "../data/fileIdFromHash";
 import { isLocalDraftFileId } from "../data/localDraftFileId";
@@ -40,14 +41,18 @@ export function useBeforeUnloadGuard(opts: {
         });
         if (sceneData && state.modified) {
           try {
-            FileSyncState.setLocalCache(fid, {
-              elements: sceneData.elements,
-              appState: sceneData.appState,
-              files: sceneData.files,
+            const canonicalSceneData = canonicalizeExcalidrawSceneFileName(
+              fid,
+              sceneData,
+            );
+            FileSyncState.setServerBackedLocalCache(fid, {
+              elements: canonicalSceneData.elements,
+              appState: canonicalSceneData.appState,
+              files: canonicalSceneData.files,
               deltas: [],
             });
             if (state.shouldMarkLocalDraftEdited) {
-              notifyLocalDraftEdited(fid, sceneData.appState?.name?.trim());
+              notifyLocalDraftEdited(fid);
             }
             didEmergencyLocalCache = true;
           } catch {
@@ -57,7 +62,9 @@ export function useBeforeUnloadGuard(opts: {
       }
 
       if (didEmergencyLocalCache) {
-        logHook.info("beforeunload: emergency local cache written", { fileId: fid?.slice(0, 8) });
+        logHook.info("beforeunload: emergency local cache written", {
+          fileId: fid?.slice(0, 8),
+        });
         return;
       }
 

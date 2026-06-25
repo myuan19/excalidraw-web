@@ -1,57 +1,279 @@
-export function buildMindMapThumbnailFocusedViewBoxOptions() {
+﻿import previewViewportConfig from "./native/previewViewportConfig.json";
+
+const DEFAULTS = {
+  targetAspect: previewViewportConfig.targetAspect,
+  baselineNodeCount: previewViewportConfig.baselineNodeCount,
+  minVisualScaleNodeCount: previewViewportConfig.minVisualScaleNodeCount,
+  singleNodeVisualScale: previewViewportConfig.singleNodeVisualScale,
+  singleRootOnlyVisualScaleFactor:
+    previewViewportConfig.singleRootOnlyVisualScaleFactor ?? 1,
+  editorEmbedSingleRootOnlyVisualScaleFactor:
+    previewViewportConfig.editorEmbedSingleRootOnlyVisualScaleFactor ?? 1,
+  thumbnailSingleRootOnlyVisualScaleFactor:
+    previewViewportConfig.thumbnailSingleRootOnlyVisualScaleFactor ??
+    previewViewportConfig.singleRootOnlyVisualScaleFactor ??
+    1,
+  minNodeVisualScale: previewViewportConfig.minNodeVisualScale,
+  nodeCountScaleInfluence:
+    previewViewportConfig.nodeCountScaleInfluence ?? 1,
+  editorEmbedNodeCountScaleInfluence:
+    previewViewportConfig.editorEmbedNodeCountScaleInfluence ?? 1,
+  centerTowardOthersRatio: previewViewportConfig.centerTowardOthersRatio,
+  rootCenterLimitRatio: previewViewportConfig.rootCenterLimitRatio,
+  thumbnailCenterTowardOthersRatio:
+    previewViewportConfig.thumbnailCenterTowardOthersRatio ??
+    previewViewportConfig.centerTowardOthersRatio,
+  thumbnailRootCenterLimitRatio:
+    previewViewportConfig.thumbnailRootCenterLimitRatio ??
+    previewViewportConfig.rootCenterLimitRatio,
+  editorEmbedCenterTowardOthersRatio:
+    previewViewportConfig.editorEmbedCenterTowardOthersRatio ??
+    previewViewportConfig.centerTowardOthersRatio,
+  editorEmbedRootCenterLimitRatio:
+    previewViewportConfig.editorEmbedRootCenterLimitRatio ??
+    previewViewportConfig.rootCenterLimitRatio,
+};
+
+function clamp(value, min, max) {
+  if (max < min) {
+    return min;
+  }
+  return Math.min(Math.max(value, min), max);
+}
+
+export function centerOfMindMapBounds(bounds) {
   return {
-    padding: 48,
-    minWidth: 420,
-    minHeight: 252,
+    x: bounds.x + bounds.width / 2,
+    y: bounds.y + bounds.height / 2,
   };
 }
 
-export function computeMindMapFocusedViewBoxFromNodeBounds(bounds, options = {}) {
-  if (!Array.isArray(bounds) || bounds.length === 0) {
+export function unionMindMapBounds(items) {
+  if (items.length <= 0) {
     return null;
   }
-  const padding = options.padding ?? 48;
-  const minWidth = options.minWidth ?? 420;
-  const minHeight = options.minHeight ?? 252;
-  const rootBounds = bounds[0];
-  const all = bounds.reduce(
-    (acc, item) => ({
-      x1: Math.min(acc.x1, item.x),
-      y1: Math.min(acc.y1, item.y),
-      x2: Math.max(acc.x2, item.x + item.width),
-      y2: Math.max(acc.y2, item.y + item.height),
-    }),
-    {
-      x1: rootBounds.x,
-      y1: rootBounds.y,
-      x2: rootBounds.x + rootBounds.width,
-      y2: rootBounds.y + rootBounds.height,
-    },
+  const minX = Math.min(...items.map((item) => item.x));
+  const minY = Math.min(...items.map((item) => item.y));
+  const maxX = Math.max(...items.map((item) => item.x + item.width));
+  const maxY = Math.max(...items.map((item) => item.y + item.height));
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY,
+  };
+}
+
+export function computeMindMapNodeVisualScale(nodeCount, options = {}) {
+  const baselineNodeCount =
+    options.baselineNodeCount ?? DEFAULTS.baselineNodeCount;
+  const minVisualScaleNodeCount =
+    options.minVisualScaleNodeCount ?? DEFAULTS.minVisualScaleNodeCount;
+  const singleNodeVisualScale =
+    options.singleNodeVisualScale ?? DEFAULTS.singleNodeVisualScale;
+  const minNodeVisualScale =
+    options.minNodeVisualScale ?? DEFAULTS.minNodeVisualScale;
+  const influence = clamp(
+    options.nodeCountScaleInfluence ?? DEFAULTS.nodeCountScaleInfluence,
+    0,
+    1,
   );
-  const width = Math.max(minWidth, all.x2 - all.x1 + padding * 2);
-  const height = Math.max(minHeight, all.y2 - all.y1 + padding * 2);
-  const x = all.x1 - padding - Math.max(0, width - (all.x2 - all.x1 + padding * 2)) / 2;
-  const y = all.y1 - padding - Math.max(0, height - (all.y2 - all.y1 + padding * 2)) / 2;
+
+  let rawScale = 1;
+  if (nodeCount <= baselineNodeCount) {
+    const t = (baselineNodeCount - nodeCount) / (baselineNodeCount - 1);
+    rawScale = 1 + clamp(t, 0, 1) * (singleNodeVisualScale - 1);
+  } else {
+    const t =
+      (nodeCount - baselineNodeCount) /
+      (minVisualScaleNodeCount - baselineNodeCount);
+    rawScale = 1 - clamp(t, 0, 1) * (1 - minNodeVisualScale);
+  }
+  let scale = 1 + (rawScale - 1) * influence;
+  if (nodeCount === 1) {
+    const rootOnlyFactor =
+      options.singleRootOnlyVisualScaleFactor ??
+      DEFAULTS.singleRootOnlyVisualScaleFactor;
+    scale *= rootOnlyFactor;
+  }
+  return scale;
+}
+
+export function computeMindMapFocusedViewBoxFromNodeBounds(
+  nodeBounds,
+  options,
+) {
+  const rootBounds = nodeBounds[0];
+  if (!rootBounds) {
+    return null;
+  }
+
+  const targetAspect = options.targetAspect ?? DEFAULTS.targetAspect;
+  const centerTowardOthersRatio =
+    options.centerTowardOthersRatio ?? DEFAULTS.centerTowardOthersRatio;
+  const normalizedCenterTowardOthersRatio = clamp(
+    centerTowardOthersRatio,
+    0,
+    1,
+  );
+  const rootCenterLimitRatio =
+    options.rootCenterLimitRatio ?? DEFAULTS.rootCenterLimitRatio;
+
+  const otherBounds = unionMindMapBounds(nodeBounds.slice(1));
+  const rootCenter = centerOfMindMapBounds(rootBounds);
+  const otherCenter = otherBounds
+    ? centerOfMindMapBounds(otherBounds)
+    : rootCenter;
+  const nodeVisualScale = computeMindMapNodeVisualScale(
+    nodeBounds.length,
+    options,
+  );
+  const targetRootRatio = options.targetRootScreenRatio * nodeVisualScale;
+  const baseWidth = Math.max(
+    rootBounds.width / targetRootRatio,
+    (rootBounds.height / targetRootRatio) * targetAspect,
+  );
+  const viewSize = {
+    width: baseWidth,
+    height: baseWidth / targetAspect,
+  };
+  const rawCenter = {
+    x:
+      rootCenter.x +
+      (otherCenter.x - rootCenter.x) * normalizedCenterTowardOthersRatio,
+    y:
+      rootCenter.y +
+      (otherCenter.y - rootCenter.y) * normalizedCenterTowardOthersRatio,
+  };
+  const normalizedRootCenterLimitRatio = clamp(rootCenterLimitRatio, 0, 1);
+  const rootVisibleCenterLimit = {
+    x: Math.max(0, 0.5 - rootBounds.width / viewSize.width / 2),
+    y: Math.max(0, 0.5 - rootBounds.height / viewSize.height / 2),
+  };
+  const rootCenterLimit = {
+    x: rootVisibleCenterLimit.x * normalizedRootCenterLimitRatio,
+    y: rootVisibleCenterLimit.y * normalizedRootCenterLimitRatio,
+  };
+  const limitedCenter = {
+    x: clamp(
+      rawCenter.x,
+      rootCenter.x - viewSize.width * rootCenterLimit.x,
+      rootCenter.x + viewSize.width * rootCenterLimit.x,
+    ),
+    y: clamp(
+      rawCenter.y,
+      rootCenter.y - viewSize.height * rootCenterLimit.y,
+      rootCenter.y + viewSize.height * rootCenterLimit.y,
+    ),
+  };
 
   return {
-    x,
-    y,
-    width,
-    height,
-    nodeCount: bounds.length,
+    x: limitedCenter.x - viewSize.width / 2,
+    y: limitedCenter.y - viewSize.height / 2,
+    width: viewSize.width,
+    height: viewSize.height,
+    nodeCount: nodeBounds.length,
     rootBounds,
-    otherBounds: bounds.slice(1),
+    otherBounds,
     rootScreen: {
-      centerX: rootBounds.x + rootBounds.width / 2,
-      centerY: rootBounds.y + rootBounds.height / 2,
-      width: rootBounds.width,
-      height: rootBounds.height,
+      centerX:
+        ((rootCenter.x - (limitedCenter.x - viewSize.width / 2)) /
+          viewSize.width) *
+        100,
+      centerY:
+        ((rootCenter.y - (limitedCenter.y - viewSize.height / 2)) /
+          viewSize.height) *
+        100,
+      width: (rootBounds.width / viewSize.width) * 100,
+      height: (rootBounds.height / viewSize.height) * 100,
     },
   };
 }
 
 export function formatMindMapViewBox(viewBox) {
-  return [viewBox.x, viewBox.y, viewBox.width, viewBox.height]
-    .map((value) => Number(value.toFixed(2)))
-    .join(" ");
+  return `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`;
+}
+
+export function getMindMapThumbnailTargetRootScreenRatio() {
+  return (
+    previewViewportConfig.baselineRootScreenRatio *
+    previewViewportConfig.thumbnailRootScreenRatioMultiplier
+  );
+}
+
+export function getMindMapEditorFocusedTargetRootScreenRatio() {
+  return (
+    previewViewportConfig.baselineRootScreenRatio *
+    previewViewportConfig.editorRootScreenRatioMultiplier
+  );
+}
+
+export function getMindMapEmbedFocusedTargetRootScreenRatio() {
+  const multiplier =
+    previewViewportConfig.embedFocusedRootScreenRatioMultiplier ?? 0.75;
+  return previewViewportConfig.baselineRootScreenRatio * multiplier;
+}
+
+function resolveConfiguredRootScreenRatio(configuredMultiplier, fallbackRatio) {
+  const multiplier = Number(configuredMultiplier);
+  if (Number.isFinite(multiplier) && multiplier > 0) {
+    return previewViewportConfig.baselineRootScreenRatio * multiplier;
+  }
+  return fallbackRatio;
+}
+
+/** 鐢诲竷锛堢紪杈戝櫒 / 宓屽叆锛夊叡鐢?focused 鍙傛暟锛屼粎 multiplier 涓庡崟鏍圭郴鏁颁笉鍚?*/
+export function buildMindMapCanvasFocusedViewBoxOptions(
+  configuredMultiplier,
+  kind,
+) {
+  const fallbackRatio =
+    kind === "embed"
+      ? getMindMapEmbedFocusedTargetRootScreenRatio()
+      : getMindMapEditorFocusedTargetRootScreenRatio();
+  return {
+    targetAspect: DEFAULTS.targetAspect,
+    targetRootScreenRatio: resolveConfiguredRootScreenRatio(
+      configuredMultiplier,
+      fallbackRatio,
+    ),
+    centerTowardOthersRatio: DEFAULTS.editorEmbedCenterTowardOthersRatio,
+    rootCenterLimitRatio: DEFAULTS.editorEmbedRootCenterLimitRatio,
+    baselineNodeCount: DEFAULTS.baselineNodeCount,
+    minVisualScaleNodeCount: DEFAULTS.minVisualScaleNodeCount,
+    singleNodeVisualScale: DEFAULTS.singleNodeVisualScale,
+    minNodeVisualScale: DEFAULTS.minNodeVisualScale,
+    nodeCountScaleInfluence: DEFAULTS.editorEmbedNodeCountScaleInfluence,
+    singleRootOnlyVisualScaleFactor:
+      DEFAULTS.editorEmbedSingleRootOnlyVisualScaleFactor,
+  };
+}
+
+/** 缂╃暐鍥?SVG 瑁佸壀锛氬悓涓€濂?viewBox 鍏紡锛岀嫭绔?multiplier / 鍗曟牴绯绘暟 */
+export function buildMindMapThumbnailFocusedViewBoxOptions() {
+  return {
+    targetAspect: DEFAULTS.targetAspect,
+    targetRootScreenRatio: getMindMapThumbnailTargetRootScreenRatio(),
+    centerTowardOthersRatio: DEFAULTS.thumbnailCenterTowardOthersRatio,
+    rootCenterLimitRatio: DEFAULTS.thumbnailRootCenterLimitRatio,
+    baselineNodeCount: DEFAULTS.baselineNodeCount,
+    minVisualScaleNodeCount: DEFAULTS.minVisualScaleNodeCount,
+    singleNodeVisualScale: DEFAULTS.singleNodeVisualScale,
+    minNodeVisualScale: DEFAULTS.minNodeVisualScale,
+    nodeCountScaleInfluence: DEFAULTS.nodeCountScaleInfluence,
+    singleRootOnlyVisualScaleFactor:
+      DEFAULTS.thumbnailSingleRootOnlyVisualScaleFactor,
+  };
+}
+
+/**
+ * 鏂囨。浠呮湁涓€涓牴鑺傜偣鏃讹紝娓叉煋鏍戦噷鍙兘浠嶆湁灞曞紑鎸夐挳绛夊瓙鑺傜偣锛? * 鐢诲竷 framing 鍙寜鏍硅妭鐐瑰昂瀵歌绠楋紝閬垮厤鏍规樉绀鸿繃灏忋€? */
+export function filterMindMapFocusedNodeBounds(
+  nodeBounds,
+  singleRootOnlyDocument,
+) {
+  if (!singleRootOnlyDocument || nodeBounds.length <= 1) {
+    return nodeBounds;
+  }
+  return [nodeBounds[0]];
 }

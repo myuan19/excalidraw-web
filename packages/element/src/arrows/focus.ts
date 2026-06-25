@@ -1,27 +1,530 @@
-export function focusBoundTextElement() {
+import { invariant } from "@excalidraw/common";
+import { pointDistance, pointFrom, type GlobalPoint } from "@excalidraw/math";
+
+import type { AppState, NullableGridSize } from "@excalidraw/excalidraw/types";
+
+import {
+  bindBindingElement,
+  calculateFixedPointForNonElbowArrowBinding,
+  FOCUS_POINT_SIZE,
+  getBindingGap,
+  getGlobalFixedPointForBindableElement,
+  isBindingEnabled,
+  maxBindingDistance_simple,
+  unbindBindingElement,
+  updateBoundPoint,
+} from "../binding";
+import { getHoveredElementForFocusPoint, hitElementItself } from "../collision";
+import { LinearElementEditor } from "../linearElementEditor";
+import type { Scene } from "../Scene";
+import {
+  isBindableElement,
+  isBindingElement,
+  isElbowArrow,
+} from "../typeChecks";
+import type {
+  ElementsMap,
+  ExcalidrawArrowElement,
+  ExcalidrawBindableElement,
+  NonDeletedSceneElementsMap,
+  PointsPositionUpdates,
+} from "../types";
+import { moveArrowAboveBindable } from "../zindex";
+
+export const isFocusPointVisible = (
+  focusPoint: GlobalPoint,
+  arrow: ExcalidrawArrowElement,
+  bindableElement: ExcalidrawBindableElement,
+  elementsMap: ElementsMap,
+  appState: {
+    isBindingEnabled: AppState["isBindingEnabled"];
+    zoom: AppState["zoom"];
+  },
+  startOrEnd: "start" | "end",
+  ignoreOverlap = false,
+): boolean => {
+  if (
+    isElbowArrow(arrow) ||
+    !isBindingEnabled(appState) ||
+    arrow.points.length !== 2
+  ) {
+    return false;
+  }
+
+  if (!ignoreOverlap) {
+    const associatedPointIdx =
+      arrow.startBinding?.elementId === bindableElement.id
+        ? 0
+        : arrow.points.length - 1;
+    const associatedArrowPoint =
+      LinearElementEditor.getPointAtIndexGlobalCoordinates(
+        arrow,
+        associatedPointIdx,
+        elementsMap,
+      );
+
+    if (
+      pointDistance(focusPoint, associatedArrowPoint) <
+      (FOCUS_POINT_SIZE * 1.5) / appState.zoom.value
+    ) {
+      return false;
+    }
+  }
+
+  const arrowPoint = LinearElementEditor.getPointAtIndexGlobalCoordinates(
+    arrow,
+    startOrEnd === "end" ? arrow.points.length - 1 : 0,
+    elementsMap,
+  );
+
+  return (
+    pointDistance(focusPoint, arrowPoint) >=
+      (FOCUS_POINT_SIZE * 1.5) / appState.zoom.value &&
+    hitElementItself({
+      element: bindableElement,
+      elementsMap,
+      point: focusPoint,
+      threshold: getBindingGap(bindableElement, arrow),
+      overrideShouldTestInside: true,
+    })
+  );
+};
+
+const focusPointUpdate = (
+  arrow: ExcalidrawArrowElement,
+  bindableElement: ExcalidrawBindableElement | null,
+  isStartBinding: boolean,
+  elementsMap: NonDeletedSceneElementsMap,
+  scene: Scene,
+  appState: AppState,
+  switchToInsideBinding: boolean,
+) => {
+  const pointUpdates = new Map();
+
+  const bindingField = isStartBinding ? "startBinding" : "endBinding";
+  const adjacentBindingField = isStartBinding ? "endBinding" : "startBinding";
+  let currentBinding = arrow[bindingField];
+  let adjacentBinding = arrow[adjacentBindingField];
+
+  if (currentBinding && bindableElement) {
+    const boundToSameElement =
+      bindableElement &&
+      adjacentBinding &&
+      currentBinding.elementId === adjacentBinding.elementId;
+    if (switchToInsideBinding || boundToSameElement) {
+      currentBinding = {
+        ...currentBinding,
+        mode: "inside",
+      };
+    } else {
+      currentBinding = {
+        ...currentBinding,
+        mode: "orbit",
+      };
+    }
+
+    const pointIndex = isStartBinding ? 0 : arrow.points.length - 1;
+    const newPoint = updateBoundPoint(
+      arrow,
+      bindingField as "startBinding" | "endBinding",
+      currentBinding,
+      bindableElement,
+      elementsMap,
+      true,
+    );
+
+    if (newPoint) {
+      pointUpdates.set(pointIndex, { point: newPoint });
+    }
+  }
+
+  if (adjacentBinding && adjacentBinding.mode === "orbit") {
+    const adjacentBindableElement = elementsMap.get(
+      adjacentBinding.elementId,
+    ) as ExcalidrawBindableElement;
+
+    if (
+      adjacentBindableElement &&
+      isBindableElement(adjacentBindableElement) &&
+      isBindingEnabled(appState)
+    ) {
+      const boundToSameElementAfterUpdate =
+        bindableElement && adjacentBinding.elementId === bindableElement.id;
+      if (switchToInsideBinding || boundToSameElementAfterUpdate) {
+        adjacentBinding = {
+          ...adjacentBinding,
+          mode: "inside",
+        };
+      } else {
+        adjacentBinding = {
+          ...adjacentBinding,
+          mode: "orbit",
+        };
+      }
+
+      const adjacentPointIndex = isStartBinding ? arrow.points.length - 1 : 0;
+      const adjacentNewPoint = updateBoundPoint(
+        arrow,
+        adjacentBindingField,
+        adjacentBinding,
+        adjacentBindableElement,
+        elementsMap,
+      );
+
+      if (adjacentNewPoint) {
+        pointUpdates.set(adjacentPointIndex, {
+          point: adjacentNewPoint,
+        });
+      }
+    }
+  }
+
+  if (pointUpdates.size > 0) {
+    LinearElementEditor.movePoints(arrow, scene, pointUpdates, {
+      [bindingField]: currentBinding,
+      [adjacentBindingField]: adjacentBinding,
+    });
+  }
+};
+
+export const handleFocusPointDrag = (
+  linearElementEditor: LinearElementEditor,
+  elementsMap: NonDeletedSceneElementsMap,
+  pointerCoords: { x: number; y: number },
+  scene: Scene,
+  appState: AppState,
+  gridSize: NullableGridSize,
+  switchToInsideBinding: boolean,
+) => {
+  const arrow = LinearElementEditor.getElement(
+    linearElementEditor.elementId,
+    elementsMap,
+  ) as ExcalidrawArrowElement | null;
+
+  if (
+    !arrow ||
+    !isBindingElement(arrow) ||
+    isElbowArrow(arrow) ||
+    !linearElementEditor.hoveredFocusPointBinding ||
+    !linearElementEditor.draggedFocusPointBinding
+  ) {
+    return;
+  }
+
+  const isStartBinding =
+    linearElementEditor.draggedFocusPointBinding === "start";
+  const binding = isStartBinding ? arrow.startBinding : arrow.endBinding;
+  const { x: offsetX, y: offsetY } = linearElementEditor.pointerOffset;
+  const point = pointFrom<GlobalPoint>(
+    pointerCoords.x - offsetX,
+    pointerCoords.y - offsetY,
+  );
+  const bindingField = isStartBinding ? "startBinding" : "endBinding";
+  const hit = getHoveredElementForFocusPoint(
+    point,
+    arrow,
+    scene.getNonDeletedElements(),
+    elementsMap,
+    maxBindingDistance_simple(appState.zoom),
+  );
+
+  if (hit && isBindingEnabled(appState)) {
+    if (arrow[bindingField] && hit.id !== binding?.elementId) {
+      unbindBindingElement(
+        arrow,
+        linearElementEditor.draggedFocusPointBinding,
+        scene,
+      );
+    }
+
+    const newMode =
+      switchToInsideBinding && arrow[bindingField]?.mode === "orbit"
+        ? "inside"
+        : !switchToInsideBinding && arrow[bindingField]?.mode === "inside"
+        ? "orbit"
+        : null;
+
+    if (!arrow[bindingField] || newMode) {
+      bindBindingElement(
+        arrow,
+        hit,
+        newMode || "orbit",
+        linearElementEditor.draggedFocusPointBinding,
+        scene,
+        point,
+      );
+    }
+
+    scene.mutateElement(arrow, {
+      [bindingField]: {
+        ...arrow[bindingField],
+        elementId: hit.id,
+        mode: newMode || arrow[bindingField]?.mode || "orbit",
+        ...calculateFixedPointForNonElbowArrowBinding(
+          arrow,
+          hit,
+          linearElementEditor.draggedFocusPointBinding,
+          elementsMap,
+          point,
+        ),
+      },
+    });
+  } else {
+    const pointUpdates: PointsPositionUpdates = new Map();
+    const pointIndex = isStartBinding ? 0 : arrow.points.length - 1;
+    pointUpdates.set(pointIndex, {
+      point: LinearElementEditor.createPointAt(
+        arrow,
+        elementsMap,
+        point[0],
+        point[1],
+        gridSize,
+      ),
+    });
+    LinearElementEditor.movePoints(arrow, scene, pointUpdates);
+    if (arrow[bindingField]) {
+      unbindBindingElement(arrow, isStartBinding ? "start" : "end", scene);
+    }
+  }
+
+  focusPointUpdate(
+    arrow,
+    hit,
+    isStartBinding,
+    elementsMap,
+    scene,
+    appState,
+    switchToInsideBinding,
+  );
+
+  if (hit && isBindingEnabled(appState)) {
+    moveArrowAboveBindable(
+      point,
+      arrow,
+      scene.getElementsIncludingDeleted(),
+      elementsMap,
+      scene,
+      hit,
+    );
+  }
+};
+
+export const handleFocusPointPointerDown = (
+  arrow: ExcalidrawArrowElement,
+  pointerDownState: { origin: { x: number; y: number } },
+  elementsMap: NonDeletedSceneElementsMap,
+  appState: AppState,
+): {
+  hitFocusPoint: "start" | "end" | null;
+  pointerOffset: { x: number; y: number };
+} => {
+  const pointerPos = pointFrom(
+    pointerDownState.origin.x,
+    pointerDownState.origin.y,
+  );
+  const hitThreshold = (FOCUS_POINT_SIZE * 1.5) / appState.zoom.value;
+
+  if (arrow.startBinding?.elementId) {
+    const bindableElement = elementsMap.get(arrow.startBinding.elementId);
+    if (
+      bindableElement &&
+      isBindableElement(bindableElement) &&
+      !bindableElement.isDeleted
+    ) {
+      const focusPoint = getGlobalFixedPointForBindableElement(
+        arrow.startBinding.fixedPoint,
+        bindableElement,
+        elementsMap,
+      );
+      if (
+        isFocusPointVisible(
+          focusPoint,
+          arrow,
+          bindableElement,
+          elementsMap,
+          appState,
+          "start",
+        ) &&
+        pointDistance(pointerPos, focusPoint) <= hitThreshold
+      ) {
+        return {
+          hitFocusPoint: "start",
+          pointerOffset: {
+            x: pointerPos[0] - focusPoint[0],
+            y: pointerPos[1] - focusPoint[1],
+          },
+        };
+      }
+    }
+  }
+
+  if (arrow.endBinding?.elementId) {
+    const bindableElement = elementsMap.get(arrow.endBinding.elementId);
+    if (
+      bindableElement &&
+      isBindableElement(bindableElement) &&
+      !bindableElement.isDeleted
+    ) {
+      const focusPoint = getGlobalFixedPointForBindableElement(
+        arrow.endBinding.fixedPoint,
+        bindableElement,
+        elementsMap,
+      );
+      if (
+        isFocusPointVisible(
+          focusPoint,
+          arrow,
+          bindableElement,
+          elementsMap,
+          appState,
+          "end",
+        ) &&
+        pointDistance(pointerPos, focusPoint) <= hitThreshold
+      ) {
+        return {
+          hitFocusPoint: "end",
+          pointerOffset: {
+            x: pointerPos[0] - focusPoint[0],
+            y: pointerPos[1] - focusPoint[1],
+          },
+        };
+      }
+    }
+  }
+
+  return {
+    hitFocusPoint: null,
+    pointerOffset: { x: 0, y: 0 },
+  };
+};
+
+export const handleFocusPointPointerUp = (
+  linearElementEditor: LinearElementEditor,
+  scene: Scene,
+) => {
+  invariant(
+    linearElementEditor.draggedFocusPointBinding,
+    "Must have a dragged focus point at pointer release",
+  );
+
+  const arrow = LinearElementEditor.getElement<ExcalidrawArrowElement>(
+    linearElementEditor.elementId,
+    scene.getNonDeletedElementsMap(),
+  );
+  invariant(arrow, "Arrow must be in the scene");
+
+  const bindingKey =
+    linearElementEditor.draggedFocusPointBinding === "start"
+      ? "startBinding"
+      : "endBinding";
+  const otherBindingKey =
+    linearElementEditor.draggedFocusPointBinding === "start"
+      ? "endBinding"
+      : "startBinding";
+  const boundElementId = arrow[bindingKey]?.elementId;
+  const otherBoundElementId = arrow[otherBindingKey]?.elementId;
+  const oldBoundElement =
+    boundElementId &&
+    scene
+      .getNonDeletedElements()
+      .find(
+        (element) =>
+          element.id !== boundElementId &&
+          element.id !== otherBoundElementId &&
+          isBindableElement(element) &&
+          element.boundElements?.find(({ id }) => id === arrow.id),
+      );
+  if (oldBoundElement) {
+    scene.mutateElement(oldBoundElement, {
+      boundElements: oldBoundElement.boundElements?.filter(
+        ({ id }) => id !== arrow.id,
+      ),
+    });
+  }
+
+  const boundElement =
+    boundElementId && scene.getNonDeletedElementsMap().get(boundElementId);
+  if (boundElement) {
+    scene.mutateElement(boundElement, {
+      boundElements: [
+        ...(boundElement.boundElements || [])?.filter(
+          ({ id }) => id !== arrow.id,
+        ),
+        {
+          id: arrow.id,
+          type: "arrow",
+        },
+      ],
+    });
+  }
+};
+
+export const handleFocusPointHover = (
+  arrow: ExcalidrawArrowElement,
+  scenePointerX: number,
+  scenePointerY: number,
+  scene: Scene,
+  appState: AppState,
+): "start" | "end" | null => {
+  const elementsMap = scene.getNonDeletedElementsMap();
+  const pointerPos = pointFrom(scenePointerX, scenePointerY);
+  const hitThreshold = (FOCUS_POINT_SIZE * 1.5) / appState.zoom.value;
+
+  if (arrow.startBinding?.elementId) {
+    const bindableElement = elementsMap.get(arrow.startBinding.elementId);
+    if (
+      bindableElement &&
+      isBindableElement(bindableElement) &&
+      !bindableElement.isDeleted
+    ) {
+      const focusPoint = getGlobalFixedPointForBindableElement(
+        arrow.startBinding.fixedPoint,
+        bindableElement,
+        elementsMap,
+      );
+      if (
+        isFocusPointVisible(
+          focusPoint,
+          arrow,
+          bindableElement,
+          elementsMap,
+          appState,
+          "start",
+        ) &&
+        pointDistance(pointerPos, focusPoint) <= hitThreshold
+      ) {
+        return "start";
+      }
+    }
+  }
+
+  if (arrow.endBinding?.elementId) {
+    const bindableElement = elementsMap.get(arrow.endBinding.elementId);
+    if (
+      bindableElement &&
+      isBindableElement(bindableElement) &&
+      !bindableElement.isDeleted
+    ) {
+      const focusPoint = getGlobalFixedPointForBindableElement(
+        arrow.endBinding.fixedPoint,
+        bindableElement,
+        elementsMap,
+      );
+      if (
+        isFocusPointVisible(
+          focusPoint,
+          arrow,
+          bindableElement,
+          elementsMap,
+          appState,
+          "end",
+        ) &&
+        pointDistance(pointerPos, focusPoint) <= hitThreshold
+      ) {
+        return "end";
+      }
+    }
+  }
+
   return null;
-}
-
-export function isFocusPointVisible() {
-  return true;
-}
-
-export function handleFocusPointDrag() {
-  return false;
-}
-
-export function handleFocusPointHover() {
-  return false;
-}
-
-export function handleFocusPointPointerDown() {
-  return false;
-}
-
-export function handleFocusPointPointerUp() {
-  return false;
-}
-
-export function maybeHandleArrowPointlikeDrag() {
-  return false;
-}
+};

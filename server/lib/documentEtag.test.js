@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   formatDocumentEtag,
+  ifMatchAllowsWrite,
   ifNoneMatchSatisfied,
   parseIfNoneMatch,
 } from "./documentEtag.js";
@@ -26,5 +27,12 @@ describe("documentEtag", () => {
   it("returns false when etag or sha missing", () => {
     expect(ifNoneMatchSatisfied("", "deadbeef")).toBe(false);
     expect(ifNoneMatchSatisfied('"deadbeef"', "")).toBe(false);
+  });
+
+  it("allows PUT without If-Match and rejects stale If-Match", () => {
+    expect(ifMatchAllowsWrite("", "deadbeef")).toBe(true);
+    expect(ifMatchAllowsWrite(undefined, "deadbeef")).toBe(true);
+    expect(ifMatchAllowsWrite('"deadbeef"', "deadbeef")).toBe(true);
+    expect(ifMatchAllowsWrite('"older"', "deadbeef")).toBe(false);
   });
 });

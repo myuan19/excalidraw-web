@@ -4,7 +4,7 @@
   position: fixed;
   inset: 0;
   z-index: var(--nb-z-modal);
-  background: var(--nb-overlay-scrim);
+  background: var(--nb-shell-overlay, var(--nb-overlay-scrim));
   backdrop-filter: blur(var(--nb-blur-overlay));
   -webkit-backdrop-filter: blur(var(--nb-blur-overlay));
   display: flex;

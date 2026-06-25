@@ -4,6 +4,7 @@ import {
   classifyMindMapIframeFailure,
   isBridgeReadyPhase,
   parseIframeFailureKind,
+  parseMindMapSaveProgress,
   stampMindMapDataSourceVersion,
 } from "./mindMapBridgeProtocol";
 import { mindMapDataWithStrongChild } from "./mindMapHydrateDraftPolicy";
@@ -33,6 +34,30 @@ describe("mindMapBridgeProtocol", () => {
     expect(parseIframeFailureKind({ kind: "runtime-blocked" })).toBe(
       "runtime-blocked",
     );
+  });
+
+  it("parses native save progress payloads", () => {
+    expect(
+      parseMindMapSaveProgress({
+        requestId: "save-1",
+        phase: "thumbnail",
+        elapsedMs: 1234,
+        waitReason: "render",
+        snapshotMs: 300,
+        thumbnailMs: 900,
+        hasThumbnail: true,
+      }),
+    ).toEqual({
+      requestId: "save-1",
+      phase: "thumbnail",
+      elapsedMs: 1234,
+      waitReason: "render",
+      message: null,
+      snapshotMs: 300,
+      thumbnailMs: 900,
+      hasThumbnail: true,
+    });
+    expect(parseMindMapSaveProgress({ requestId: "save-1" })).toBeNull();
   });
 
   describe("stampMindMapDataSourceVersion", () => {

@@ -10,7 +10,11 @@ import { generateMindMapThumbnailAndCache } from "./mindMapThumbnail";
 import { hashDocumentSnapshot, hashSceneSnapshot } from "./sceneHash";
 import { defaultNameForDocumentKind } from "./defaultDocumentName";
 import { createLocalDraftFileId } from "./localDraftFileId";
-import { LocalDraftSessions } from "./localDraftSessions";
+import {
+  LocalDraftSessions,
+  type LocalDraftSaveTarget,
+} from "./localDraftSessions";
+import { devDebug } from "../lib/devDebug";
 
 import { toMindMapLocalCacheRecord } from "../editors/mindmap/useMindMapFileSave";
 
@@ -20,11 +24,17 @@ import { toMindMapLocalCacheRecord } from "../editors/mindmap/useMindMapFileSave
  */
 export async function bootstrapLocalDraftSession(
   kind: string,
-  opts?: { folderId?: string | null },
+  opts?: { folderId?: string | null; saveTarget?: LocalDraftSaveTarget },
 ): Promise<{ id: string; kind: string }> {
   const now = new Date().toISOString();
   const id = createLocalDraftFileId();
   const displayName = defaultNameForDocumentKind(kind);
+  devDebug("api-sync", "bootstrapLocalDraftSession | start", {
+    id8: id.slice(0, 20),
+    kind,
+    folderId: opts?.folderId ?? null,
+    saveTarget: opts?.saveTarget ?? null,
+  });
 
   LocalDraftSessions.upsert({
     id,
@@ -33,6 +43,7 @@ export async function bootstrapLocalDraftSession(
     created_at: now,
     updated_at: now,
     ...(opts?.folderId !== undefined ? { folder_id: opts.folderId } : {}),
+    ...(opts?.saveTarget ? { save_target: opts.saveTarget } : {}),
   });
 
   await DeltaStorage.setFileId(id);
@@ -57,5 +68,9 @@ export async function bootstrapLocalDraftSession(
     await generateExcalidrawThumbnailAndCache(id, initialScene);
   }
 
+  devDebug("api-sync", "bootstrapLocalDraftSession | ok", {
+    id8: id.slice(0, 20),
+    kind,
+  });
   return { id, kind };
 }

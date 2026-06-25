@@ -60,6 +60,22 @@ export function clearMindMapBrowserView(fileId: string): void {
   }
 }
 
+export function moveMindMapBrowserViewBetweenFiles(
+  fromFileId: string,
+  toFileId: string,
+): void {
+  try {
+    const raw = localStorage.getItem(storageKey(fromFileId));
+    if (!raw) {
+      return;
+    }
+    localStorage.setItem(storageKey(toFileId), raw);
+    localStorage.removeItem(storageKey(fromFileId));
+  } catch {
+    // ignore
+  }
+}
+
 export function readMindMapBrowserView(
   fileId: string,
 ): MindMapBrowserViewState | null {

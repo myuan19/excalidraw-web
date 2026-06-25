@@ -3,7 +3,7 @@
 Docker and compose files for this fork. Build context is always the **repository root** (`..` from this folder).
 
 | File | Purpose |
-|------|---------|
+| --- | --- |
 | `Dockerfile` | Static frontend only (nginx) |
 | `Dockerfile.full` | Full stack: SPA + Express API + nginx |
 | `docker-compose.yml` | Upstream-style dev container |
@@ -20,7 +20,7 @@ docker compose -f deploy/docker-compose.full.yml up -d --build
 ### `./_scripts/deploy.sh` menu
 
 | Option | Type | What it does |
-|--------|------|----------------|
+| --- | --- | --- |
 | **1) ship** | **One-click** | Host `yarn build:production` → verify `apps/web/build` → Docker deploy → `:17888` |
 | **2) debug-ship** | **One-click (debug)** | Same as ship, debug image/container (still only `:17888`, verbose logs) |
 | **3) deploy** | **Deploy only** | Docker build + start only — **no** host `yarn build:production` (needs existing `apps/web/build` or in-image build) |
@@ -71,7 +71,7 @@ location ^~ /mind-map/dist/ {
 }
 ```
 
-3. **OAuth forward-auth** — when the user *is* logged in, the auth middleware must **pass the session cookie through** to upstream for `/mind-map/dist/*` (return 200 + JS, not login HTML). If only navigations get cookies but subresources do not, fix cookie `Domain` / `Path` on the OAuth product so `editorhub.*` receives the session cookie.
+3. **OAuth forward-auth** — when the user _is_ logged in, the auth middleware must **pass the session cookie through** to upstream for `/mind-map/dist/*` (return 200 + JS, not login HTML). If only navigations get cookies but subresources do not, fix cookie `Domain` / `Path` on the OAuth product so `editorhub.*` receives the session cookie.
 
 Verify **with** a logged-in browser cookie (or `Cookie:` header from DevTools):
 
@@ -125,7 +125,7 @@ Usually **stale or partial release**: `index.html` was updated but `apps/web/bui
 Docker nginx (`deploy/full/nginx.conf`) mirrors the app cache split:
 
 | Path | Policy |
-|------|--------|
+| --- | --- |
 | `index.html`, `/build-meta.json` | `no-cache` — always revalidate shell |
 | `/assets/*`, `/mind-map/dist/*` | `immutable` + 1y — content-hashed bundles |
 | `/api/*`, `/embed` (HTML/API) | proxied to Node; document routes use `ETag` / `304` where applicable |
@@ -137,7 +137,7 @@ After deploy, the SPA compares `VITE_APP_GIT_SHA` (injected at build) with `buil
 ### Performance verification (manual Network tab)
 
 | Scenario | Expected after this release |
-|----------|----------------------------|
+| --- | --- |
 | Main editor refresh (local cache, server unchanged) | `GET /api/files/:id` → **304**; no large JSON parse |
 | MindMap refresh | Cache-first; background `GET /api/files/hashes` only; no second full `getFile` when hash matches |
 | Embed reload | Hashed `/embed/.../dist/*` served with **session cookie** only (no per-chunk DB in server logs); second load hits **disk cache** |

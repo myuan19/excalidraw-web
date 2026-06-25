@@ -1,0 +1,15 @@
+/** 首页外壳输入框聚焦样式（FileList 搜索等） */
+@mixin shell-search-input {
+  border: var(--nb-border-width) solid var(--fl-input-border);
+  border-radius: var(--nb-radius-md);
+  background: var(--fl-input-bg);
+  outline: none;
+  transition: border-color 80ms ease-in,
+    box-shadow var(--nb-dur-hover) var(--nb-ease-ui);
+
+  &:focus {
+    border-color: var(--fl-input-focus-border);
+    box-shadow: var(--fl-input-focus-ring);
+    background: var(--fl-input-focus-bg);
+  }
+}

@@ -8,12 +8,9 @@
       const isMindMapDebugEnabled = () => {
         if (window.__MINDMAP_DEBUG__ === true) return true
         try {
-          const params = new URLSearchParams(window.location.search)
           if (
-            params.get('mindmapDebug') === '1' ||
-            params.get('mindmapLoadDebug') === '1' ||
-            window.localStorage.getItem('mindmapDebug') === '1' ||
-            window.localStorage.getItem('mindmapLoadDebug') === '1'
+            window.localStorage &&
+            window.localStorage.getItem('editorhub-debug-logging') === '1'
           ) {
             return true
           }
@@ -24,6 +21,16 @@
           return false
         }
         return false
+      }
+      const isMindMapOperationTraceEnabled = () => {
+        try {
+          return (
+            window.localStorage &&
+            window.localStorage.getItem('editorhub-debug-logging') === '1'
+          )
+        } catch (error) {
+          return false
+        }
       }
       const mindmapLoadMark = (label, data) => {
         if (!isMindMapDebugEnabled()) return
@@ -50,6 +57,71 @@
               ...(data || {})
             })
         )
+      }
+      const normalizeTraceText = text =>
+        String(text || '')
+          .replace(/<[^>]+>/g, '')
+          .replace(/&nbsp;/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+      const countTraceNodes = node => {
+        if (!node) return 0
+        return (
+          1 +
+          (node.children || []).reduce(
+            (sum, child) => sum + countTraceNodes(child),
+            0
+          )
+        )
+      }
+      const flattenTraceNodes = (node, path = ['root'], out = []) => {
+        if (!node || out.length >= 500) return out
+        const children = Array.isArray(node.children) ? node.children : []
+        out.push({
+          path: path.join('.'),
+          text: normalizeTraceText(node.data && node.data.text).slice(0, 120),
+          rawTextLen: String((node.data && node.data.text) || '').length,
+          richText: !!(node.data && node.data.richText === true),
+          childCount: children.length
+        })
+        children.forEach((child, index) => {
+          if (out.length < 500) {
+            flattenTraceNodes(child, [...path, String(index)], out)
+          }
+        })
+        return out
+      }
+      const compactTraceNode = (node, depth = 0) => {
+        if (!node) return null
+        const children = Array.isArray(node.children) ? node.children : []
+        return {
+          text: normalizeTraceText(node.data && node.data.text).slice(0, 80),
+          rawTextLen: String((node.data && node.data.text) || '').length,
+          richText: !!(node.data && node.data.richText === true),
+          childCount: children.length,
+          children:
+            depth >= 2
+              ? undefined
+              : children.slice(0, 8).map(child => compactTraceNode(child, depth + 1)),
+          truncatedChildren: Math.max(0, children.length - 8)
+        }
+      }
+      const summarizeNativeMindMapDataForTrace = data => {
+        const root = data && data.root ? data.root : null
+        if (!root) return null
+        const firstChildren = Array.isArray(root.children) ? root.children : []
+        return {
+          nodeCount: countTraceNodes(root),
+          rootText: normalizeTraceText(root.data && root.data.text).slice(0, 120),
+          rootRawTextLen: String((root.data && root.data.text) || '').length,
+          rootChildCount: firstChildren.length,
+          firstChildTexts: firstChildren
+            .slice(0, 12)
+            .map(child => normalizeTraceText(child.data && child.data.text).slice(0, 80)),
+          compactTree: compactTraceNode(root),
+          flatNodes: flattenTraceNodes(root),
+          flatNodesTruncated: countTraceNodes(root) > 500
+        }
       }
       const summarizeMindMapPayloadRichText = payload => {
         let sample = ''
@@ -100,8 +172,30 @@
             encodedBodySize: item.encodedBodySize || 0
           }))
       }
+      const normalizeBridgeTheme = theme => {
+        if (typeof theme === 'string' && theme.trim()) {
+          return { template: theme.trim(), config: {} }
+        }
+        if (theme && typeof theme === 'object' && typeof theme.template === 'string') {
+          return {
+            template: theme.template,
+            config:
+              theme.config && typeof theme.config === 'object' ? theme.config : {}
+          }
+        }
+        return { template: 'classic4', config: {} }
+      }
+      const normalizeBridgeMindMapData = data => {
+        if (!data || typeof data !== 'object') {
+          return data
+        }
+        return {
+          ...data,
+          theme: normalizeBridgeTheme(data.theme)
+        }
+      }
       const defaultBridgeState = {
-        mindMapData: {
+        mindMapData: normalizeBridgeMindMapData({
           root: {
             data: {
               text: '<p>未命名</p>',
@@ -117,7 +211,7 @@
           layout: 'logicalStructure',
           config: {},
           view: null
-        },
+        }),
         mindMapConfig: {},
         lang: 'zh',
         localConfig: null,
@@ -212,8 +306,10 @@
       const DRAFT_THUMB_EXPORT_DEBOUNCE_MS = 450
       let draftThumbExportTimer = null
       let draftThumbExportRevision = 0
+      let nativeSaveInFlight = null
       let dirtyNotifyEnabled = false
       let dirtyNotifyEnableTimer = null
+      let pendingUserEditDraftMeta = null
       // [DEBUG] 记录最近一次静默窗口的来源，便于诊断被吞掉的脏通知/草稿推送
       let dirtyNotifyDisabledMeta = null
       const describeDirtyNotifyWindow = () => {
@@ -224,6 +320,20 @@
             performance.now() - dirtyNotifyDisabledMeta.at
           )
         }
+      }
+      const notePendingUserEditDraftMeta = reason => {
+        pendingUserEditDraftMeta = {
+          userEdit: true,
+          reason: reason || null
+        }
+        traceNativeMindMapOp('pendingUserEditDraftMeta.note', {
+          reason: reason || null
+        })
+      }
+      const consumePendingUserEditDraftMeta = () => {
+        const meta = pendingUserEditDraftMeta
+        pendingUserEditDraftMeta = null
+        return meta || { userEdit: false, reason: null }
       }
       const bridgeRequests = new Map()
       const postToHost = (type, payload) => {
@@ -237,6 +347,41 @@
             '*'
           )
         }
+      }
+      const reportMindMapSaveProgress = (requestId, phase, extra) => {
+        if (
+          nativeSaveInFlight &&
+          phase !== 'skipped-not-ready' &&
+          phase !== 'failed' &&
+          phase !== 'concurrent'
+        ) {
+          nativeSaveInFlight.phase = phase
+        }
+        postToHost('mindMapSaveProgress', {
+          requestId: requestId || null,
+          phase,
+          elapsedMs:
+            nativeSaveInFlight &&
+            typeof nativeSaveInFlight.startedAt === 'number'
+              ? Math.round(performance.now() - nativeSaveInFlight.startedAt)
+              : null,
+          ...(extra || {})
+        })
+      }
+      let nativeTraceSeq = 0
+      const traceNativeMindMapOp = (label, data) => {
+        if (!isMindMapOperationTraceEnabled()) return
+        nativeTraceSeq += 1
+        const payload = {
+          nativeSeq: nativeTraceSeq,
+          nativeRevision: mindMapDataRevision,
+          label,
+          t: Math.round(performance.now()),
+          sinceBridgeStart: Math.round(performance.now() - bridgeStartedAt),
+          ...(data || {})
+        }
+        debugMindMapOpen(`op.${label}`, payload)
+        postToHost('mindMapNativeOperationTrace', payload)
       }
       const reportIframeFailure = (payload) => {
         console.error('[mindmap-bridge] iframe failure', payload)
@@ -341,18 +486,88 @@
           window.setTimeout(resolve, 0)
         })
       }
+      const waitForPendingInsertEditForSnapshot = async reason => {
+        const renderer = nativeMindMap && nativeMindMap.renderer
+        if (!renderer) {
+          return true
+        }
+        let waited = false
+        for (let attempt = 1; attempt <= 8; attempt++) {
+          const pendingPromise = renderer.pendingInsertEditPromise
+          const hasPendingRender =
+            !!renderer.pendingInsertEditRequest ||
+            !!renderer.pendingRenderRequest ||
+            !!renderer.isRendering
+          if (pendingPromise && typeof pendingPromise.then === 'function') {
+            waited = true
+            traceNativeMindMapOp('requestMindMapSave.waitPendingInsertEdit', {
+              reason,
+              attempt,
+              phase: 'edit-open-promise'
+            })
+            await Promise.race([
+              pendingPromise,
+              new Promise(resolve => window.setTimeout(resolve, 250))
+            ])
+            await waitForNextFrame()
+            continue
+          }
+          if (!hasPendingRender) {
+            if (waited) {
+              traceNativeMindMapOp('requestMindMapSave.pendingInsertEditSettled', {
+                reason,
+                attempt,
+                textEditVisible:
+                  renderer.textEdit &&
+                  typeof renderer.textEdit.isShowTextEdit === 'function'
+                    ? renderer.textEdit.isShowTextEdit()
+                    : null
+              })
+            }
+            return true
+          }
+          waited = true
+          traceNativeMindMapOp('requestMindMapSave.waitPendingInsertEdit', {
+            reason,
+            attempt,
+            phase: 'render-pending',
+            hasPendingInsertEdit: !!renderer.pendingInsertEditRequest,
+            hasPendingRenderRequest: !!renderer.pendingRenderRequest,
+            isRendering: !!renderer.isRendering
+          })
+          await new Promise(resolve =>
+            window.setTimeout(resolve, attempt <= 2 ? 0 : 16)
+          )
+        }
+        traceNativeMindMapOp('requestMindMapSave.pendingInsertEditTimeout', {
+          reason,
+          hasPendingInsertEdit: !!renderer.pendingInsertEditRequest,
+          hasPendingRenderRequest: !!renderer.pendingRenderRequest,
+          isRendering: !!renderer.isRendering,
+          hasPendingInsertEditPromise: !!renderer.pendingInsertEditPromise
+        })
+        return false
+      }
       const syncPendingTextEditForSnapshot = async reason => {
+        const insertSettled = await waitForPendingInsertEditForSnapshot(reason)
+        if (!insertSettled) {
+          return false
+        }
         const textEdit =
           nativeMindMap &&
           nativeMindMap.renderer &&
           nativeMindMap.renderer.textEdit
         if (
           !textEdit ||
-          typeof textEdit.syncEditingTextToNode !== 'function' ||
-          (typeof textEdit.isShowTextEdit === 'function' &&
-            !textEdit.isShowTextEdit())
+          typeof textEdit.syncEditingTextToNode !== 'function'
         ) {
-          return false
+          return true
+        }
+        const editing =
+          typeof textEdit.isShowTextEdit === 'function' &&
+          textEdit.isShowTextEdit()
+        if (!editing) {
+          return true
         }
         try {
           const synced = textEdit.syncEditingTextToNode()
@@ -360,12 +575,59 @@
             await synced
           }
           await waitForNextFrame()
-          debugMindMapOpen('synced text edit before snapshot', { reason })
+          debugMindMapOpen('synced text edit before snapshot', {
+            reason,
+            synced: !!synced
+          })
+          traceNativeMindMapOp('snapshot.syncTextEdit', {
+            reason,
+            synced: !!synced,
+            stillEditing:
+              typeof textEdit.isShowTextEdit === 'function'
+                ? textEdit.isShowTextEdit()
+                : null,
+            editNodeUid:
+              nativeMindMap.richText && nativeMindMap.richText.node
+                ? nativeMindMap.richText.node.uid
+                : textEdit.currentNode
+                  ? textEdit.currentNode.uid
+                  : null
+          })
           return !!synced
         } catch (error) {
           console.warn('Failed to sync MindMap text edit before snapshot', error)
+          traceNativeMindMapOp('snapshot.syncTextEdit.fail', {
+            reason,
+            message: error && error.message ? error.message : String(error)
+          })
           return false
         }
+      }
+      const collectMindMapDataForSnapshot = async reason => {
+        const insertSettled = await waitForPendingInsertEditForSnapshot(reason)
+        if (!insertSettled) {
+          traceNativeMindMapOp('requestMindMapSave.skipUnsettled', {
+            reason
+          })
+          return null
+        }
+        const syncedOk = await syncPendingTextEditForSnapshot(reason)
+        if (!syncedOk) {
+          traceNativeMindMapOp('collectMindMapDataForSnapshot.syncTextEditFailed', {
+            reason
+          })
+          return null
+        }
+        await ensureMindMapTextRendered(reason)
+        if (
+          nativeMindMap &&
+          typeof nativeMindMap.getDataForSnapshot === 'function'
+        ) {
+          return await nativeMindMap.getDataForSnapshot(true)
+        }
+        return nativeMindMap && typeof nativeMindMap.getData === 'function'
+          ? nativeMindMap.getData(true)
+          : null
       }
       const getMindMapThumbnail = async () => {
         if (!nativeMindMap || typeof nativeMindMap.export !== 'function') {
@@ -380,12 +642,168 @@
           return null
         }
       }
+      const waitForMindMapRenderSettled = () => {
+        return new Promise(resolve => {
+          const finish = () => {
+            waitForNextFrame()
+              .then(() => waitForNextFrame())
+              .then(resolve)
+          }
+          if (renderEnded && nativeMindMap) {
+            finish()
+            return
+          }
+          if (window.$bus && typeof window.$bus.$once === 'function') {
+            window.$bus.$once('node_tree_render_end', finish)
+            return
+          }
+          window.setTimeout(finish, 32)
+        })
+      }
+      const stripTextHtml = value => {
+        const div = document.createElement('div')
+        div.innerHTML = String(value || '')
+        return (div.textContent || '').trim()
+      }
+      const summarizeExpectedTextNodes = data => {
+        const summary = {
+          expectedTextNodes: 0,
+          expectedRichTextNodes: 0,
+          expectedPlainTextNodes: 0
+        }
+        const walk = node => {
+          if (!node || !node.data) return
+          const text = stripTextHtml(node.data.text)
+          if (text) {
+            summary.expectedTextNodes += 1
+            if (node.data.richText) {
+              summary.expectedRichTextNodes += 1
+            } else {
+              summary.expectedPlainTextNodes += 1
+            }
+          }
+          ;(node.children || []).forEach(walk)
+        }
+        if (data && data.root) walk(data.root)
+        return summary
+      }
+      const getNumericSize = (el, attrName, rectValue) => {
+        const attr = Number(el.getAttribute(attrName) || 0)
+        return Number.isFinite(attr) && attr > 0 ? attr : rectValue || 0
+      }
+      const collectMindMapTextRenderHealth = expectedData => {
+        const expected = summarizeExpectedTextNodes(expectedData)
+        const rootEl = nativeMindMap && nativeMindMap.el
+        const containerRect = rootEl
+          ? rootEl.getBoundingClientRect()
+          : { width: 0, height: 0 }
+        const foreignObjects = rootEl
+          ? Array.from(rootEl.querySelectorAll('foreignObject'))
+          : []
+        const textForeignObjects = foreignObjects.filter(item =>
+          (item.textContent || '').trim()
+        )
+        const collapsedForeignObjects = textForeignObjects.filter(item => {
+          const rect = item.getBoundingClientRect()
+          const width = getNumericSize(item, 'width', rect.width)
+          const height = getNumericSize(item, 'height', rect.height)
+          return width <= 1 || height <= 1
+        })
+        const svgTextNodes = rootEl
+          ? Array.from(rootEl.querySelectorAll('text')).filter(item =>
+              (item.textContent || '').trim()
+            )
+          : []
+        const renderedTextCount = textForeignObjects.length + svgTextNodes.length
+        const hasAllExpectedText = renderedTextCount >= expected.expectedTextNodes
+        const hasAllExpectedRichText =
+          expected.expectedRichTextNodes === 0 ||
+          textForeignObjects.length >= expected.expectedRichTextNodes
+        const health = {
+          ...expected,
+          renderedTextCount,
+          hasAllExpectedText,
+          hasAllExpectedRichText,
+          foreignObjectCount: foreignObjects.length,
+          textForeignObjectCount: textForeignObjects.length,
+          collapsedForeignObjectCount: collapsedForeignObjects.length,
+          svgTextCount: svgTextNodes.length,
+          containerWidth: Math.round(containerRect.width || 0),
+          containerHeight: Math.round(containerRect.height || 0)
+        }
+        health.healthy =
+          expected.expectedTextNodes === 0 ||
+          (health.containerWidth > 1 &&
+            health.containerHeight > 1 &&
+            hasAllExpectedText &&
+            hasAllExpectedRichText &&
+            collapsedForeignObjects.length === 0)
+        return health
+      }
+      const ensureMindMapTextRendered = async reason => {
+        if (!nativeMindMap || !nativeMindMap.renderer) {
+          return
+        }
+        const renderer = nativeMindMap.renderer
+        if (typeof renderer.forceLoadNode !== 'function') {
+          if (!renderEnded) {
+            await waitForMindMapRenderSettled()
+          }
+          return
+        }
+        const runPass = async (passReason, attempt) => {
+          renderer.forceLoadNode()
+          await waitForMindMapRenderSettled()
+          const health = collectMindMapTextRenderHealth(bridgeState.mindMapData)
+          debugMindMapOpen('ensureMindMapTextRendered pass', {
+            reason,
+            passReason,
+            attempt,
+            health
+          })
+          return health
+        }
+        let health = await runPass('initial', 1)
+        const el = nativeMindMap.el
+        if (el) {
+          const rect = el.getBoundingClientRect()
+          if (rect.width <= 1 || rect.height <= 1) {
+            await waitForNextFrame()
+            await waitForNextFrame()
+            health = await runPass('container-resized', 2)
+          }
+        }
+        for (let attempt = 3; attempt <= 5 && health && !health.healthy; attempt++) {
+          debugMindMapOpen('text render unhealthy after force render', {
+            reason,
+            attempt: attempt - 1,
+            health
+          })
+          await new Promise(resolve => window.setTimeout(resolve, 32 * attempt))
+          health = await runPass('retry-unhealthy', attempt)
+        }
+      }
+      const exportMindMapThumbnailSnapshot = async reason => {
+        if (!nativeMindMap || typeof nativeMindMap.export !== 'function') {
+          return null
+        }
+        await syncPendingTextEditForSnapshot(reason)
+        await ensureMindMapTextRendered(reason)
+        return await getMindMapThumbnail()
+      }
       const scheduleDraftThumbnailExport = revision => {
         draftThumbExportRevision = revision
+        traceNativeMindMapOp('draftThumbnailExport.scheduled', {
+          revision,
+          debounceMs: DRAFT_THUMB_EXPORT_DEBOUNCE_MS
+        })
         window.clearTimeout(draftThumbExportTimer)
         draftThumbExportTimer = window.setTimeout(() => {
           draftThumbExportTimer = null
           const revisionAtExport = draftThumbExportRevision
+          traceNativeMindMapOp('draftThumbnailExport.timerFired', {
+            revision: revisionAtExport
+          })
           const runExport = async () => {
             if (!nativeMindMap || !renderEnded) {
               debugMindMapOpen('draft thumbnail export deferred (not rendered)', {
@@ -403,7 +821,9 @@
               return
             }
             const exportStart = performance.now()
-            const thumbnail = await getMindMapThumbnail()
+            const thumbnail = await exportMindMapThumbnailSnapshot(
+              'draft-thumb-export'
+            )
             debugMindMapOpen('draft thumbnail export done', {
               revision: revisionAtExport,
               elapsed: Math.round(performance.now() - exportStart),
@@ -411,6 +831,10 @@
               thumbnailLength: thumbnail ? thumbnail.length : 0
             })
             if (!thumbnail) return
+            traceNativeMindMapOp('draftThumbnailExport.posted', {
+              revision: revisionAtExport,
+              thumbnailLength: thumbnail.length
+            })
             postToHost('saveMindMapThumbnail', {
               revision: revisionAtExport,
               thumbnail
@@ -419,8 +843,17 @@
           void runExport()
         }, DRAFT_THUMB_EXPORT_DEBOUNCE_MS)
       }
-      const postMindMapDataToHost = async (data, requestId) => {
+      const postMindMapDataToHost = async (data, requestId, providedThumbnail) => {
         const revision = ++mindMapDataRevision
+        const draftUserEditMeta = consumePendingUserEditDraftMeta()
+        traceNativeMindMapOp('saveMindMapData.prepare', {
+          requestId: requestId || null,
+          revision,
+          userEdit: draftUserEditMeta.userEdit,
+          reason: draftUserEditMeta.reason,
+          dirtyNotifyEnabled,
+          data: summarizeNativeMindMapDataForTrace(data)
+        })
         if (requestId) {
           const exportStart = performance.now()
           debugMindMapOpen('postMindMapDataToHost before thumbnail export', {
@@ -431,7 +864,20 @@
                 ? data.root.children.length
                 : 0
           })
-          const thumbnail = await getMindMapThumbnail()
+          let thumbnail = providedThumbnail
+          if (thumbnail === undefined) {
+            thumbnail = await exportMindMapThumbnailSnapshot(
+              'save-mindmap-data'
+            )
+          }
+          traceNativeMindMapOp('saveMindMapData.thumbnailExported', {
+            requestId,
+            revision,
+            elapsed: Math.round(performance.now() - exportStart),
+            hasThumbnail: !!thumbnail,
+            thumbnailLength: thumbnail ? thumbnail.length : 0,
+            data: summarizeNativeMindMapDataForTrace(data)
+          })
           debugMindMapOpen('postMindMapDataToHost after thumbnail export', {
             requestId,
             revision,
@@ -443,11 +889,28 @@
             requestId,
             revision,
             data,
-            thumbnail
+            thumbnail,
+            userEdit: draftUserEditMeta.userEdit,
+            reason: draftUserEditMeta.reason
+          })
+          traceNativeMindMapOp('saveMindMapData.postedSaveResponse', {
+            requestId,
+            revision,
+            userEdit: draftUserEditMeta.userEdit,
+            reason: draftUserEditMeta.reason,
+            hasThumbnail: !!thumbnail,
+            data: summarizeNativeMindMapDataForTrace(data)
           })
           return
         }
-        if (!dirtyNotifyEnabled) {
+        if (!dirtyNotifyEnabled && !draftUserEditMeta.userEdit) {
+          traceNativeMindMapOp('saveMindMapData.suppressed', {
+            ...describeDirtyNotifyWindow(),
+            revision,
+            userEdit: draftUserEditMeta.userEdit,
+            reason: draftUserEditMeta.reason,
+            data: summarizeNativeMindMapDataForTrace(data)
+          })
           debugMindMapOpen('postMindMapDataToHost draft push suppressed', {
             ...describeDirtyNotifyWindow(),
             revision,
@@ -478,6 +941,8 @@
         })()
         debugMindMapOpen('postMindMapDataToHost draft data push', {
           revision,
+          userEdit: draftUserEditMeta.userEdit,
+          reason: draftUserEditMeta.reason,
           rootChildren:
             data && data.root && data.root.children
               ? data.root.children.length
@@ -490,7 +955,15 @@
         postToHost('saveMindMapData', {
           revision,
           data,
-          thumbnail: null
+          thumbnail: null,
+          userEdit: draftUserEditMeta.userEdit,
+          reason: draftUserEditMeta.reason
+        })
+        traceNativeMindMapOp('saveMindMapData.postedDraft', {
+          revision,
+          userEdit: draftUserEditMeta.userEdit,
+          reason: draftUserEditMeta.reason,
+          data: summarizeNativeMindMapDataForTrace(data)
         })
         scheduleDirtyNotifyEnable('draft-push')
         scheduleDraftThumbnailExport(revision)
@@ -523,7 +996,7 @@
           return ''
         }
       }
-      const applyHostMindMapData = reason => {
+      const applyHostMindMapData = async reason => {
         if (!nativeMindMap || typeof nativeMindMap.setFullData !== 'function') {
           return
         }
@@ -542,14 +1015,41 @@
         }
         if (incomingFp && incomingFp === currentFp) {
           debugMindMapOpen('skip host mindMapData apply (unchanged)', { reason })
+          await ensureMindMapTextRendered(`unchanged:${reason}`)
           return
         }
-        nativeMindMap.setFullData(data)
+        let dataToApply = data
+        if (!data.view && typeof nativeMindMap.getData === 'function') {
+          try {
+            const currentData = nativeMindMap.getData(true)
+            if (currentData && currentData.view) {
+              dataToApply = {
+                ...data,
+                view: currentData.view
+              }
+              debugMindMapOpen('preserve current view for host mindMapData apply', {
+                reason
+              })
+            }
+          } catch (error) {
+            debugMindMapOpen('preserve current view failed', {
+              reason,
+              message: error && error.message ? error.message : String(error)
+            })
+          }
+        }
+        nativeMindMap.setFullData(dataToApply)
+        await ensureMindMapTextRendered(reason)
       }
       const setTakeOverAppMethods = data => {
         bridgeState = {
           ...defaultBridgeState,
           ...(data || {})
+        }
+        if (bridgeState.mindMapData) {
+          bridgeState.mindMapData = normalizeBridgeMindMapData(
+            bridgeState.mindMapData
+          )
         }
         window.takeOverAppEmbedMode = bridgeState.embedMode === true
         window.takeOverAppReadOnly = bridgeState.readOnly === true
@@ -560,8 +1060,17 @@
         }
         // 保存思维导图数据的函数
         window.takeOverAppMethods.saveMindMapData = data => {
-          bridgeState.mindMapData = data
-          postMindMapDataToHost(data)
+          void (async () => {
+            const snapshot =
+              await collectMindMapDataForSnapshot('takeover-save')
+            const resolved = snapshot || data
+            bridgeState.mindMapData = resolved
+            traceNativeMindMapOp('takeOverApp.saveMindMapData', {
+              usedSnapshot: !!snapshot,
+              data: summarizeNativeMindMapDataForTrace(resolved)
+            })
+            await postMindMapDataToHost(resolved)
+          })()
         }
         // 获取思维导图配置，也就是实例化时会传入的选项
         window.takeOverAppMethods.getMindMapConfig = () => {
@@ -698,16 +1207,59 @@
         }
         let textEditDirtyTimer = null
         scheduleDirtyNotifyEnable('bootstrap-start')
-        const notifyDirty = () => {
-          if (!dirtyNotifyEnabled) {
+        const userEditCommandNames = new Set([
+          'INSERT_NODE',
+          'INSERT_CHILD_NODE',
+          'INSERT_PARENT_NODE',
+          'INSERT_MULTI_NODE',
+          'INSERT_MULTI_CHILD_NODE',
+          'REMOVE_NODE',
+          'REMOVE_CURRENT_NODE',
+          'SET_NODE_EXPAND',
+          'MOVE_UP_ONE_LEVEL',
+          'MOVE_NODE_TO',
+          'MOVE_NODE_BY_DROP_TARGET',
+          'UP_NODE',
+          'DOWN_NODE'
+        ])
+        const notifyDirty = (opts = {}) => {
+          const forceUserEdit = opts.userEdit === true
+          if (forceUserEdit) {
+            notePendingUserEditDraftMeta(opts.reason || null)
+          }
+          if (!dirtyNotifyEnabled && !forceUserEdit) {
+            traceNativeMindMapOp('dirtyNotify.suppressed', {
+              reason: opts.reason || null,
+              userEdit: forceUserEdit,
+              ...describeDirtyNotifyWindow()
+            })
             debugMindMapOpen(
               'dirty notify suppressed',
               describeDirtyNotifyWindow()
             )
             return
           }
-          debugMindMapOpen('dirty notify emit', { phase: 'user-edit' })
-          postToHost('mindMapDirtyState', { dirty: true })
+          traceNativeMindMapOp('dirtyNotify.emit', {
+            phase: forceUserEdit ? 'user-edit' : 'data-change',
+            forced: forceUserEdit && !dirtyNotifyEnabled,
+            reason: opts.reason || null,
+            userEdit: forceUserEdit,
+            data: summarizeNativeMindMapDataForTrace(
+              nativeMindMap && typeof nativeMindMap.getData === 'function'
+                ? nativeMindMap.getData()
+                : null
+            )
+          })
+          debugMindMapOpen('dirty notify emit', {
+            phase: forceUserEdit ? 'text-edit' : 'data-change',
+            forced: forceUserEdit && !dirtyNotifyEnabled,
+            reason: opts.reason || null
+          })
+          postToHost('mindMapDirtyState', {
+            dirty: true,
+            userEdit: forceUserEdit,
+            reason: opts.reason || null
+          })
         }
         window.$bus.$on('data_change', notifyDirty)
         window.$bus.$on('hide_text_edit', () => {
@@ -786,10 +1338,32 @@
           // 直接在 mindMap 实例上监听文本编辑变化（不通过 $bus 转发，避免触发 RichText 内部错误）
           nativeMindMap.on('node_text_edit_change', () => {
             if (textEditDirtyTimer) return
+          traceNativeMindMapOp('user.textEdit.change', {
+            data: summarizeNativeMindMapDataForTrace(
+              nativeMindMap && typeof nativeMindMap.getData === 'function'
+                ? nativeMindMap.getData(true)
+                : null
+            )
+          })
+            notifyDirty({ userEdit: true, reason: 'text-edit' })
             textEditDirtyTimer = setTimeout(() => {
               textEditDirtyTimer = null
-              notifyDirty()
             }, 150)
+          })
+          nativeMindMap.on('afterExecCommand', commandName => {
+            if (!userEditCommandNames.has(commandName)) return
+          traceNativeMindMapOp('user.command.afterExec', {
+            commandName,
+            data: summarizeNativeMindMapDataForTrace(
+              nativeMindMap && typeof nativeMindMap.getData === 'function'
+                ? nativeMindMap.getData(true)
+                : null
+            )
+          })
+            notifyDirty({
+              userEdit: true,
+              reason: `command:${commandName}`
+            })
           })
         })
         window.$bus.$on('node_tree_render_end', () => {
@@ -864,7 +1438,7 @@
           })
           if (appStarted && nativeMindMap && hostAppInitedSent) {
             setTakeOverAppMethods(message.payload)
-            applyHostMindMapData('init-mind-map-repeat')
+            void applyHostMindMapData('init-mind-map-repeat')
             return
           }
           startTakeOverApp(message.payload)
@@ -880,7 +1454,7 @@
           debugMindMapOpen('received setMindMapData message', richSummary)
           scheduleDirtyNotifyEnable('set-mind-map-data')
           setTakeOverAppMethods(message.payload)
-          applyHostMindMapData('set-mind-map-data')
+          void applyHostMindMapData('set-mind-map-data')
         }
         if (message.type === 'mindMapAiConfig') {
           debugMindMapOpen('postMessage mindMapAiConfig', {
@@ -916,31 +1490,139 @@
           }
         }
         if (message.type === 'hostExportDraftThumbnail') {
+          const revision = ++mindMapDataRevision
           debugMindMapOpen('hostExportDraftThumbnail', {
             renderEnded,
             hasNativeMindMap: !!nativeMindMap
           })
-          scheduleDraftThumbnailExport(++mindMapDataRevision)
+          void (async () => {
+            const exportStart = performance.now()
+            const thumbnail = await exportMindMapThumbnailSnapshot(
+              'host-export-draft'
+            )
+            debugMindMapOpen('hostExportDraftThumbnail done', {
+              revision,
+              elapsed: Math.round(performance.now() - exportStart),
+              hasThumbnail: !!thumbnail,
+              thumbnailLength: thumbnail ? thumbnail.length : 0
+            })
+            if (!thumbnail) {
+              return
+            }
+            postToHost('saveMindMapThumbnail', {
+              revision,
+              thumbnail
+            })
+          })()
         }
         if (message.type === 'requestMindMapSave') {
           const requestId = message.payload && message.payload.requestId
-          debugMindMapOpen('received requestMindMapSave', {
+          const saveStartedAt = performance.now()
+          debugMindMapOpen('requestMindMapSave | received', {
             requestId: requestId || null,
             hasNativeMindMap: !!nativeMindMap,
-            bridgeReady: !!window.takeOverAppMethods
+            bridgeReady: !!window.takeOverAppMethods,
+            renderEnded,
+            concurrentInFlight: nativeSaveInFlight
+              ? {
+                  requestId: nativeSaveInFlight.requestId,
+                  phase: nativeSaveInFlight.phase,
+                  elapsedMs: Math.round(
+                    performance.now() - nativeSaveInFlight.startedAt
+                  )
+                }
+              : null
           })
           if (!nativeMindMap || typeof nativeMindMap.getData !== 'function') {
+            reportMindMapSaveProgress(requestId, 'skipped-not-ready', {
+              hasNativeMindMap: !!nativeMindMap
+            })
+            traceNativeMindMapOp('requestMindMapSave.skipNotReady', {
+              requestId: requestId || null,
+              hasNativeMindMap: !!nativeMindMap
+            })
             console.warn(
               '[DEBUG] mindmap-bridge | requestMindMapSave skipped: nativeMindMap not ready',
               { requestId: requestId || null, hasNativeMindMap: !!nativeMindMap }
             )
             return
           }
-          if (nativeMindMap && typeof nativeMindMap.getData === 'function') {
-            await syncPendingTextEditForSnapshot('request-save')
-            bridgeState.mindMapData = nativeMindMap.getData(true)
+          if (nativeSaveInFlight) {
+            reportMindMapSaveProgress(requestId, 'concurrent', {
+              existingRequestId: nativeSaveInFlight.requestId,
+              existingPhase: nativeSaveInFlight.phase,
+              existingElapsedMs: Math.round(
+                performance.now() - nativeSaveInFlight.startedAt
+              )
+            })
           }
-          postMindMapDataToHost(bridgeState.mindMapData, requestId)
+          nativeSaveInFlight = {
+            requestId: requestId || null,
+            startedAt: saveStartedAt,
+            phase: 'snapshot'
+          }
+          reportMindMapSaveProgress(requestId, 'snapshot', { renderEnded })
+          try {
+            const snapshotStartedAt = performance.now()
+            const snapshotData =
+              await collectMindMapDataForSnapshot('request-save')
+            if (!snapshotData) {
+              reportMindMapSaveProgress(requestId, 'failed', {
+                message: 'MindMap snapshot not settled'
+              })
+              traceNativeMindMapOp('requestMindMapSave.skipUnsettled', {
+                requestId: requestId || null
+              })
+              return
+            }
+            bridgeState.mindMapData = snapshotData
+            traceNativeMindMapOp('requestMindMapSave.snapshot', {
+              requestId: requestId || null,
+              snapshotMs: Math.round(performance.now() - snapshotStartedAt),
+              data: summarizeNativeMindMapDataForTrace(bridgeState.mindMapData)
+            })
+            reportMindMapSaveProgress(requestId, 'thumbnail', {
+              snapshotMs: Math.round(performance.now() - snapshotStartedAt),
+              renderEnded
+            })
+            const thumbStartedAt = performance.now()
+            let thumbnail = null
+            try {
+              thumbnail = await exportMindMapThumbnailSnapshot(
+                'request-save'
+              )
+            } catch (error) {
+              debugMindMapOpen('requestMindMapSave | thumbnail export failed', {
+                requestId: requestId || null,
+                message: error && error.message ? error.message : String(error)
+              })
+              console.warn('Failed to export MindMap save thumbnail', error)
+            }
+            reportMindMapSaveProgress(requestId, 'post', {
+              snapshotMs: Math.round(performance.now() - snapshotStartedAt),
+              thumbnailMs: Math.round(performance.now() - thumbStartedAt),
+              hasThumbnail: !!thumbnail
+            })
+            await postMindMapDataToHost(
+              bridgeState.mindMapData,
+              requestId,
+              thumbnail
+            )
+            debugMindMapOpen('requestMindMapSave | posted', {
+              requestId: requestId || null,
+              totalMs: Math.round(performance.now() - saveStartedAt),
+              hasThumbnail: !!thumbnail
+            })
+          } catch (error) {
+            reportMindMapSaveProgress(requestId, 'failed', {
+              phase: nativeSaveInFlight ? nativeSaveInFlight.phase : null,
+              totalMs: Math.round(performance.now() - saveStartedAt),
+              message: error && error.message ? error.message : String(error)
+            })
+            return
+          } finally {
+            nativeSaveInFlight = null
+          }
         }
         if (message.type === 'updateRootText') {
           const newText = message.payload && message.payload.text

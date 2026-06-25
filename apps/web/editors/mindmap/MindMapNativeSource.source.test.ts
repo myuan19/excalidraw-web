@@ -110,6 +110,14 @@ describe("MindMap native source contract", () => {
     expect(utilsSource).toContain(
       "export const handleTextEditSaveShortcut = (e, mindMap)",
     );
+    const saveShortcutBlock = utilsSource.slice(
+      utilsSource.indexOf("export const handleTextEditSaveShortcut"),
+      utilsSource.indexOf("//  缩放图片", utilsSource.indexOf("export const handleTextEditSaveShortcut")),
+    );
+    expect(saveShortcutBlock).toContain("hideEditTextBox()");
+    expect(saveShortcutBlock.indexOf("hideEditTextBox()")).toBeLessThan(
+      saveShortcutBlock.indexOf("handler()"),
+    );
     expect(textEditSource).toContain(
       "handleTextEditSaveShortcut(e, this.mindMap)",
     );
@@ -144,6 +152,66 @@ describe("MindMap native source contract", () => {
     expect(richTextSource).toContain(
       "避免Quill把剪贴板末尾换行转换成额外空段落",
     );
+  });
+
+  it("opens only the latest inserted node after the render pass settles", () => {
+    const renderSource = fs.readFileSync(
+      path.join(
+        appRoot,
+        "editors/mindmap/native/simple-mind-map/src/core/render/Render.js",
+      ),
+      "utf8",
+    );
+    const textEditSource = fs.readFileSync(
+      path.join(
+        appRoot,
+        "editors/mindmap/native/simple-mind-map/src/core/render/TextEdit.js",
+      ),
+      "utf8",
+    );
+    const mindMapNodeSource = fs.readFileSync(
+      path.join(
+        appRoot,
+        "editors/mindmap/native/simple-mind-map/src/core/render/node/MindMapNode.js",
+      ),
+      "utf8",
+    );
+
+    expect(renderSource).toContain("this.pendingInsertEditRequest = null");
+    expect(renderSource).toContain("this.pendingInsertEditToken = 0");
+    expect(renderSource).toContain("token: ++this.pendingInsertEditToken");
+    expect(renderSource).toContain(
+      "request.token !== this.pendingInsertEditToken",
+    );
+    expect(renderSource).toContain(
+      "this.textEdit.openAfterInsert(node, request.token)",
+    );
+
+    expect(textEditSource).toContain(
+      "openAfterInsert(node, insertEditToken = null)",
+    );
+    expect(textEditSource).toContain("this.hideEditTextBox()");
+    expect(textEditSource).toContain("this.renderer.findNodeByUid(node.uid)");
+    expect(textEditSource).toContain(
+      "this.show({ node: targetNode, isInserting: true, insertEditToken })",
+    );
+    expect(textEditSource).toContain("selectAllAfterInsert(node)");
+    expect(textEditSource).toContain("window.requestAnimationFrame");
+    expect(textEditSource).toContain(
+      "this.selectAllAfterInsert(node, insertEditToken)",
+    );
+
+    const renderMethodSource = mindMapNodeSource.slice(
+      mindMapNodeSource.indexOf("render(callback = () => {},"),
+      mindMapNodeSource.indexOf("// 删除自身"),
+    );
+    const insertingBlockIndex = renderMethodSource.indexOf(
+      "this.nodeData.inserting",
+    );
+    const childRenderIndex = renderMethodSource.indexOf("// 子节点");
+    expect(insertingBlockIndex).toBeGreaterThan(-1);
+    expect(childRenderIndex).toBeGreaterThan(-1);
+    expect(insertingBlockIndex).toBeLessThan(childRenderIndex);
   });
 
   it("prevents native browser dragging for node links", () => {
@@ -495,6 +563,13 @@ describe("MindMap native source contract", () => {
       ),
       "utf8",
     );
+    const textEditSource = fs.readFileSync(
+      path.join(
+        appRoot,
+        "editors/mindmap/native/simple-mind-map/src/core/render/TextEdit.js",
+      ),
+      "utf8",
+    );
     const indexSource = fs.readFileSync(
       path.join(appRoot, "editors/mindmap/native/simple-mind-map/index.js"),
       "utf8",
@@ -522,11 +597,37 @@ describe("MindMap native source contract", () => {
     expect(renderPassBlock.indexOf("this.mindMap.clearDraw()")).toBeLessThan(
       renderPassBlock.indexOf("this.lastNodeCache = this.nodeCache"),
     );
-    // 插入后编辑队列按uid解析最新实例，避免引用被全量重建替换的旧实例
-    expect(renderSource).toContain(
-      "this.pendingInsertEditNodes.push(node.uid)",
+    // 插入后编辑队列只保留最新uid+token，避免旧 render pass 打开过期节点
+    expect(renderSource).toContain("this.pendingInsertEditRequest = null");
+    expect(renderSource).toContain("this.pendingInsertEditToken = 0");
+    expect(renderSource).toContain("this.pendingInsertEditPromise = null");
+    expect(renderSource).toContain("token: ++this.pendingInsertEditToken");
+    expect(renderSource).toContain("const node = this.findNodeByUid(request.uid)");
+    expect(renderSource).toContain("this.pendingInsertEditPromise = Promise.resolve(opened)");
+    expect(textEditSource).toContain("return this.show({ node: targetNode, isInserting: true, insertEditToken })");
+  });
+
+  it("keeps getData synchronous and exposes an awaited snapshot data path", () => {
+    const indexSource = fs.readFileSync(
+      path.join(appRoot, "editors/mindmap/native/simple-mind-map/index.js"),
+      "utf8",
     );
-    expect(renderSource).toContain("const node = this.findNodeByUid(uid)");
+    const getDataBlock = indexSource.slice(
+      indexSource.indexOf("getData(withConfig) {"),
+      indexSource.indexOf("async export(...args)", indexSource.indexOf("getData(withConfig) {")),
+    );
+
+    expect(indexSource).toContain("async getDataForSnapshot(withConfig)");
+    expect(indexSource).toContain("await this.syncEditingTextToNodeForSnapshot()");
+    const snapshotBlock = indexSource.slice(
+      indexSource.indexOf("async getDataForSnapshot(withConfig)"),
+      indexSource.indexOf("//  ???????????????????", indexSource.indexOf("async getDataForSnapshot(withConfig)")),
+    );
+    expect(snapshotBlock).toContain("this.command.originAddHistory()");
+    expect(snapshotBlock.indexOf("await this.syncEditingTextToNodeForSnapshot()")).toBeLessThan(
+      snapshotBlock.indexOf("this.command.originAddHistory()"),
+    );
+    expect(getDataBlock).not.toContain("syncEditingTextToNode()");
   });
 
   it("keeps realtime text edit rebuilds driven by quill text-change events", () => {
@@ -544,6 +645,110 @@ describe("MindMap native source contract", () => {
     expect(richTextSource).toContain(
       "this.mindMap.emit('node_text_edit_change'",
     );
+  });
+
+  it("explicitly focuses Quill before setting rich text editor selection", () => {
+    const richTextSource = fs.readFileSync(
+      path.join(
+        appRoot,
+        "editors/mindmap/native/simple-mind-map/src/plugins/RichText.js",
+      ),
+      "utf8",
+    );
+    const focusStart = richTextSource.indexOf("focus(start) {");
+    const focusEnd = richTextSource.indexOf("focusAtMouseEvent", focusStart);
+    const focusBlock = richTextSource.slice(focusStart, focusEnd);
+
+    expect(focusBlock).toContain("this.quill.focus()");
+    expect(focusBlock.indexOf("this.quill.focus()")).toBeLessThan(
+      focusBlock.indexOf("this.quill.setSelection("),
+    );
+  });
+
+  it("forces dirty state for real native user edits even during hydrate settle", () => {
+    const takeoverShellSource = fs.readFileSync(
+      path.join(
+        appRoot,
+        "editors/mindmap/native/web/src/bridge/takeoverShell.js",
+      ),
+      "utf8",
+    );
+
+    expect(takeoverShellSource).toContain("const userEditCommandNames = new Set");
+    expect(takeoverShellSource).toContain("'INSERT_CHILD_NODE'");
+    expect(takeoverShellSource).toContain("'REMOVE_NODE'");
+    expect(takeoverShellSource).toContain("'SET_NODE_EXPAND'");
+    expect(takeoverShellSource).toContain("const notifyDirty = (opts = {}) =>");
+    expect(takeoverShellSource).toContain("const forceUserEdit = opts.userEdit === true");
+    expect(takeoverShellSource).toContain("postToHost('mindMapDirtyState', {");
+    expect(takeoverShellSource).toContain("userEdit: forceUserEdit");
+    expect(takeoverShellSource).toContain("notifyDirty({ userEdit: true, reason: 'text-edit' })");
+    expect(takeoverShellSource).toContain("nativeMindMap.on('afterExecCommand'");
+    expect(takeoverShellSource).toContain("reason: `command:${commandName}`");
+  });
+
+  it("carries real native user edit metadata into the next draft payload", () => {
+    const takeoverShellSource = fs.readFileSync(
+      path.join(
+        appRoot,
+        "editors/mindmap/native/web/src/bridge/takeoverShell.js",
+      ),
+      "utf8",
+    );
+
+    expect(takeoverShellSource).toContain("let pendingUserEditDraftMeta = null");
+    expect(takeoverShellSource).toContain("pendingUserEditDraftMeta = {");
+    expect(takeoverShellSource).toContain("const draftUserEditMeta = consumePendingUserEditDraftMeta()");
+    expect(takeoverShellSource).toContain("userEdit: draftUserEditMeta.userEdit");
+    expect(takeoverShellSource).toContain("reason: draftUserEditMeta.reason");
+  });
+
+  it("forwards native user operation traces back to the host timeline", () => {
+    const takeoverShellSource = fs.readFileSync(
+      path.join(
+        appRoot,
+        "editors/mindmap/native/web/src/bridge/takeoverShell.js",
+      ),
+      "utf8",
+    );
+
+    expect(takeoverShellSource).toContain("const traceNativeMindMapOp = (label, data) =>");
+    expect(takeoverShellSource).toContain("editorhub-debug-logging");
+    expect(takeoverShellSource).toContain("if (!isMindMapOperationTraceEnabled()) return");
+    expect(takeoverShellSource).toContain(
+      "postToHost('mindMapNativeOperationTrace', payload)",
+    );
+    expect(takeoverShellSource).toContain("traceNativeMindMapOp('user.command.afterExec'");
+    expect(takeoverShellSource).toContain("traceNativeMindMapOp('requestMindMapSave.snapshot'");
+    expect(takeoverShellSource).toContain("traceNativeMindMapOp('saveMindMapData.postedDraft'");
+  });
+
+  it("removes native note hover sidebars and opens notes from one toolbar click path", () => {
+    const editSource = fs.readFileSync(
+      path.join(
+        appRoot,
+        "editors/mindmap/native/web/src/pages/Edit/components/Edit.vue",
+      ),
+      "utf8",
+    );
+    const toolbarSource = fs.readFileSync(
+      path.join(
+        appRoot,
+        "editors/mindmap/native/web/src/pages/Edit/components/Toolbar.vue",
+      ),
+      "utf8",
+    );
+
+    expect(editSource).not.toContain("NodeNoteContentShow");
+    expect(editSource).not.toContain("NodeNoteSidebar");
+    expect(editSource).not.toContain("customNoteContentShow");
+    expect(editSource).toContain("'node_note_click'");
+    expect(editSource).not.toContain("'node_note_dblclick'");
+    expect(toolbarSource).toContain("this.$bus.$on('node_note_click', this.onNodeNoteClick)");
+    expect(toolbarSource).toContain("this.$bus.$off('node_note_click', this.onNodeNoteClick)");
+    expect(toolbarSource).toContain("onNodeNoteClick(node, e)");
+    expect(toolbarSource).not.toContain("node_note_dblclick");
+    expect(toolbarSource).not.toContain("onNodeNoteDblclick");
   });
 
   it("commits AI fallback writes through the native history save chain", () => {

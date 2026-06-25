@@ -1,5 +1,7 @@
 import {
   createEmptyMindMapData,
+  getMindMapRootPlainText,
+  getMindMapRootText,
   isEffectivelyEmptyMindMapData,
   MindMapAdapter,
 } from "./MindMapAdapter";
@@ -24,16 +26,25 @@ describe("MindMapAdapter", () => {
   });
 
   it("uses the provided display name as the default root text", () => {
-    expect(createEmptyMindMapData("项目计划").root.data.text).toBe(
+    expect(createEmptyMindMapData("项目计划").root.data!.text).toBe(
       "<p>项目计划</p>",
     );
-    expect(createEmptyMindMapData("<unsafe&name>").root.data.text).toBe(
+    expect(createEmptyMindMapData("<unsafe&name>").root.data!.text).toBe(
       "<p>&lt;unsafe&amp;name&gt;</p>",
     );
   });
 
-  it("accepts current simple-mind-map data", async () => {
-    await expect(
+  it("treats cleared root text as 未命名 for display-name sync", () => {
+    const data = {
+      root: { data: { text: "<p><br></p>", richText: true }, children: [] },
+    };
+
+    expect(getMindMapRootText(data)).toBe("未命名");
+    expect(getMindMapRootPlainText(data)).toBe("");
+  });
+
+  it("accepts current simple-mind-map data", () => {
+    expect(
       MindMapAdapter.parse({
         root: {
           data: {
@@ -49,7 +60,7 @@ describe("MindMapAdapter", () => {
         lang: "zh",
         localConfig: null,
       }),
-    ).resolves.toMatchObject({
+    ).toMatchObject({
       root: {
         data: {
           text: "中心主题",

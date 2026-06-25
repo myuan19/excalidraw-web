@@ -1,6 +1,7 @@
 import type { FileTreeResponse, ServerFile } from "./ServerSync";
 
 const CACHE_KEY = "excalidraw-filelist-tree-v1";
+const CACHE_ETAG_KEY = "excalidraw-filelist-tree-etag-v1";
 
 /** 去掉可能很大的字段，避免撑满 sessionStorage */
 function stripFilesForCache(files: ServerFile[]): ServerFile[] {
@@ -35,10 +36,33 @@ export function writeFileListTreeCache(tree: FileTreeResponse): void {
     const payload: FileTreeResponse = {
       folders: tree.folders,
       files: stripFilesForCache(tree.files),
+      capabilities: tree.capabilities,
+      scan: tree.scan,
     };
     sessionStorage.setItem(CACHE_KEY, JSON.stringify(payload));
   } catch {
     // 配额或隐私模式：忽略
+  }
+}
+
+export function readFileListTreeCacheEtag(): string | null {
+  try {
+    const raw = sessionStorage.getItem(CACHE_ETAG_KEY);
+    return raw?.trim() ? raw.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeFileListTreeCacheEtag(etag: string | null): void {
+  try {
+    if (!etag?.trim()) {
+      sessionStorage.removeItem(CACHE_ETAG_KEY);
+      return;
+    }
+    sessionStorage.setItem(CACHE_ETAG_KEY, etag.trim());
+  } catch {
+    /* ignore */
   }
 }
 
@@ -101,5 +125,37 @@ export function patchFileListTreeCacheThumbnailMissing(
   const nextFiles = [...tree.files];
   nextFiles[index] = { ...file, has_thumbnail: false };
   writeFileListTreeCache({ folders: tree.folders, files: nextFiles });
+  return true;
+}
+
+export function patchFileListTreeCacheSavedFile(
+  fileId: string,
+  patch: Partial<
+    Pick<
+      ServerFile,
+      | "name"
+      | "kind"
+      | "has_thumbnail"
+      | "content_sha256"
+      | "version"
+      | "updated_at"
+    >
+  >,
+): boolean {
+  const tree = readFileListTreeCache();
+  if (!tree) {
+    return false;
+  }
+  const index = tree.files.findIndex((file) => file.id === fileId);
+  if (index === -1) {
+    return false;
+  }
+  const nextPatch = Object.fromEntries(
+    Object.entries(patch).filter(([, value]) => value !== undefined),
+  ) as Partial<ServerFile>;
+  const nextFiles = [...tree.files];
+  nextFiles[index] = { ...nextFiles[index], ...nextPatch };
+  writeFileListTreeCache({ folders: tree.folders, files: nextFiles });
+  writeFileListTreeCacheEtag(null);
   return true;
 }

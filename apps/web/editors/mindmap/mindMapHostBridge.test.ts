@@ -131,4 +131,27 @@ describe("MindMapHostBridge", () => {
     );
     expect(postMessage).toHaveBeenCalledTimes(1);
   });
+
+  it("accepts native messages only from its own iframe window", () => {
+    const ownWindow = { postMessage: vi.fn() };
+    const otherWindow = { postMessage: vi.fn() };
+    const iframe = {
+      contentWindow: ownWindow,
+      src: "http://localhost/mind-map/index.html",
+      getAttribute: (name: string) =>
+        name === "src" ? "http://localhost/mind-map/index.html" : null,
+      dataset: {},
+    } as unknown as HTMLIFrameElement;
+
+    const bridge = new MindMapHostBridge({
+      getIframe: () => iframe,
+      callbacks: {
+        onSnapshot: () => {},
+      },
+    });
+
+    expect(bridge.isMessageFromCurrentIframe(ownWindow as Window)).toBe(true);
+    expect(bridge.isMessageFromCurrentIframe(otherWindow as Window)).toBe(false);
+    expect(bridge.isMessageFromCurrentIframe(null)).toBe(false);
+  });
 });

@@ -2,6 +2,8 @@
 
 import { devDebug } from "../lib/devDebug";
 
+import { apiTransport } from "./apiTransport";
+
 export interface AIConfig {
   endpoint: string;
   apiKey: string;
@@ -232,15 +234,19 @@ export async function ensureAIConfigLoaded(): Promise<AISettingsConfig> {
   }
   inFlight = (async () => {
     devDebug("ai-config", "ensureAIConfigLoaded GET start");
-    const res = await fetch("/api/ai-settings");
+    const res = await apiTransport.request({
+      method: "GET",
+      path: "/api/ai-settings",
+      headers: { Accept: "application/json" },
+    });
     devDebug("ai-config", "ensureAIConfigLoaded GET response", {
-      ok: res.ok,
+      ok: res.status >= 200 && res.status < 300,
       status: res.status,
     });
-    if (!res.ok) {
+    if (res.status < 200 || res.status >= 300) {
       throw new Error(`AI 配置加载失败: ${res.status}`);
     }
-    const cfg = parseResponseJson(await res.json());
+    const cfg = parseResponseJson(JSON.parse(res.bodyText));
     cache = cfg;
     loadedOnce = true;
     debugAIConfig("ensureAIConfigLoaded:loaded", cache);
@@ -257,15 +263,19 @@ export async function ensureAIConfigLoaded(): Promise<AISettingsConfig> {
 /** 打开设置页时刷新，避免其它会话已改写 */
 export async function refetchAIConfig(): Promise<AISettingsConfig> {
   devDebug("ai-config", "refetchAIConfig GET start");
-  const res = await fetch("/api/ai-settings");
+  const res = await apiTransport.request({
+    method: "GET",
+    path: "/api/ai-settings",
+    headers: { Accept: "application/json" },
+  });
   devDebug("ai-config", "refetchAIConfig GET response", {
-    ok: res.ok,
+    ok: res.status >= 200 && res.status < 300,
     status: res.status,
   });
-  if (!res.ok) {
+  if (res.status < 200 || res.status >= 300) {
     throw new Error(`AI 配置加载失败: ${res.status}`);
   }
-  const cfg = parseResponseJson(await res.json());
+  const cfg = parseResponseJson(JSON.parse(res.bodyText));
   cache = cfg;
   loadedOnce = true;
   debugAIConfig("refetchAIConfig:loaded", cache);
@@ -277,20 +287,24 @@ export async function saveAIConfigToServer(
   config: AISettingsConfig,
 ): Promise<AISettingsConfig> {
   debugAIConfig("saveAIConfigToServer:before", config);
-  const res = await fetch("/api/ai-settings", {
+  const res = await apiTransport.request({
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    path: "/api/ai-settings",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
     body: JSON.stringify(config),
   });
   devDebug("ai-config", "saveAIConfigToServer PUT response", {
-    ok: res.ok,
+    ok: res.status >= 200 && res.status < 300,
     status: res.status,
   });
-  if (!res.ok) {
-    const text = await res.text();
+  if (res.status < 200 || res.status >= 300) {
+    const text = res.bodyText;
     throw new Error(text || `保存失败: ${res.status}`);
   }
-  const saved = parseResponseJson(await res.json());
+  const saved = parseResponseJson(JSON.parse(res.bodyText));
   cache = saved;
   loadedOnce = true;
   debugAIConfig("saveAIConfigToServer:after", cache);

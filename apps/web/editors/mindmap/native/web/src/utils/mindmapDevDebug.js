@@ -1,6 +1,8 @@
 /**
- * MindMap Vue runtime diagnostics — off in production unless explicitly enabled.
+ * MindMap Vue runtime diagnostics — off in production unless host debug logging is on.
  */
+
+const DEBUG_LOGGING_KEY = 'editorhub-debug-logging'
 
 export function isMindmapDevDebugEnabled() {
   if (process.env.NODE_ENV === 'development') {
@@ -10,13 +12,7 @@ export function isMindmapDevDebugEnabled() {
     return true
   }
   try {
-    const params = new URLSearchParams(window.location.search)
-    return (
-      params.get('mindmapDebug') === '1' ||
-      params.get('mindmapLoadDebug') === '1' ||
-      window.localStorage.getItem('mindmapDebug') === '1' ||
-      window.localStorage.getItem('mindmapLoadDebug') === '1'
-    )
+    return window.localStorage.getItem(DEBUG_LOGGING_KEY) === '1'
   } catch (error) {
     return false
   }

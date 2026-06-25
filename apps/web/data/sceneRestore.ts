@@ -9,6 +9,7 @@ import { restoreAppState, restoreElements } from "@excalidraw/excalidraw/data/re
 import type { AppState } from "@excalidraw/excalidraw/types";
 
 type RestoredAppState = Omit<AppState, "offsetTop" | "offsetLeft" | "width" | "height">;
+type ViewportAppState = Pick<AppState, "scrollX" | "scrollY" | "zoom">;
 
 /**
  * Guard against non-Map collaborators that can appear in stale localStorage
@@ -36,6 +37,16 @@ export function restoreSceneAppState(
   );
   const restored = restoreAppState(sanitized, null);
   return overlay ? { ...restored, ...overlay } : restored;
+}
+
+export function pickSceneViewportAppState(
+  appState: AppState,
+): ViewportAppState {
+  return {
+    scrollX: appState.scrollX,
+    scrollY: appState.scrollY,
+    zoom: appState.zoom,
+  };
 }
 
 export function restoreSceneElements(rawElements: unknown) {

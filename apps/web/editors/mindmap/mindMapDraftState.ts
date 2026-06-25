@@ -1,6 +1,10 @@
-import { evaluateCurrentFileModificationState } from "../../data/fileModificationState";
+import {
+  applyFileModificationState,
+  evaluateCurrentFileModificationState,
+} from "../../data/fileModificationState";
 import { FileSyncState } from "../../data/FileSyncState";
 import { isLocalDraftFileId } from "../../data/localDraftFileId";
+import { markTabFileDirty } from "../../data/tabFileDirtyState";
 import { recordMindMapPersisted } from "./mindMapPersistCoordinator";
 
 import type { ManagedDocument } from "../../data/documentTypes";
@@ -24,14 +28,18 @@ export function getMindMapModificationState(
 }
 
 /**
- * 初始化阶段：以 iframe 规范化后的文档作为服务器基线（baseline = draft）。
- * 用于打开文件后 native 推送的 draft，避免主题压缩等程序化变更误报未保存。
+ * 初始化阶段：以 iframe 规范化后的文档作为基线写入 modification 状态。
+ * 服务端文件走 persistCoordinator；local-draft 走 applyFileModificationState。
  */
 export function adoptMindMapNativeBaseline(
   fileId: string,
   document: MindMapSaveDocument,
 ): void {
   if (isLocalDraftFileId(fileId)) {
+    const state = getMindMapModificationState(fileId, document);
+    applyFileModificationState(fileId, state, {
+      reason: "mindMapDraftState.adoptNativeBaseline:local-draft",
+    });
     return;
   }
   recordMindMapPersisted(fileId, document);
@@ -42,6 +50,9 @@ export function adoptMindMapNativeBaseline(
  * 先保守标记为草稿，等后续 saveMindMapData / 保存快照到达后再用真实 hash 对齐。
  */
 export function markMindMapNativeDirtyPending(fileId: string): boolean {
+  if (FileSyncState.getSyncState(fileId) === "synced") {
+    return false;
+  }
   const baselineHash = FileSyncState.getBaselineHash(fileId);
   const pendingHash = `${NATIVE_DIRTY_PENDING_HASH_PREFIX}${
     baselineHash ?? "no-baseline"
@@ -51,6 +62,7 @@ export function markMindMapNativeDirtyPending(fileId: string): boolean {
   }
   FileSyncState.setDraftHash(fileId, pendingHash);
   FileSyncState.setLocalEditTime(fileId);
+  markTabFileDirty(fileId);
   return true;
 }
 
@@ -59,6 +71,23 @@ export function isMindMapNativeDirtyPending(fileId: string): boolean {
     FileSyncState.getDraftHash(fileId)?.startsWith(
       NATIVE_DIRTY_PENDING_HASH_PREFIX,
     ) ?? false
+  );
+}
+
+/**
+ * hydrate settle 结束时若用户已编辑，不得把 iframe 快照当作已保存基线对齐。
+ * 否则会表现为「首次编辑变黄后立刻变绿」，且不会触发真正的服务器保存。
+ */
+export function shouldSkipMindMapHydrateSettleBaselineAdopt(
+  fileId: string,
+  document?: MindMapSaveDocument | null,
+): boolean {
+  if (document) {
+    return getMindMapModificationState(fileId, document).modified;
+  }
+  return (
+    FileSyncState.hasUnsavedChanges(fileId) ||
+    isMindMapNativeDirtyPending(fileId)
   );
 }
 
@@ -74,9 +103,8 @@ export function clearMindMapDraftIfUnchanged(
   if (state.modified) {
     return false;
   }
-  if (!isLocalDraftFileId(fileId) && state.contentHash) {
-    FileSyncState.alignHashes(fileId, state.contentHash);
-    FileSyncState.clearLocalEditTime(fileId);
-  }
+  applyFileModificationState(fileId, state, {
+    reason: "mindMapDraftState.clearIfUnchanged",
+  });
   return true;
 }

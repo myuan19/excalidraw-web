@@ -1,6 +1,46 @@
 import "@excalidraw/excalidraw/global";
 import "@excalidraw/excalidraw/css";
 
-interface Window {
-  __EXCALIDRAW_SHA__: string | undefined;
+declare global {
+  interface Window {
+    __EXCALIDRAW_SHA__: string | undefined;
+    editorHubDesktop?: {
+      platform: string;
+      invokeApi?: (request: {
+        method?: string;
+        path: string;
+        headers?: Record<string, string>;
+        body?: string | null;
+      }) => Promise<{
+        status: number;
+        headers: Record<string, string>;
+        bodyText: string;
+      }>;
+      subscribeCatalogChanges?: (
+        callback: (payload: Record<string, unknown>) => void,
+      ) => () => void;
+      pickFolder?: () => Promise<string | null>;
+      getDefaultDataDirectoryPath?: () => Promise<string | null>;
+      openPath?: (targetPath: string) => Promise<string>;
+      showSaveDialog?: (options?: {
+        title?: string;
+        defaultName?: string;
+        extension?: string;
+      }) => Promise<string | null>;
+      getPathForFile?: (file: File) => string;
+      windowMinimize?: () => Promise<void>;
+      windowToggleMaximize?: () => Promise<boolean>;
+      windowClose?: () => Promise<void>;
+      requestWindowClose?: () => Promise<void>;
+      finishWindowClose?: (allow: boolean) => Promise<boolean>;
+      windowIsMaximized?: () => Promise<boolean>;
+      onWindowCloseRequested?: (callback: () => void) => () => void;
+      onWindowMaximized?: (callback: (maximized: boolean) => void) => () => void;
+      versions?: {
+        chrome?: string;
+        electron?: string;
+        node?: string;
+      };
+    };
+  }
 }

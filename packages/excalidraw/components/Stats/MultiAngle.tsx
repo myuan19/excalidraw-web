@@ -48,15 +48,18 @@ const handleDegreeChange: DragInputCallbackType<
       }
       mutateElement(
         element,
+        elementsMap,
         {
           angle: nextAngle,
         },
-        false,
+        { isDragging: false },
       );
 
       const boundTextElement = getBoundTextElement(element, elementsMap);
       if (boundTextElement && !isArrowElement(element)) {
-        mutateElement(boundTextElement, { angle: nextAngle }, false);
+        mutateElement(boundTextElement, elementsMap, { angle: nextAngle }, {
+          isDragging: false,
+        });
       }
     }
 
@@ -86,15 +89,18 @@ const handleDegreeChange: DragInputCallbackType<
 
     mutateElement(
       latestElement,
+      elementsMap,
       {
         angle: nextAngle,
       },
-      false,
+      { isDragging: false },
     );
 
     const boundTextElement = getBoundTextElement(latestElement, elementsMap);
     if (boundTextElement && !isArrowElement(latestElement)) {
-      mutateElement(boundTextElement, { angle: nextAngle }, false);
+      mutateElement(boundTextElement, elementsMap, { angle: nextAngle }, {
+        isDragging: false,
+      });
     }
   }
   scene.triggerUpdate();

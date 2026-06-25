@@ -707,7 +707,19 @@ body.excalidraw-cursor-resize * {
     z-index: var(--zIndex-ui-main-menu);
   }
   .main-menu-trigger {
+    @include outlineButtonStyles;
     @include filledButtonOnCanvas;
+
+    width: var(--lg-button-size);
+    height: var(--lg-button-size);
+    padding: 0;
+    line-height: 0;
+
+    svg {
+      width: var(--lg-icon-size);
+      height: var(--lg-icon-size);
+      color: var(--icon-fill-color);
+    }
   }
 
   .App-mobile-menu,
