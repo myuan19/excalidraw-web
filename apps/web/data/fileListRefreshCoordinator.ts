@@ -29,10 +29,6 @@ export function shouldSkipSilentTreeRefreshAfterIncrementalSave(
   return true;
 }
 
-export function clearFileListIncrementalSaveSkip(): void {
-  recentIncrementalSave = null;
-}
-
 export function scheduleDebouncedFileListRefresh(run: () => void): void {
   pendingRun = run;
   if (debounceTimer !== null) {

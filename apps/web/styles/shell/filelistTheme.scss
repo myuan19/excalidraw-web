@@ -69,6 +69,11 @@
   --nb-drop-line: rgba(14, 165, 233, 0.4);
   --nb-shell-overlay: rgba(15, 23, 42, 0.32);
 
+  --nb-shell-chrome-bg: var(--nb-surface-sidebar-top);
+  --nb-shell-chrome-border: var(--nb-filelist-border);
+  --nb-shell-control-bg: var(--nb-surface);
+  --nb-shell-control-border: var(--nb-filelist-border);
+
   --nb-shadow-ink: rgba(14, 116, 178, 0.05);
   --nb-shadow-ink-md: rgba(14, 116, 178, 0.08);
   --nb-shadow-ink-strong: rgba(14, 116, 178, 0.12);
@@ -153,6 +158,11 @@
   --nb-drop-line: rgba(56, 189, 248, 0.4);
   --nb-shell-overlay: rgba(2, 6, 23, 0.58);
 
+  --nb-shell-chrome-bg: var(--nb-page-bg);
+  --nb-shell-chrome-border: var(--nb-filelist-border);
+  --nb-shell-control-bg: var(--nb-surface);
+  --nb-shell-control-border: var(--nb-filelist-border);
+
   --nb-shadow-ink: rgba(0, 0, 0, 0.3);
   --nb-shadow-ink-md: rgba(0, 0, 0, 0.4);
   --nb-shadow-ink-strong: rgba(0, 0, 0, 0.5);
@@ -197,18 +207,20 @@
   --nb-fork-home-muted: #94a3b8;
 }
 
-.filelist.theme--light,
-.editor-platform-shell.theme--light,
-.shell-dialog-host.theme--light,
-.filelist-dialog-host.theme--light {
-  @include shell-theme-light;
-}
-
 .filelist.theme--dark,
 .editor-platform-shell.theme--dark,
 .shell-dialog-host.theme--dark,
-.filelist-dialog-host.theme--dark {
+.filelist-dialog-host.theme--dark,
+.desktop-titlebar.theme--dark {
   @include shell-theme-dark;
+}
+
+.filelist.theme--light,
+.editor-platform-shell.theme--light,
+.shell-dialog-host.theme--light,
+.filelist-dialog-host.theme--light,
+.desktop-titlebar.theme--light {
+  @include shell-theme-light;
 }
 
 /* 兼容旧 mixin 名（若有外部引用） */

@@ -103,7 +103,7 @@ export function useMindMapFileSave(
         const thumbnailResult = await ServerSync.saveThumbnailOnly(
           fileId,
           thumbnail,
-          name,
+          resolveMindMapSaveDisplayName(document.data, name),
         );
         traceMindMapOperation("fileSave.thumbnail.after", {
           fileId8: fileId.slice(0, 8),

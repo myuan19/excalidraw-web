@@ -2525,7 +2525,9 @@ class Render {
       maxx = -Infinity,
       maxy = -Infinity
     if (range) {
-      const children = node.children.slice(range[0], range[1] + 1)
+      const children = Array.isArray(node.children)
+        ? node.children.slice(range[0], range[1] + 1)
+        : []
       children.forEach(child => {
         if (child.left < minx) {
           minx = child.left
@@ -2547,6 +2549,26 @@ class Render {
       miny = node.top
       maxx = node.left + node.width
       maxy = node.top + node.height
+    }
+    if (
+      !this.highlightBoxNode ||
+      typeof this.highlightBoxNode.plot !== 'function' ||
+      ![minx, miny, maxx, maxy].every(Number.isFinite)
+    ) {
+      mindMapDebugLog('mindmap-render', 'highlightNode skipped', {
+        reason: !this.highlightBoxNode
+          ? 'missing-highlight-node'
+          : typeof this.highlightBoxNode.plot !== 'function'
+            ? 'missing-plot'
+            : 'invalid-bounds',
+        hasNode: !!node,
+        range: range || null,
+        bounds: { minx, miny, maxx, maxy },
+        childCount: Array.isArray(node && node.children)
+          ? node.children.length
+          : null
+      })
+      return
     }
     this.highlightBoxNode.plot([
       [minx, miny],

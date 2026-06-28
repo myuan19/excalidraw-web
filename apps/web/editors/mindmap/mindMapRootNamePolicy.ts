@@ -28,13 +28,15 @@ export function resolveMindMapOpenDisplayName(
   return rootText || DEFAULT_DOCUMENT_DISPLAY_NAME;
 }
 
-/** 正式文件保存时保留现有文件名，不再从根节点反推。 */
+/**
+ * 正式文件内容保存时不发送 `name`，避免 UI 显示名与磁盘去重名不一致时触发 rename 冲突。
+ * 文件重命名走独立的 rename API，不在 PUT 内容保存里附带 name。
+ */
 export function resolveMindMapSaveDisplayName(
   _data: MindMapDocumentData,
-  currentName: string | null | undefined,
-): string {
-  const name = String(currentName ?? "").trim();
-  return name || DEFAULT_DOCUMENT_DISPLAY_NAME;
+  _currentName: string | null | undefined,
+): undefined {
+  return undefined;
 }
 
 /** local draft 首次保存时，可用首次编辑后的根节点标题作为初始文件名。 */

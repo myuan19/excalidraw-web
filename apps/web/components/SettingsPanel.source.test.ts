@@ -58,26 +58,31 @@ describe("SettingsPanel source contract", () => {
     expect(source).not.toContain("AI 调试");
   });
 
-  it("exposes a desktop default data directory control between auto-save and debug", () => {
+  it("exposes desktop storage controls between auto-save and debug", () => {
     const source = fs.readFileSync(
       path.resolve(__dirname, "SettingsPanel.tsx"),
       "utf8",
     );
 
-    expect(source).toContain("默认数据目录");
+    expect(source).toContain("应用数据目录");
+    expect(source).toContain("handleOpenAppDataDirectory");
+    expect(source).toContain("getAppDataDirectoryPath");
+    expect(source).toContain("默认保存目录");
     expect(source).toContain("handleChooseDefaultDataDirectory");
     expect(source).toContain("handleOpenDefaultDataDirectory");
     expect(source).toContain("defaultDataDirectoryPath");
     expect(source).toContain("pickFolder");
     expect(source).toContain("openPath");
-    expect(source).toContain("settings-panel__option-actions");
+    expect(source).toContain("SettingsPathSetting");
+    expect(source).toContain("settings-panel__path-toolbar");
+    expect(source).toContain("settings-panel__path-btn");
     expect(source).toContain("settings-panel__option--path-setting");
-    expect(source).toContain("settings-panel__path-row");
-    expect(source).toContain("<h3>数据目录</h3>");
-    expect(source.indexOf("<h3>数据目录</h3>")).toBeLessThan(
+    expect(source).toContain("settings-panel__path-block");
+    expect(source).toContain("<h3>存储位置</h3>");
+    expect(source.indexOf("<h3>存储位置</h3>")).toBeLessThan(
       source.indexOf("<h3>日志</h3>"),
     );
-    expect(source).toContain("打开文件夹");
-    expect(source).toContain("选择文件夹");
+    expect(source).toContain('label: "打开"');
+    expect(source).toContain('label: "更改"');
   });
 });

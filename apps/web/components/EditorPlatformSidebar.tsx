@@ -43,6 +43,7 @@ import { useDesktopWindowCloseGuard } from "../hooks/useDesktopWindowCloseGuard"
 import { editorIconForKind, getDocumentKindFromHash } from "../lib/appBranding";
 import { devDebug } from "../lib/devDebug";
 import { createLogger } from "../lib/logger";
+import { traceIssueDiag } from "../lib/issueDiagTrace";
 import { isDesktopEditorHub } from "../lib/runtimePlatform";
 import {
   APP_SHELL_PENDING_NAVIGATION_CHANGE,
@@ -57,10 +58,8 @@ import {
   useEditorModalOverlayRegistration,
 } from "../shell/editorModalOverlay";
 import {
-  readShellTheme,
   shellThemeClassName,
-  subscribeShellThemeChange,
-  type ShellTheme,
+  useShellTheme,
 } from "../hooks/useShellTheme";
 
 import { FileCardThumb } from "./FileCardThumb";
@@ -529,6 +528,12 @@ function logRecentFlyout(
   fields?: Record<string, unknown>,
 ): void {
   logRecent.event(level, `recent.flyout.${event}`, message, { fields });
+  traceIssueDiag(
+    "recent.flyout",
+    event,
+    { message, ...fields },
+    level === "warn" ? "fail" : level === "info" ? "ok" : "branch",
+  );
 }
 
 type RecentRowHover = {
@@ -599,6 +604,7 @@ function SidebarRecentList({
     resolveRecentFlyoutItems({
       limit: RECENT_PANEL_MAX,
       excludeFileId,
+      diagReason: "initial",
     }),
   );
   const [rowHover, setRowHover] = useState<RecentRowHover | null>(null);
@@ -608,10 +614,24 @@ function SidebarRecentList({
   useEffect(() => {
     let cancelled = false;
     const refresh = (reason: string) => {
-      thumbSvgCacheRef.current = {};
       const nextItems = resolveRecentFlyoutItems({
         limit: RECENT_PANEL_MAX,
         excludeFileId,
+        diagReason: reason,
+      });
+      setItems((prev) => {
+        const unchanged =
+          prev.length === nextItems.length &&
+          prev.every(
+            (item, index) =>
+              item.id === nextItems[index]?.id &&
+              item.contentSha256 === nextItems[index]?.contentSha256 &&
+              item.hasThumbnail === nextItems[index]?.hasThumbnail,
+          );
+        if (!unchanged) {
+          thumbSvgCacheRef.current = {};
+        }
+        return nextItems;
       });
       logRecentFlyout("debug", "items.resolved", "recent flyout items resolved", {
         reason,
@@ -620,7 +640,6 @@ function SidebarRecentList({
         itemCount: nextItems.length,
         itemIds8: nextItems.map((item) => recentFileId8(item.id)),
       });
-      setItems(nextItems);
       return nextItems;
     };
     const refreshFromEvent = () => {
@@ -680,6 +699,15 @@ function SidebarRecentList({
       window.removeEventListener("excalidraw-file-sync-state", refreshFromEvent);
     };
   }, [excludeFileId]);
+
+  useEffect(() => {
+    logRecentFlyout("info", "render", "recent flyout render snapshot", {
+      fileId8: recentFileId8(excludeFileId),
+      excludeFileId8: recentFileId8(excludeFileId),
+      itemCount: items.length,
+      itemIds8: items.map((item) => recentFileId8(item.id)),
+    });
+  }, [excludeFileId, items]);
 
   const handleRowHover = useCallback(
     (item: RecentFlyoutItem, row: HTMLLIElement | null) => {
@@ -1256,7 +1284,17 @@ export function EditorPlatformSidebar() {
   const openRecentFile = useCallback(
     (item: RecentFlyoutItem) => {
       const activeId = getActiveDocumentFileId();
+      traceIssueDiag("recent.flyout", "select", {
+        itemId8: item.id.slice(0, 8),
+        kind: item.kind,
+        name: item.name,
+        activeId8: activeId ? activeId.slice(0, 8) : null,
+        sameAsActive: activeId === item.id,
+      });
       if (activeId && item.id === activeId) {
+        traceIssueDiag("recent.flyout", "select.skip_same", {
+          itemId8: item.id.slice(0, 8),
+        }, "skip");
         return;
       }
       setPendingOpenFileNavigation({
@@ -1499,7 +1537,22 @@ export function EditorPlatformSidebar() {
                 aria-label="最近"
                 aria-expanded={recentOpen}
                 disabled={!fileActionsEnabled}
-                onClick={() => setRecentOpen((value) => !value)}
+                onClick={() => {
+                  setRecentOpen((value) => {
+                    const next = !value;
+                    traceIssueDiag(
+                      "recent.flyout",
+                      next ? "toggle.open" : "toggle.close",
+                      {
+                        fileId8: fileId ? fileId.slice(0, 8) : null,
+                        fileActionsEnabled,
+                        panelOpen: open,
+                      },
+                      "start",
+                    );
+                    return next;
+                  });
+                }}
               >
                 <SidebarGlyph type="recent" />
                 <span className="editor-bridge__action-label">最近</span>
@@ -1635,11 +1688,7 @@ export function EditorPlatformSidebar() {
 export function EditorPlatformShell({ children }: { children: ReactNode }) {
   useAppShellGoHomeListener();
   useDesktopWindowCloseGuard();
-  const [shellTheme, setShellTheme] = useState<ShellTheme>(readShellTheme);
-
-  useEffect(() => {
-    return subscribeShellThemeChange(setShellTheme);
-  }, []);
+  const { shellTheme } = useShellTheme();
 
   return (
     <div

@@ -400,6 +400,10 @@
   max-height: var(--fl-topbar-h);
   padding: var(--fl-topbar-pad-y) var(--nb-space-8);
   z-index: 1;
+
+  .filelist__breadcrumbs {
+    color: var(--nb-text-muted);
+  }
 }
 
 .filelist--desktop .filelist__topbar {
@@ -447,6 +451,69 @@
   }
 }
 
+.filelist__filter-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--nb-space-2);
+  flex: 0 0 auto;
+  min-width: 0;
+  height: var(--fl-topbar-control-h);
+}
+
+.filelist__filter-chip {
+  @include filelist-topbar-chip;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: var(--nb-space-2) var(--nb-space-3);
+  color: var(--nb-text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  font-family: inherit;
+  font-size: var(--nb-font-caption);
+  font-weight: 500;
+  line-height: 1;
+
+  &:hover:not(.filelist__filter-chip--active) {
+    background: var(--nb-fill-hover);
+    border-color: var(--fl-border-strong);
+    color: var(--nb-text-muted);
+  }
+
+  &--active {
+    background: var(--nb-primary-soft);
+    border-color: var(--nb-primary-border-hover, var(--nb-blue-border-hover));
+    color: var(--nb-text);
+
+    &:hover {
+      background: var(--nb-primary-soft-hover);
+      border-color: var(--fl-primary);
+      color: var(--nb-text);
+    }
+  }
+}
+
+.filelist__topbar-primary-btn {
+  min-width: var(--nb-filelist-topbar-import-min-w);
+  padding-left: var(--nb-space-5);
+  padding-right: var(--nb-space-5);
+}
+
+.filelist__topbar-open-btn {
+  color: color-mix(in srgb, var(--fl-primary) 72%, var(--nb-text-muted));
+  background: color-mix(in srgb, var(--fl-primary) 7%, var(--nb-surface));
+  border-color: color-mix(in srgb, var(--fl-primary) 18%, var(--fl-border));
+  box-shadow: none;
+
+  &:hover:not(:disabled):not(.filelist__import-scene-btn--busy) {
+    background: color-mix(in srgb, var(--fl-primary) 12%, var(--nb-surface));
+    border-color: color-mix(in srgb, var(--fl-primary) 28%, var(--fl-border));
+  }
+}
+
 .filelist__topbar-view-mode-slot {
   display: inline-flex;
   align-items: center;
@@ -479,6 +546,7 @@
   --filelist-topbar-import-min-width: var(--nb-filelist-topbar-import-min-w);
 
   .filelist__view-mode-toggle,
+  .filelist__filter-chip,
   .filelist__search,
   .filelist__sort select,
   .filelist__import-scene-btn,
@@ -1149,7 +1217,8 @@
   display: flex;
   align-items: center;
   gap: var(--nb-space-2);
-  width: 100%;
+  flex: 1 1 auto;
+  width: 0;
   height: var(--fl-topbar-control-h);
   min-width: 0;
   max-width: 100%;
@@ -1333,6 +1402,58 @@
       animation: fadeSlideUp 0.25s var(--nb-ease-ui) both;
     }
   }
+
+  &.filelist__grid--no-enter-animate {
+    .filelist__folder-card,
+    .filelist__card {
+      animation: none;
+    }
+  }
+
+  &[data-virtualized="true"] {
+    display: block;
+    padding-top: var(--nb-space-9);
+    padding-bottom: var(--nb-space-16);
+  }
+}
+
+.filelist__virtual-leading {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(var(--nb-filelist-grid-min), 1fr)
+  );
+  gap: var(--nb-space-8);
+  padding: 0 var(--nb-space-12) var(--nb-space-8);
+}
+
+.filelist__virtual-spacer {
+  position: relative;
+  width: 100%;
+}
+
+.filelist__virtual-row {
+  will-change: transform;
+}
+
+.filelist__body--scrolling {
+  .filelist__card,
+  .filelist__folder-card {
+    transition: none;
+
+    &:hover {
+      transform: none;
+      box-shadow: var(--fl-shadow-card);
+    }
+  }
+}
+
+.filelist__grid:not([data-virtualized="true"]) {
+  .filelist__card,
+  .filelist__folder-card {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 17.5rem;
+  }
 }
 
 /* ── New file card (recent view) ── */
@@ -1488,7 +1609,8 @@
   font-weight: 600;
   color: var(--nb-amber-badge-text, #92400e);
   background: var(--nb-amber-badge-bg, rgba(251, 191, 36, 0.2));
-  border: var(--nb-border-width) solid var(--nb-amber-badge-border, rgba(251, 191, 36, 0.3));
+  border: var(--nb-border-width) solid
+    var(--nb-amber-badge-border, rgba(251, 191, 36, 0.3));
   padding: var(--nb-thumb-badge-pad-y) var(--nb-thumb-badge-pad-x);
   border-radius: var(--nb-radius-xs);
   pointer-events: none;

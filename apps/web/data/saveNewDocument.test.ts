@@ -329,7 +329,7 @@ describe("saveNewDocument", () => {
       },
     });
 
-    await saveNewDocument({
+    const saved = await saveNewDocument({
       kind: "mindmap",
       name: " ",
       folderId: null,
@@ -337,6 +337,11 @@ describe("saveNewDocument", () => {
       mindMapThumbnail: "<svg>native</svg>",
     });
 
+    expect(saved).toMatchObject({
+      id: "server-file",
+      kind: "mindmap",
+      name: "未命名 (1)",
+    });
     expect(mocks.saveFileImmediate).toHaveBeenCalledWith(
       "server-file",
       expect.anything(),

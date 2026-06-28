@@ -75,8 +75,13 @@ describe("Desktop title bar source contract", () => {
     expect(titleBarStyleSource).toContain("-webkit-app-region: no-drag");
     expect(titleBarSource).toContain("onPointerDown");
     expect(titleBarSource).toContain("reorderOpenFileTab");
-    expect(titleBarSource).toContain("!session.moved");
-    expect(titleBarSource).toContain("activateEditorTab(session.sourceTabId)");
+    expect(titleBarSource).toContain("session.moved");
+    expect(titleBarSource).toContain("suppressClickTabIdRef");
+    expect(titleBarSource).toContain("activateTab (pointer)");
+    expect(titleBarSource).not.toMatch(
+      /session\.moved[\s\S]{0,120}activateEditorTab\(session\.sourceTabId\)/,
+    );
+    expect(titleBarSource).toContain("tabId === HOME_TAB_ID");
     expect(titleBarSource).not.toContain("dataTransfer");
     expect(titleBarSource).not.toContain("onDragStart");
     expect(titleBarSource).not.toContain("onDrop");

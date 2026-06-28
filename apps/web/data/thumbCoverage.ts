@@ -3,6 +3,8 @@
  */
 
 export const THUMB_PREFETCH_FIRST_N = 16;
+/** 「最近」视图条目通常较少，首屏一次性 prefetch 全部，避免 16+N 分两批出现。 */
+export const THUMB_PREFETCH_RECENT_ALL = Number.MAX_SAFE_INTEGER;
 
 /** 合并：IntersectionObserver 可见 id + scope 排序前 prefetchFirstN 个文件 id（去重）。 */
 export function computeThumbFetchAllowIds(

@@ -190,8 +190,7 @@ describe("FileList layout source contract", () => {
     );
     const pathbarRule = styles.match(/\.filelist__pathbar \{([\s\S]*?)\n\}/);
     const breadcrumbsRule = styles.match(/\.filelist__breadcrumbs \{([\s\S]*?)\n  &::-webkit-scrollbar/);
-    const slotRule = styles.match(/\.filelist__topbar-view-mode-slot \{([\s\S]*?)\n\}/);
-    const slotButtonRule = styles.match(/\.filelist__topbar-view-mode-slot \.filelist__view-mode-toggle \{([\s\S]*?)\n\}/);
+    const filterChipsRule = styles.match(/\.filelist__filter-chips \{([\s\S]*?)\n\}/);
 
     expect(tokens).toContain("--nb-shell-toolbar-view-mode-slot-w:");
     expect(designTokens).toContain(
@@ -199,10 +198,9 @@ describe("FileList layout source contract", () => {
     );
     expect(pathbarRule?.[1]).toContain("flex: 1 1 0;");
     expect(pathbarRule?.[1]).toContain("width: 0;");
-    expect(breadcrumbsRule?.[1]).toContain("width: 100%;");
+    expect(breadcrumbsRule?.[1]).toContain("flex: 1 1 auto;");
     expect(breadcrumbsRule?.[1]).toContain("scrollbar-width: none;");
-    expect(slotRule?.[1]).toContain("min-width: var(--fl-topbar-view-mode-slot-w)");
-    expect(slotButtonRule?.[1]).toContain("width: auto");
+    expect(filterChipsRule?.[1]).toContain("display: inline-flex");
   });
 
   it("shows all recursive local files at the local directory root", () => {
@@ -217,14 +215,14 @@ describe("FileList layout source contract", () => {
     expect(source).not.toContain("if (!isSelectedFolderId(currentFolderId, foldersById)) {\n        list = [];");
   });
 
-  it("keeps direct-files and default-directory view toggles in the topbar", () => {
+  it("keeps direct-files and default-directory filters beside breadcrumbs", () => {
     const source = fs.readFileSync(controllerPath, "utf8");
     const styles = fs.readFileSync(path.join(__dirname, "FileList.scss"), "utf8");
 
     expect(source).toContain("FLAT_FOLDER_VIEW_LABEL");
-    expect(source).toContain("renderTopbarViewModeToggle");
-    expect(source).toContain("filelist__view-mode-toggle");
-    expect(styles).toContain(".filelist__view-mode-toggle {");
+    expect(source).toContain("renderBreadcrumbFilters");
+    expect(source).toContain("filelist__filter-chip");
+    expect(styles).toContain(".filelist__filter-chip {");
     expect(styles).toContain("filelist-topbar-chip");
   });
 
@@ -275,17 +273,16 @@ describe("FileList layout source contract", () => {
     expect(styles).toContain("height: var(--fl-topbar-h);");
     expect(styles).toContain("max-height: var(--fl-topbar-h);");
     expect(styles).toContain("@include shell-chrome-bar");
-    expect(styles).toContain(".filelist__topbar-view-mode-slot");
+    expect(styles).toContain(".filelist__filter-chips");
     expect(breadcrumbRule?.[1]).toContain("height: var(--fl-topbar-control-h);");
     expect(breadcrumbRule?.[1]).not.toMatch(/&:last-child[\s\S]*font-weight: 600/);
   });
 
-  it("keeps local-directory breadcrumbs and view-mode slot stable across folder switches", () => {
+  it("keeps local-directory breadcrumbs and filter chips stable across folder switches", () => {
     const source = fs.readFileSync(controllerPath, "utf8");
 
     expect(source).toContain("selectLocalDirectoryView()");
-    expect(source).toContain("shell-toolbar__slot");
-    expect(source).toContain("filelist__topbar-view-mode-slot");
+    expect(source).toContain("renderBreadcrumbFilters()");
     expect(source).toContain("DEFAULT_DATA_DIRECTORY_ONLY_LABEL");
     expect(source).toContain("defaultDataDirectoryOnlyView &&");
     expect(source).toContain("isLocalDirectoryRoot &&");

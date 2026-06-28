@@ -11,21 +11,39 @@ import { MindMapAdapter } from "./formats/MindMapAdapter";
 import { generateExcalidrawThumbnailAndCache } from "./excalidrawThumbnail";
 import { generateMindMapThumbnailAndCache } from "./mindMapThumbnail";
 import { LocalThumbnailCache } from "./localThumbnailCache";
-import { formatOpenCatalogFromPathError } from "./openCatalogFromPath";
 import { isLocalDraftFileId } from "./localDraftFileId";
 import {
   getServerSyncErrorJson,
   ServerSync,
+  ServerSyncError,
   type ServerFile,
 } from "./ServerSync";
-import { recordRecentFilePath } from "./recentFiles";
 import { clearThumbnailServerMiss } from "./thumbnailServerFetchMiss";
 import { finalizeSavedThumbnail } from "./thumbnailLifecycle";
+
+export function formatOpenCatalogFromPathError(error: unknown): string {
+  if (error instanceof ServerSyncError) {
+    const payload = getServerSyncErrorJson(error) as {
+      error?: string;
+      code?: string;
+    } | null;
+    if (payload?.error) {
+      return payload.error;
+    }
+    return error.message;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+}
 
 export type TrackCatalogPathsResult = {
   tracked: number;
   errors: string[];
   filesByPath: Record<string, ServerFile>;
+  /** Successfully tracked files, in the same order as the input paths. */
+  trackedFilesInOrder: ServerFile[];
 };
 
 function catalogPathErrorCode(error: unknown): string | undefined {
@@ -108,27 +126,25 @@ async function trackOneCatalogPath(
   return await ServerSync.trackCatalogFileByPath(normalized);
 }
 
-/** Track paths in catalog + recent list only; thumbnails generated separately. */
+/** Track paths in catalog only; recent ordering is applied by the caller. */
 export async function trackCatalogPathsToRecent(
   absPaths: string[],
 ): Promise<TrackCatalogPathsResult> {
   const errors: string[] = [];
   const filesByPath: Record<string, ServerFile> = {};
+  const trackedFilesInOrder: ServerFile[] = [];
   let tracked = 0;
   for (const absPath of absPaths) {
     try {
       const { absPath: canonicalPath, file } = await trackOneCatalogPath(absPath);
-      recordRecentFilePath(canonicalPath);
-      filesByPath[canonicalPath] = {
-        ...file,
-        has_thumbnail: false,
-      };
+      filesByPath[canonicalPath] = file;
+      trackedFilesInOrder.push(file);
       tracked += 1;
     } catch (error) {
       errors.push(formatOpenCatalogFromPathError(error));
     }
   }
-  return { tracked, errors, filesByPath };
+  return { tracked, errors, filesByPath, trackedFilesInOrder };
 }
 
 export async function generateRecentPathThumbnails(
@@ -148,14 +164,7 @@ export async function generateRecentPathThumbnails(
         continue;
       }
       try {
-        let displayFile = await persistTrackedFileThumbnail(file);
-        try {
-          const resolved =
-            await ServerSync.resolveCatalogFileByPath(canonicalPath);
-          displayFile = resolved.file;
-        } catch {
-          // Keep post-persist metadata if resolve fails transiently.
-        }
+        const displayFile = await persistTrackedFileThumbnail(file);
         next[canonicalPath] = displayFile;
       } catch {
         // Thumbnail failure should not remove the recent entry.

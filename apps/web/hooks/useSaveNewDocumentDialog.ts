@@ -25,6 +25,7 @@ import {
 import { ServerSync, type ServerFile } from "../data/ServerSync";
 import { devDebug } from "../lib/devDebug";
 import { isDesktopEditorHub } from "../lib/runtimePlatform";
+import { traceUserAction, traceUserError } from "../lib/userTrace";
 import {
   openEditorFileTab,
   replaceOpenFileTabAfterSave,
@@ -151,11 +152,23 @@ export function useSaveNewDocumentDialog(opts: {
         devDebug("api-sync", "commitSave | skipped not local-draft", {
           draftId8: draftId?.slice(0, 20) ?? null,
         });
+        traceUserAction(
+          "save-dialog",
+          "commitSave",
+          { draftId8: draftId?.slice(0, 12) ?? null },
+          "skip",
+        );
         return;
       }
       const presetFolderId = getLocalDraftPresetFolderIdForFile(draftId);
       const resolvedFolderId = presetFolderId ?? folderId;
       if (!resolvedFolderId) {
+        traceUserAction(
+          "save-dialog",
+          "commitSave.noFolder",
+          { draftId8: draftId.slice(0, 12), name },
+          "skip",
+        );
         setErrorMessage?.("请选择保存位置");
         return;
       }
@@ -168,10 +181,32 @@ export function useSaveNewDocumentDialog(opts: {
         folderId: resolvedFolderId,
         kind: getDocumentKind(),
       });
+      traceUserAction(
+        "save-dialog",
+        "commitSave",
+        {
+          draftId8: draftId.slice(0, 12),
+          name,
+          folderId: resolvedFolderId,
+          presetFolderId,
+          kind: getDocumentKind(),
+          navigateAfterSave: shouldNavigateHome,
+          overwriteFileId8:
+            nativeOverwriteFileRef.current?.id?.slice(0, 8) ?? null,
+          overwriteFileName: nativeOverwriteFileRef.current?.name ?? null,
+        },
+        "start",
+      );
       try {
         await beforeSave?.();
         const kind = getDocumentKind();
-        const { id, kind: savedKind } = await saveNewDocument({
+        traceUserAction(
+          "save-dialog",
+          "commitSave.beforeSaveDone",
+          { draftId8: draftId.slice(0, 12), kind, name },
+          "ok",
+        );
+        const { id, kind: savedKind, name: savedName } = await saveNewDocument({
           kind,
           name,
           folderId: resolvedFolderId,
@@ -184,14 +219,28 @@ export function useSaveNewDocumentDialog(opts: {
         devDebug("api-sync", "commitSave | ok", {
           id8: id.slice(0, 8),
           savedKind,
+          savedName,
           navigateAfterSave: shouldNavigateHome,
         });
+        traceUserAction(
+          "save-dialog",
+          "commitSave",
+          {
+            draftId8: draftId.slice(0, 12),
+            id8: id.slice(0, 8),
+            savedKind,
+            requestedName: name,
+            savedName,
+            navigateAfterSave: shouldNavigateHome,
+          },
+          "ok",
+        );
         setSaveOpen(false);
         replaceOpenFileTabAfterSave({
           fromFileId: draftId,
           toFileId: id,
           kind: savedKind,
-          title: name,
+          title: savedName,
         });
         onSaved?.(id, savedKind);
         if (shouldNavigateHome) {
@@ -200,7 +249,7 @@ export function useSaveNewDocumentDialog(opts: {
           void openEditorFileTab({
             fileId: id,
             kind: savedKind,
-            title: name,
+            title: savedName,
           });
           window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
         }
@@ -208,6 +257,14 @@ export function useSaveNewDocumentDialog(opts: {
         const message =
           err instanceof Error ? err.message : String(err ?? "保存失败");
         devDebug("api-sync", "commitSave | failed", { message });
+        traceUserError("save-dialog", "commitSave", err, {
+          draftId8: draftId.slice(0, 12),
+          name,
+          folderId: resolvedFolderId,
+          kind: getDocumentKind(),
+          overwriteFileId8:
+            nativeOverwriteFileRef.current?.id?.slice(0, 8) ?? null,
+        });
         setSaveOpen(false);
         setErrorMessage?.(message);
       } finally {
@@ -240,31 +297,101 @@ export function useSaveNewDocumentDialog(opts: {
       const kind = getDocumentKind();
       const extension = saveExtensionForKind(kind);
       try {
+        traceUserAction(
+          "save-dialog",
+          "nativeSaveDialog.open",
+          { kind, extension, defaultName: getDefaultName(), navigateAfter },
+          "start",
+        );
         const filePath = await window.editorHubDesktop.showSaveDialog({
           title: "保存文件",
           defaultName: getDefaultName(),
           extension,
         });
         if (!filePath) {
+          traceUserAction(
+            "save-dialog",
+            "nativeSaveDialog.cancel",
+            { kind, extension, navigateAfter },
+            "skip",
+          );
           return;
         }
+        traceUserAction(
+          "save-dialog",
+          "nativeSaveDialog.selected",
+          {
+            kind,
+            extension,
+            navigateAfter,
+            pathTail: filePath.slice(-160),
+          },
+          "ok",
+        );
         const nativeTarget = splitNativeSavePath(filePath);
         if (!nativeTarget) {
+          traceUserAction(
+            "save-dialog",
+            "nativeSaveDialog.parsePath",
+            { pathTail: filePath.slice(-160) },
+            "fail",
+          );
           setErrorMessage?.("无法解析保存路径");
           return;
         }
+        traceUserAction(
+          "save-dialog",
+          "nativeSaveDialog.mapFolder",
+          { folderPathTail: nativeTarget.folderPath.slice(-160) },
+          "start",
+        );
         const result = await addMappedFolderRoot({
           absPath: nativeTarget.folderPath,
         });
         if (!result?.folder?.id) {
+          traceUserAction(
+            "save-dialog",
+            "nativeSaveDialog.mapFolder",
+            { folderPathTail: nativeTarget.folderPath.slice(-160) },
+            "fail",
+          );
           setErrorMessage?.("请选择保存位置");
           return;
         }
+        traceUserAction(
+          "save-dialog",
+          "nativeSaveDialog.mapFolder",
+          {
+            folderId: result.folder.id,
+            folderPathTail: nativeTarget.folderPath.slice(-160),
+          },
+          "ok",
+        );
         const overwriteFile = await ServerSync.resolveCatalogFileByPath(
           filePath,
         )
           .then((resolved) => resolved.file)
-          .catch(() => null);
+          .catch((error) => {
+            traceUserError(
+              "save-dialog",
+              "nativeSaveDialog.resolveTarget",
+              error,
+              {
+                pathTail: filePath.slice(-160),
+              },
+            );
+            return null;
+          });
+        traceUserAction(
+          "save-dialog",
+          "nativeSaveDialog.resolveTarget",
+          {
+            pathTail: filePath.slice(-160),
+            overwriteFileId8: overwriteFile?.id?.slice(0, 8) ?? null,
+            overwriteFileName: overwriteFile?.name ?? null,
+          },
+          overwriteFile ? "ok" : "skip",
+        );
         window.dispatchEvent(new CustomEvent("excalidraw-file-list-refresh"));
         navigateAfterSaveRef.current = navigateAfter;
         nativeOverwriteFileRef.current = overwriteFile;
@@ -274,6 +401,11 @@ export function useSaveNewDocumentDialog(opts: {
           result.folder.id,
         );
       } catch (err: unknown) {
+        traceUserError("save-dialog", "nativeSaveDialog", err, {
+          kind,
+          extension,
+          navigateAfter,
+        });
         setErrorMessage?.(
           err instanceof Error ? err.message : String(err ?? "保存失败"),
         );
@@ -286,17 +418,28 @@ export function useSaveNewDocumentDialog(opts: {
     (navigateAfter: boolean) => {
       navigateAfterSaveRef.current = navigateAfter;
       setNavigateAfterSave(navigateAfter);
-      if (
+      const useNativeDialog =
         isDesktopEditorHub() &&
         isLocalDraftOpen() &&
-        shouldUseNativeSaveDialogForDraft(getFileId())
-      ) {
+        shouldUseNativeSaveDialogForDraft(getFileId());
+      traceUserAction(
+        "save-dialog",
+        "openSaveDialog",
+        {
+          navigateAfter,
+          fileId8: getFileId()?.slice(0, 12) ?? null,
+          isLocalDraft: isLocalDraftOpen(),
+          useNativeDialog,
+        },
+        "start",
+      );
+      if (useNativeDialog) {
         void openNativeSaveDialogForDraft(navigateAfter);
         return;
       }
       setSaveOpen(true);
     },
-    [getPresetFolderId, isLocalDraftOpen, openNativeSaveDialogForDraft],
+    [getFileId, isLocalDraftOpen, openNativeSaveDialogForDraft],
   );
 
   return {

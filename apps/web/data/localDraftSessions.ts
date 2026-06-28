@@ -1,7 +1,7 @@
 import { readStoredFileModificationState } from "./fileModificationState";
 import { FileSyncState } from "./FileSyncState";
 import { isLocalDraftFileId } from "./localDraftFileId";
-import { recordRecentFileAccess, removeRecentFileEntry } from "./recentFiles";
+import { touchRecentOpenedFile, removeRecentFileEntry } from "./recentFiles";
 
 import type { ServerFile } from "./ServerSync";
 
@@ -136,7 +136,7 @@ export function notifyLocalDraftEdited(fileId: string): void {
     return;
   }
   LocalDraftSessions.touch(fileId);
-  recordRecentFileAccess(fileId);
+  touchRecentOpenedFile({ fileId });
 }
 
 export function removeLocalDraftFromRecent(fileId: string): void {

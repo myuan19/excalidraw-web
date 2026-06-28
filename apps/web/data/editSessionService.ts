@@ -1,5 +1,5 @@
 import { FileSyncState } from "./FileSyncState";
-import { recordRecentFileAccess } from "./recentFiles";
+import { bumpRecentEditOrder } from "./recentFiles";
 
 const SESSION_PREFIX = "editorhub-edit-session-v1-";
 
@@ -61,7 +61,7 @@ export function markEditSessionEdited(fileId: string): void {
     openedAt: prev?.openedAt ?? new Date().toISOString(),
     lastEditedAt: new Date().toISOString(),
   });
-  recordRecentFileAccess(fileId);
+  bumpRecentEditOrder({ fileId }, { force: true });
 }
 
 /** 保存成功或正常离开且已同步。 */

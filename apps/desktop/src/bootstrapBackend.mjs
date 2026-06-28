@@ -7,6 +7,7 @@ import { createDesktopAiProxyRouter } from "../adapters/aiProxyRouter.js";
 import { createDesktopAiSettingsRouter } from "../adapters/aiSettingsRouter.js";
 import { createDesktopLibraryRouter } from "../adapters/libraryRouter.js";
 import { createDesktopMindMapAiRouter } from "../adapters/mindMapAiRouter.js";
+import { ensureDesktopAiSettingsConfig } from "../adapters/desktopAiConfigStore.js";
 import { createDesktopTtdChatsRouter } from "../adapters/ttdChatsRouter.js";
 import {
   closeDispatchLoopbackServer,
@@ -63,6 +64,7 @@ export async function assembleDesktopExpressApp(config) {
 
   const createApp = await loadCreateApp(config);
   const createLogsRouter = await loadCreateLogsRouter(config);
+  await ensureDesktopAiSettingsConfig();
   const aiSettingsRouter = createDesktopAiSettingsRouter();
   const aiPromptPresetsRouter = createDesktopAiPromptPresetsRouter();
   const logsRouter = createLogsRouter({
@@ -70,8 +72,8 @@ export async function assembleDesktopExpressApp(config) {
     showLocalItemInFolder: config.showLocalItemInFolder,
   });
   const libraryRouter = createDesktopLibraryRouter();
-  const aiProxyRouter = createDesktopAiProxyRouter();
-  const mindMapAiRouter = createDesktopMindMapAiRouter();
+  const aiProxyRouter = await createDesktopAiProxyRouter();
+  const mindMapAiRouter = await createDesktopMindMapAiRouter();
   const ttdChatsRouter = createDesktopTtdChatsRouter();
 
   const app = await createApp({

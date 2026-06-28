@@ -2,12 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   clearDeferredAutoSave,
+  fileNeedsIdleAutoSave,
   isAutoSaveEligibleFile,
   isAutoSaveLabel,
   notifyEdit,
   rearmDeferredAutoSave,
+  rearmIdleAutoSaveIfNeeded,
   registerAutoSaveTrigger,
+  shouldRearmIdleAutoSave,
 } from "./autoSaveSession";
+import { FileSyncState } from "./FileSyncState";
 import {
   AUTO_SAVE_IDLE_SEC_OPTIONS,
   getAppSettings,
@@ -19,6 +23,7 @@ import { CHECKPOINT_LABELS, resolveCheckpointPolicy } from "./checkpointPolicy";
 
 beforeEach(() => {
   window.location.hash = "";
+  localStorage.clear();
   updateAppSettings({
     autoSaveEnabled: false,
     autoSaveIdleSec: 10,
@@ -108,10 +113,13 @@ describe("auto-save settings semantics", () => {
 describe("idle timer settings refresh", () => {
   it("restarts the pending idle timer when autoSaveIdleSec changes", () => {
     vi.useFakeTimers();
+    const fileId = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
     updateAppSettings({ autoSaveEnabled: true, autoSaveIdleSec: 10 });
     const trigger = vi.fn();
     const unregister = registerAutoSaveTrigger(trigger);
-    window.location.hash = "#file=a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+    window.location.hash = `#file=${fileId}`;
+    FileSyncState.setDraftHash(fileId, "draft");
+    FileSyncState.setBaselineHash(fileId, "baseline");
 
     notifyEdit();
     vi.advanceTimersByTime(5_000);
@@ -180,6 +188,84 @@ describe("idle timer settings refresh", () => {
     clearDeferredAutoSave();
 
     expect(rearmDeferredAutoSave()).toBe(false);
+
+    unregister();
+  });
+
+  it("does not arm idle auto-save on settings change when file has no unsaved changes", () => {
+    vi.useFakeTimers();
+    window.location.hash = "#file=a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+    const trigger = vi.fn();
+    const unregister = registerAutoSaveTrigger(trigger);
+
+    updateAppSettings({ autoSaveEnabled: true, autoSaveIdleSec: 10 });
+
+    vi.advanceTimersByTime(10_000);
+    expect(trigger).not.toHaveBeenCalled();
+
+    unregister();
+  });
+
+  it("arms idle auto-save on settings change when file has unsaved changes", () => {
+    vi.useFakeTimers();
+    const fileId = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+    window.location.hash = `#file=${fileId}`;
+    FileSyncState.setDraftHash(fileId, "draft-hash");
+    FileSyncState.setBaselineHash(fileId, "baseline-hash");
+    const trigger = vi.fn();
+    const unregister = registerAutoSaveTrigger(trigger);
+
+    updateAppSettings({ autoSaveEnabled: true, autoSaveIdleSec: 10 });
+
+    vi.advanceTimersByTime(10_000);
+    expect(trigger).toHaveBeenCalledTimes(1);
+
+    unregister();
+  });
+});
+
+describe("idle auto-save rearm policy", () => {
+  const fileId = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+
+  beforeEach(() => {
+    window.location.hash = `#file=${fileId}`;
+    localStorage.clear();
+    updateAppSettings({ autoSaveEnabled: true, autoSaveIdleSec: 10 });
+  });
+
+  it("only rearms for the active hash file with unsaved changes", () => {
+    FileSyncState.setDraftHash(fileId, "draft");
+    FileSyncState.setBaselineHash(fileId, "baseline");
+
+    expect(fileNeedsIdleAutoSave(fileId)).toBe(true);
+    expect(shouldRearmIdleAutoSave(fileId)).toBe(true);
+    expect(shouldRearmIdleAutoSave("other-file-id")).toBe(false);
+
+    window.location.hash = "#file=other-file-id";
+    expect(shouldRearmIdleAutoSave(fileId)).toBe(false);
+  });
+
+  it("rearms cached background panes when allowInactiveFile is set", () => {
+    FileSyncState.setDraftHash(fileId, "draft");
+    FileSyncState.setBaselineHash(fileId, "baseline");
+
+    window.location.hash = "#file=other-file-id";
+    expect(shouldRearmIdleAutoSave(fileId)).toBe(false);
+    expect(
+      shouldRearmIdleAutoSave(fileId, { allowInactiveFile: true }),
+    ).toBe(true);
+  });
+
+  it("rearmIdleAutoSaveIfNeeded starts the global idle timer", () => {
+    vi.useFakeTimers();
+    FileSyncState.setDraftHash(fileId, "draft");
+    FileSyncState.setBaselineHash(fileId, "baseline");
+    const trigger = vi.fn();
+    const unregister = registerAutoSaveTrigger(trigger);
+
+    expect(rearmIdleAutoSaveIfNeeded(fileId)).toBe(true);
+    vi.advanceTimersByTime(10_000);
+    expect(trigger).toHaveBeenCalledTimes(1);
 
     unregister();
   });

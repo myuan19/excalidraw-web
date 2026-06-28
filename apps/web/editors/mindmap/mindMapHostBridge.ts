@@ -89,6 +89,50 @@ export class MindMapHostBridge {
     this.phase = "idle";
   }
 
+  /**
+   * Resume bridge handshake after a cached tab returns to the foreground.
+   * Cached panes use CSS visibility (not unmount); native init can stall while
+   * hidden — this retriggers init/timeouts without a full navigation.
+   */
+  onForeground(): void {
+    this.debugOpen("onForeground", {
+      phase: this.phase,
+      bootKey: this.bootKey,
+      hasPendingPayload: this.pendingPayload != null,
+    });
+
+    if (this.phase === "failed") {
+      return;
+    }
+
+    if (this.phase === "app_ready") {
+      this.postToNative("hostTabForeground", {});
+      return;
+    }
+
+    const iframe = this.options.getIframe();
+    if (!iframe) {
+      return;
+    }
+
+    if (this.phase === "bridge_ready") {
+      this.sendInitMindMap("foreground");
+      return;
+    }
+
+    if (this.phase === "init_sent") {
+      this.scheduleInitTimeout();
+      this.postToNative("hostTabForeground", {});
+      return;
+    }
+
+    if (this.phase === "mounting") {
+      if (isMindMapIframeDocumentComplete(iframe)) {
+        this.scheduleMountTimeout();
+      }
+    }
+  }
+
   publishDocument(
     payload: NativeMindMapBridgePayload,
     reason: string,

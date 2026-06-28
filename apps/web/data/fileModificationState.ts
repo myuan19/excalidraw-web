@@ -32,6 +32,8 @@ export type ApplyFileModificationStateOptions = {
   clearLocalCacheWhenSynced?: boolean;
   /** mindmap-op 诊断：谁触发了 draft/synced 状态写入 */
   reason?: string;
+  /** 连续编辑中刷新 draft 指纹时不广播 sync-state（避免拖动时每帧整页重渲染）。 */
+  silent?: boolean;
 };
 
 const MINDMAP_TEMPLATE_ROOT_TEXTS = new Set([
@@ -270,9 +272,13 @@ export function applyFileModificationState(
 
   if (state.modified) {
     if (state.contentHash) {
-      FileSyncState.setDraftHash(fileId, state.contentHash);
+      FileSyncState.setDraftHash(fileId, state.contentHash, {
+        emit: opts.silent ? false : undefined,
+      });
     }
-    FileSyncState.setLocalEditTime(fileId);
+    FileSyncState.setLocalEditTime(fileId, {
+      emit: opts.silent ? false : undefined,
+    });
     markTabFileDirty(fileId);
     return;
   }

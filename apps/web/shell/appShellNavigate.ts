@@ -1,5 +1,3 @@
-import { recordRecentFileAccess } from "../data/recentFiles";
-
 import { devDebug } from "../lib/devDebug";
 import { traceUserAction } from "../lib/userTrace";
 import { APP_SHELL_GO_HOME } from "./Sidebar";
@@ -74,7 +72,6 @@ export function runAppShellPendingNavigation(
     if (skipLeaveStashOnceRef) {
       skipLeaveStashOnceRef.current = true;
     }
-    recordRecentFileAccess(id);
     void openEditorFileTab(
       {
         fileId: id,

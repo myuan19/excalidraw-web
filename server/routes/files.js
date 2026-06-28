@@ -44,6 +44,29 @@ function thumbnailMetaPath(fileId) {
   return join(fileDir(fileId), "thumbnail.meta.json");
 }
 
+function readThumbnailMeta(fileId) {
+  const metaPath = thumbnailMetaPath(fileId);
+  if (!existsSync(metaPath)) {
+    return null;
+  }
+  try {
+    return JSON.parse(readFileSync(metaPath, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+
+function thumbnailMatchesContent(fileId, contentSha256) {
+  if (!existsSync(thumbnailPath(fileId))) {
+    return false;
+  }
+  if (!contentSha256) {
+    return true;
+  }
+  const meta = readThumbnailMeta(fileId);
+  return meta?.content_sha256 === contentSha256;
+}
+
 function hashSceneDataJson(data) {
   return createHash("sha256").update(JSON.stringify(data)).digest("hex");
 }
@@ -51,6 +74,7 @@ function hashSceneDataJson(data) {
 /** 每次成功保存后追加一条版本快照（与 current.excalidraw 内容一致） */
 /** 每个文件最多保留的版本快照条数（更早的从 DB 与磁盘删除） */
 const MAX_ARCHIVES_PER_FILE = 8;
+const MAX_THUMBNAIL_SVG_CHARS = 2_000_000;
 const AUTO_ARCHIVE_LABEL_PREFIX = "auto:";
 const FILE_VERSION_MAX = 2_147_483_647;
 const CHECKPOINT_LABELS = {
@@ -67,6 +91,20 @@ function isAutoArchiveLabel(label) {
   return (
     typeof label === "string" && label.startsWith(AUTO_ARCHIVE_LABEL_PREFIX)
   );
+}
+
+function normalizeThumbnailSvgInput(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const svg = value.trim();
+  if (!svg || svg.length > MAX_THUMBNAIL_SVG_CHARS) {
+    return null;
+  }
+  if (!/<svg\b/i.test(svg) || !/<\/svg>/i.test(svg)) {
+    return null;
+  }
+  return svg;
 }
 
 function currentFileVersion(version) {
@@ -225,7 +263,7 @@ function mapFileRow(r) {
     folder_id: r.folder_id ?? null,
     sort_index: r.sort_index ?? 0,
     version: currentFileVersion(r.version),
-    has_thumbnail: existsSync(thumbnailPath(r.id)),
+    has_thumbnail: thumbnailMatchesContent(r.id, r.content_sha256 ?? null),
     content_sha256: r.content_sha256 ?? null,
   };
 }
@@ -1051,6 +1089,78 @@ router.put("/:id", (req, res) => {
   });
 });
 
+router.put("/:id/thumbnail", (req, res) => {
+  const id = req.params.id;
+  const row = db.prepare("SELECT * FROM files WHERE id = ?").get(id);
+  if (!row) {
+    return res.status(404).json({ error: "not found" });
+  }
+
+  const thumbnail = normalizeThumbnailSvgInput(req.body.thumbnail);
+  const contentSha256 =
+    typeof req.body.contentSha256 === "string"
+      ? req.body.contentSha256.trim()
+      : "";
+  const currentSha = row.content_sha256 ?? null;
+
+  log.info("PUT /:id/thumbnail start", {
+    id: id.slice(0, 8),
+    contentLength: req.headers["content-length"] ?? null,
+    hasThumb: typeof req.body.thumbnail === "string",
+    thumbLen:
+      typeof req.body.thumbnail === "string" ? req.body.thumbnail.length : 0,
+    contentSha: contentSha256 ? contentSha256.slice(0, 8) : null,
+    currentSha: currentSha?.slice(0, 8) ?? null,
+  });
+
+  if (!thumbnail) {
+    log.warn("PUT /:id/thumbnail invalid", {
+      id: id.slice(0, 8),
+      thumbLen:
+        typeof req.body.thumbnail === "string" ? req.body.thumbnail.length : 0,
+    });
+    return res.status(400).json({ error: "invalid_thumbnail" });
+  }
+  if (!contentSha256 || !currentSha || contentSha256 !== currentSha) {
+    log.warn("PUT /:id/thumbnail stale", {
+      id: id.slice(0, 8),
+      contentSha: contentSha256 ? contentSha256.slice(0, 8) : null,
+      currentSha: currentSha?.slice(0, 8) ?? null,
+    });
+    return res.status(409).json({
+      error: "stale_thumbnail",
+      content_sha256: currentSha,
+      version: Number.isInteger(row.version) ? row.version : 0,
+      updated_at: row.updated_at,
+    });
+  }
+
+  const now = new Date().toISOString();
+  ensureFileDir(id);
+  writeFileSync(thumbnailPath(id), thumbnail, "utf-8");
+  writeFileSync(
+    thumbnailMetaPath(id),
+    JSON.stringify({
+      content_sha256: currentSha,
+      updated_at: now,
+      thumbnail_source: "client_svg_async_upload",
+    }),
+    "utf-8",
+  );
+
+  log.info("PUT /:id/thumbnail saved", {
+    id: id.slice(0, 8),
+    sha: currentSha.slice(0, 8),
+    thumbLen: thumbnail.length,
+  });
+  res.json({
+    ok: true,
+    content_sha256: currentSha,
+    version: Number.isInteger(row.version) ? row.version : 0,
+    updated_at: row.updated_at,
+  });
+});
+
 router.get("/:id/thumbnail", (req, res) => {
   const fid = req.params.id;
   const tp = thumbnailPath(fid);
@@ -1059,6 +1169,22 @@ router.get("/:id/thumbnail", (req, res) => {
       id: fid.slice(0, 8),
     });
     return res.status(404).json({ error: "no thumbnail" });
+  }
+  const requestedSha = typeof req.query.h === "string" ? req.query.h : "";
+  if (requestedSha) {
+    const meta = readThumbnailMeta(fid);
+    const metaSha = meta?.content_sha256 ?? null;
+    if (metaSha !== requestedSha) {
+      log.warn("GET /:id/thumbnail stale meta", {
+        id: fid.slice(0, 8),
+        requestedSha: requestedSha.slice(0, 8),
+        metaSha: metaSha?.slice(0, 8) ?? null,
+      });
+      return res.status(404).json({
+        error: "stale_thumbnail",
+        content_sha256: metaSha,
+      });
+    }
   }
   const svg = readFileSync(tp, "utf-8");
   if (svg.trim().length < 80) {

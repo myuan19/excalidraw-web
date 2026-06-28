@@ -5,7 +5,10 @@ import path from "path";
 import express from "express";
 import { describe, expect, it } from "vitest";
 
-import { createFolderMappingRouter } from "./router.js";
+import {
+  createFolderMappingRouter,
+  createOwnWritePathSuppressor,
+} from "./router.js";
 import { summarizePutBody } from "./desktopFilesLog.mjs";
 
 function createTestServer(router) {
@@ -62,6 +65,25 @@ async function mountMappingRoot(baseUrl, absPath) {
 }
 
 describe("desktop folder mapping router", () => {
+  it("suppresses watcher rescans for recent app-owned file writes", () => {
+    let now = 1000;
+    const suppressor = createOwnWritePathSuppressor({
+      ttlMs: 500,
+      now: () => now,
+    });
+    const root = path.join(os.tmpdir(), "editorhub-own-write-root");
+    const filePath = path.join(root, "docs", "demo.excalidraw");
+
+    suppressor.mark(filePath);
+
+    expect(suppressor.shouldSuppress(root, "docs/demo.excalidraw")).toBe(true);
+    expect(suppressor.shouldSuppress(root, "docs\\demo.excalidraw")).toBe(true);
+
+    now += 501;
+
+    expect(suppressor.shouldSuppress(root, "docs/demo.excalidraw")).toBe(false);
+  });
+
   it("summarizes MindMap PUT payloads for desktop diagnostics", () => {
     const summary = summarizePutBody({
       name: "Map",
@@ -1280,6 +1302,59 @@ describe("desktop folder mapping router", () => {
       });
       expect(resolved.response.status).toBe(200);
       expect(resolved.data.file.has_thumbnail).toBe(true);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+      rmSync(workspacePath, { recursive: true, force: true });
+      rmSync(externalDir, { recursive: true, force: true });
+    }
+  });
+
+  it("accepts async thumbnail uploads on PUT /:id/thumbnail", async () => {
+    const workspacePath = mkdtempSync(
+      path.join(os.tmpdir(), "editorhub-desktop-async-thumb-"),
+    );
+    const externalDir = mkdtempSync(
+      path.join(os.tmpdir(), "editorhub-desktop-async-thumb-external-"),
+    );
+    const externalPath = path.join(externalDir, "AsyncThumb.smm");
+    writeFileSync(
+      externalPath,
+      JSON.stringify({
+        root: { data: { text: "Async" }, children: [] },
+      }),
+      "utf-8",
+    );
+
+    const router = await createFolderMappingRouter({ workspacePath });
+    const { server, baseUrl } = await createTestServer(router);
+
+    try {
+      const tracked = await jsonFetch(`${baseUrl}/track-path`, {
+        method: "POST",
+        body: JSON.stringify({ absPath: externalPath }),
+      });
+      expect(tracked.response.status).toBe(200);
+      const contentSha256 = tracked.data.file.content_sha256;
+      expect(contentSha256).toBeTruthy();
+
+      const uploaded = await jsonFetch(
+        `${baseUrl}/${tracked.data.file.id}/thumbnail`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            thumbnail: '<svg viewBox="0 0 1 1"><rect width="1" height="1" /></svg>',
+            contentSha256,
+          }),
+        },
+      );
+      expect(uploaded.response.status).toBe(200);
+      expect(uploaded.data.content_sha256).toBe(contentSha256);
+
+      const fetched = await fetch(
+        `${baseUrl}/${tracked.data.file.id}/thumbnail`,
+      );
+      expect(fetched.status).toBe(200);
+      expect(await fetched.text()).toContain("<svg");
     } finally {
       await new Promise((resolve) => server.close(resolve));
       rmSync(workspacePath, { recursive: true, force: true });

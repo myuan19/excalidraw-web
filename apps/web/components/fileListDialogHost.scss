@@ -1,4 +1,5 @@
 @import "./filelist-design-tokens";
+@import "../styles/shell/shellModal.scss";
 
 /**
  * 编辑器内打开的保存/新建/导入类型弹层不在 .filelist 内，须自带 --fl-* token，
@@ -6,6 +7,7 @@
  */
 .filelist-dialog-host {
   @include filelist-design-tokens;
+  @include shell-confirm-dialog-styles;
   font-family: var(--nb-font-ui), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   color: var(--nb-text);

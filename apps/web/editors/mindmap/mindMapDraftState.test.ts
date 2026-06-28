@@ -76,16 +76,16 @@ describe("mindMapDraftState", () => {
     expect(clearMindMapDraftIfUnchanged(fileId, mutated)).toBe(false);
   });
 
-  it("does not mark native dirty when document is already synced", () => {
+  it("marks native dirty when a clean document reports an edit before its snapshot arrives", () => {
     const document = MindMapAdapter.toDocument(MindMapAdapter.createEmpty());
     FileSyncState.alignHashes(fileId, hashDocumentSnapshot(document));
 
-    expect(markMindMapNativeDirtyPending(fileId)).toBe(false);
-    expect(isMindMapNativeDirtyPending(fileId)).toBe(false);
-    expect(FileSyncState.hasUnsavedChanges(fileId)).toBe(false);
+    expect(markMindMapNativeDirtyPending(fileId)).toBe(true);
+    expect(isMindMapNativeDirtyPending(fileId)).toBe(true);
+    expect(FileSyncState.hasUnsavedChanges(fileId)).toBe(true);
   });
 
-  it("marks native dirty notifications as unsaved until a real snapshot arrives", () => {
+  it("does not replace an existing real draft hash with a transient dirty marker", () => {
     const document = MindMapAdapter.toDocument(MindMapAdapter.createEmpty());
     const mutated = MindMapAdapter.toDocument({
       ...document.data,
@@ -95,10 +95,12 @@ describe("mindMapDraftState", () => {
       },
     });
     FileSyncState.alignHashes(fileId, hashDocumentSnapshot(document));
-    FileSyncState.setDraftHash(fileId, hashDocumentSnapshot(mutated));
+    const realDraftHash = hashDocumentSnapshot(mutated);
+    FileSyncState.setDraftHash(fileId, realDraftHash);
 
-    expect(markMindMapNativeDirtyPending(fileId)).toBe(true);
-    expect(isMindMapNativeDirtyPending(fileId)).toBe(true);
+    expect(markMindMapNativeDirtyPending(fileId)).toBe(false);
+    expect(FileSyncState.getDraftHash(fileId)).toBe(realDraftHash);
+    expect(isMindMapNativeDirtyPending(fileId)).toBe(false);
     expect(FileSyncState.hasUnsavedChanges(fileId)).toBe(true);
 
     expect(clearMindMapDraftIfUnchanged(fileId, document)).toBe(true);
@@ -108,15 +110,7 @@ describe("mindMapDraftState", () => {
 
   it("does not churn pending dirty hash for repeated native dirty notifications", () => {
     const document = MindMapAdapter.toDocument(MindMapAdapter.createEmpty());
-    const mutated = MindMapAdapter.toDocument({
-      ...document.data,
-      root: {
-        ...document.data.root,
-        data: { ...document.data.root.data, text: "edited" },
-      },
-    });
     FileSyncState.alignHashes(fileId, hashDocumentSnapshot(document));
-    FileSyncState.setDraftHash(fileId, hashDocumentSnapshot(mutated));
 
     expect(markMindMapNativeDirtyPending(fileId)).toBe(true);
     const pendingHash = FileSyncState.getDraftHash(fileId);

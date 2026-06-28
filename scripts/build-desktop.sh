@@ -21,6 +21,8 @@ run_yarn() {
 
 prepare_runtime() {
   local runtime_dir="${ROOT}/apps/desktop/.runtime"
+  log "sync desktop app icon"
+  (cd "$ROOT" && node apps/desktop/scripts/sync-app-icon.mjs)
   log "prepare Electron runtime files"
   rm -rf "$runtime_dir"
   mkdir -p "$runtime_dir"
@@ -33,16 +35,7 @@ prepare_runtime() {
 
 verify_desktop_entry() {
   log "verify desktop Electron/server modules"
-  (
-    cd "$ROOT"
-    node --input-type=module - <<'NODE'
-await import("./apps/desktop/src/config.mjs");
-await import("./apps/desktop/src/bootstrapBackend.mjs");
-await import("./apps/desktop/src/editorHubProtocol.mjs");
-NODE
-  )
-  [[ -f "${ROOT}/apps/desktop/electron/main.mjs" ]] || fail "missing apps/desktop/electron/main.mjs"
-  [[ -f "${ROOT}/apps/desktop/electron/preload.mjs" ]] || fail "missing apps/desktop/electron/preload.mjs"
+  (cd "$ROOT" && node scripts/verify-desktop-entry.mjs)
 }
 
 verify_build() {
@@ -61,14 +54,58 @@ verify_build() {
   log "desktop build prerequisites ok"
 }
 
+ensure_pack_outputs_unlocked() {
+  log "ensure desktop pack outputs are not locked"
+  (cd "$ROOT" && node scripts/ensure-desktop-pack-unlocked.mjs)
+}
+
+is_debug_pack() {
+  case "${EDITORHUB_DESKTOP_DEBUG_PACK:-}" in
+    1|true|TRUE|yes|YES|on|ON) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+desktop_dist_script() {
+  if is_debug_pack; then
+    printf '%s' "dist:debug"
+  else
+    printf '%s' "dist"
+  fi
+}
+
+desktop_pack_script() {
+  if is_debug_pack; then
+    printf '%s' "pack:debug"
+  else
+    printf '%s' "pack"
+  fi
+}
+
+write_desktop_build_flags() {
+  log "write desktop build flags"
+  (cd "$ROOT" && node apps/desktop/scripts/write-build-flags.mjs)
+}
+
+pack_desktop() {
+  write_desktop_build_flags
+  ensure_pack_outputs_unlocked
+  (cd "$ROOT" && run_yarn --cwd apps/desktop run "$(desktop_dist_script)")
+}
+
 case "$TARGET" in
   all)
-    log "build production artifacts"
+    if is_debug_pack; then
+      export VITE_APP_DEPLOY_DEBUG=true
+      log "build production artifacts (desktop debug pack)"
+    else
+      log "build production artifacts"
+    fi
     (cd "$ROOT" && bash scripts/build-production.sh all)
     verify_build
     log "build Windows installer and portable app"
     prepare_runtime
-    (cd "$ROOT" && run_yarn --cwd apps/desktop run dist)
+    pack_desktop
     ;;
   app)
     log "build Web app artifacts"
@@ -90,26 +127,41 @@ case "$TARGET" in
     verify_build
     log "build unpacked desktop app"
     prepare_runtime
-    (cd "$ROOT" && run_yarn --cwd apps/desktop run pack)
+    write_desktop_build_flags
+    (cd "$ROOT" && run_yarn --cwd apps/desktop run "$(desktop_pack_script)")
     ;;
-  dist)
+  dist|dist-debug)
+    if [[ "$TARGET" == "dist-debug" ]]; then
+      export EDITORHUB_DESKTOP_DEBUG_PACK=1
+      export VITE_APP_DEPLOY_DEBUG=true
+      log "build Web app (desktop debug pack)"
+      (cd "$ROOT" && bash scripts/build-production.sh app)
+    fi
+    if is_debug_pack; then
+      log "build Windows installer and portable app (debug pack)"
+    else
+      log "build Windows installer and portable app"
+    fi
     verify_build
-    log "build Windows installer and portable app"
     prepare_runtime
-    (cd "$ROOT" && run_yarn --cwd apps/desktop run dist)
+    pack_desktop
     ;;
   *)
     cat >&2 <<'EOF'
-Usage: scripts/build-desktop.sh [all|app|mindmap|verify|check|pack|dist]
+Usage: scripts/build-desktop.sh [all|app|mindmap|verify|check|pack|dist|dist-debug]
 
 Targets:
-  all      build production Web + MindMap artifacts, then build Windows desktop packages
-  app      build only the Web app artifacts
-  mindmap  build and sync only the MindMap iframe artifacts
-  verify   verify existing apps/web/build and desktop Electron/server modules
-  check    run verify plus TypeScript typecheck
-  pack     verify, then build an unpacked desktop app
-  dist     verify, then build Windows installer + portable exe
+  all         build production Web + MindMap artifacts, then build Windows desktop packages
+  app         build only the Web app artifacts
+  mindmap     build and sync only the MindMap iframe artifacts
+  verify      verify existing apps/web/build and desktop Electron/server modules
+  check       run verify plus TypeScript typecheck
+  pack        verify, then build an unpacked desktop app
+  dist        verify, then build Windows installer + portable exe
+  dist-debug  like dist, but bake debug diagnostics (also set EDITORHUB_DESKTOP_DEBUG_PACK=1)
+
+Environment:
+  EDITORHUB_DESKTOP_DEBUG_PACK=1   build a debug-enabled desktop package (Web + main process)
 EOF
     exit 2
     ;;

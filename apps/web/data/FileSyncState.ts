@@ -22,12 +22,16 @@ function normalizeCacheText(text: unknown): string {
     .trim();
 }
 
-function countMindMapCacheNodes(node: MindMapCacheNode | null | undefined): number {
+function countMindMapCacheNodes(
+  node: MindMapCacheNode | null | undefined,
+): number {
   if (!node) {
     return 0;
   }
   const children = Array.isArray(node.children) ? node.children : [];
-  return 1 + children.reduce((sum, child) => sum + countMindMapCacheNodes(child), 0);
+  return (
+    1 + children.reduce((sum, child) => sum + countMindMapCacheNodes(child), 0)
+  );
 }
 
 function flattenMindMapCacheNodes(
@@ -142,7 +146,11 @@ export const FileSyncState = {
     return `${PREFIX}local-cache-${fileId}`;
   },
 
-  setLocalCache(fileId: string, data: ForkLocalCacheRecord): void {
+  setLocalCache(
+    fileId: string,
+    data: ForkLocalCacheRecord,
+    opts?: { emit?: boolean },
+  ): void {
     const existingMeta = this.getLocalCache(fileId)?.meta;
     const mergedMeta = mergeServerMeta(existingMeta, data.meta);
     const record = {
@@ -170,7 +178,9 @@ export const FileSyncState = {
       logStash.debug(`setLocalCache FAILED ${fileId.slice(0, 8)}`);
       // ignore quota
     }
-    emitSyncState();
+    if (opts?.emit !== false) {
+      emitSyncState();
+    }
   },
 
   setLocalCachePreservingServerMeta(
@@ -265,10 +275,16 @@ export const FileSyncState = {
     return localStorage.getItem(this.baselineHashKey(fileId));
   },
 
-  setDraftHash(fileId: string, hash: string): void {
-    localStorage.setItem(this.draftHashKey(fileId), hash);
+  setDraftHash(fileId: string, hash: string, opts?: { emit?: boolean }): void {
+    const key = this.draftHashKey(fileId);
+    if (localStorage.getItem(key) === hash) {
+      return;
+    }
+    localStorage.setItem(key, hash);
     logStash.debug(`setDraftHash ${fileId.slice(0, 8)} hash=${hash}`);
-    emitSyncState();
+    if (opts?.emit !== false) {
+      emitSyncState();
+    }
   },
 
   getDraftHash(fileId: string): string | null {
@@ -351,12 +367,18 @@ export const FileSyncState = {
     return `${PREFIX}local-edit-time-${fileId}`;
   },
 
-  setLocalEditTime(fileId: string): void {
+  setLocalEditTime(fileId: string, opts?: { emit?: boolean }): void {
     localStorage.setItem(
       this.localEditTimeKey(fileId),
       new Date().toISOString(),
     );
     logStash.debug(`setLocalEditTime ${fileId.slice(0, 8)}`);
+    if (opts?.emit !== false) {
+      emitSyncState();
+    }
+  },
+
+  notifySyncState(): void {
     emitSyncState();
   },
 

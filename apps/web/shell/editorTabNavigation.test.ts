@@ -40,6 +40,24 @@ describe("editorTabNavigation", () => {
     writeEditorTabsState(createInitialEditorTabsState());
   });
 
+  it("openEditorFileTab records the opened file in recent", async () => {
+    localStorage.removeItem("editorhub-recent-files-v1");
+
+    await openEditorFileTab(
+      { fileId: "file-1", kind: "mindmap", title: "A", absPath: "C:/a.smm" },
+      {
+        snapshot,
+        setHash,
+        getCurrentFileId: () => null,
+        buildFileHash: (fileId, kind) => `#file=${fileId}&kind=${kind}`,
+      },
+    );
+
+    const raw = localStorage.getItem("editorhub-recent-files-v1");
+    expect(raw).toBeTruthy();
+    expect(JSON.parse(raw!)[0]?.id).toBe("path:C:/a.smm");
+  });
+
   it("opens a new file tab after snapshotting the current editor", async () => {
     await openEditorFileTab(
       { fileId: "file-1", kind: "mindmap", title: "A" },
@@ -115,7 +133,11 @@ describe("editorTabNavigation", () => {
       buildHomeHash: () => "#view=home",
     });
 
-    expect(prepareEditorTabForClose).toHaveBeenCalledWith("file-1");
+    expect(prepareEditorTabForClose).toHaveBeenCalledWith(
+      "file-1",
+      "tab-close",
+      "exit",
+    );
     expect(setHash).toHaveBeenCalledWith("#view=home");
   });
 
@@ -134,7 +156,11 @@ describe("editorTabNavigation", () => {
       buildHomeHash: () => "#view=home",
     });
 
-    expect(prepareEditorTabForClose).toHaveBeenCalledWith("bg-file");
+    expect(prepareEditorTabForClose).toHaveBeenCalledWith(
+      "bg-file",
+      "tab-close",
+      "exit",
+    );
     expect(snapshot).not.toHaveBeenCalled();
     expect(setHash).not.toHaveBeenCalled();
   });
@@ -169,7 +195,11 @@ describe("editorTabNavigation", () => {
 
     const next = readEditorTabsState();
     expect(next.tabs.some((tab) => tab.type === "file")).toBe(false);
-    expect(prepareEditorTabForClose).toHaveBeenCalledWith("local-draft:draft-1");
+    expect(prepareEditorTabForClose).toHaveBeenCalledWith(
+      "local-draft:draft-1",
+      "tab-close",
+      "exit",
+    );
   });
 
   it("activating an existing file tab snapshots then switches hash", async () => {

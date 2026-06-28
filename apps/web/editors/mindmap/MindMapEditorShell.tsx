@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { EditorShellCacheProps } from "../editorShellCacheProps";
+import { resolvePaneForeground } from "../editorShellCacheProps";
 
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
 import { apiTransport } from "../../data/apiTransport";
@@ -12,6 +13,13 @@ import {
 } from "../../data/fileSyncOperationState";
 import { CHECKPOINT_LABELS } from "../../data/checkpointPolicy";
 import { getAppSettings } from "../../data/appSettings";
+import { useIdleAutoSaveRearm } from "../../hooks/useIdleAutoSaveRearm";
+import {
+  releaseEditorPaneEditPipelineHold,
+  retainEditorPaneEditPipelineHold,
+  transferEditorPaneEditPipelineHold,
+} from "../../shell/editorPaneEditPipeline";
+import { useEditorPaneMountGate } from "../../shell/editorPaneLifecycle";
 import {
   clearDeferredAutoSave,
   rearmDeferredAutoSave,
@@ -33,6 +41,7 @@ import {
   type ActiveEditorSnapshotSource,
 } from "../../data/activeEditorSnapshotBridge";
 import { discardLocalDraftSession } from "../../data/discardLocalDraftSession";
+import { scheduleSavedFileThumbnailUpload } from "../../data/fileThumbnailPersistence";
 import {
   cacheMindMapDraft,
   markDocumentCommitted,
@@ -41,7 +50,6 @@ import {
 import { updateLocalCacheServerVersionMeta } from "../../data/documentSessionVersionSync";
 import {
   cacheDraftThumbnailIfVisible,
-  finalizeSavedThumbnail,
 } from "../../data/thumbnailLifecycle";
 import {
   MindMapAdapter,
@@ -72,6 +80,7 @@ import {
   traceMindMapOperation,
 } from "../../data/mindMapOperationTrace";
 import { persistNativeMindMapThumbnail } from "../../data/mindMapThumbnail";
+import type { MindMapSavedThumbnailTarget } from "../../data/mindMapThumbnail";
 import { saveNewDocument } from "../../data/saveNewDocument";
 import {
   getLocalDraftPresetFolderIdForFile,
@@ -89,6 +98,8 @@ import {
   type EditorOpenPhase,
 } from "../../lib/editorOpenPhases";
 import { devDebug } from "../../lib/devDebug";
+import { logPerf } from "../../lib/perfLog";
+import { traceUserAction } from "../../lib/userTrace";
 import { resolveEditorSaveConflict } from "../../shell/editorSaveConflict";
 import {
   activateHomeTabWithoutSnapshot,
@@ -112,6 +123,10 @@ import {
   type NativeMindMapMessage,
 } from "./mindMapBridgeProtocol";
 import { createMindMapNativeSaveCoordinator } from "./mindMapNativeSaveCoordinator";
+import {
+  beginMindMapNativeSavePaneBoost,
+  waitForMindMapNativeSavePaneBoost,
+} from "./mindMapNativeSavePaneBoost";
 import { isAllowedNativeMindMapMessageOrigin } from "./mindMapBridgeOrigins";
 import { useMindMapHostBridge } from "./useMindMapHostBridge";
 import { useMindMapFileSave } from "./useMindMapFileSave";
@@ -308,20 +323,23 @@ async function shouldRefreshMindMapServerThumbnail(
   }
 }
 
-export default function MindMapEditorShell({
-  pinnedFileId,
-  isEditorTabActive = true,
-}: EditorShellCacheProps = {}) {
+export default function MindMapEditorShell(props: EditorShellCacheProps = {}) {
+  const isPaneForeground = resolvePaneForeground(props);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const shellRootRef = useRef<HTMLDivElement | null>(null);
+  const mountNativeFrame = useEditorPaneMountGate(isPaneForeground);
+  const pinnedFileId = props.pinnedFileId;
   const [file, setFile] = useState<ServerFile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
   const [archiveSaving, setArchiveSaving] = useState(false);
-  const fileId = pinnedFileId ?? getFileIdFromHash();
+  const fileId = props.pinnedFileId ?? getFileIdFromHash();
 
   const baselineHashRef = useRef<string | null>(null);
   const saveTimerRef = useRef<number | null>(null);
+  const releaseAutoSavePipelineRef = useRef<(() => void) | null>(null);
+  const releaseNativeSavePipelineRef = useRef<(() => void) | null>(null);
   const missingFileRedirectTimerRef = useRef<number | null>(null);
   const enqueueSaveRef = useRef(createSerializedSaveRunner<boolean>());
   const pendingNativeSnapshotRef = useRef<Map<string, (ok: boolean) => void>>(
@@ -340,6 +358,8 @@ export default function MindMapEditorShell({
   const latestDataRevisionRef = useRef(0);
   const latestNativeRevisionRef = useRef(0);
   const nativeThumbnailSaveInFlightRef = useRef(false);
+  const lastSavedThumbnailTargetRef =
+    useRef<MindMapSavedThumbnailTarget | null>(null);
   const needsInitialThumbnailRef = useRef(false);
   const initialThumbnailGateRef = useRef({
     needsRefresh: false,
@@ -353,6 +373,13 @@ export default function MindMapEditorShell({
   const pendingNativeSnapshotRequestIdRef = useRef<string | null>(null);
   const requestNativeSaveRef = useRef<
     ((source?: ActiveEditorSaveSource) => Promise<boolean>) | null
+  >(null);
+  const queueAutoSaveRef = useRef<
+    ((
+      mindMapData: MindMapDocumentData,
+      thumbnail?: string | null,
+      requestId?: string | null,
+    ) => void) | null
   >(null);
   const {
     saveOpen,
@@ -395,7 +422,7 @@ export default function MindMapEditorShell({
   );
 
   const { markDocumentChanged, markNativeDocumentDirty, flushDraft } =
-    useMindMapDraftTracking(fileId);
+    useMindMapDraftTracking(fileId, { allowInactiveFile: !!pinnedFileId });
 
   const noteOpenHydrateSession = useCallback(
     (document: ManagedDocument<MindMapDocumentData>) => {
@@ -423,6 +450,58 @@ export default function MindMapEditorShell({
       void requestNativeSaveRef.current?.("auto");
     },
     [fileId],
+  );
+
+  const deferMindMapAutoSave = useCallback(
+    (reason: string) => {
+      deferredMindMapAutoSaveRef.current = true;
+      traceMindMapOperation("host.deferredAutoSave.mark", {
+        fileId8: fileId?.slice(0, 8) ?? null,
+        reason,
+        fileState: readMindMapTraceFileState(fileId),
+      });
+    },
+    [fileId],
+  );
+
+  const finishMindMapAutoSaveRequest = useCallback(
+    (ok: boolean, reason: string) => {
+      if (ok) {
+        deferredMindMapAutoSaveRef.current = false;
+        return;
+      }
+      deferMindMapAutoSave(reason);
+      const pendingData =
+        latestMindMapDataRef.current ??
+        latestDocumentRef.current?.data ??
+        null;
+      if (pendingData) {
+        queueAutoSaveRef.current?.(pendingData);
+      }
+    },
+    [deferMindMapAutoSave],
+  );
+
+  const flushMindMapAutoSaveWhenInactive = useCallback(
+    (reason: string) => {
+      flushDraft();
+      if (!fileId || !FileSyncState.hasUnsavedChanges(fileId)) {
+        return;
+      }
+      if (saveTimerRef.current !== null) {
+        window.clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      traceMindMapOperation("host.autoSave.flushWhenInactive", {
+        fileId8: fileId.slice(0, 8),
+        reason,
+        fileState: readMindMapTraceFileState(fileId),
+      });
+      void requestNativeSaveRef.current?.("auto").then((ok) => {
+        finishMindMapAutoSaveRequest(ok, reason);
+      });
+    },
+    [fileId, finishMindMapAutoSaveRequest, flushDraft],
   );
 
   const onNativeHydrateSettleEnd = useCallback(() => {
@@ -469,7 +548,11 @@ export default function MindMapEditorShell({
       return;
     }
     clearDeferredAutoSave();
-    deferredMindMapAutoSaveRef.current = false;
+    if (deferredMindMapAutoSaveRef.current) {
+      flushDeferredMindMapAutoSave("adopt-baseline");
+    } else {
+      deferredMindMapAutoSaveRef.current = false;
+    }
     adoptMindMapNativeBaseline(fileId, baselineDocument);
     traceMindMapOperation("host.hydrateSettleEnd.adoptBaselineAfter", {
       fileId8: fileId.slice(0, 8),
@@ -510,6 +593,8 @@ export default function MindMapEditorShell({
     [],
   );
 
+  const onTabForegroundRef = useRef<() => void>(() => {});
+
   const {
     bootKey,
     bridgePhase,
@@ -528,6 +613,10 @@ export default function MindMapEditorShell({
   } = useMindMapHostBridge({
     fileId,
     iframeRef,
+    sessionEnabled: mountNativeFrame,
+    isPaneForeground,
+    onPaneForeground: () => onTabForegroundRef.current(),
+    onPaneBackground: () => flushMindMapAutoSaveWhenInactive("pane-background"),
     debugOpen,
   });
 
@@ -724,6 +813,22 @@ export default function MindMapEditorShell({
       publishDocument,
     ],
   );
+
+  useEffect(() => {
+    onTabForegroundRef.current = () => {
+      flushDeferredMindMapAutoSave("pane-foreground");
+      if (!file || isAppReady) {
+        return;
+      }
+      const document = latestDocumentRef.current;
+      if (!document) {
+        return;
+      }
+      publishMindMapDocument(document.data, "tab-foreground", {
+        preserveViewport: true,
+      });
+    };
+  }, [file, flushDeferredMindMapAutoSave, isAppReady, publishMindMapDocument]);
 
   const baselineHash = useMemo(() => {
     if (!file) {
@@ -1136,13 +1241,13 @@ export default function MindMapEditorShell({
             fromFileId: fileId,
             toFileId: saved.id,
             kind: saved.kind,
-            title,
+            title: saved.name,
           });
           void openEditorFileTab(
             {
               fileId: saved.id,
               kind: saved.kind,
-              title,
+              title: saved.name,
             },
             { getCurrentFileId: () => null },
           );
@@ -1161,6 +1266,8 @@ export default function MindMapEditorShell({
               source,
               requestId: requestId ?? null,
               hash,
+              requestedName: title,
+              savedName: saved.name,
             },
           );
           return true;
@@ -1168,7 +1275,7 @@ export default function MindMapEditorShell({
         const result = await saveMindMapFile(
           document,
           source,
-          file?.name,
+          undefined,
           resolvedThumbnail,
           { forceOverwrite: opts?.forceOverwrite },
         );
@@ -1182,14 +1289,26 @@ export default function MindMapEditorShell({
               : undefined,
           );
           if (result.content_sha256) {
-            finalizeSavedThumbnail({
+            const thumbnailSource =
+              source === "manual"
+                ? "sidebar"
+                : source === "exit"
+                  ? "home"
+                  : source;
+            const thumbnailTarget = {
               fileId,
               kind: "mindmap",
               name: file?.name ?? DEFAULT_DOCUMENT_DISPLAY_NAME,
               contentSha: result.content_sha256,
+              documentHash: hash,
               version: result.version ?? null,
               updatedAt: result.updated_at ?? null,
-              thumbnail: resolvedThumbnail ?? LocalThumbnailCache.get(fileId),
+              source: thumbnailSource,
+            } satisfies MindMapSavedThumbnailTarget;
+            lastSavedThumbnailTargetRef.current = thumbnailTarget;
+            scheduleSavedFileThumbnailUpload({
+              ...thumbnailTarget,
+              thumbnail: resolvedThumbnail,
             });
             if (resolvedThumbnail) {
               initialThumbnailGateRef.current.needsRefresh = false;
@@ -1210,6 +1329,20 @@ export default function MindMapEditorShell({
           hash,
           fileStateAfter: readMindMapTraceFileState(fileId),
         });
+        traceUserAction(
+          "mindmap-save",
+          "persistServer",
+          {
+            fileId8: fileId.slice(0, 8),
+            source,
+            requestId: requestId ?? null,
+            ok: !!result,
+            skipped: !!result?.skipped,
+            serverSha8: result?.content_sha256?.slice(0, 8) ?? null,
+            version: result?.version ?? null,
+          },
+          result ? "ok" : "fail",
+        );
         if (requestId) {
           postToNative("mindMapHostSaveStatus", {
             requestId,
@@ -1296,6 +1429,7 @@ export default function MindMapEditorShell({
       if (saveTimerRef.current !== null) {
         window.clearTimeout(saveTimerRef.current);
       }
+      releaseEditorPaneEditPipelineHold(releaseAutoSavePipelineRef);
       const saveSource = requestId
         ? pendingNativeSaveSourceRef.current.get(requestId) ?? "manual"
         : "auto";
@@ -1310,6 +1444,20 @@ export default function MindMapEditorShell({
         data: summarizeMindMapTraceData(mindMapData),
         fileStateAtQueue: readMindMapTraceFileState(fileId),
       });
+      traceUserAction(
+        "mindmap-save",
+        "queueAutoSave",
+        {
+          fileId8: fileId?.slice(0, 8) ?? null,
+          saveSource,
+          requestId: requestId ?? null,
+          autoSaveEnabled: settings.autoSaveEnabled,
+          autoSaveIdleSec: settings.autoSaveIdleSec,
+          hasThumbnail: typeof thumbnail === "string" && thumbnail.length > 0,
+          nodeCount: summarizeMindMapTraceData(mindMapData)?.nodeCount ?? null,
+        },
+        "start",
+      );
       if (
         !requestId &&
         (!settings.autoSaveEnabled || settings.autoSaveIdleSec <= 0)
@@ -1355,6 +1503,13 @@ export default function MindMapEditorShell({
         );
       }
       const delay = requestId ? 0 : settings.autoSaveIdleSec * 1000;
+      if (fileId && delay > 0) {
+        retainEditorPaneEditPipelineHold(
+          releaseAutoSavePipelineRef,
+          fileId,
+          "mindmap-idle-save",
+        );
+      }
       saveTimerRef.current = window.setTimeout(() => {
         saveTimerRef.current = null;
         traceMindMapOperation("host.queueAutoSave.timerFired", {
@@ -1364,6 +1519,17 @@ export default function MindMapEditorShell({
           delay,
           fileStateAtFire: readMindMapTraceFileState(fileId),
         });
+        traceUserAction(
+          "mindmap-save",
+          "queueAutoSave.timerFired",
+          {
+            fileId8: fileId?.slice(0, 8) ?? null,
+            saveSource,
+            requestId: requestId ?? null,
+            delay,
+          },
+          "start",
+        );
         if (saveSource === "thumbnail") {
           void (async () => {
             const ok =
@@ -1411,7 +1577,20 @@ export default function MindMapEditorShell({
               fileState: readMindMapTraceFileState(fileId),
             },
           );
-          void requestNativeSaveRef.current?.("auto");
+          void requestNativeSaveRef.current?.("auto").then((ok) => {
+            finishMindMapAutoSaveRequest(ok, "queue-auto-save-local-draft");
+          });
+          return;
+        }
+        if (!requestId) {
+          traceMindMapOperation("host.queueAutoSave.requestNativeSnapshot", {
+            fileId8: fileId?.slice(0, 8) ?? null,
+            saveSource,
+            fileState: readMindMapTraceFileState(fileId),
+          });
+          void requestNativeSaveRef.current?.("auto").then((ok) => {
+            finishMindMapAutoSaveRequest(ok, "queue-auto-save");
+          });
           return;
         }
         void persistMindMapDocument(
@@ -1420,14 +1599,36 @@ export default function MindMapEditorShell({
           thumbnail,
           requestId,
         ).then((ok) => {
-          if (requestId) {
-            nativeSaveCoordinatorRef.current.fulfillCurrentSave(ok);
-            pendingNativeSaveSourceRef.current.delete(requestId);
-          }
+          nativeSaveCoordinatorRef.current.fulfillCurrentSave(ok);
+          pendingNativeSaveSourceRef.current.delete(requestId);
         });
       }, delay);
     },
-    [file?.name, fileId, nativeHydratingRef, persistMindMapDocument, postToNative],
+    [file?.name, fileId, finishMindMapAutoSaveRequest, nativeHydratingRef, persistMindMapDocument, postToNative],
+  );
+
+  useIdleAutoSaveRearm(
+    fileId,
+    mountNativeFrame,
+    () => {
+      const data = latestMindMapDataRef.current;
+      if (data) {
+        queueAutoSave(data);
+      }
+    },
+    {
+      pendingDeferred: () => deferredMindMapAutoSaveRef.current,
+      allowInactiveFile: !!pinnedFileId,
+      beforeDirtyCheck: flushDraft,
+      rearmKey: isPaneForeground,
+      onIdleDisabled: () => {
+        if (saveTimerRef.current !== null) {
+          window.clearTimeout(saveTimerRef.current);
+          saveTimerRef.current = null;
+        }
+        releaseEditorPaneEditPipelineHold(releaseAutoSavePipelineRef);
+      },
+    },
   );
 
   const requestNativeSave = useCallback(
@@ -1469,28 +1670,113 @@ export default function MindMapEditorShell({
         openSaveDialog(source === "exit");
         return Promise.resolve(false);
       }
-      const savePromise =
-        nativeSaveCoordinatorRef.current.requestNativeSave(source);
-      const requestId = nativeSaveCoordinatorRef.current.getCurrentRequestId();
-      devDebug("mindmap-bridge", "requestNativeSave | start", {
-        requestId,
-        source,
-      });
-      traceMindMapOperation("host.requestNativeSave.start", {
-        fileId8: fileId?.slice(0, 8) ?? null,
-        requestId,
-        source,
-        fileStateAtRequest: readMindMapTraceFileState(fileId),
-      });
-      void savePromise.finally(() => {
-        if (requestId && pendingNativeSaveRequestIdRef.current === requestId) {
-          pendingNativeSaveRequestIdRef.current = null;
-          pendingNativeSaveSourceRef.current.delete(requestId);
+      const releasePaneBoost = beginMindMapNativeSavePaneBoost(
+        shellRootRef.current,
+        isPaneForeground,
+      );
+      if (fileId) {
+        transferEditorPaneEditPipelineHold(
+          releaseAutoSavePipelineRef,
+          releaseNativeSavePipelineRef,
+          fileId,
+          "mindmap-native-save",
+        );
+      }
+      const nativeSaveStartedAt =
+        typeof performance !== "undefined" ? performance.now() : Date.now();
+      const savePromise = (async () => {
+        if (!isPaneForeground) {
+          await waitForMindMapNativeSavePaneBoost();
         }
+        const promise =
+          nativeSaveCoordinatorRef.current.requestNativeSave(source);
+        const requestId =
+          nativeSaveCoordinatorRef.current.getCurrentRequestId();
+        devDebug("mindmap-bridge", "requestNativeSave | start", {
+          requestId,
+          source,
+          paneBoost: !isPaneForeground,
+        });
+        traceMindMapOperation("host.requestNativeSave.start", {
+          fileId8: fileId?.slice(0, 8) ?? null,
+          requestId,
+          source,
+          paneBoost: !isPaneForeground,
+          fileStateAtRequest: readMindMapTraceFileState(fileId),
+        });
+        traceUserAction(
+          "mindmap-save",
+          "requestNativeSave",
+          {
+            fileId8: fileId?.slice(0, 8) ?? null,
+            requestId,
+            source,
+            paneBoost: !isPaneForeground,
+            paneForeground: isPaneForeground,
+          },
+          "start",
+        );
+        void promise.finally(() => {
+          if (
+            requestId &&
+            pendingNativeSaveRequestIdRef.current === requestId
+          ) {
+            pendingNativeSaveRequestIdRef.current = null;
+            pendingNativeSaveSourceRef.current.delete(requestId);
+          }
+        });
+        return promise;
+      })();
+      void savePromise.then(
+        (ok) => {
+          const elapsedMs = Math.round(
+            (typeof performance !== "undefined"
+              ? performance.now()
+              : Date.now()) - nativeSaveStartedAt,
+          );
+          traceUserAction(
+            "mindmap-save",
+            "requestNativeSave",
+            {
+              fileId8: fileId?.slice(0, 8) ?? null,
+              source,
+              ok,
+              paneBoost: !isPaneForeground,
+              elapsedMs,
+            },
+            ok ? "ok" : "fail",
+          );
+        },
+        (error) => {
+          const elapsedMs = Math.round(
+            (typeof performance !== "undefined"
+              ? performance.now()
+              : Date.now()) - nativeSaveStartedAt,
+          );
+          traceUserAction(
+            "mindmap-save",
+            "requestNativeSave",
+            {
+              fileId8: fileId?.slice(0, 8) ?? null,
+              source,
+              paneBoost: !isPaneForeground,
+              elapsedMs,
+              error:
+                error instanceof Error
+                  ? { message: error.message, name: error.name }
+                  : { value: String(error) },
+            },
+            "fail",
+          );
+        },
+      );
+      void savePromise.finally(() => {
+        releasePaneBoost();
+        releaseEditorPaneEditPipelineHold(releaseNativeSavePipelineRef);
       });
       return savePromise;
     },
-    [file?.folder_id, fileId, isNativeReady, openSaveDialog],
+    [file?.folder_id, fileId, isNativeReady, isPaneForeground, openSaveDialog],
   );
 
   useEffect(() => {
@@ -1501,6 +1787,51 @@ export default function MindMapEditorShell({
       }
     };
   }, [requestNativeSave]);
+
+  useEffect(() => {
+    queueAutoSaveRef.current = queueAutoSave;
+    return () => {
+      if (queueAutoSaveRef.current === queueAutoSave) {
+        queueAutoSaveRef.current = null;
+      }
+    };
+  }, [queueAutoSave]);
+
+  useEffect(() => {
+    if (!fileId || !isNativeReady || !nativeHydrateSettled) {
+      return;
+    }
+    flushDeferredMindMapAutoSave("native-ready");
+  }, [
+    fileId,
+    flushDeferredMindMapAutoSave,
+    isNativeReady,
+    nativeHydrateSettled,
+  ]);
+
+  useEffect(() => {
+    if (!fileId || !isPaneForeground) {
+      return;
+    }
+    const onVisibilityChange = () => {
+      if (!document.hidden) {
+        flushDraft();
+        flushDeferredMindMapAutoSave("document-visible");
+        return;
+      }
+      flushMindMapAutoSaveWhenInactive("document-hidden");
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [
+    fileId,
+    flushDraft,
+    flushDeferredMindMapAutoSave,
+    flushMindMapAutoSaveWhenInactive,
+    isPaneForeground,
+  ]);
 
   const persistLocalMindMapSnapshot = useCallback(
     (document: ReturnType<typeof MindMapAdapter.toDocument>, reason: string) => {
@@ -1593,7 +1924,7 @@ export default function MindMapEditorShell({
     return registerEditorTabSnapshotHandler(fileId, async (source) => {
       const ok = await requestNativeSnapshot(source);
       return {
-        ok,
+        ok: source === "tab-close" ? true : ok,
         reason: ok ? source : "native-snapshot-failed",
       };
     });
@@ -1786,6 +2117,27 @@ export default function MindMapEditorShell({
         return;
       }
 
+      if (event.data.type === "mindMapSaveProgress") {
+        const payload =
+          event.data.payload &&
+          typeof event.data.payload === "object" &&
+          !Array.isArray(event.data.payload)
+            ? (event.data.payload as Record<string, unknown>)
+            : {};
+        traceUserAction(
+          "mindmap-native",
+          "saveProgress",
+          {
+            fileId8: fileId?.slice(0, 8) ?? null,
+            ...payload,
+          },
+          payload.phase === "failed" || payload.phase === "skipped-not-ready"
+            ? "fail"
+            : "ok",
+        );
+        return;
+      }
+
       if (event.data.type === "mindMapNativeOperationTrace") {
         const payload =
           event.data.payload &&
@@ -1798,6 +2150,20 @@ export default function MindMapEditorShell({
           ...payload,
           fileStateAtHostReceive: readMindMapTraceFileState(fileId),
         });
+        if (
+          typeof payload.label === "string" &&
+          payload.label.startsWith("requestMindMapSave")
+        ) {
+          traceUserAction(
+            "mindmap-native",
+            "saveProgress",
+            {
+              fileId8: fileId?.slice(0, 8) ?? null,
+              ...payload,
+            },
+            payload.label.includes("failed") ? "fail" : "ok",
+          );
+        }
         return;
       }
 
@@ -2154,6 +2520,24 @@ export default function MindMapEditorShell({
           hydrating: nativeHydratingRef.current,
           fileStateBeforeDirty: readMindMapTraceFileState(fileId),
         });
+        traceUserAction(
+          "mindmap-dirty",
+          "nativeDirtyState",
+          {
+            fileId8: fileId?.slice(0, 8) ?? null,
+            userEdit,
+            reason:
+              typeof dirtyPayload.reason === "string"
+                ? dirtyPayload.reason
+                : null,
+            revision:
+              typeof dirtyPayload.revision === "number"
+                ? dirtyPayload.revision
+                : null,
+            hydrating: nativeHydratingRef.current,
+          },
+          "start",
+        );
         if (
           shouldSuppressMindMapDirtyState({
             hydrating: nativeHydratingRef.current,
@@ -2175,6 +2559,13 @@ export default function MindMapEditorShell({
           return;
         }
         markNativeDocumentDirty();
+        const pendingData =
+          latestMindMapDataRef.current ??
+          latestDocumentRef.current?.data ??
+          null;
+        if (pendingData) {
+          queueAutoSave(pendingData);
+        }
         traceMindMapOperation("host.message.mindMapDirtyState.afterMarkDirty", {
           fileId8: fileId?.slice(0, 8) ?? null,
           userEdit,
@@ -2199,6 +2590,39 @@ export default function MindMapEditorShell({
             rawLen: parsed.thumbnail.length,
           });
           return;
+        }
+        const currentDocument = latestDocumentRef.current;
+        if (fileId && currentDocument) {
+          const currentHash = hashDocumentSnapshot(currentDocument);
+          cacheDraftThumbnailIfVisible(
+            fileId,
+            "mindmap",
+            decoded,
+            currentHash,
+          );
+          const savedTarget = lastSavedThumbnailTargetRef.current;
+          const savedTargetMatches =
+            !!savedTarget &&
+            savedTarget.fileId === fileId &&
+            savedTarget.documentHash === currentHash;
+          logPerf("thumbnail.native_received", {
+            fileId8: fileId.slice(0, 8),
+            revision: parsed.revision ?? null,
+            thumbLen: decoded.length,
+            currentHash8: currentHash.slice(0, 8),
+            savedTargetDocHash8:
+              savedTarget?.documentHash?.slice(0, 8) ?? null,
+            savedTargetSha8: savedTarget?.contentSha?.slice(0, 8) ?? null,
+            savedTargetMatches,
+          });
+          if (savedTargetMatches) {
+            scheduleSavedFileThumbnailUpload({
+              ...savedTarget,
+              thumbnail: decoded,
+              documentHash: currentHash,
+            });
+            return;
+          }
         }
         void persistNativeThumbnail(decoded, parsed.revision);
         return;
@@ -2227,7 +2651,28 @@ export default function MindMapEditorShell({
       }
 
       if (event.data.type === "mindMapIframeError") {
-        const payload = event.data.payload as { message?: string } | undefined;
+        const payload = event.data.payload as
+          | {
+              message?: string;
+              kind?: string;
+              source?: string | null;
+              line?: number | null;
+              column?: number | null;
+            }
+          | undefined;
+        traceUserAction(
+          "mindmap-native",
+          "iframeError",
+          {
+            fileId8: fileId?.slice(0, 8) ?? null,
+            kind: payload?.kind ?? null,
+            message: payload?.message ?? null,
+            source: payload?.source ?? null,
+            line: payload?.line ?? null,
+            column: payload?.column ?? null,
+          },
+          "fail",
+        );
         setStatusMessage(payload?.message || "MindMap iframe error");
       }
     };
@@ -2241,11 +2686,13 @@ export default function MindMapEditorShell({
     handleBridgeLifecycleMessage,
     handleNativeClipboardMessage,
     isMessageFromCurrentIframe,
+    isPaneForeground,
     learnedOrigin,
     markDocumentChanged,
     markNativeDocumentDirty,
     nativeHydratingRef,
     persistNativeThumbnail,
+    pinnedFileId,
     queueAutoSave,
     requestNativeSave,
     syncRootTextToFileName,
@@ -2319,6 +2766,8 @@ export default function MindMapEditorShell({
       if (saveTimerRef.current !== null) {
         window.clearTimeout(saveTimerRef.current);
       }
+      releaseEditorPaneEditPipelineHold(releaseAutoSavePipelineRef);
+      releaseEditorPaneEditPipelineHold(releaseNativeSavePipelineRef);
       if (missingFileRedirectTimerRef.current !== null) {
         window.clearTimeout(missingFileRedirectTimerRef.current);
       }
@@ -2336,7 +2785,7 @@ export default function MindMapEditorShell({
   }
 
   return (
-    <div className="mindmap-editor">
+    <div className="mindmap-editor" ref={shellRootRef}>
       {statusMessage ? (
         <div
           style={{
@@ -2354,15 +2803,17 @@ export default function MindMapEditorShell({
           {statusMessage}
         </div>
       ) : null}
-      <iframe
-        key={bootKey}
-        ref={iframeRef}
-        title={file.name || "MindMap"}
-        src="/mind-map/index.html"
-        className="mindmap-editor__native-frame"
-        onLoad={onIframeLoad}
-        onError={onIframeError}
-      />
+      {mountNativeFrame ? (
+        <iframe
+          key={bootKey}
+          ref={iframeRef}
+          title={file.name || "MindMap"}
+          src="/mind-map/index.html"
+          className="mindmap-editor__native-frame"
+          onLoad={onIframeLoad}
+          onError={onIframeError}
+        />
+      ) : null}
       {fileId && !isLocalDraftFileId(fileId) && showHistoryPanel ? (
         <ArchivePanel
           fileId={fileId}

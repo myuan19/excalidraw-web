@@ -16,5 +16,8 @@ describe("desktop preload contracts", () => {
     expect(source).toContain("editorhub:api");
     expect(source).toContain("subscribeCatalogChanges");
     expect(source).toContain("editorhub:catalog-change");
+    expect(source).toContain("getAppDataDirectoryPath");
+    expect(source).toContain("subscribeOpenDocumentPaths");
+    expect(source).toContain("consumeOpenDocumentPaths");
   });
 });

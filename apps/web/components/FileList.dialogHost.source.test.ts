@@ -7,9 +7,13 @@ import { describe, expect, it } from "vitest";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 describe("FileList dialog host source contract", () => {
-  it("keeps dialog host styles and theme class on save/kind dialogs", () => {
+  it("keeps dialog host styles and ShellDialogOverlay on shell modals", () => {
     const hostScss = fs.readFileSync(
       path.join(__dirname, "fileListDialogHost.scss"),
+      "utf8",
+    );
+    const overlaySource = fs.readFileSync(
+      path.join(__dirname, "ShellDialogOverlay.tsx"),
       "utf8",
     );
     const saveDialog = fs.readFileSync(
@@ -20,20 +24,26 @@ describe("FileList dialog host source contract", () => {
       path.join(__dirname, "NewFileDialog.tsx"),
       "utf8",
     );
+    const confirmDialog = fs.readFileSync(
+      path.join(__dirname, "FileListConfirmDialog.tsx"),
+      "utf8",
+    );
 
     expect(hostScss).toContain(".filelist-dialog-host");
     expect(hostScss).toContain("filelist-design-tokens");
     expect(hostScss).toContain(
       ".filelist__new-btn:not(.filelist__new-btn--danger)",
     );
-    expect(hostScss).toContain("background: var(--fl-primary-soft);");
-    expect(hostScss).toContain("color: var(--fl-primary);");
-    expect(saveDialog).toContain('import "./fileListDialogHost.scss"');
-    expect(saveDialog).toContain("shellThemeClassName");
-    expect(saveDialog).toContain("filelist-dialog-host");
-    expect(saveDialog).toContain("filelist__detail-overlay");
-    expect(kindDialog).toContain("shellThemeClassName");
-    expect(kindDialog).toContain("filelist-dialog-host");
-    expect(kindDialog).toContain("filelist__detail-overlay");
+    expect(hostScss).toContain("@include shell-confirm-dialog-styles");
+    expect(hostScss).not.toContain(".app-confirm-dialog-overlay");
+
+    expect(overlaySource).toContain("filelist-dialog-host");
+    expect(overlaySource).toContain("filelist__detail-overlay");
+    expect(overlaySource).toContain("useLiveShellTheme");
+
+    expect(confirmDialog).toContain("ShellDialogOverlay");
+    expect(confirmDialog).toContain("overlay={false}");
+    expect(saveDialog).toContain("ShellDialogOverlay");
+    expect(kindDialog).toContain("ShellDialogOverlay");
   });
 });

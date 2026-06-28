@@ -13,11 +13,11 @@ import { DesktopTitleBar } from "./components/DesktopTitleBar";
 import { FileList } from "./components/FileList";
 import { DebugModeTrigger } from "./components/DebugModeTrigger";
 import { EditorPlatformShell } from "./components/EditorPlatformSidebar";
-import { recordRecentFileAccess } from "./data/recentFiles";
 import { logFileListOpen } from "./lib/logger";
 import { devDebug } from "./lib/devDebug";
 import { traceUserAction } from "./lib/userTrace";
 import { isEmbedMode } from "./embed/embedMode";
+import { ShellThemeProvider } from "./hooks/useShellTheme";
 import { editorRegistry } from "./editors";
 import { getLazyEditorShell } from "./editors/lazyViews";
 import { hashNeedsEditorRoute } from "./data/documentHash";
@@ -152,7 +152,6 @@ const ForkRoot = () => {
       >
         <FileList
           onOpenFile={({ id, kind, name }) => {
-            recordRecentFileAccess(id);
             const resolvedKind = editorRegistry.resolveKind(kind);
             const next = buildFileHash(id, resolvedKind);
             traceUserAction(
@@ -239,16 +238,18 @@ const ExcalidrawApp = () => {
   return (
     <TopErrorBoundary>
       <Provider store={appJotaiStore}>
-        <div
-          className={isDesktopEditorHub() ? "app-shell--desktop" : undefined}
-          style={{ height: "100%" }}
-        >
-          <DesktopTitleBar />
-          <div className="app-shell--desktop__body">
-            <ForkRoot />
+        <ShellThemeProvider>
+          <div
+            className={isDesktopEditorHub() ? "app-shell--desktop" : undefined}
+            style={{ height: "100%" }}
+          >
+            <DesktopTitleBar />
+            <div className="app-shell--desktop__body">
+              <ForkRoot />
+            </div>
           </div>
-        </div>
-        <DebugModeTrigger />
+          <DebugModeTrigger />
+        </ShellThemeProvider>
       </Provider>
     </TopErrorBoundary>
   );

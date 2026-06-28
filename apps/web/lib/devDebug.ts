@@ -14,6 +14,7 @@ export type DevDebugChannel =
   | "api-sync"
   | "editor-bridge"
   | "editor-open"
+  | "excalidraw-sync"
   | "mindmap-open"
   | "mindmap-bridge"
   | "mindmap-op"
@@ -31,6 +32,7 @@ const CHANNEL_ENV_FLAG: Record<DevDebugChannel, string> = {
   "api-sync": "VITE_APP_ENABLE_API_SYNC_DEBUG",
   "editor-bridge": "VITE_APP_ENABLE_EDITOR_BRIDGE_DEBUG",
   "editor-open": "VITE_APP_ENABLE_EDITOR_OPEN_DEBUG",
+  "excalidraw-sync": "VITE_APP_ENABLE_EXCALIDRAW_SYNC_DEBUG",
   "mindmap-open": "VITE_APP_ENABLE_MINDMAP_DEBUG",
   "mindmap-bridge": "VITE_APP_ENABLE_MINDMAP_DEBUG",
   "mindmap-op": "VITE_APP_ENABLE_MINDMAP_DEBUG",

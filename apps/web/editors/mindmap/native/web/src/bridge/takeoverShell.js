@@ -486,6 +486,17 @@
           window.setTimeout(resolve, 0)
         })
       }
+      const isTextEditVisible = () => {
+        const textEdit =
+          nativeMindMap &&
+          nativeMindMap.renderer &&
+          nativeMindMap.renderer.textEdit
+        return (
+          textEdit &&
+          typeof textEdit.isShowTextEdit === 'function' &&
+          textEdit.isShowTextEdit()
+        )
+      }
       const waitForPendingInsertEditForSnapshot = async reason => {
         const renderer = nativeMindMap && nativeMindMap.renderer
         if (!renderer) {
@@ -557,53 +568,28 @@
           nativeMindMap &&
           nativeMindMap.renderer &&
           nativeMindMap.renderer.textEdit
-        if (
-          !textEdit ||
-          typeof textEdit.syncEditingTextToNode !== 'function'
-        ) {
+        if (!textEdit || !isTextEditVisible()) {
           return true
         }
-        const editing =
-          typeof textEdit.isShowTextEdit === 'function' &&
-          textEdit.isShowTextEdit()
-        if (!editing) {
-          return true
-        }
+        // 与点击画布空白一致：编辑中直接 getData 会丢字，须先 hideEditTextBox。
         try {
-          const synced = textEdit.syncEditingTextToNode()
-          if (synced && typeof synced.then === 'function') {
-            await synced
+          if (typeof textEdit.hideEditTextBox === 'function') {
+            textEdit.hideEditTextBox()
           }
+          await waitForMindMapRenderSettled()
           await waitForNextFrame()
-          debugMindMapOpen('synced text edit before snapshot', {
-            reason,
-            synced: !!synced
-          })
-          traceNativeMindMapOp('snapshot.syncTextEdit', {
-            reason,
-            synced: !!synced,
-            stillEditing:
-              typeof textEdit.isShowTextEdit === 'function'
-                ? textEdit.isShowTextEdit()
-                : null,
-            editNodeUid:
-              nativeMindMap.richText && nativeMindMap.richText.node
-                ? nativeMindMap.richText.node.uid
-                : textEdit.currentNode
-                  ? textEdit.currentNode.uid
-                  : null
-          })
-          return !!synced
+          return !isTextEditVisible()
         } catch (error) {
-          console.warn('Failed to sync MindMap text edit before snapshot', error)
-          traceNativeMindMapOp('snapshot.syncTextEdit.fail', {
+          console.warn('Failed to finish MindMap text edit before snapshot', error)
+          traceNativeMindMapOp('snapshot.finishTextEdit.fail', {
             reason,
             message: error && error.message ? error.message : String(error)
           })
           return false
         }
       }
-      const collectMindMapDataForSnapshot = async reason => {
+      const collectMindMapDataForSnapshot = async (reason, options = {}) => {
+        const ensureRendered = options.ensureRendered !== false
         const insertSettled = await waitForPendingInsertEditForSnapshot(reason)
         if (!insertSettled) {
           traceNativeMindMapOp('requestMindMapSave.skipUnsettled', {
@@ -618,7 +604,9 @@
           })
           return null
         }
-        await ensureMindMapTextRendered(reason)
+        if (ensureRendered) {
+          await ensureMindMapTextRendered(reason)
+        }
         if (
           nativeMindMap &&
           typeof nativeMindMap.getDataForSnapshot === 'function'
@@ -1061,15 +1049,26 @@
         // 保存思维导图数据的函数
         window.takeOverAppMethods.saveMindMapData = data => {
           void (async () => {
+            if (isTextEditVisible()) {
+              traceNativeMindMapOp('takeOverApp.saveMindMapData.skippedWhileEditing', {
+                data: summarizeNativeMindMapDataForTrace(data)
+              })
+              return
+            }
             const snapshot =
               await collectMindMapDataForSnapshot('takeover-save')
-            const resolved = snapshot || data
-            bridgeState.mindMapData = resolved
+            if (!snapshot) {
+              traceNativeMindMapOp('takeOverApp.saveMindMapData.skippedUnsettled', {
+                data: summarizeNativeMindMapDataForTrace(data)
+              })
+              return
+            }
+            bridgeState.mindMapData = snapshot
             traceNativeMindMapOp('takeOverApp.saveMindMapData', {
-              usedSnapshot: !!snapshot,
-              data: summarizeNativeMindMapDataForTrace(resolved)
+              usedSnapshot: true,
+              data: summarizeNativeMindMapDataForTrace(snapshot)
             })
-            await postMindMapDataToHost(resolved)
+            await postMindMapDataToHost(snapshot)
           })()
         }
         // 获取思维导图配置，也就是实例化时会传入的选项
@@ -1564,8 +1563,10 @@
           reportMindMapSaveProgress(requestId, 'snapshot', { renderEnded })
           try {
             const snapshotStartedAt = performance.now()
-            const snapshotData =
-              await collectMindMapDataForSnapshot('request-save')
+            const snapshotData = await collectMindMapDataForSnapshot(
+              'request-save',
+              { ensureRendered: false }
+            )
             if (!snapshotData) {
               reportMindMapSaveProgress(requestId, 'failed', {
                 message: 'MindMap snapshot not settled'

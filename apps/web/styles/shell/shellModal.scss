@@ -97,6 +97,116 @@
   }
 }
 
+/** AppConfirmDialog 卡片 + 按钮 — filelist / editor platform 共用 */
+@mixin shell-confirm-dialog-card {
+  @include shell-modal-card;
+  max-width: 22rem;
+  width: 100%;
+  padding: var(--nb-space-8) var(--nb-space-10);
+
+  h3 {
+    margin: 0 0 var(--nb-space-3);
+    font-size: var(--nb-font-body);
+    font-weight: 600;
+    color: var(--nb-text);
+  }
+}
+
+@mixin shell-confirm-dialog-styles {
+  .app-confirm-dialog {
+    @include shell-confirm-dialog-card;
+  }
+
+  .app-confirm-dialog__desc {
+    margin: 0 0 var(--nb-space-7);
+    font-size: var(--nb-font-body-sm);
+    line-height: 1.5;
+    color: var(--nb-text-muted);
+    white-space: pre-line;
+  }
+
+  .app-confirm-dialog__actions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--nb-space-3);
+  }
+
+  .app-confirm-dialog__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 2.375rem;
+    padding: var(--nb-space-3) var(--nb-space-5);
+    border-radius: var(--nb-radius-md);
+    font-size: var(--nb-font-body-sm);
+    font-weight: 500;
+    font-family: inherit;
+    border: var(--nb-border-width) solid transparent;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease,
+      opacity 0.15s ease;
+    box-sizing: border-box;
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+
+  .app-confirm-dialog__btn--primary {
+    background: var(--nb-primary-soft);
+    color: var(--nb-primary);
+    border: var(--nb-border-width) solid var(--nb-border-input);
+
+    &:hover:not(:disabled) {
+      background: var(--nb-blue-soft);
+      border-color: var(--nb-primary);
+    }
+  }
+
+  .app-confirm-dialog__btn--danger {
+    background: var(--nb-surface-muted);
+    color: var(--nb-danger-foreground);
+    border-color: var(--nb-danger-border);
+
+    &:hover:not(:disabled) {
+      background: var(--nb-danger-soft-bg);
+      border-color: rgba(239, 68, 68, 0.25);
+    }
+  }
+
+  .app-confirm-dialog__cancel {
+    display: block;
+    margin: var(--nb-space-5) auto 0;
+    padding: var(--nb-space-2) var(--nb-space-4);
+    background: transparent;
+    border: none;
+    font-size: var(--nb-font-caption);
+    color: var(--nb-text-muted);
+    cursor: pointer;
+    font-family: inherit;
+    border-radius: var(--nb-radius-md);
+    transition: color 0.15s ease, background-color 0.15s ease;
+
+    &:hover:not(:disabled) {
+      background: var(--nb-fill-hover);
+      color: var(--nb-text);
+    }
+  }
+
+  &.theme--dark .app-confirm-dialog__btn--danger,
+  .theme--dark .app-confirm-dialog__btn--danger {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--nb-danger-soft-text-dark);
+    border-color: rgba(248, 113, 113, 0.2);
+
+    &:hover:not(:disabled) {
+      background: rgba(248, 113, 113, 0.12);
+    }
+  }
+}
+
 @keyframes shellModalIn {
   from {
     opacity: 0;

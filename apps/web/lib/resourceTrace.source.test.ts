@@ -23,6 +23,8 @@ describe("resource trace wiring", () => {
     expect(apiTransportTraceWrapSource).toContain("wrapApiTransportWithResourceTrace");
     expect(resourceTraceSource).toContain("traceApiCall");
     expect(resourceTraceSource).toContain("getResourceTraceSummary");
+    expect(resourceTraceSource).toContain("fileListScroll");
+    expect(resourceTraceSource).toContain("fileListScrollSummary");
     expect(resourceTraceSource).toContain("api.rapid-duplicate");
   });
 
@@ -35,7 +37,7 @@ describe("resource trace wiring", () => {
     expect(fileListSource).toContain("traceResourceOp");
     expect(fileListSource).toContain("traceTreeStateApply");
     expect(fileListSource).toContain('"filelist", "refresh"');
-    expect(fileListSource).toContain('"filelist", "scheduleSilentRefresh"');
+    expect(fileListSource).toContain('"filelist", "applyCatalogTree"');
     expect(thumbPipelineSource).toContain('"thumbnail", "effectTick"');
     expect(saveQueueSource).toContain('"saveQueue", "drain"');
     expect(userTraceSource).toContain("mergeResourceTraceGlobals");

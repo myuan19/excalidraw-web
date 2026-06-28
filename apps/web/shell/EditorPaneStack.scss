@@ -1,0 +1,61 @@
+.editor-pane-stack {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+}
+
+/*
+ * All panes share the same box; only z-index / visibility distinguish foreground.
+ * DOM sibling order is irrelevant — title-bar tab reorder must not affect layout.
+ */
+.editor-pane-stack__pane {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.editor-pane-stack__pane--foreground {
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.editor-pane-stack__pane--background {
+  z-index: 0;
+  display: block;
+  visibility: hidden;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/*
+ * Dirty / saving background panes must keep iframe layout and timers alive until
+ * their save completes. They stay behind the foreground pane and cannot receive
+ * input; only the browser visibility state changes from hidden to visible.
+ */
+.editor-pane-stack__pane--background.editor-pane-stack__pane--keep-running {
+  visibility: visible;
+}
+
+/*
+ * Excalidraw snapshots use in-memory scene refs; background panes do not need to
+ * stay visibly rendered while dirty. MindMap iframes still need visibility when
+ * keep-running for native snapshot/layout.
+ */
+.editor-pane-stack__pane--background.editor-pane-stack__pane--keep-running[data-editor-kind="excalidraw"] {
+  visibility: hidden;
+}
+
+/*
+ * Native snapshot save: keep iframe layout alive without raising z-index.
+ * Foreground panes stay on top; background saves remain invisible to the user.
+ */
+.editor-pane-stack__pane--background.editor-pane-stack__pane--save-active {
+  visibility: visible;
+  pointer-events: none;
+}

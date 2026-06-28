@@ -1,3 +1,5 @@
+import { buildServerUpdateConfirmCopy } from "../data/editorSyncSurface";
+
 import { requestEditorPlatformConfirm } from "./editorPlatformDialog";
 
 export type LeaveEditorConfirmChoice = "save" | "discard" | "cancel";
@@ -40,22 +42,14 @@ export async function promptServerUpdateConfirm(opts: {
   serverVersion?: number | null;
   mode: "remote-update" | "save-conflict";
 }): Promise<ServerUpdateConfirmChoice> {
-  const subject = opts.documentName?.trim()
-    ? `「${opts.documentName.trim()}」`
-    : "当前文档";
-  const version =
-    typeof opts.serverVersion === "number" ? `（v${opts.serverVersion}）` : "";
-  const keepLocalEffect =
-    opts.mode === "save-conflict"
-      ? "保留当前修改将覆盖服务器的新版本。"
-      : "保留当前修改将继续留在当前页面。";
+  const copy = buildServerUpdateConfirmCopy(opts);
 
   const choice = await requestEditorPlatformConfirm({
-    title: "检测到服务器有更新",
-    message: `${subject}在服务器上已有新版本${version}。当前页面有未保存修改。\n\n${keepLocalEffect}\n载入服务器版本将放弃当前未保存修改。`,
-    primaryLabel: "保留当前修改",
+    title: copy.title,
+    message: copy.message,
+    primaryLabel: copy.primaryLabel,
     primaryVariant: "primary",
-    secondaryLabel: "载入服务器版本",
+    secondaryLabel: copy.secondaryLabel,
     secondaryVariant: "danger",
     dismissOnOverlay: false,
   });

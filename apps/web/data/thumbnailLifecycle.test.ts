@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { FileSyncState } from "./FileSyncState";
+import { FILE_LIST_INCREMENTAL_APPLY_EVENT } from "./fileListIncrementalPatch";
 import {
   readFileListTreeCache,
   writeFileListTreeCache,
@@ -77,6 +78,12 @@ describe("thumbnailLifecycle", () => {
 
   it("finalizes saved thumbnails and patches the file-list cache", () => {
     writeFileListTreeCache({ folders: [], files: [file()] });
+    const incrementalEvents: string[] = [];
+    window.addEventListener(FILE_LIST_INCREMENTAL_APPLY_EVENT, (event) => {
+      incrementalEvents.push(
+        (event as CustomEvent<{ fileId?: string }>).detail?.fileId ?? "",
+      );
+    });
 
     expect(
       finalizeSavedThumbnail({
@@ -90,6 +97,7 @@ describe("thumbnailLifecycle", () => {
       }),
     ).toBe(VISIBLE_SVG);
 
+    expect(incrementalEvents).toEqual(["file-1"]);
     expect(LocalThumbnailCache.getForContent("file-1", "sha-saved")).toBe(
       VISIBLE_SVG,
     );

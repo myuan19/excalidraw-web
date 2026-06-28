@@ -38,7 +38,7 @@ describe("App editor tabs source contract", () => {
     );
 
     expect(cachedPaneBlock).toContain("visibility: hidden");
-    expect(cachedPaneBlock).toContain("pointer-events: none");
+    expect(cachedPaneBlock).toContain("editor-tab-cache-pane--save-active");
     expect(cachedPaneBlock).not.toContain("content-visibility");
     expect(cachedPaneBlock).not.toContain("contain:");
   });

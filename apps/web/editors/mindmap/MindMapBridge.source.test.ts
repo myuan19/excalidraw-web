@@ -54,9 +54,7 @@ describe("MindMap bridge source contract", () => {
     expect(source).toContain("collectMindMapDataForSnapshot");
     expect(source).toContain("waitForPendingInsertEditForSnapshot");
     expect(source).toContain("pendingInsertEditPromise");
-    expect(saveRequestBlock).toContain(
-      "await collectMindMapDataForSnapshot('request-save')",
-    );
+    expect(saveRequestBlock).toContain("ensureRendered: false");
     expect(
       saveRequestBlock.indexOf("collectMindMapDataForSnapshot"),
     ).toBeLessThan(

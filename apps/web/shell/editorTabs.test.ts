@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   closeEditorTab,
   createInitialEditorTabsState,
+  listFileEditorTabsForPaneStack,
   normalizeEditorTabsState,
   openFileTab,
   reorderFileTab,
@@ -144,6 +145,30 @@ describe("editorTabs state", () => {
     ]);
   });
 
+  it("keeps pane stack order stable when the title-bar tab strip is reordered", () => {
+    let state: EditorTabsState = createInitialEditorTabsState();
+    state = openFileTab(state, { fileId: "a", kind: "mindmap", title: "A" });
+    state = openFileTab(state, { fileId: "b", kind: "mindmap", title: "B" });
+    state = openFileTab(state, { fileId: "c", kind: "mindmap", title: "C" });
+
+    const stackBefore = listFileEditorTabsForPaneStack(state).map((tab) => tab.id);
+    const reordered = reorderFileTab(state, {
+      sourceTabId: "file:c",
+      targetTabId: "file:a",
+      position: "before",
+    });
+
+    expect(reordered.tabs.map((tab) => tab.id)).toEqual([
+      "home",
+      "file:c",
+      "file:a",
+      "file:b",
+    ]);
+    expect(listFileEditorTabsForPaneStack(reordered).map((tab) => tab.id)).toEqual(
+      stackBefore,
+    );
+  });
+
   it("updates an open file tab title from the authoritative file name", () => {
     const state = openFileTab(createInitialEditorTabsState(), {
       fileId: "file-1",
@@ -161,6 +186,30 @@ describe("editorTabs state", () => {
       fileId: "file-1",
       title: "真实文件名",
     });
+  });
+
+  it("assigns monotonic stackOrder for pane stack independent of strip order", () => {
+    let state: EditorTabsState = createInitialEditorTabsState();
+    state = openFileTab(state, { fileId: "a", kind: "mindmap", title: "A" });
+    state = openFileTab(state, { fileId: "b", kind: "mindmap", title: "B" });
+
+    const tabA = state.tabs.find((tab) => tab.id === "file:a");
+    const tabB = state.tabs.find((tab) => tab.id === "file:b");
+    expect(tabA?.type === "file" && tabB?.type === "file").toBe(true);
+    if (tabA?.type !== "file" || tabB?.type !== "file") {
+      return;
+    }
+    expect(tabB.stackOrder).toBeGreaterThan(tabA.stackOrder);
+
+    const stackBefore = listFileEditorTabsForPaneStack(state).map((tab) => tab.id);
+    const reordered = reorderFileTab(state, {
+      sourceTabId: "file:b",
+      targetTabId: "file:a",
+      position: "before",
+    });
+    expect(listFileEditorTabsForPaneStack(reordered).map((tab) => tab.id)).toEqual(
+      stackBefore,
+    );
   });
 
   it("normalizes stale tab kinds to a renderable editor kind", () => {

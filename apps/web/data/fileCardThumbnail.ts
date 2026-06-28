@@ -1,3 +1,5 @@
+import { traceThumbChoiceReject } from "../lib/thumbPipelineTrace";
+
 import { isLocalDraftFileId } from "./localDraftFileId";
 import { LocalThumbnailCache } from "./localThumbnailCache";
 import { isTrustedWarmLocalThumbnailSvg } from "./thumbnailSvg";
@@ -83,6 +85,7 @@ export function resolveValidFetchedThumb(
 }
 
 export function chooseFileCardThumbnail(opts: {
+  fileId?: string;
   syncState: "synced" | "draft";
   listLocalPolicy: FileListCardLocalThumbPolicy;
   /** 是否优先本地槽（与 syncState / policy 一致，供 pipeline 判断 stale fetch）。 */
@@ -98,6 +101,29 @@ export function chooseFileCardThumbnail(opts: {
     opts.fetchedThumbContentSha,
     opts.fileContentSha,
   );
+  if (
+    opts.fetchedThumb &&
+    !validFetched &&
+    opts.fileContentSha &&
+    opts.fetchedThumbContentSha != null &&
+    opts.fetchedThumbContentSha !== opts.fileContentSha
+  ) {
+    traceThumbChoiceReject({
+      fileId8: opts.fileId ? opts.fileId.slice(0, 8) : "unknown",
+      reason: "fetched-hash-mismatch",
+      fetchedLen: opts.fetchedThumb.length,
+      fetchedHash8: opts.fetchedThumbContentSha.slice(0, 8),
+      fileHash8: opts.fileContentSha.slice(0, 8),
+    });
+  } else if (opts.fetchedThumb && !validFetched && opts.fileContentSha) {
+    traceThumbChoiceReject({
+      fileId8: opts.fileId ? opts.fileId.slice(0, 8) : "unknown",
+      reason: "fetched-hash-missing",
+      fetchedLen: opts.fetchedThumb.length,
+      fetchedHash8: opts.fetchedThumbContentSha?.slice(0, 8) ?? null,
+      fileHash8: opts.fileContentSha.slice(0, 8),
+    });
+  }
   const allowStaleFetchedFallback =
     opts.listLocalPolicy === "last-saved-until-sync";
   const blockStaleFetchedFallback =

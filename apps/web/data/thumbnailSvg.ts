@@ -236,6 +236,10 @@ function isMindMapThumbNormalized(svgMarkup: string): boolean {
   );
 }
 
+function isMindMapThumbnailSvg(svgMarkup: string): boolean {
+  return /class="[^"]*\bsmm-container\b/i.test(svgMarkup);
+}
+
 interface Bounds {
   x: number;
   y: number;
@@ -926,9 +930,14 @@ export function thumbnailSvgHasVisibleContent(svgMarkup: string): boolean {
  * 父级 `overflow: hidden` + 圆角负责裁切。
  */
 export function patchThumbnailSvgForCard(svgMarkup: string): string {
-  const normalized = isMindMapThumbNormalized(svgMarkup)
-    ? svgMarkup
-    : normalizeMindMapThumbnailSvg(svgMarkup);
+  const normalized = isMindMapThumbnailSvg(svgMarkup)
+    ? normalizeMindMapThumbnailSvg(
+        svgMarkup,
+        isNativeMindMapThumbnailSvg(svgMarkup) ? { source: "native" } : undefined,
+      )
+    : isMindMapThumbNormalized(svgMarkup)
+      ? svgMarkup
+      : normalizeMindMapThumbnailSvg(svgMarkup);
   return normalized.replace(
     /(<svg\b)([^>]*)(>)/i,
     (_match, open: string, attrs: string, close: string) => {

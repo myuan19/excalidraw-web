@@ -1,3 +1,5 @@
+import { isDesktopEditorHub } from "../lib/runtimePlatform";
+
 export type CatalogCapabilities = {
   folderMapping: boolean;
   addMappedFolder: boolean;
@@ -10,11 +12,18 @@ export const WEB_CATALOG_CAPABILITIES: CatalogCapabilities = {
   archivesEnabled: true,
 };
 
+export const DESKTOP_CATALOG_CAPABILITIES: CatalogCapabilities = {
+  folderMapping: true,
+  addMappedFolder: true,
+  archivesEnabled: false,
+};
+
 export function parseCatalogCapabilities(
   value: unknown,
+  fallback: CatalogCapabilities = WEB_CATALOG_CAPABILITIES,
 ): CatalogCapabilities {
   if (!value || typeof value !== "object") {
-    return WEB_CATALOG_CAPABILITIES;
+    return fallback;
   }
   const record = value as Record<string, unknown>;
   return {
@@ -22,6 +31,18 @@ export function parseCatalogCapabilities(
     addMappedFolder: record.addMappedFolder === true,
     archivesEnabled: record.archivesEnabled !== false,
   };
+}
+
+/** Use runtime platform defaults when the tree payload omits capabilities. */
+export function resolveRuntimeCatalogCapabilities(
+  value: unknown,
+): CatalogCapabilities {
+  return parseCatalogCapabilities(
+    value,
+    isDesktopEditorHub()
+      ? DESKTOP_CATALOG_CAPABILITIES
+      : WEB_CATALOG_CAPABILITIES,
+  );
 }
 
 export function isDiscoveredCatalogFile(

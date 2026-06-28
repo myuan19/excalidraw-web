@@ -320,7 +320,20 @@ export async function pipeWebStreamToResponse(stream, res) {
   const reader = stream.getReader();
   try {
     while (!res.destroyed) {
-      const { done, value } = await reader.read();
+      let readResult;
+      try {
+        readResult = await reader.read();
+      } catch (error) {
+        if (
+          res.destroyed ||
+          error?.name === "AbortError" ||
+          error?.code === "ERR_INVALID_STATE"
+        ) {
+          break;
+        }
+        throw error;
+      }
+      const { done, value } = readResult;
       if (done) {
         break;
       }
@@ -329,7 +342,16 @@ export async function pipeWebStreamToResponse(stream, res) {
       }
     }
   } finally {
-    reader.releaseLock();
+    try {
+      await reader.cancel();
+    } catch {
+      // Client disconnect may already have closed the upstream body.
+    }
+    try {
+      reader.releaseLock();
+    } catch {
+      // Ignore double-close races from undici abort.
+    }
   }
 }
 

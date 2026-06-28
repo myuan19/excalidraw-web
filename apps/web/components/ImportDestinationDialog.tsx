@@ -8,9 +8,7 @@ import {
 import { FolderPathPicker } from "./FolderPathPicker";
 
 import type { OverlayDismissHandlers } from "./NewFileDialog";
-import { shellThemeClassName } from "../hooks/useShellTheme";
-
-import "./fileListDialogHost.scss";
+import { ShellDialogOverlay } from "./ShellDialogOverlay";
 
 type ImportDestinationDialogProps = {
   open: boolean;
@@ -72,12 +70,10 @@ export const ImportDestinationDialog = memo(function ImportDestinationDialog({
   const canConfirm = files.length > 0 && selectedFolderId !== null && !busy;
 
   return (
-    <div
-      className={`filelist-dialog-host ${shellThemeClassName()} filelist__detail-overlay`}
+    <ShellDialogOverlay
       role="dialog"
       aria-modal
-      aria-labelledby="import-destination-title"
-      {...overlayDismiss}
+      overlayDismiss={overlayDismiss}
     >
       <div
         className="filelist__detail-card filelist__import-dialog"
@@ -169,6 +165,6 @@ export const ImportDestinationDialog = memo(function ImportDestinationDialog({
           </button>
         </div>
       </div>
-    </div>
+    </ShellDialogOverlay>
   );
 });

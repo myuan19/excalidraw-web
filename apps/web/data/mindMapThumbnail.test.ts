@@ -45,7 +45,6 @@ describe("persistNativeMindMapThumbnail", () => {
     expect(ServerSync.saveThumbnailOnly).toHaveBeenCalledWith(
       fileId,
       expect.stringContaining("<svg"),
-      "Map",
     );
     expect(
       LocalThumbnailCache.getForContent(fileId, "server-thumb-sha"),

@@ -1,89 +1,34 @@
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { FileList } from "../components/FileList";
 import { EditorPlatformShell } from "../components/EditorPlatformSidebar";
 import { EditorPlatformDialogHost } from "../components/EditorPlatformDialogHost";
-import { EditorShellChunkFallback } from "../components/EditorShellChunkFallback";
-import { recordRecentFileAccess } from "../data/recentFiles";
 import { logFileListOpen } from "../lib/logger";
 import { devDebug } from "../lib/devDebug";
-import { traceTab, id8, traceFileOpen } from "../lib/interactionDebugTrace";
+import { id8, traceFileOpen } from "../lib/interactionDebugTrace";
+import {
+  buildTabCacheHostSnapshot,
+  publishTabCacheHostSnapshot,
+  traceTabCache,
+  traceTabCacheWhiteScreen,
+} from "../lib/editorTabCacheTrace";
 import { traceUserAction } from "../lib/userTrace";
 import { editorRegistry } from "../editors";
-import { getLazyEditorShell } from "../editors/lazyViews";
 import { useHomePageWheelZoom } from "../hooks/useHomePageWheelZoom";
-import { openEditorFileTab } from "./editorTabNavigation";
+import { EditorPaneStack } from "./EditorPaneStack";
+import { openEditorFileTab, reconcileEditorTabsWithHash } from "./editorTabNavigation";
 import {
   EDITOR_TABS_CHANGE_EVENT,
   HOME_TAB_ID,
+  listFileEditorTabsForPaneStack,
   readEditorTabsState,
   type EditorTabsState,
-  type FileEditorTab,
 } from "./editorTabs";
 
 import "./EditorTabCacheHost.scss";
 
 function buildFileHash(id: string, kind?: string): string {
   return editorRegistry.buildFileHash(id, kind);
-}
-
-function CachedFileEditorPane({
-  tab,
-  active,
-}: {
-  tab: FileEditorTab;
-  active: boolean;
-}) {
-  useEffect(() => {
-    traceTab("editorPane.active", {
-      tabId: tab.id,
-      fileId8: id8(tab.fileId),
-      kind: tab.kind,
-      active,
-    }, active ? "ok" : "branch");
-  }, [active, tab.id, tab.fileId, tab.kind]);
-
-  const editorDefinition = editorRegistry.getByKind(tab.kind);
-  if (!editorDefinition) {
-    devDebug("app", "[DEBUG] EditorTabCacheHost | missing editor definition", {
-      tabId: tab.id,
-      fileId8: tab.fileId.slice(0, 8),
-      kind: tab.kind,
-      active,
-    });
-    return null;
-  }
-
-  const LazyEditor = getLazyEditorShell(editorDefinition);
-  if (!LazyEditor) {
-    devDebug("app", "[DEBUG] EditorTabCacheHost | missing lazy editor", {
-      tabId: tab.id,
-      fileId8: tab.fileId.slice(0, 8),
-      kind: tab.kind,
-      active,
-    });
-    return null;
-  }
-
-  return (
-    <div
-      className={[
-        "editor-tab-cache-pane",
-        active ? "editor-tab-cache-pane--active" : "editor-tab-cache-pane--cached",
-      ]
-        .filter(Boolean)
-        .join(" ")}
-      data-tab-id={tab.id}
-      data-file-id={tab.fileId}
-    >
-      <Suspense fallback={<EditorShellChunkFallback editorKind={tab.kind} />}>
-        <LazyEditor
-          pinnedFileId={tab.fileId}
-          isEditorTabActive={active}
-        />
-      </Suspense>
-    </div>
-  );
 }
 
 export function EditorTabCacheHost({
@@ -95,9 +40,11 @@ export function EditorTabCacheHost({
     readEditorTabsState(),
   );
   const homeContainerRef = useRef<HTMLDivElement>(null);
+  const lastReconcileKeyRef = useRef<string | null>(null);
   const homeActive = tabState.activeTabId === HOME_TAB_ID;
-  const fileTabs = tabState.tabs.filter(
-    (tab): tab is FileEditorTab => tab.type === "file",
+  const fileTabs = useMemo(
+    () => listFileEditorTabsForPaneStack(tabState),
+    [tabState],
   );
   const hasFileTabs = fileTabs.length > 0;
   const activeFileTab =
@@ -108,6 +55,12 @@ export function EditorTabCacheHost({
   useEffect(() => {
     const sync = () => {
       const next = readEditorTabsState();
+      traceTabCache("sync", {
+        activeTabId: next.activeTabId,
+        tabCount: next.tabs.length,
+        fileTabCount: next.tabs.filter((tab) => tab.type === "file").length,
+        hash: window.location.hash,
+      });
       devDebug("app", "[DEBUG] EditorTabCacheHost | sync", {
         activeTabId: next.activeTabId,
         tabCount: next.tabs.length,
@@ -126,19 +79,65 @@ export function EditorTabCacheHost({
   useHomePageWheelZoom(homeContainerRef, homeActive);
 
   useEffect(() => {
-    if (homeActive || activeFileTab) {
+    const snapshot = buildTabCacheHostSnapshot({
+      activeTabId: tabState.activeTabId,
+      hash: window.location.hash,
+      homeActive,
+      hasFileTabs,
+      activeFileTab,
+      fileTabs,
+    });
+    publishTabCacheHostSnapshot(snapshot);
+
+    if (!homeActive && !activeFileTab) {
+      traceTabCacheWhiteScreen(snapshot, "no-active-file-pane");
+      devDebug("app", "[DEBUG] EditorTabCacheHost | active tab has no pane", {
+        activeTabId: tabState.activeTabId,
+        tabIds: tabState.tabs.map((tab) => tab.id),
+        fileTabIds: fileTabs.map((tab) => tab.id),
+        hash: window.location.hash,
+      });
+      const reconcileKey = `${tabState.activeTabId}|${window.location.hash}`;
+      if (lastReconcileKeyRef.current !== reconcileKey) {
+        lastReconcileKeyRef.current = reconcileKey;
+        reconcileEditorTabsWithHash(window.location.hash);
+      }
       return;
     }
-    devDebug("app", "[DEBUG] EditorTabCacheHost | active tab has no pane", {
-      activeTabId: tabState.activeTabId,
-      tabIds: tabState.tabs.map((tab) => tab.id),
-      fileTabIds: fileTabs.map((tab) => tab.id),
-    });
-  }, [activeFileTab, fileTabs, homeActive, tabState.activeTabId, tabState.tabs]);
+    lastReconcileKeyRef.current = null;
+
+    if (homeActive && hasFileTabs && tabState.activeTabId !== HOME_TAB_ID) {
+      traceTabCache(
+        "hostModeMismatch",
+        {
+          activeTabId: tabState.activeTabId,
+          homeActive,
+          hash: window.location.hash,
+        },
+        "branch",
+      );
+    }
+  }, [
+    activeFileTab,
+    fileTabs,
+    hasFileTabs,
+    homeActive,
+    tabState.activeTabId,
+    tabState.tabs,
+  ]);
 
   const onOpenFile = useCallback(
-    ({ id, kind, name }: { id: string; kind?: string; name?: string }) => {
-      recordRecentFileAccess(id);
+    ({
+      id,
+      kind,
+      name,
+      absPath,
+    }: {
+      id: string;
+      kind?: string;
+      name?: string;
+      absPath?: string | null;
+    }) => {
       const resolvedKind = editorRegistry.resolveKind(kind);
       const next = buildFileHash(id, resolvedKind);
       traceFileOpen("openEditorTab", {
@@ -166,6 +165,7 @@ export function EditorTabCacheHost({
         fileId: id,
         kind: resolvedKind,
         title: name,
+        absPath: absPath ?? null,
       });
     },
     [],
@@ -177,18 +177,6 @@ export function EditorTabCacheHost({
       ? "editor-tab-cache-host--home-active"
       : "editor-tab-cache-host--file-active",
   ].join(" ");
-
-  const fileStack = (
-    <div className="editor-tab-cache-file-stack">
-      {fileTabs.map((tab) => (
-        <CachedFileEditorPane
-          key={tab.id}
-          tab={tab}
-          active={tab.id === tabState.activeTabId}
-        />
-      ))}
-    </div>
-  );
 
   return (
     <div className={hostClassName}>
@@ -211,7 +199,9 @@ export function EditorTabCacheHost({
         </div>
       </div>
       {hasFileTabs ? (
-        <EditorPlatformShell>{fileStack}</EditorPlatformShell>
+        <EditorPlatformShell>
+          <EditorPaneStack tabState={tabState} />
+        </EditorPlatformShell>
       ) : null}
     </div>
   );

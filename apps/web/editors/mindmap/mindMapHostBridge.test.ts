@@ -154,4 +154,72 @@ describe("MindMapHostBridge", () => {
     expect(bridge.isMessageFromCurrentIframe(otherWindow as Window)).toBe(false);
     expect(bridge.isMessageFromCurrentIframe(null)).toBe(false);
   });
+
+  it("onForeground retries init when bridge is ready", () => {
+    const postMessage = vi.fn();
+    const iframe = {
+      contentWindow: { postMessage },
+      src: "http://localhost/mind-map/index.html",
+      getAttribute: (name: string) =>
+        name === "src" ? "http://localhost/mind-map/index.html" : null,
+      dataset: {},
+    } as unknown as HTMLIFrameElement;
+
+    const bridge = new MindMapHostBridge({
+      getIframe: () => iframe,
+      callbacks: {
+        onSnapshot: () => {},
+      },
+    });
+
+    bridge.beginSession();
+    bridge.publishDocument(emptyPayload(), "test");
+    bridge.handleNativeMessage(
+      { source: "simple-mind-map-native", type: "ready" },
+      window.location.origin,
+    );
+    expect(bridge.getSnapshot().phase).toBe("init_sent");
+
+    postMessage.mockClear();
+    bridge.onForeground();
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "hostTabForeground" }),
+      expect.any(String),
+    );
+  });
+
+  it("onForeground posts hostTabForeground when app is ready", () => {
+    const postMessage = vi.fn();
+    const iframe = {
+      contentWindow: { postMessage },
+      src: "http://localhost/mind-map/index.html",
+      getAttribute: (name: string) =>
+        name === "src" ? "http://localhost/mind-map/index.html" : null,
+      dataset: {},
+    } as unknown as HTMLIFrameElement;
+
+    const bridge = new MindMapHostBridge({
+      getIframe: () => iframe,
+      callbacks: {
+        onSnapshot: () => {},
+      },
+    });
+
+    bridge.beginSession();
+    bridge.publishDocument(emptyPayload(), "test");
+    bridge.handleNativeMessage(
+      { source: "simple-mind-map-native", type: "ready" },
+      window.location.origin,
+    );
+    bridge.handleNativeMessage(
+      { source: "simple-mind-map-native", type: "appInited" },
+      window.location.origin,
+    );
+    postMessage.mockClear();
+    bridge.onForeground();
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "hostTabForeground" }),
+      expect.any(String),
+    );
+  });
 });

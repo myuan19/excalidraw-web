@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@excalidraw/random-username": "1.0.0",
+    "@tanstack/react-virtual": "3.13.12",
     "callsites": "4.2.0",
     "i18next-browser-languagedetector": "6.1.4",
     "idb-keyval": "6.0.3",

@@ -27,6 +27,10 @@ describe("EditorPlatformDialogHost source contract", () => {
       path.join(__dirname, "../shell/editorLeaveConfirm.ts"),
       "utf8",
     );
+    const syncSurfaceSource = fs.readFileSync(
+      path.join(__dirname, "../data/editorSyncSurface.ts"),
+      "utf8",
+    );
 
     expect(cacheHostSource).toContain('<div id="editor-platform-dialog-root" />');
     expect(cacheHostSource).toContain("<EditorPlatformDialogHost />");
@@ -38,6 +42,8 @@ describe("EditorPlatformDialogHost source contract", () => {
     expect(dialogStyles).toContain("color: var(--nb-primary);");
     expect(serviceSource).toContain("requestEditorPlatformConfirm");
     expect(leaveSource).toContain("promptServerUpdateConfirm");
+    expect(leaveSource).toContain("buildServerUpdateConfirmCopy");
+    expect(syncSurfaceSource).toContain("local-folder");
     expect(leaveSource).toContain("尚未保存到本地文件夹，是否保存？");
   });
 

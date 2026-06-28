@@ -1,5 +1,7 @@
 import React from "react";
 
+import { traceUserError } from "../lib/userTrace";
+
 interface TopErrorBoundaryState {
   hasError: boolean;
   errorRef: string;
@@ -34,6 +36,13 @@ export class TopErrorBoundary extends React.Component<
       .toString(36)
       .slice(2, 10)}`;
     console.error(error, errorInfo);
+    traceUserError("app", "topErrorBoundary", error, {
+      errorRef,
+      componentStack: errorInfo?.componentStack
+        ? String(errorInfo.componentStack).split("\n").slice(0, 12).join("\n")
+        : null,
+      hash: window.location.hash,
+    });
 
     this.setState(() => ({
       hasError: true,

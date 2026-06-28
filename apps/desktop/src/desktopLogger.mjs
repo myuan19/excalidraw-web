@@ -243,8 +243,16 @@ export function writeDesktopLog(category, event, details = {}) {
  */
 export function applyDesktopServerLogEnv(paths) {
   process.env.EDITORHUB_DESKTOP = "1";
-  process.env.EXCALIDRAW_DATA_DIR ||= paths.dataDir;
-  process.env.EXCALIDRAW_LOG_DIR ||= paths.logDir;
+  if (paths.dataDir) {
+    process.env.EXCALIDRAW_DATA_DIR = paths.dataDir;
+  } else {
+    process.env.EXCALIDRAW_DATA_DIR ||= paths.dataDir;
+  }
+  if (paths.logDir) {
+    process.env.EXCALIDRAW_LOG_DIR = paths.logDir;
+  } else {
+    process.env.EXCALIDRAW_LOG_DIR ||= paths.logDir;
+  }
   process.env.EXCALIDRAW_LOG_TO_FILE ||= "1";
 
   if (isDesktopDebugCapabilityEnabled()) {

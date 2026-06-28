@@ -1,14 +1,12 @@
 import { editorRegistry } from "../editors/registry";
 
-import { dispatchFileListIncrementalApply } from "./fileListIncrementalPatch";
 import {
   resolveFileListCardLocalThumbPolicy,
   resolveListCardLocalThumb,
   type FileListCardLocalThumbPolicy,
 } from "./fileCardThumbnail";
+import { dispatchFileListIncrementalApply } from "./fileListIncrementalPatch";
 import { patchFileListTreeCacheSavedFile } from "./fileListSessionCache";
-import { markFileListIncrementalSave } from "./fileListRefreshCoordinator";
-import { traceThumb, id8 } from "../lib/interactionDebugTrace";
 import { FileSyncState } from "./FileSyncState";
 import { isLocalDraftFileId } from "./localDraftFileId";
 import { LocalThumbnailCache } from "./localThumbnailCache";
@@ -27,11 +25,11 @@ export type ThumbnailDraftSlot = {
   preferLocalThumb: boolean;
   baseHash: string | null;
   draftHash: string | null;
-  /** 编辑 session 实时预览（sceneHash 槽），供 pipeline 判断是否等待 session。 */
+  /** 编辑中实时预览（draft 槽） */
   localDraftThumb: string | null;
-  /** 文件列表卡片应展示的本地缩略图（由 listLocalPolicy 决定来源）。 */
-  listLocalThumb: string | null;
   listLocalPolicy: FileListCardLocalThumbPolicy;
+  /** 列表卡片按策略解析的本地缩略图 */
+  listLocalThumb: string | null;
 };
 
 export type SavedThumbnailPatch = {
@@ -75,13 +73,13 @@ export function buildThumbnailDraftSlot(file: ServerFile): ThumbnailDraftSlot {
   const preferLocalThumb = isLocalDraftFileId(fileId) || syncState === "draft";
   const draftHash = FileSyncState.getDraftHash(fileId);
   const listLocalPolicy = resolveFileListCardLocalThumbPolicy(fileId, syncState);
-  const localDraftThumb = LocalThumbnailCache.getDraftPreview(fileId, draftHash);
   const listLocalThumb = resolveListCardLocalThumb({
     fileId,
     policy: listLocalPolicy,
     draftHash,
     contentSha: file.content_sha256,
   });
+  const localDraftThumb = LocalThumbnailCache.getDraftPreview(fileId, draftHash);
 
   return {
     syncState,
@@ -89,8 +87,8 @@ export function buildThumbnailDraftSlot(file: ServerFile): ThumbnailDraftSlot {
     baseHash: FileSyncState.getBaselineHash(fileId),
     draftHash,
     localDraftThumb,
-    listLocalThumb,
     listLocalPolicy,
+    listLocalThumb,
   };
 }
 
@@ -116,9 +114,11 @@ export function finalizeSavedThumbnail({
   updatedAt,
   thumbnail,
 }: SavedThumbnailPatch): string | null {
-  const savedThumbnail = editorUsesSessionThumbnail(kind)
-    ? bindSavedFileThumbnailToContentSha(fileId, contentSha, thumbnail)
-    : null;
+  const savedThumbnail = bindSavedFileThumbnailToContentSha(
+    fileId,
+    contentSha,
+    thumbnail,
+  );
   patchFileListTreeCacheSavedFile(fileId, {
     name,
     kind,
@@ -127,15 +127,25 @@ export function finalizeSavedThumbnail({
     version: version ?? undefined,
     updated_at: updatedAt ?? undefined,
   });
-  markFileListIncrementalSave(fileId);
-  traceThumb("finalizeSaved", {
-    fileId8: id8(fileId),
-    kind,
-    contentSha8: contentSha?.slice(0, 8) ?? null,
-    hasSavedThumb: !!savedThumbnail,
-    thumbLen: savedThumbnail?.length ?? thumbnail?.length ?? 0,
-    version: version ?? null,
-  });
   dispatchFileListIncrementalApply(fileId);
   return savedThumbnail;
+}
+
+export function finalizeSavedThumbnailMetadata({
+  fileId,
+  kind,
+  name,
+  contentSha,
+  version,
+  updatedAt,
+}: SavedThumbnailPatch): null {
+  patchFileListTreeCacheSavedFile(fileId, {
+    name,
+    kind,
+    content_sha256: contentSha ?? undefined,
+    version: version ?? undefined,
+    updated_at: updatedAt ?? undefined,
+  });
+  dispatchFileListIncrementalApply(fileId);
+  return null;
 }

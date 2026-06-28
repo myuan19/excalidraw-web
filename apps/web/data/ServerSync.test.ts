@@ -8,6 +8,7 @@ import {
 import { FileSyncState } from "./FileSyncState";
 import {
   isServerSyncNotFoundError,
+  isServerSyncVersionConflictError,
   ServerSync,
   ServerSyncError,
 } from "./ServerSync";
@@ -451,5 +452,84 @@ describe("ServerSync.listFileTree", () => {
 
     LocalDraftSessions.remove(draftId);
     FileSyncState.clearLocalCache(draftId);
+  });
+});
+
+describe("isServerSyncVersionConflictError", () => {
+  it("matches version_conflict 409 only", () => {
+    expect(
+      isServerSyncVersionConflictError(
+        new ServerSyncError(
+          "conflict",
+          409,
+          "/files/a",
+          JSON.stringify({ error: "version_conflict", version: 2 }),
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      isServerSyncVersionConflictError(
+        new ServerSyncError(
+          "stale",
+          409,
+          "/files/a/thumbnail",
+          JSON.stringify({ error: "stale_thumbnail" }),
+        ),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("ServerSync.saveFileImmediate session preflight", () => {
+  beforeEach(() => {
+    clearDocumentSessionVersion(FILE_ID, "test-reset");
+    FileSyncState.clearLocalCache(FILE_ID);
+    FileSyncState.clearHashStateForFile(FILE_ID);
+    vi.restoreAllMocks();
+  });
+
+  it("falls back to cache meta version before save when session is empty", async () => {
+    FileSyncState.setLocalCache(FILE_ID, {
+      elements: [],
+      appState: {},
+      files: {},
+      deltas: [],
+      meta: { serverContentSha256: "server-sha", serverVersion: 6 },
+    });
+    FileSyncState.setServerHash(FILE_ID, "server-sha");
+    FileSyncState.alignHashes(FILE_ID, "baseline-hash");
+    FileSyncState.setDraftHash(FILE_ID, "draft-hash");
+
+    vi.spyOn(ServerSync, "listFileHashes").mockRejectedValue(
+      new Error("offline"),
+    );
+
+    let requestBody: { expectedVersion?: number } = {};
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        requestBody = JSON.parse(String(init?.body ?? "{}"));
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            content_sha256: "sha-7",
+            version: 7,
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      },
+    );
+
+    await ServerSync.saveFileImmediate(
+      FILE_ID,
+      { elements: [{ id: "local" }] },
+      undefined,
+      undefined,
+      { source: "auto" },
+    );
+
+    expect(requestBody.expectedVersion).toBe(6);
   });
 });

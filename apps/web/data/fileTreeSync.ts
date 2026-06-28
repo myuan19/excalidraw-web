@@ -1,4 +1,3 @@
-import { ServerSync } from "./ServerSync";
 import type { CatalogScanStatus, FileTreeResponse } from "./ServerSync";
 
 const CATALOG_SCAN_NOTICE_RUNNING =
@@ -79,21 +78,4 @@ export function mergeExpandedFolderState(
     return prev;
   }
   return next;
-}
-
-/** 合并 catalog SSE 触发，避免索引完成时连续 refresh。 */
-export function subscribeDebouncedCatalogChanges(
-  onChange: () => void,
-  debounceMs = 800,
-): () => void {
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  return ServerSync.subscribeCatalogChanges(() => {
-    if (timer) {
-      clearTimeout(timer);
-    }
-    timer = setTimeout(() => {
-      timer = null;
-      onChange();
-    }, debounceMs);
-  });
 }

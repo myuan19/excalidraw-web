@@ -1,4 +1,13 @@
-import { useCallback, useLayoutEffect, useState } from "react";
+import {
+  createContext,
+  createElement,
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useState,
+  useEffect,
+  type ReactNode,
+} from "react";
 
 /** 首页/外壳主题，与编辑器内 excalidraw-theme 独立存储 */
 const SHELL_THEME_STORAGE_KEY = "editorhub-shell-theme";
@@ -6,6 +15,14 @@ const SHELL_THEME_STORAGE_KEY = "editorhub-shell-theme";
 export const SHELL_THEME_CHANGE_EVENT = "editorhub-shell-theme-change";
 
 export type ShellTheme = "light" | "dark";
+
+export type ShellThemeContextValue = {
+  shellTheme: ShellTheme;
+  setShellTheme: (value: ShellTheme | ((theme: ShellTheme) => ShellTheme)) => void;
+  toggleShellTheme: () => void;
+};
+
+const ShellThemeContext = createContext<ShellThemeContextValue | null>(null);
 
 export function readShellTheme(): ShellTheme {
   try {
@@ -18,6 +35,19 @@ export function readShellTheme(): ShellTheme {
 
 export function shellThemeClassName(theme?: ShellTheme): `theme--${ShellTheme}` {
   return `theme--${theme ?? readShellTheme()}`;
+}
+
+function publishShellTheme(theme: ShellTheme) {
+  try {
+    localStorage.setItem(SHELL_THEME_STORAGE_KEY, theme);
+  } catch {
+    // ignore quota / private mode
+  }
+  window.dispatchEvent(
+    new CustomEvent<ShellTheme>(SHELL_THEME_CHANGE_EVENT, {
+      detail: theme,
+    }),
+  );
 }
 
 export function subscribeShellThemeChange(
@@ -42,21 +72,11 @@ export function subscribeShellThemeChange(
   };
 }
 
-/** 外壳亮/暗主题（首页、悬浮球、弹窗），与编辑器画布主题独立存储 */
-export function useShellTheme() {
+function useShellThemeState(): ShellThemeContextValue {
   const [shellTheme, setShellTheme] = useState<ShellTheme>(readShellTheme);
 
   useLayoutEffect(() => {
-    try {
-      localStorage.setItem(SHELL_THEME_STORAGE_KEY, shellTheme);
-    } catch {
-      // ignore quota / private mode
-    }
-    window.dispatchEvent(
-      new CustomEvent<ShellTheme>(SHELL_THEME_CHANGE_EVENT, {
-        detail: shellTheme,
-      }),
-    );
+    publishShellTheme(shellTheme);
   }, [shellTheme]);
 
   const toggleShellTheme = useCallback(() => {
@@ -64,4 +84,30 @@ export function useShellTheme() {
   }, []);
 
   return { shellTheme, setShellTheme, toggleShellTheme };
+}
+
+/** 应用根包裹，使标题栏与首页等同帧切换主题 */
+export function ShellThemeProvider({ children }: { children: ReactNode }) {
+  const value = useShellThemeState();
+  return createElement(ShellThemeContext.Provider, { value }, children);
+}
+
+/** 订阅外壳主题变化（弹窗/portal 与 filelist 状态同步）。 */
+export function useLiveShellTheme(): ShellTheme {
+  const ctx = useContext(ShellThemeContext);
+  if (ctx) {
+    return ctx.shellTheme;
+  }
+  const [theme, setTheme] = useState<ShellTheme>(readShellTheme);
+  useEffect(() => subscribeShellThemeChange(setTheme), []);
+  return theme;
+}
+
+/** 外壳亮/暗主题（首页、标题栏、弹窗），与编辑器画布主题独立存储 */
+export function useShellTheme(): ShellThemeContextValue {
+  const ctx = useContext(ShellThemeContext);
+  if (!ctx) {
+    throw new Error("useShellTheme must be used within ShellThemeProvider");
+  }
+  return ctx;
 }

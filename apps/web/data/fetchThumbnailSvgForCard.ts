@@ -1,4 +1,5 @@
 import { createLogger } from "../lib/logger";
+import { traceThumbFetchHttp } from "../lib/thumbPipelineTrace";
 import { apiTransport } from "./apiTransport";
 import { decodeMindMapThumbnailPayload } from "./thumbnailSvg";
 
@@ -23,6 +24,7 @@ export async function fetchThumbnailSvgForCard(
   };
 
   async function attempt(url: string, label: "A" | "B") {
+    const startedAt = performance.now();
     logPipe.debug("GET thumb request", {
       id8,
       step: label,
@@ -35,7 +37,18 @@ export async function fetchThumbnailSvgForCard(
       path,
       headers: requestHeaders,
     });
+    const ms = performance.now() - startedAt;
     const raw = res.bodyText;
+    const bodyEmpty = !raw.trim();
+    traceThumbFetchHttp({
+      fileId8: id8,
+      step: label,
+      ms,
+      status: res.status,
+      bodyLen: raw.length,
+      bodyEmpty,
+      bustRetry: label === "B",
+    });
     logPipe.debug("GET thumb response", {
       id8,
       step: label,
@@ -43,7 +56,7 @@ export async function fetchThumbnailSvgForCard(
       ok: res.status >= 200 && res.status < 300,
       ct: res.headers["content-type"],
       bodyLen: raw.length,
-      bodyEmpty: !raw.trim(),
+      bodyEmpty,
       head: raw.trim().slice(0, 140),
     });
     if (res.status < 200 || res.status >= 300) {

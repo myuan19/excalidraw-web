@@ -3,6 +3,11 @@ import { createPortal } from "react-dom";
 
 import { useDrawerTransition } from "../hooks/useDrawerTransition";
 import { useStrictOverlayDismiss } from "../hooks/useStrictOverlayDismiss";
+import {
+  shellThemeClassName,
+  useLiveShellTheme,
+} from "../hooks/useShellTheme";
+import "./fileListDialogHost.scss";
 
 import {
   type AISettingsConfig,
@@ -35,6 +40,66 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
+type SettingsPathAction = {
+  label: string;
+  onClick: () => void;
+  variant?: "accent" | "neutral";
+};
+
+function SettingsPathSetting({
+  label,
+  description,
+  path,
+  pathTitle,
+  status,
+  actions,
+}: {
+  label: string;
+  description: string;
+  path: string;
+  pathTitle?: string;
+  status: string | null;
+  actions: SettingsPathAction[];
+}) {
+  return (
+    <div className="settings-panel__option settings-panel__option--path-setting">
+      <div className="settings-panel__option-text">
+        <span className="settings-panel__option-label">{label}</span>
+        <span className="settings-panel__option-desc">{description}</span>
+      </div>
+      <div className="settings-panel__path-block">
+        <span className="settings-panel__path" title={pathTitle ?? path}>
+          {path}
+        </span>
+        {actions.length > 0 ? (
+          <div className="settings-panel__path-toolbar">
+            {actions.map((action) => (
+              <button
+                key={action.label}
+                type="button"
+                className={[
+                  "settings-panel__path-btn",
+                  action.variant === "neutral"
+                    ? "settings-panel__path-btn--neutral"
+                    : "settings-panel__path-btn--accent",
+                ].join(" ")}
+                onClick={action.onClick}
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      {status ? (
+        <span className="settings-panel__option-desc settings-panel__option-desc--status">
+          {status}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 const DEFAULT_AI_CONFIG: AISettingsConfig = {
   excalidraw: DEFAULT_EXCALIDRAW_AI_CONFIG,
   mindmap: DEFAULT_MINDMAP_AI_CONFIG,
@@ -53,9 +118,16 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [defaultDataDirectoryStatus, setDefaultDataDirectoryStatus] = useState<
     string | null
   >(null);
+  const [appDataDirectoryPath, setAppDataDirectoryPath] = useState<
+    string | null
+  >(null);
+  const [appDataDirectoryStatus, setAppDataDirectoryStatus] = useState<
+    string | null
+  >(null);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<"general" | "ai">("general");
   const [debugCapability, setDebugCapability] = useState(getDebugCapability);
+  const shellTheme = useLiveShellTheme();
   const { mounted, active, onDrawerTransitionEnd } = useDrawerTransition(open);
   const isDesktop = isDesktopEditorHub();
   const showCheckpointSettings = !isDesktop;
@@ -65,7 +137,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     if (!mounted) {
       return;
     }
-    setLoadError(null);
     let cancelled = false;
     (async () => {
       try {
@@ -84,6 +155,21 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
       cancelled = true;
     };
   }, [mounted]);
+
+  useEffect(() => {
+    if (!mounted || !isDesktop) {
+      return;
+    }
+    let cancelled = false;
+    void window.editorHubDesktop?.getAppDataDirectoryPath?.().then((resolved) => {
+      if (!cancelled && resolved?.trim()) {
+        setAppDataDirectoryPath(resolved.trim());
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [mounted, isDesktop]);
 
   useEffect(() => {
     return subscribeAppSettings(() => {
@@ -168,6 +254,27 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     }
   }, []);
 
+  const handleOpenAppDataDirectory = useCallback(async () => {
+    setAppDataDirectoryStatus(null);
+    try {
+      const absPath =
+        appDataDirectoryPath ??
+        (await window.editorHubDesktop?.getAppDataDirectoryPath?.());
+      if (!absPath?.trim()) {
+        throw new Error("无法获取应用数据目录");
+      }
+      const result = await window.editorHubDesktop?.openPath?.(absPath.trim());
+      if (result && result !== "") {
+        throw new Error(result);
+      }
+      setAppDataDirectoryStatus("已在文件管理器中打开");
+    } catch (error) {
+      setAppDataDirectoryStatus(
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }, [appDataDirectoryPath]);
+
   const handleChooseDefaultDataDirectory = useCallback(async () => {
     setDefaultDataDirectoryStatus(null);
     try {
@@ -176,7 +283,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         return;
       }
       handleAppSettingChange("defaultDataDirectoryPath", picked);
-      setDefaultDataDirectoryStatus("已更新默认数据目录");
+      setDefaultDataDirectoryStatus("已更新默认保存目录");
     } catch (error) {
       setDefaultDataDirectoryStatus(
         error instanceof Error ? error.message : String(error),
@@ -208,9 +315,14 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   return createPortal(
     <div
-      className={`settings-panel-overlay${
-        active ? " settings-panel-overlay--active" : ""
-      }`}
+      className={[
+        "settings-panel-overlay",
+        "filelist-dialog-host",
+        shellThemeClassName(shellTheme),
+        active ? "settings-panel-overlay--active" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
       role="presentation"
     >
       <div
@@ -369,46 +481,40 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               </div>
               {isDesktop ? (
                 <div className="settings-panel__section">
-                  <h3>数据目录</h3>
-                  <div className="settings-panel__option settings-panel__option--path-setting">
-                    <div className="settings-panel__option-text">
-                      <span className="settings-panel__option-label">
-                        默认数据目录
-                      </span>
-                      <span className="settings-panel__option-desc">
-                        在“本地目录”根视图新建或导入内容时，默认保存到这个本地文件夹
-                      </span>
-                    </div>
-                    <div className="settings-panel__path-row">
-                      <span
-                        className="settings-panel__path"
-                        title={appSettings.defaultDataDirectoryPath}
-                      >
-                        {appSettings.defaultDataDirectoryPath}
-                      </span>
-                      <div className="settings-panel__option-actions">
-                        <button
-                          type="button"
-                          className="settings-panel__btn-secondary"
-                          onClick={handleOpenDefaultDataDirectory}
-                        >
-                          打开文件夹
-                        </button>
-                        <button
-                          type="button"
-                          className="settings-panel__btn-secondary settings-panel__btn-secondary--accent"
-                          onClick={handleChooseDefaultDataDirectory}
-                        >
-                          选择文件夹
-                        </button>
-                      </div>
-                    </div>
-                    {defaultDataDirectoryStatus ? (
-                      <span className="settings-panel__option-desc settings-panel__option-desc--status">
-                        {defaultDataDirectoryStatus}
-                      </span>
-                    ) : null}
-                  </div>
+                  <h3>存储位置</h3>
+                  <SettingsPathSetting
+                    label="应用数据目录"
+                    description="AI 配置、素材库、聊天历史、目录映射索引等（data、catalog 子文件夹）。缓存与日志在本机 Local/Logs 目录，不随 Roaming 同步。"
+                    path={appDataDirectoryPath ?? "加载中…"}
+                    pathTitle={appDataDirectoryPath ?? undefined}
+                    status={appDataDirectoryStatus}
+                    actions={[
+                      {
+                        label: "打开",
+                        onClick: () => void handleOpenAppDataDirectory(),
+                        variant: "accent",
+                      },
+                    ]}
+                  />
+                  <SettingsPathSetting
+                    label="默认保存目录"
+                    description="在「本地目录」根视图新建或导入内容时，默认保存到这个文件夹（你的 .excalidraw / .smm 文件）"
+                    path={appSettings.defaultDataDirectoryPath}
+                    pathTitle={appSettings.defaultDataDirectoryPath}
+                    status={defaultDataDirectoryStatus}
+                    actions={[
+                      {
+                        label: "打开",
+                        onClick: () => void handleOpenDefaultDataDirectory(),
+                        variant: "accent",
+                      },
+                      {
+                        label: "更改",
+                        onClick: () => void handleChooseDefaultDataDirectory(),
+                        variant: "neutral",
+                      },
+                    ]}
+                  />
                 </div>
               ) : null}
               <div className="settings-panel__section">
@@ -456,10 +562,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   </div>
                   <button
                     type="button"
-                    className="settings-panel__btn-secondary"
-                    onClick={handleOpenLogs}
+                    className="settings-panel__path-btn settings-panel__path-btn--accent"
+                    onClick={() => void handleOpenLogs()}
                   >
-                    打开日志
+                    打开
                   </button>
                 </div>
               </div>

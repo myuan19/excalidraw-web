@@ -11,11 +11,14 @@ import {
   EDITOR_MAX_IMAGE_FILE_BYTES,
   formatEditorMaxImageFileSizeMb,
 } from "@excalidraw/common";
+import { FileListConfirmDialog } from "../components/FileListConfirmDialog";
+import { ShellDialogOverlay } from "../components/ShellDialogOverlay";
 import {
   applyMainSiteDocumentBranding,
   HOME_APP_TITLE,
   MAIN_SITE_ICON,
 } from "../lib/appBranding";
+import { serverThumbnailCacheKey } from "../data/serverThumbnailUrl";
 import { shellThemeClassName, useShellTheme } from "./useShellTheme";
 import { createLogger, logFileListOpen } from "../lib/logger";
 import { traceResourceOp, traceTreeStateApply } from "../lib/resourceTrace";
@@ -27,7 +30,20 @@ import {
   isFileListThumbnailDebugEnabled,
 } from "../lib/devDebug";
 import { traceFileOpen, id8 } from "../lib/interactionDebugTrace";
-import { isDesktopEditorHub } from "../lib/runtimePlatform";
+import {
+  startIssueDiagTimer,
+  traceFileListSortOrder,
+  traceHomeRenderMount,
+  traceHomeRenderPaint,
+  traceIssueDiag,
+} from "../lib/issueDiagTrace";
+import {
+  traceThumbFetchAllowChange,
+  traceThumbFetchedStateApply,
+  traceThumbHashInvalidate,
+} from "../lib/thumbPipelineTrace";
+import { bindDesktopOpenDocumentPaths } from "../shell/desktopOpenDocuments";
+import { isDebugRuntimeEnabled } from "../data/debugCapability";
 import { readFileDraftStatus } from "./useFileDraftStatus";
 import {
   readFileListTreeCache,
@@ -45,6 +61,7 @@ import {
 } from "../data/localThumbnailCache";
 import { detectImportCandidateKinds } from "../data/detectImportCandidates";
 import { FileCardThumb } from "../components/FileCardThumb";
+import { FileListVirtualGrid } from "../components/FileListVirtualGrid";
 import { EditorKindDialog, NewFileDialog } from "../components/NewFileDialog";
 import { SaveNewDocumentDialog } from "../components/PromoteTempFileDialog";
 import type { DiskFolderPickResult } from "../components/saveDialogUtils";
@@ -60,14 +77,17 @@ import {
   draftSessionToServerFile,
 } from "../data/localDraftSessions";
 import {
+  findRecentPathCatalogFile,
   getRecentFileEntries,
+  getRecentPathForFileId,
   getRecentPathFromEntryId,
   isRecentPathEntry,
   RECENT_FILES_CHANGE_EVENT,
-  recordRecentFileAccess,
-  recordRecentFilePath,
   removeRecentFileEntry,
+  resolveRecentEntryToFileId,
   toRecentPathEntryId,
+  touchRecentOpenedFile,
+  touchRecentTrackedFiles,
 } from "../data/recentFiles";
 import {
   addMappedFolderRoot,
@@ -75,6 +95,27 @@ import {
   resolveDefaultDataDirectoryPath,
 } from "../data/mappedFolderClient";
 import { readDroppedFileAbsPaths } from "../lib/droppedFilePath";
+import { FILE_LIST_VIRTUAL_THRESHOLD } from "../lib/fileListGridLayout";
+import {
+  attachFileListScrollElement,
+  recordFileListScrollContext,
+  refreshFileListScrollMonitoring,
+  startFileListScrollMonitoring,
+} from "../lib/fileListScrollPerf";
+import {
+  collectRecentAbsPathsFromEntries,
+  fingerprintRecentAbsPaths,
+  findCatalogFileByAbsPath,
+  mergeRecentPathCatalogBatch,
+  mergeRecentPathCatalogFromTree,
+  resolveRecentPathCatalogByPaths,
+} from "../data/recentPathCatalogSync";
+import { isDesktopEditorHub, canOpenRecentByCatalogPath } from "../lib/runtimePlatform";
+import {
+  isExcalidrawPointerDragActive,
+  runAfterExcalidrawPointerDrag,
+  shouldDeferHeavyHostWorkForExcalidraw,
+} from "../editors/excalidraw/excalidrawPointerDrag";
 import {
   fileAwaitingNativeThumbnail,
   generateRecentPathThumbnails,
@@ -104,15 +145,17 @@ import {
 } from "../data/fileTreeSync";
 import {
   cancelDebouncedFileListRefresh,
-  clearFileListIncrementalSaveSkip,
   scheduleDebouncedFileListRefresh,
   shouldSkipSilentTreeRefreshAfterIncrementalSave,
   markFileListIncrementalSave,
 } from "../data/fileListRefreshCoordinator";
 import {
+  dispatchFileListIncrementalApply,
   FILE_LIST_INCREMENTAL_APPLY_EVENT,
+  mergeFileListTreeWithSessionCachePatches,
   mergeServerFilePatch,
   readFileListIncrementalPatch,
+  resolveListSortUpdatedAt,
   type FileListIncrementalPatch,
 } from "../data/fileListIncrementalPatch";
 import {
@@ -128,7 +171,7 @@ import {
   isAIConfigured,
   subscribeAIConfig,
 } from "../data/aiConfig";
-import { computeThumbFetchAllowIds } from "../data/thumbCoverage";
+import { computeThumbFetchAllowIds, THUMB_PREFETCH_FIRST_N, THUMB_PREFETCH_RECENT_ALL } from "../data/thumbCoverage";
 import { buildThumbnailDraftSlot } from "../data/thumbnailLifecycle";
 import { EmbedTokenManager } from "../components/EmbedTokenManager";
 import { DocumentPreviewDialog } from "../components/DocumentPreviewDialog";
@@ -138,8 +181,8 @@ import { SettingsPanel } from "../components/SettingsPanel";
 import {
   WEB_CATALOG_CAPABILITIES,
   isCorruptCatalogFile,
-  parseCatalogCapabilities,
   type CatalogCapabilities,
+  resolveRuntimeCatalogCapabilities,
 } from "../data/catalogCapabilities";
 
 import {
@@ -171,13 +214,9 @@ function getDebugSvgAttr(
 }
 
 function fileThumbnailCacheKey(
-  file: Pick<ServerFile, "content_sha256" | "updated_at">,
+  file: Pick<ServerFile, "content_sha256">,
 ): string | null {
-  const contentSha = file.content_sha256 ?? null;
-  if (!contentSha) {
-    return null;
-  }
-  return `${contentSha}:${file.updated_at ?? ""}`;
+  return serverThumbnailCacheKey(file.content_sha256);
 }
 
 function stripKnownDocumentExtension(name: string): string {
@@ -369,7 +408,7 @@ function collectTopbarLayoutDebug(topbar: HTMLElement | null): Record<string, un
       : null,
     pathbarLabel: pick(".filelist__pathbar-label"),
     topbarActions: pick(".filelist__topbar-actions"),
-    viewModeToggle: pick(".filelist__view-mode-toggle"),
+    viewModeToggle: pick(".filelist__filter-chip"),
     searchWrap: pick(".filelist__search-wrap"),
     searchInput: pick(".filelist__search"),
     sort: pick(".filelist__sort"),
@@ -416,7 +455,12 @@ function debugFolderDnd(label: string, data: Record<string, unknown>): void {
 }
 
 export interface FileListProps {
-  onOpenFile: (file: { id: string; kind?: string; name?: string }) => void;
+  onOpenFile: (file: {
+    id: string;
+    kind?: string;
+    name?: string;
+    absPath?: string | null;
+  }) => void;
   onReady?: () => void;
 }
 
@@ -530,6 +574,10 @@ function takeImportableFilesFromList(fileList: FileList | File[]): File[] {
       f.type === "application/vnd.excalidraw+json" ||
       f.type === "application/x-excalidraw",
   );
+}
+
+function filterImportableAbsPaths(absPaths: string[]): string[] {
+  return absPaths.filter((absPath) => IMPORTABLE_NAME.test(absPath));
 }
 
 /** 多文件导入中途失败时回滚；返回**未能**删除的 id（或网络失败）。 */
@@ -786,13 +834,24 @@ function getInitialFileListStateFromCache(): {
 export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const { shellTheme, toggleShellTheme } = useShellTheme();
   const showWebOnlyFileActions = !isDesktopEditorHub();
+  const initialList = getInitialFileListStateFromCache();
   useEffect(() => {
     purgeLegacyTempArtifacts();
     applyMainSiteDocumentBranding();
+    const bootList = getInitialFileListStateFromCache();
+    traceHomeRenderMount({
+      cachedFiles: bootList.files.length,
+      cachedFolders: bootList.folders.length,
+      initialLoading: bootList.loading,
+    });
+    return () => {
+      traceIssueDiag("home.render", "unmount", {}, "ok");
+    };
   }, []);
 
-  const initialList = getInitialFileListStateFromCache();
   const [files, setFiles] = useState<ServerFile[]>(initialList.files);
+  const filesRef = useRef(files);
+  filesRef.current = files;
   const [folders, setFolders] = useState<ServerFolder[]>(initialList.folders);
   const [currentFolderId, setCurrentFolderIdRaw] = useState<string | null>(
     () => {
@@ -869,13 +928,20 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const [visibleThumbIds, setVisibleThumbIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const prevVisibleThumbIdsRef = useRef<Set<string>>(new Set());
   const sceneImportInputRef = useRef<HTMLInputElement>(null);
+  const recentResolvedPathsKeyRef = useRef<string | null>(null);
   const thumbObserverRef = useRef<IntersectionObserver | null>(null);
   const thumbNodeMap = useRef<Map<string, HTMLElement>>(new Map());
   const sidebarRef = useRef<HTMLElement | null>(null);
+  const sidebarTreeSelectRef = useRef<{
+    folderId: string;
+    finish: ReturnType<typeof startIssueDiagTimer>;
+  } | null>(null);
   const topbarRef = useRef<HTMLElement | null>(null);
   const mainRef = useRef<HTMLDivElement | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
+  const visibleDomCardCountRef = useRef(0);
   const topbarHeightRef = useRef<number | null>(null);
   const pendingLayoutDebugRef = useRef<{
     label: string;
@@ -1048,37 +1114,39 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const dismissMoveDialog = useCallback(() => setMoveDialogFile(null), []);
   const dismissMobileTree = useCallback(() => setMobileTreeOpen(false), []);
   const folderDraftOverlayDismiss = useStrictOverlayDismiss(dismissFolderDraft);
-  const folderDeleteOverlayDismiss = useStrictOverlayDismiss(
-    dismissFolderDeleteDialog,
-  );
-  const fileDeleteOverlayDismiss = useStrictOverlayDismiss(
-    dismissFileDeleteDialog,
-  );
   const newFileOverlayDismiss = useStrictOverlayDismiss(dismissNewFileDialog);
   const moveDialogOverlayDismiss = useStrictOverlayDismiss(dismissMoveDialog);
   const mobileTreeBackdropDismiss = useStrictOverlayDismiss(dismissMobileTree);
 
   useEffect(() => {
-    const bumpRecent = () => setRecentRevision((value) => value + 1);
+    const bumpRecent = (event?: Event) => {
+      const reason = event?.type ?? "manual";
+      setRecentRevision((value) => {
+        const next = value + 1;
+        traceIssueDiag(
+          "home.render",
+          "recentRevision.bump",
+          { from: value, to: next, reason },
+          "branch",
+        );
+        return next;
+      });
+    };
     window.addEventListener(RECENT_FILES_CHANGE_EVENT, bumpRecent);
     window.addEventListener(LOCAL_DRAFT_SESSIONS_CHANGE_EVENT, bumpRecent);
-    window.addEventListener("excalidraw-file-list-refresh", bumpRecent);
-    window.addEventListener("excalidraw-file-sync-state", bumpRecent);
     const unsubCrossTab = onCrossTabFileSaved((fileId, contentSha256, version) => {
       if (contentSha256) {
         patchFileListTreeCacheSavedFile(fileId, {
           content_sha256: contentSha256,
           version: version ?? undefined,
         });
-        markFileListIncrementalSave(fileId);
+        dispatchFileListIncrementalApply(fileId);
       }
       window.dispatchEvent(new CustomEvent("excalidraw-file-sync-state"));
     });
     return () => {
       window.removeEventListener(RECENT_FILES_CHANGE_EVENT, bumpRecent);
       window.removeEventListener(LOCAL_DRAFT_SESSIONS_CHANGE_EVENT, bumpRecent);
-      window.removeEventListener("excalidraw-file-list-refresh", bumpRecent);
-      window.removeEventListener("excalidraw-file-sync-state", bumpRecent);
       unsubCrossTab();
     };
   }, []);
@@ -1087,86 +1155,66 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     if (!isDesktopEditorHub()) {
       return undefined;
     }
-    const paths = getRecentFileEntries()
-      .map((entry) => getRecentPathFromEntryId(entry.id))
-      .filter((value): value is string => !!value);
+    const paths = collectRecentAbsPathsFromEntries();
     if (paths.length === 0) {
       devDebug("file-list", "[DEBUG] recent-paths | clear no paths", {
         recentRevision,
       });
+      recentResolvedPathsKeyRef.current = null;
       setRecentPathCatalogFiles({});
       setRecentPathResolveFailed({});
       return undefined;
     }
+    const pathsKey = fingerprintRecentAbsPaths(paths);
+    if (pathsKey === recentResolvedPathsKeyRef.current) {
+      devDebug("file-list", "[DEBUG] recent-paths | skip unchanged paths", {
+        recentRevision,
+        paths: paths.length,
+      });
+      return undefined;
+    }
     let cancelled = false;
     void (async () => {
-      const next: Record<string, ServerFile> = {};
-      const failures: { path: string; message: string; status?: number }[] = [];
       devDebug("file-list", "[DEBUG] recent-paths | resolve start", {
         recentRevision,
         paths: paths.length,
       });
-      for (const absPath of paths) {
-        try {
-          const resolved = await ServerSync.resolveCatalogFileByPath(absPath);
-          next[absPath] = resolved.file;
-          devDebug("file-list", "[DEBUG] recent-paths | resolved", {
-            recentRevision,
-            pathTail: absPath.slice(-120),
-            id: resolved.file.id,
-            kind: resolved.file.kind,
-            health: resolved.file.health ?? null,
-            hasThumb: !!resolved.file.has_thumbnail,
-            contentSha: resolved.file.content_sha256 ?? null,
-          });
-        } catch (error) {
-          failures.push({
-            path: absPath,
-            message: error instanceof Error ? error.message : String(error),
-            status:
-              typeof (error as { status?: unknown })?.status === "number"
-                ? ((error as { status?: number }).status)
-                : undefined,
-          });
-          // Stale recent path entries are omitted from the sidebar list.
-        }
+      const { resolvedByPath, failures } =
+        await resolveRecentPathCatalogByPaths(paths);
+      if (cancelled) {
+        return;
       }
-      if (!cancelled) {
-        devDebug("file-list", "[DEBUG] recent-paths | apply", {
-          recentRevision,
-          resolved: Object.keys(next).length,
-          failures: failures.map((failure) => ({
-            pathTail: failure.path.slice(-120),
-            message: failure.message.slice(0, 200),
-            status: failure.status ?? null,
-          })),
-        });
-        setRecentPathCatalogFiles((prev) => {
-          const merged: Record<string, ServerFile> = {};
-          for (const absPath of paths) {
-            if (next[absPath]) {
-              merged[absPath] = next[absPath];
-            } else if (prev[absPath]) {
-              merged[absPath] = prev[absPath];
-            }
-          }
-          return merged;
-        });
-        setRecentPathResolveFailed(() => {
-          const failed: Record<string, true> = {};
-          for (const absPath of paths) {
-            if (!next[absPath]) {
-              failed[absPath] = true;
-            }
-          }
-          return failed;
-        });
-      }
+      const filesById = new Map(filesRef.current.map((file) => [file.id, file]));
+      devDebug("file-list", "[DEBUG] recent-paths | apply", {
+        recentRevision,
+        resolved: Object.keys(resolvedByPath).length,
+        failures: Object.keys(failures).length,
+      });
+      setRecentPathCatalogFiles((prev) =>
+        mergeRecentPathCatalogBatch(prev, paths, resolvedByPath, filesById, {
+          replaceScope: true,
+        }),
+      );
+      setRecentPathResolveFailed(failures);
+      recentResolvedPathsKeyRef.current = pathsKey;
     })();
     return () => {
       cancelled = true;
     };
-  }, [recentRevision, files]);
+  }, [recentRevision]);
+
+  useEffect(() => {
+    if (!isDesktopEditorHub()) {
+      return;
+    }
+    setRecentPathCatalogFiles((prev) => {
+      if (Object.keys(prev).length === 0) {
+        return prev;
+      }
+      const filesById = new Map(files.map((file) => [file.id, file]));
+      return mergeRecentPathCatalogFromTree(prev, filesById);
+    });
+  }, [files]);
 
   useEffect(() => {
     const syncAiDot = () => setAiDotOk(isAIConfigured());
@@ -1182,6 +1230,39 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     for (const file of Object.values(recentPathCatalogFiles)) {
       nextHashes[file.id] = fileThumbnailCacheKey(file);
     }
+
+    const invalidateReasons: Array<{
+      id8: string;
+      oldHash: string | null;
+      newHash: string | null;
+      reason: string;
+    }> = [];
+    for (const id of Object.keys(fetchedThumbsRef.current)) {
+      const oldHash = fetchedThumbHashByIdRef.current[id] ?? null;
+      if (!(id in nextHashes)) {
+        invalidateReasons.push({
+          id8: id8(id) ?? id.slice(0, 8),
+          oldHash,
+          newHash: null,
+          reason: "file-removed-from-tree",
+        });
+      } else if (oldHash !== nextHashes[id]) {
+        invalidateReasons.push({
+          id8: id8(id) ?? id.slice(0, 8),
+          oldHash,
+          newHash: nextHashes[id],
+          reason: "content-hash-changed",
+        });
+      }
+    }
+    if (invalidateReasons.length > 0) {
+      traceThumbHashInvalidate({
+        clearedIds8: invalidateReasons.map((r) => r.id8),
+        reasons: invalidateReasons,
+        filesN: files.length,
+      });
+    }
+
     fileThumbHashByIdRef.current = nextHashes;
     pruneThumbnailServerMisses(nextHashes);
 
@@ -1278,8 +1359,6 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const refreshSeqRef = useRef(0);
   const catalogListingFingerprintRef = useRef<string | null>(null);
   const latestCatalogTreeRef = useRef<FileTreeResponse | null>(null);
-  const filesRef = useRef(files);
-  filesRef.current = files;
   const currentFolderIdRef = useRef(currentFolderId);
   currentFolderIdRef.current = currentFolderId;
   const sidebarViewRef = useRef(sidebarView);
@@ -1332,7 +1411,22 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       tree,
       isDesktopEditorHub(),
     );
-    if (listingFingerprint === catalogListingFingerprintRef.current) {
+    const unchanged =
+      listingFingerprint === catalogListingFingerprintRef.current;
+    traceIssueDiag(
+      "home.render",
+      unchanged ? "catalogTree.skip" : "catalogTree.apply",
+      {
+        fingerprint8: listingFingerprint.slice(0, 8),
+        prevFingerprint8:
+          catalogListingFingerprintRef.current?.slice(0, 8) ?? null,
+        folders: tree.folders.length,
+        files: tree.files.length,
+        scanRunning: tree.scan?.running ?? false,
+      },
+      unchanged ? "skip" : "ok",
+    );
+    if (unchanged) {
       setCatalogScanNotice((prev) => (prev === scanNotice ? prev : scanNotice));
       traceResourceOp("filelist", "applyCatalogTree", "skip", {
         reason: "listing-fingerprint-unchanged",
@@ -1340,8 +1434,22 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       return false;
     }
     catalogListingFingerprintRef.current = listingFingerprint;
-    setFolders(tree.folders);
-    setFiles(tree.files);
+    const mergedTree = mergeFileListTreeWithSessionCachePatches(tree);
+    setFolders(mergedTree.folders);
+    setFiles(mergedTree.files);
+    if (isDebugRuntimeEnabled()) {
+      for (const merged of mergedTree.files) {
+        const server = tree.files.find((file) => file.id === merged.id);
+        if (!server || server.updated_at === merged.updated_at) {
+          continue;
+        }
+        traceFileListSortOrder("catalog.merge", {
+          fileId8: merged.id.slice(0, 8),
+          serverUpdatedAt: server.updated_at,
+          mergedUpdatedAt: merged.updated_at,
+        });
+      }
+    }
     traceResourceOp("filelist", "applyCatalogTree", "ok", {
       folders: tree.folders.length,
       files: tree.files.length,
@@ -1352,7 +1460,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       files: tree.files.length,
       scanRunning: tree.scan?.running ?? false,
     });
-    setCatalogCapabilities(parseCatalogCapabilities(tree.capabilities));
+    setCatalogCapabilities(resolveRuntimeCatalogCapabilities(tree.capabilities));
     setCatalogScanNotice(scanNotice);
     setExpandedFolders((prev) => mergeExpandedFolderState(prev, tree.folders));
     for (const f of tree.files) {
@@ -1367,7 +1475,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         FileSyncState.clearHashStateForFile(f.id);
       }
     }
-    writeFileListTreeCache(tree);
+    writeFileListTreeCache(mergedTree);
     return true;
   }, []);
 
@@ -1426,6 +1534,16 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
           isDesktopEditorHub(),
         );
         if (listingFingerprint === catalogListingFingerprintRef.current) {
+          traceIssueDiag(
+            "home.render",
+            "refresh.skip_unchanged",
+            {
+              seq,
+              fingerprint8: listingFingerprint.slice(0, 8),
+              scanNotice,
+            },
+            "skip",
+          );
           devDebug("file-list", "[DEBUG] refresh | skip unchanged listing", {
             seq,
             listingFingerprint,
@@ -1453,35 +1571,61 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
             ? tree.folders.some((folder) => folder.id === currentFolderIdRef.current)
             : true,
         });
-        applyCatalogTree(tree);
-        traceResourceOp("filelist", "refresh", "ok", {
-          seq,
-          folders: tree.folders.length,
-          files: tree.files.length,
-          scanRunning: tree.scan?.running ?? false,
-        });
-        // Use ref to read latest currentFolderId without it being a dep,
-        // preventing unwanted re-fetches when folder navigation triggers a
-        // setCurrentFolderId here (which would create a dep-change loop).
-        const fid = currentFolderIdRef.current;
-        if (fid && !tree.folders.some((f) => f.id === fid)) {
-          devDebug("file-list", "[DEBUG] refresh | current folder missing", {
+        traceIssueDiag(
+          "home.render",
+          "refresh.apply",
+          {
             seq,
-            missingFolderId: fid,
-            tree: summarizeFileListTreeForDebug(tree),
+            fingerprint8: listingFingerprint.slice(0, 8),
+            folders: tree.folders.length,
+            files: tree.files.length,
+            scanRunning: tree.scan?.running ?? false,
+          },
+          "ok",
+        );
+        const commitTree = () => {
+          if (seq !== refreshSeqRef.current) {
+            return;
+          }
+          applyCatalogTree(tree);
+          traceResourceOp("filelist", "refresh", "ok", {
+            seq,
+            folders: tree.folders.length,
+            files: tree.files.length,
+            scanRunning: tree.scan?.running ?? false,
           });
-          setSidebarView("recent");
-          setCurrentFolderId(null);
+          // Use ref to read latest currentFolderId without it being a dep,
+          // preventing unwanted re-fetches when folder navigation triggers a
+          // setCurrentFolderId here (which would create a dep-change loop).
+          const fid = currentFolderIdRef.current;
+          if (fid && !tree.folders.some((f) => f.id === fid)) {
+            devDebug("file-list", "[DEBUG] refresh | current folder missing", {
+              seq,
+              missingFolderId: fid,
+              tree: summarizeFileListTreeForDebug(tree),
+            });
+            setSidebarView("recent");
+            setCurrentFolderId(null);
+          }
+          logList.debug("refresh done", {
+            folders: tree.folders.length,
+            count: tree.files.length,
+            withThumb: tree.files.filter((x) => x.has_thumbnail).length,
+            withSha: tree.files.filter((x) => x.content_sha256).length,
+          });
+          setError(null);
+          setImportNotice(null);
+          onReady?.();
+        };
+        if (shouldDeferHeavyHostWorkForExcalidraw()) {
+          traceResourceOp("filelist", "refresh", "defer", {
+            reason: "excalidraw-host-cooldown",
+            seq,
+          });
+          runAfterExcalidrawPointerDrag(commitTree);
+          return tree;
         }
-        logList.debug("refresh done", {
-          folders: tree.folders.length,
-          count: tree.files.length,
-          withThumb: tree.files.filter((x) => x.has_thumbnail).length,
-          withSha: tree.files.filter((x) => x.content_sha256).length,
-        });
-        setError(null);
-        setImportNotice(null);
-        onReady?.();
+        commitTree();
         return tree;
       } catch (e: any) {
         if (ac.signal.aborted || seq !== refreshSeqRef.current) {
@@ -1531,6 +1675,24 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   );
 
   const runSilentRefresh = useCallback(() => {
+    if (shouldDeferHeavyHostWorkForExcalidraw()) {
+      traceResourceOp("filelist", "refresh", "defer", {
+        reason: isExcalidrawPointerDragActive()
+          ? "excalidraw-pointer-drag"
+          : "excalidraw-host-cooldown",
+      });
+      if (isDebugRuntimeEnabled()) {
+        traceFileListSortOrder("refresh.defer", {
+          reason: "excalidraw-pointer-drag",
+        });
+      }
+      devDebug(
+        "file-list",
+        "[DEBUG] refresh | defer until excalidraw pointer drag ends",
+      );
+      runAfterExcalidrawPointerDrag(runSilentRefresh);
+      return;
+    }
     if (shouldSkipSilentTreeRefreshAfterIncrementalSave()) {
       traceResourceOp("filelist", "refresh", "skip", {
         reason: "incremental-save-window",
@@ -1594,7 +1756,6 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       return;
     }
     return ServerSync.subscribeCatalogChanges(() => {
-      clearFileListIncrementalSaveSkip();
       scheduleSilentRefresh();
     });
   }, [catalogCapabilities.folderMapping, scheduleSilentRefresh]);
@@ -1660,13 +1821,11 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   }, [files, syncVersion]);
 
   const effectiveUpdatedAt = useCallback((f: ServerFile): string => {
-    const local = FileSyncState.getLocalEditTime(f.id);
-    if (!local) {
-      return f.updated_at;
-    }
-    return new Date(local).getTime() > new Date(f.updated_at).getTime()
-      ? local
-      : f.updated_at;
+    return resolveListSortUpdatedAt(
+      f.id,
+      f.updated_at,
+      FileSyncState.getLocalEditTime(f.id),
+    );
   }, []);
 
   const descendantFolderIds = useMemo(
@@ -1695,6 +1854,14 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     return map;
   }, [files, recentRevision]);
 
+  const recentCatalogFileIdToAbsPath = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const [absPath, file] of Object.entries(recentPathCatalogFiles)) {
+      map[file.id] = absPath;
+    }
+    return map;
+  }, [recentPathCatalogFiles]);
+
   const handleOpenFile = useCallback(
     (opts: { id: string; kind: string }) => {
       const file = filesById.get(opts.id);
@@ -1709,8 +1876,11 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         id8: opts.id.slice(0, 20),
         kind: opts.kind,
       });
-      recordRecentFileAccess(opts.id);
       if (isCorruptCatalogFile(file)) {
+        touchRecentOpenedFile({
+          fileId: opts.id,
+          absPath: recentCatalogFileIdToAbsPath[opts.id] ?? null,
+        });
         traceFileOpen("clickCard", { fileId8: id8(opts.id), reason: "corrupt-preview" }, "branch");
         if (file) {
           setPreviewFile(file);
@@ -1718,19 +1888,58 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         return;
       }
       traceFileOpen("clickCard", { fileId8: id8(opts.id), kind: opts.kind }, "ok");
-      onOpenFile({ ...opts, name: file?.name });
+      onOpenFile({
+        ...opts,
+        name: file?.name,
+        absPath: recentCatalogFileIdToAbsPath[opts.id] ?? null,
+      });
     },
-    [filesById, onOpenFile],
+    [filesById, onOpenFile, recentCatalogFileIdToAbsPath],
+  );
+
+  const openTrackedCatalogFile = useCallback(
+    (file: ServerFile, absPath?: string | null) => {
+      traceFileOpen("openTrackedPath", {
+        fileId8: id8(file.id),
+        kind: file.kind,
+        name: file.name,
+        corrupt: isCorruptCatalogFile(file),
+      });
+      if (isCorruptCatalogFile(file)) {
+        setPreviewFile(file);
+        return;
+      }
+      onOpenFile({
+        id: file.id,
+        kind: editorRegistry.resolveKind(file.kind),
+        name: file.name,
+        absPath: absPath ?? recentCatalogFileIdToAbsPath[file.id] ?? null,
+      });
+    },
+    [onOpenFile, recentCatalogFileIdToAbsPath],
   );
 
   const recentDisplayFiles = useMemo(() => {
     const resolved: ServerFile[] = [];
     const seenIds = new Set<string>();
+    const resolveCtx = {
+      filesById,
+      recentPathCatalogFiles,
+      pathByFileId: recentCatalogFileIdToAbsPath,
+    };
     for (const entry of getRecentFileEntries()) {
       let file: ServerFile | null = null;
       if (isRecentPathEntry(entry.id)) {
         const absPath = getRecentPathFromEntryId(entry.id);
-        file = absPath ? recentPathCatalogFiles[absPath] ?? null : null;
+        file = absPath
+          ? findRecentPathCatalogFile(recentPathCatalogFiles, absPath)?.file ??
+            findCatalogFileByAbsPath(
+              absPath,
+              filesById,
+              recentCatalogFileIdToAbsPath,
+            ) ??
+            null
+          : null;
       } else if (isLocalDraftFileId(entry.id)) {
         file =
           filesById.get(entry.id) ??
@@ -1738,7 +1947,25 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
             ? draftSessionToServerFile(LocalDraftSessions.get(entry.id)!)
             : null);
       } else {
-        file = filesById.get(entry.id) ?? null;
+        const resolvedId = resolveRecentEntryToFileId(entry, resolveCtx);
+        if (resolvedId) {
+          file = filesById.get(resolvedId) ?? null;
+          if (!file) {
+            const absPath =
+              getRecentPathForFileId(resolvedId) ??
+              recentCatalogFileIdToAbsPath[resolvedId] ??
+              null;
+            file = absPath
+              ? findRecentPathCatalogFile(recentPathCatalogFiles, absPath)?.file ??
+                findCatalogFileByAbsPath(
+                  absPath,
+                  filesById,
+                  recentCatalogFileIdToAbsPath,
+                ) ??
+                null
+              : null;
+          }
+        }
       }
       if (file && !seenIds.has(file.id)) {
         seenIds.add(file.id);
@@ -1746,15 +1973,15 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       }
     }
     return resolved;
-  }, [filesById, recentPathCatalogFiles, recentRevision]);
+  }, [filesById, recentCatalogFileIdToAbsPath, recentPathCatalogFiles, recentRevision]);
 
-  const recentCatalogFileIdToAbsPath = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const [absPath, file] of Object.entries(recentPathCatalogFiles)) {
-      map[file.id] = absPath;
-    }
-    return map;
-  }, [recentPathCatalogFiles]);
+  useEffect(() => {
+    traceHomeRenderPaint("recentDisplayFiles", {
+      count: recentDisplayFiles.length,
+      recentRevision,
+      recentEntryCount: getRecentFileEntries().length,
+    });
+  }, [recentDisplayFiles, recentRevision]);
 
   const filteredFiles = useMemo(() => {
     let list =
@@ -1846,7 +2073,83 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     searchQuery,
     sidebarView,
     sortKey,
+    syncVersion,
   ]);
+
+  const fileListSortPosRef = useRef<Map<string, number>>(new Map());
+  useEffect(() => {
+    if (!isDebugRuntimeEnabled() || sortKey === "name") {
+      return;
+    }
+    const prev = fileListSortPosRef.current;
+    const next = new Map<string, number>();
+    for (let index = 0; index < filteredFiles.length; index += 1) {
+      const file = filteredFiles[index];
+      next.set(file.id, index);
+      const fileId = file.id;
+      const prevIndex = prev.get(fileId);
+      if (prevIndex === index) {
+        continue;
+      }
+      const localEdit = FileSyncState.getLocalEditTime(fileId);
+      const hasDraft = FileSyncState.hasUnsavedChanges(fileId);
+      if (!localEdit && !hasDraft && prevIndex == null) {
+        continue;
+      }
+      traceFileListSortOrder("position.change", {
+        fileId8: fileId.slice(0, 8),
+        prevIndex: prevIndex ?? null,
+        nextIndex: index,
+        sortKey,
+        localEditTime: localEdit,
+        serverUpdatedAt: file.updated_at,
+        effectiveUpdatedAt: effectiveUpdatedAt(file),
+        hasDraft,
+        syncVersion,
+      });
+    }
+    fileListSortPosRef.current = next;
+  }, [effectiveUpdatedAt, filteredFiles, sortKey, syncVersion]);
+
+  useEffect(() => {
+    traceHomeRenderPaint("loading", {
+      loading,
+      files: files.length,
+      folders: folders.length,
+      sidebarView,
+      recentRevision,
+      filteredFiles: filteredFiles.length,
+    });
+  }, [
+    loading,
+    files.length,
+    folders.length,
+    sidebarView,
+    recentRevision,
+    filteredFiles.length,
+  ]);
+
+  useEffect(() => {
+    const pending = sidebarTreeSelectRef.current;
+    if (!pending || pending.folderId !== currentFolderId) {
+      return;
+    }
+    pending.finish({
+      folderId8: currentFolderId.slice(0, 8),
+      sidebarView,
+      filteredFiles: filteredFiles.length,
+      visibleThumbs: visibleThumbIds.size,
+    });
+    sidebarTreeSelectRef.current = null;
+  }, [currentFolderId, sidebarView, filteredFiles.length, visibleThumbIds.size]);
+
+  useEffect(() => {
+    traceHomeRenderPaint("visibleThumbs", {
+      count: visibleThumbIds.size,
+      sidebarView,
+      filteredFiles: filteredFiles.length,
+    });
+  }, [visibleThumbIds.size, sidebarView, filteredFiles.length]);
 
   const collectLayoutDebugData = useCallback(
     (data: Record<string, unknown> = {}) => {
@@ -1950,26 +2253,32 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
 
   const setFetchedThumbsWithLayoutDebug = useCallback(
     (nextState: React.SetStateAction<Record<string, string>>) => {
-      if (!isFileListLayoutDebugEnabled()) {
-        setFetchedThumbs(nextState);
-        return;
-      }
-
       setFetchedThumbs((prev) => {
         const next =
           typeof nextState === "function" ? nextState(prev) : nextState;
         const prevIds = new Set(Object.keys(prev));
         const nextIds = Object.keys(next);
-        const newThumbIds = nextIds.filter((id) => !prevIds.has(id));
+        const added = nextIds.filter((id) => !prevIds.has(id));
+        const removed = [...prevIds].filter((id) => !(id in next));
 
-        if (newThumbIds.length > 0) {
+        if (added.length > 0 || removed.length > 0) {
+          traceThumbFetchedStateApply({
+            addedIds8: added.map((id) => id8(id) ?? id.slice(0, 8)),
+            removedIds8: removed.map((id) => id8(id) ?? id.slice(0, 8)),
+            prevN: prevIds.size,
+            nextN: nextIds.length,
+            source: "setFetchedThumbs",
+          });
+        }
+
+        if (isFileListLayoutDebugEnabled() && added.length > 0) {
           debugFileListLayout(
             "before thumbnail state update",
             collectLayoutDebugData({
-              firstThumbId: newThumbIds[0],
-              newThumbCount: newThumbIds.length,
-              newThumbIds: newThumbIds.slice(0, 8).map((id) => id.slice(0, 8)),
-              previousFetchedThumbs: Object.keys(prev).length,
+              firstThumbId: added[0],
+              newThumbCount: added.length,
+              newThumbIds: added.slice(0, 8).map((id) => id.slice(0, 8)),
+              previousFetchedThumbs: prevIds.size,
               nextFetchedThumbs: nextIds.length,
             }),
           );
@@ -2148,9 +2457,33 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
    * 首屏必须与 IntersectionObserver 可见集合并：可见 id ∪ 当前作用域排序前 N 条（见 thumbCoverage）。
    */
   const thumbFetchAllowIds = useMemo(
-    () => computeThumbFetchAllowIds(visibleThumbIds, thumbLoadScopeFiles),
-    [visibleThumbIds, thumbLoadScopeFiles],
+    () =>
+      computeThumbFetchAllowIds(
+        visibleThumbIds,
+        thumbLoadScopeFiles,
+        sidebarView === "recent" && !searchQuery.trim()
+          ? THUMB_PREFETCH_RECENT_ALL
+          : THUMB_PREFETCH_FIRST_N,
+      ),
+    [visibleThumbIds, thumbLoadScopeFiles, sidebarView, searchQuery],
   );
+
+  useEffect(() => {
+    const prev = prevVisibleThumbIdsRef.current;
+    const added = [...visibleThumbIds].filter((id) => !prev.has(id));
+    const removed = [...prev].filter((id) => !visibleThumbIds.has(id));
+    if (added.length > 0 || removed.length > 0) {
+      traceThumbFetchAllowChange({
+        visibleN: visibleThumbIds.size,
+        allowN: thumbFetchAllowIds.size,
+        scopeN: thumbLoadScopeFiles.length,
+        addedVisible8: added.map((id) => id8(id) ?? id.slice(0, 8)),
+        removedVisible8: removed.map((id) => id8(id) ?? id.slice(0, 8)),
+        allowDelta: thumbFetchAllowIds.size - computeThumbFetchAllowIds(prev, thumbLoadScopeFiles).size,
+      });
+    }
+    prevVisibleThumbIdsRef.current = new Set(visibleThumbIds);
+  }, [visibleThumbIds, thumbFetchAllowIds, thumbLoadScopeFiles]);
 
   const onThumbnailServerMiss = useCallback(() => {
     setThumbnailMissRevision((revision) => revision + 1);
@@ -2222,6 +2555,16 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       if (!applied) {
         return false;
       }
+      markFileListIncrementalSave(fileId);
+      if (isDebugRuntimeEnabled()) {
+        const patched = readFileListIncrementalPatch(fileId);
+        traceFileListSortOrder("incremental.apply", {
+          fileId8: fileId.slice(0, 8),
+          updatedAt: patched?.updated_at ?? detail?.updatedAt ?? null,
+          contentSha8: patched?.content_sha256?.slice(0, 8) ?? null,
+          localEditTime: FileSyncState.getLocalEditTime(fileId),
+        });
+      }
       if (detail?.contentSha256) {
         clearFetchedThumbForFile(fileId);
       }
@@ -2233,7 +2576,6 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       traceResourceOp("filelist", "incrementalApply", "ok", {
         fileId8: fileId.slice(0, 8),
       });
-      setRecentRevision((value) => value + 1);
       return true;
     },
     [clearFetchedThumbForFile],
@@ -2488,13 +2830,35 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const GRID_ENTER_ANIM_MS = 280;
   const [gridEnterAnimate, setGridEnterAnimate] = useState(true);
   useLayoutEffect(() => {
+    if (filteredFiles.length > 24) {
+      setGridEnterAnimate(false);
+      return;
+    }
     setGridEnterAnimate(true);
     const timer = window.setTimeout(
       () => setGridEnterAnimate(false),
       GRID_ENTER_ANIM_MS,
     );
     return () => window.clearTimeout(timer);
-  }, [gridListKey]);
+  }, [gridListKey, filteredFiles.length]);
+
+  useEffect(() => {
+    startFileListScrollMonitoring();
+    refreshFileListScrollMonitoring();
+    const detach = attachFileListScrollElement(mainRef.current);
+    return detach;
+  }, [loading, sidebarView, currentFolderId]);
+
+  useEffect(() => {
+    recordFileListScrollContext({
+      listedFileCount: filteredFiles.length,
+      domCardCount:
+        visibleDomCardCountRef.current > 0
+          ? visibleDomCardCountRef.current
+          : filteredFiles.length,
+      virtualized: filteredFiles.length >= FILE_LIST_VIRTUAL_THRESHOLD,
+    });
+  }, [filteredFiles.length, fetchedThumbs, visibleThumbIds.size]);
 
   useEffect(() => {
     setVisibleThumbIds(new Set());
@@ -2604,7 +2968,6 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
           id8: id.slice(0, 8),
           kind,
         });
-        recordRecentFileAccess(id);
         setFormalCreateKind(null);
         void openEditorFileTab({
           fileId: id,
@@ -2976,6 +3339,159 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     dismissImportFolderPicker,
   );
 
+  const applyTrackRecentAbsPaths = useCallback(
+    async (absPaths: string[]) => {
+      if (!canOpenRecentByCatalogPath()) {
+        setError("「最近」仅支持在桌面版通过文件路径添加外部文件。");
+        return;
+      }
+      const filtered = filterImportableAbsPaths(absPaths);
+      if (filtered.length === 0) {
+        setError(
+          "未识别到可打开的文档文件（如 .excalidraw、.smm、.json、.png、.svg）。",
+        );
+        return;
+      }
+      clearAllThumbnailServerMisses();
+      setError(null);
+      setImportNotice(null);
+      devDebug("file-list", "[DEBUG] recent-track | start", {
+        paths: filtered.map((item) => item.slice(-160)),
+        sidebarView,
+        currentFolderId,
+      });
+      const { tracked, errors, filesByPath, trackedFilesInOrder } =
+        await trackCatalogPathsToRecent(filtered);
+      devDebug("file-list", "[DEBUG] recent-track | result", {
+        tracked,
+        errors,
+        files: Object.entries(filesByPath).map(([absPath, file]) => ({
+          pathTail: absPath.slice(-160),
+          id: file.id,
+          kind: file.kind,
+          health: file.health ?? null,
+          hasThumb: !!file.has_thumbnail,
+          contentSha: file.content_sha256 ?? null,
+        })),
+      });
+      if (Object.keys(filesByPath).length > 0) {
+        const trackedPaths = Object.keys(filesByPath);
+        const filesByIdMap = new Map(
+          filesRef.current.map((file) => [file.id, file]),
+        );
+        setRecentPathCatalogFiles((prev) =>
+          mergeRecentPathCatalogBatch(
+            prev,
+            trackedPaths,
+            filesByPath,
+            filesByIdMap,
+          ),
+        );
+      }
+      if (tracked === 0) {
+        setError(errors[0] ?? "无法打开文件，请重试。");
+        return;
+      }
+      const pathEntries = trackedFilesInOrder.slice(1).map((file) => ({
+        fileId: file.id,
+        absPath:
+          Object.entries(filesByPath).find(([, item]) => item.id === file.id)?.[0] ??
+          null,
+      }));
+      touchRecentTrackedFiles(pathEntries);
+      const firstFile = trackedFilesInOrder[0];
+      const firstPath =
+        Object.entries(filesByPath).find(([, item]) => item.id === firstFile.id)?.[0] ??
+        null;
+      openTrackedCatalogFile(firstFile, firstPath);
+      recentResolvedPathsKeyRef.current = fingerprintRecentAbsPaths(
+        collectRecentAbsPathsFromEntries(),
+      );
+      if (errors.length > 0) {
+        setImportNotice(
+          `已打开 ${trackedFilesInOrder[0]?.name ?? "文件"}；${errors.length} 个失败：${errors[0]}`,
+        );
+      }
+      void generateRecentPathThumbnails(filesByPath)
+        .then((updated) => {
+          devDebug("file-list", "[DEBUG] recent-track | thumbnails done", {
+            updated: Object.entries(updated).map(([absPath, file]) => ({
+              pathTail: absPath.slice(-160),
+              id: file.id,
+              kind: file.kind,
+              hasThumb: !!file.has_thumbnail,
+              contentSha: file.content_sha256 ?? null,
+            })),
+          });
+          if (Object.keys(updated).length === 0) {
+            return;
+          }
+          const updatedPaths = Object.keys(updated);
+          const filesByIdMap = new Map(
+            filesRef.current.map((file) => [file.id, file]),
+          );
+          setRecentPathCatalogFiles((prev) =>
+            mergeRecentPathCatalogBatch(
+              prev,
+              updatedPaths,
+              updated,
+              filesByIdMap,
+            ),
+          );
+        })
+        .catch((error: unknown) => {
+          logList.debug("recent thumbnail generation failed", error);
+        });
+    },
+    [currentFolderId, openTrackedCatalogFile, sidebarView, touchRecentTrackedFiles],
+  );
+
+  const onVirtualGridDomCountChange = useCallback((count: number) => {
+    visibleDomCardCountRef.current = count;
+    recordFileListScrollContext({
+      listedFileCount: filteredFiles.length,
+      domCardCount: count,
+      virtualized: true,
+    });
+  }, [filteredFiles.length]);
+
+  const handleSceneAbsPaths = useCallback(
+    async (absPaths: string[], opts?: { intent?: SceneFilesIntent }) => {
+      const intent =
+        opts?.intent ??
+        resolveSceneFilesIntent(sidebarView, currentFolderId, foldersById);
+      applySceneFilesViewSwitch(intent);
+      if (intent.type !== "track-recent") {
+        setError("系统打开文件仅支持通过「最近」打开。");
+        return;
+      }
+      try {
+        await applyTrackRecentAbsPaths(absPaths);
+      } catch (error: unknown) {
+        logList.debug("scene abs paths action failed", error);
+        setError(
+          error instanceof Error ? error.message : "打开文件失败，请重试。",
+        );
+      }
+    },
+    [
+      applySceneFilesViewSwitch,
+      applyTrackRecentAbsPaths,
+      currentFolderId,
+      foldersById,
+      sidebarView,
+    ],
+  );
+
+  useEffect(() => {
+    if (!isDesktopEditorHub()) {
+      return;
+    }
+    return bindDesktopOpenDocumentPaths((paths) => {
+      void handleSceneAbsPaths(paths, { intent: { type: "track-recent" } });
+    });
+  }, [handleSceneAbsPaths]);
+
   const handleSceneFiles = useCallback(
     async (fileList: File[], opts?: { intent?: SceneFilesIntent }) => {
       const next = takeImportableFilesFromList(fileList);
@@ -2995,70 +3511,12 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
 
       try {
         if (intent.type === "track-recent") {
-          if (!isDesktopEditorHub() || !catalogCapabilities.folderMapping) {
-            setError("「最近」仅支持在桌面版通过文件路径添加外部文件。");
-            return;
-          }
           const absPaths = readDroppedFileAbsPaths(next);
           if (absPaths.length === 0) {
             setError("无法获取文件路径，请从文件管理器拖入或使用桌面版。");
             return;
           }
-          clearAllThumbnailServerMisses();
-          setError(null);
-          setImportNotice(null);
-          devDebug("file-list", "[DEBUG] recent-track | start", {
-            paths: absPaths.map((item) => item.slice(-160)),
-            sidebarView,
-            currentFolderId,
-          });
-          const { tracked, errors, filesByPath } =
-            await trackCatalogPathsToRecent(absPaths);
-          devDebug("file-list", "[DEBUG] recent-track | result", {
-            tracked,
-            errors,
-            files: Object.entries(filesByPath).map(([absPath, file]) => ({
-              pathTail: absPath.slice(-160),
-              id: file.id,
-              kind: file.kind,
-              health: file.health ?? null,
-              hasThumb: !!file.has_thumbnail,
-              contentSha: file.content_sha256 ?? null,
-            })),
-          });
-          if (Object.keys(filesByPath).length > 0) {
-            setRecentPathCatalogFiles((prev) => ({ ...prev, ...filesByPath }));
-          }
-          setRecentRevision((value) => value + 1);
-          if (tracked === 0) {
-            setError(errors[0] ?? "无法添加到最近");
-            return;
-          }
-          if (errors.length > 0) {
-            setImportNotice(
-              `已添加 ${tracked} 个文件；${errors.length} 个失败：${errors[0]}`,
-            );
-          }
-          void generateRecentPathThumbnails(filesByPath)
-            .then((updated) => {
-              devDebug("file-list", "[DEBUG] recent-track | thumbnails done", {
-                updated: Object.entries(updated).map(([absPath, file]) => ({
-                  pathTail: absPath.slice(-160),
-                  id: file.id,
-                  kind: file.kind,
-                  hasThumb: !!file.has_thumbnail,
-                  contentSha: file.content_sha256 ?? null,
-                })),
-              });
-              if (Object.keys(updated).length === 0) {
-                return;
-              }
-              setRecentPathCatalogFiles((prev) => ({ ...prev, ...updated }));
-              setRecentRevision((value) => value + 1);
-            })
-            .catch((error: unknown) => {
-              logList.debug("recent thumbnail generation failed", error);
-            });
+          await applyTrackRecentAbsPaths(absPaths);
           return;
         }
 
@@ -3088,8 +3546,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     },
     [
       applySceneFilesViewSwitch,
-      catalogCapabilities.folderMapping,
-      currentFolderId,
+      applyTrackRecentAbsPaths,
       ensureDefaultDataDirectoryFolderId,
       foldersById,
       isLocalDirectoryRoot,
@@ -3239,6 +3696,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
             delete next[recentPath];
             return next;
           });
+          recentResolvedPathsKeyRef.current = null;
           setRecentRevision((value) => value + 1);
         }
       }
@@ -3275,6 +3733,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     } else {
       removeRecentFileEntry(file.id);
     }
+    recentResolvedPathsKeyRef.current = null;
     setRecentRevision((value) => value + 1);
   };
 
@@ -3368,13 +3827,14 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
               renamed.kind,
             );
             removeRecentFileEntry(toRecentPathEntryId(recentPath));
-            recordRecentFilePath(nextPath);
+            touchRecentOpenedFile({ fileId: id, absPath: nextPath });
             setRecentPathCatalogFiles((prev) => {
               const next = { ...prev };
               delete next[recentPath];
               next[nextPath] = renamed;
               return next;
             });
+            recentResolvedPathsKeyRef.current = null;
             setRecentRevision((value) => value + 1);
           }
         }
@@ -3395,9 +3855,31 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
 
   const selectFolder = (folderId: string) => {
     if (sidebarView === "all" && currentFolderId === folderId) {
+      traceIssueDiag(
+        "sidebar.tree",
+        "selectFolder.skip_same",
+        { folderId8: folderId.slice(0, 8) },
+        "skip",
+      );
       setMobileTreeOpen(false);
       return;
     }
+    const finish = startIssueDiagTimer("sidebar.tree", "selectFolder", {
+      folderId8: folderId.slice(0, 8),
+      fromFolderId8: currentFolderId ? currentFolderId.slice(0, 8) : null,
+      sidebarView,
+      folderName: foldersById.get(folderId)?.name ?? null,
+    });
+    sidebarTreeSelectRef.current = { folderId, finish };
+    traceIssueDiag(
+      "sidebar.tree",
+      "selectFolder.click",
+      {
+        folderId8: folderId.slice(0, 8),
+        folderName: foldersById.get(folderId)?.name ?? null,
+      },
+      "start",
+    );
     setSidebarView("all");
     if (isFileListLayoutDebugEnabled()) {
       const data = {
@@ -3654,7 +4136,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       setFolders(result.tree.folders);
       setFiles(result.tree.files);
       setCatalogCapabilities(
-        parseCatalogCapabilities(result.tree.capabilities),
+        resolveRuntimeCatalogCapabilities(result.tree.capabilities),
       );
       if (result.tree.scan?.state === "running" || result.tree.scan?.running) {
         setCatalogScanNotice("正在后台索引本地文件夹，文件会陆续出现…");
@@ -4223,6 +4705,17 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
                 className="filelist__tree-toggle"
                 onClick={(event) => {
                   event.stopPropagation();
+                  traceIssueDiag(
+                    "sidebar.tree",
+                    expanded ? "toggle.collapse" : "toggle.expand",
+                    {
+                      folderId8: folder.id.slice(0, 8),
+                      folderName: folder.name,
+                      depth,
+                      hasChildren,
+                    },
+                    "start",
+                  );
                   setExpandedFolders((prev) => ({
                     ...prev,
                     [folder.id]: !expanded,
@@ -4457,6 +4950,41 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
 
         {allFilesTreeExpanded ? (
           <div className="filelist__sidebar-subtree">
+            <button
+              type="button"
+              className="filelist__sidebar-subtree-action"
+              disabled={mappingBusy}
+              title={
+                catalogCapabilities.addMappedFolder
+                  ? "添加本地目录"
+                  : "新建文件夹"
+              }
+              aria-label={
+                catalogCapabilities.addMappedFolder
+                  ? mappingBusy
+                    ? "添加中"
+                    : catalogScanNotice
+                      ? "索引中"
+                      : "添加本地目录"
+                  : "新建文件夹"
+              }
+              onClick={() =>
+                void (catalogCapabilities.addMappedFolder
+                  ? addMappedFolder()
+                  : quickCreateFolder())
+              }
+            >
+              <Icon type="plus" size={16} aria-hidden />
+              <span>
+                {catalogCapabilities.addMappedFolder
+                  ? mappingBusy
+                    ? "添加中…"
+                    : catalogScanNotice
+                      ? "索引中…"
+                      : "添加"
+                  : "新建文件夹"}
+              </span>
+            </button>
             <div className="filelist__tree filelist__tree--nested">
               {renderFolderTree(ROOT_ID)}
             </div>
@@ -4476,14 +5004,16 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       ? "打开"
       : "导入";
     const actionTitle = isRecentOpen
-      ? `打开 ${editorRegistry.importableEditorNames()} 文档并添加到最近`
-      : `导入 ${editorRegistry.importableEditorNames()} 文档`;
+      ? `打开 ${editorRegistry.importableEditorNames()} 文档（添加到最近并进入编辑器）`
+      : `导入 ${editorRegistry.importableEditorNames()} 文档到当前目录`;
+    const buttonClass = isRecentOpen
+      ? "filelist__import-scene-btn filelist__import-scene-btn--file filelist__topbar-open-btn filelist__topbar-primary-btn"
+      : "filelist__import-scene-btn filelist__import-scene-btn--file";
     return (
     <label
       className={[
         "filelist__topbar-import",
-        "filelist__import-scene-btn",
-        "filelist__import-scene-btn--file",
+        buttonClass,
         importing ? "filelist__import-scene-btn--busy" : "",
       ]
         .filter(Boolean)
@@ -4511,74 +5041,67 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     );
   };
 
-  const renderTopbarViewModeToggle = () => {
+  const renderBreadcrumbFilters = () => {
+    if (sidebarView !== "all") {
+      return null;
+    }
     const showDefaultDataDirectoryToggle =
-      sidebarView === "all" && isLocalDirectoryRoot && isDesktopEditorHub();
+      isLocalDirectoryRoot && isDesktopEditorHub();
     const showFlatFolderToggle =
-      sidebarView === "all" &&
-      (isBrowsingSubfolder || !isDesktopEditorHub());
+      isBrowsingSubfolder || !isDesktopEditorHub();
 
-    if (showDefaultDataDirectoryToggle) {
-      return (
-        <button
-          type="button"
-          className={[
-            "filelist__view-mode-toggle",
-            defaultDataDirectoryOnlyView
-              ? "filelist__view-mode-toggle--active"
-              : "",
-          ]
-            .filter(Boolean)
-            .join(" ")}
-          aria-pressed={defaultDataDirectoryOnlyView}
-          aria-label={
-            defaultDataDirectoryOnlyView
-              ? "只看默认目录：仅显示默认数据目录中的文件"
-              : "显示全部本地目录中的文件"
-          }
-          title={
-            defaultDataDirectoryOnlyView
-              ? "当前只看默认目录；点击后显示全部本地目录"
-              : "当前显示全部本地目录；点击后只看默认目录"
-          }
-          onClick={() =>
-            setDefaultDataDirectoryOnlyView(!defaultDataDirectoryOnlyView)
-          }
-        >
-          {DEFAULT_DATA_DIRECTORY_ONLY_LABEL}
-        </button>
-      );
+    if (!showDefaultDataDirectoryToggle && !showFlatFolderToggle) {
+      return null;
     }
 
-    if (showFlatFolderToggle) {
-      return (
-        <button
-          type="button"
-          className={[
-            "filelist__view-mode-toggle",
-            flatFolderView ? "filelist__view-mode-toggle--active" : "",
-          ]
-            .filter(Boolean)
-            .join(" ")}
-          aria-pressed={flatFolderView}
-          aria-label={
-            flatFolderView
-              ? "只看直属文件：仅显示当前文件夹直属文件"
-              : "已包含子文件夹内文件"
-          }
-          title={
-            flatFolderView
-              ? "当前只看直属文件；点击后包含子文件夹"
-              : "当前包含子文件夹内文件；点击后只看直属文件"
-          }
-          onClick={() => setFlatFolderView(!flatFolderView)}
-        >
-          {FLAT_FOLDER_VIEW_LABEL}
-        </button>
-      );
-    }
-
-    return null;
+    return (
+      <div className="filelist__filter-chips" role="group" aria-label="目录筛选">
+        {showDefaultDataDirectoryToggle ? (
+          <button
+            type="button"
+            className={[
+              "filelist__filter-chip",
+              defaultDataDirectoryOnlyView
+                ? "filelist__filter-chip--active"
+                : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            aria-pressed={defaultDataDirectoryOnlyView}
+            title={
+              defaultDataDirectoryOnlyView
+                ? "当前只看默认保存目录；点击显示全部本地目录"
+                : "当前显示全部本地目录；点击只看默认保存目录"
+            }
+            onClick={() =>
+              setDefaultDataDirectoryOnlyView(!defaultDataDirectoryOnlyView)
+            }
+          >
+            {DEFAULT_DATA_DIRECTORY_ONLY_LABEL}
+          </button>
+        ) : null}
+        {showFlatFolderToggle ? (
+          <button
+            type="button"
+            className={[
+              "filelist__filter-chip",
+              flatFolderView ? "filelist__filter-chip--active" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            aria-pressed={flatFolderView}
+            title={
+              flatFolderView
+                ? "当前仅显示本文件夹直属文件"
+                : "当前包含子文件夹文件；点击仅看直属文件"
+            }
+            onClick={() => setFlatFolderView(!flatFolderView)}
+          >
+            {FLAT_FOLDER_VIEW_LABEL}
+          </button>
+        ) : null}
+      </div>
+    );
   };
 
   const renderTopbarImport = () => renderSceneImportControl();
@@ -4706,12 +5229,9 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     const preferLocalThumb = isBrowserDraft || syncState === "draft";
     const localDraftThumb = state?.localDraftThumb ?? null;
     const localThumb = localDraftThumb;
-    const fetchedThumbContentSha =
-      syncState === "draft" && fetchedThumbs[f.id]
-        ? (fetchedThumbHashByIdRef.current[f.id] ?? f.content_sha256 ?? null)
-        : fetchedThumbHashByIdRef.current[f.id] === fileThumbnailCacheKey(f)
-          ? f.content_sha256 ?? null
-          : null;
+    const fetchedThumbContentSha = fetchedThumbs[f.id]
+      ? (fetchedThumbHashByIdRef.current[f.id] ?? null)
+      : null;
     const shouldUseDraftPreview = preferLocalThumb;
     const thumbnailChoice = chooseFileCardThumbnailForFile(
       f.id,
@@ -5014,6 +5534,44 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     !showNewEntryCard &&
     !showLocalDirectoryHub;
 
+  const renderFileGrid = () => {
+    const gridClassName = [
+      "filelist__grid",
+      gridEnterAnimate ? "filelist__grid--animate-children" : "",
+      filteredFiles.length > 24 ? "filelist__grid--no-enter-animate" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const useVirtualizedGrid =
+      filteredFiles.length >= FILE_LIST_VIRTUAL_THRESHOLD;
+
+    if (useVirtualizedGrid) {
+      return (
+        <FileListVirtualGrid
+          scrollRef={mainRef}
+          gridRef={gridRef}
+          files={filteredFiles}
+          listKey={gridListKey}
+          gridClassName={gridClassName}
+          leadingSlot={showNewEntryCard ? renderNewEntryCard(0) : null}
+          renderFile={(file, index) =>
+            renderFileCard(file, showNewEntryCard ? index + 1 : index)
+          }
+          onVisibleDomCountChange={onVirtualGridDomCountChange}
+        />
+      );
+    }
+
+    return (
+      <div className={gridClassName} ref={gridRef} key={gridListKey}>
+        {showNewEntryCard ? renderNewEntryCard(0) : null}
+        {filteredFiles.map((f, i) =>
+          renderFileCard(f, showNewEntryCard ? i + 1 : i),
+        )}
+      </div>
+    );
+  };
+
   /** Same nesting as sidebar tree: children under `parentId`, indent by `depth`. */
   const renderMoveTargetFolderTree = (
     parentId: string | null,
@@ -5212,11 +5770,9 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
                 </>
               )}
             </div>
+            {renderBreadcrumbFilters()}
           </div>
           <div className="filelist__topbar-actions">
-            <div className="filelist__topbar-view-mode-slot shell-toolbar__slot">
-              {sidebarView === "all" ? renderTopbarViewModeToggle() : null}
-            </div>
             <div className="filelist__search-wrap">
               <span className="filelist__search-icon">
                 <Icon type="search" size={16} />
@@ -5278,21 +5834,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
               </p>
             </div>
           ) : (
-            <div
-              className={[
-                "filelist__grid",
-                gridEnterAnimate ? "filelist__grid--animate-children" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              ref={gridRef}
-              key={gridListKey}
-            >
-              {showNewEntryCard ? renderNewEntryCard(0) : null}
-              {filteredFiles.map((f, i) =>
-                renderFileCard(f, showNewEntryCard ? i + 1 : i),
-              )}
-            </div>
+            renderFileGrid()
           )}
         </div>
       </div>
@@ -5328,11 +5870,11 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       {renderFolderContextMenu()}
 
       {folderDraft && (
-        <div
-          className="filelist__detail-overlay"
+        <ShellDialogOverlay
+          theme={shellTheme}
           role="dialog"
           aria-modal
-          {...folderDraftOverlayDismiss}
+          overlayDismiss={folderDraftOverlayDismiss}
         >
           <div
             className="filelist__detail-card filelist__new-file-dialog"
@@ -5372,91 +5914,39 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
               </button>
             </div>
           </div>
-        </div>
+        </ShellDialogOverlay>
       )}
 
       {folderDeleteTarget ? (
-        <div
-          className={`filelist-dialog-host ${shellThemeClassName()} filelist__detail-overlay`}
-          role="alertdialog"
-          aria-modal
-          {...folderDeleteOverlayDismiss}
-        >
-          <div
-            className="filelist__detail-card filelist__folder-delete-dialog"
-            onPointerDown={(e) => e.stopPropagation()}
-          >
-            <h2 className="filelist__detail-title">
-              {folderDeleteTarget.is_mapping_root ? "移除映射" : "删除文件夹"}
-            </h2>
-            <p className="filelist__new-file-hint">
-              {folderDeleteTarget.is_mapping_root
-                ? `移除映射文件夹「${folderDeleteTarget.name}」？本地磁盘上的文件夹和文件不会被删除。`
-                : `删除文件夹「${folderDeleteTarget.name}」？文件会移动到根目录，子文件夹会被删除。`}
-            </p>
-            <div className="filelist__detail-actions filelist__detail-actions--destructive">
-              <button
-                type="button"
-                className="filelist__import-scene-btn"
-                autoFocus
-                disabled={folderDeleteBusy}
-                onClick={dismissFolderDeleteDialog}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                className="filelist__new-btn filelist__new-btn--danger"
-                disabled={folderDeleteBusy}
-                onClick={() => void confirmDeleteFolder()}
-              >
-                {folderDeleteBusy
-                  ? "处理中…"
-                  : folderDeleteTarget.is_mapping_root
-                  ? "移除映射"
-                  : "删除文件夹"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <FileListConfirmDialog
+          open={!!folderDeleteTarget}
+          title={
+            folderDeleteTarget.is_mapping_root ? "移除映射" : "删除文件夹"
+          }
+          message={
+            folderDeleteTarget.is_mapping_root
+              ? `移除映射文件夹「${folderDeleteTarget.name}」？本地磁盘上的文件夹和文件不会被删除。`
+              : `删除文件夹「${folderDeleteTarget.name}」？文件会移动到根目录，子文件夹会被删除。`
+          }
+          confirmLabel={
+            folderDeleteTarget.is_mapping_root ? "移除映射" : "删除文件夹"
+          }
+          busy={folderDeleteBusy}
+          onCancel={dismissFolderDeleteDialog}
+          onConfirm={() => void confirmDeleteFolder()}
+        />
       ) : null}
 
       {fileDeleteTarget ? (
-        <div
-          className={`filelist-dialog-host ${shellThemeClassName()} filelist__detail-overlay`}
-          role="alertdialog"
-          aria-modal
-          {...fileDeleteOverlayDismiss}
-        >
-          <div
-            className="filelist__detail-card filelist__folder-delete-dialog"
-            onPointerDown={(e) => e.stopPropagation()}
-          >
-            <h2 className="filelist__detail-title">删除文件</h2>
-            <p className="filelist__new-file-hint">
-              确定删除「{fileDeleteTarget.name}」？
-            </p>
-            <div className="filelist__detail-actions filelist__detail-actions--destructive">
-              <button
-                type="button"
-                className="filelist__import-scene-btn"
-                autoFocus
-                disabled={fileDeleteBusy}
-                onClick={dismissFileDeleteDialog}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                className="filelist__new-btn filelist__new-btn--danger"
-                disabled={fileDeleteBusy}
-                onClick={() => void confirmDeleteFile()}
-              >
-                {fileDeleteBusy ? "处理中…" : "确定"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <FileListConfirmDialog
+          open={!!fileDeleteTarget}
+          title="删除文件"
+          message={`确定删除「${fileDeleteTarget.name}」？`}
+          confirmLabel="删除"
+          busy={fileDeleteBusy}
+          onCancel={dismissFileDeleteDialog}
+          onConfirm={() => void confirmDeleteFile()}
+        />
       ) : null}
 
       <SettingsPanel
@@ -5510,11 +6000,11 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       />
 
       {moveDialogFile && (
-        <div
-          className="filelist__detail-overlay"
+        <ShellDialogOverlay
+          theme={shellTheme}
           role="dialog"
           aria-modal
-          {...moveDialogOverlayDismiss}
+          overlayDismiss={moveDialogOverlayDismiss}
         >
           <div
             className="filelist__detail-card filelist__move-dialog"
@@ -5551,7 +6041,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
               </button>
             </div>
           </div>
-        </div>
+        </ShellDialogOverlay>
       )}
 
       {importFolderPickerOpen ? (

@@ -82,7 +82,19 @@ export async function streamAIChat(opts: {
 
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      let done = false;
+      let value: Uint8Array | undefined;
+      try {
+        ({ done, value } = await reader.read());
+      } catch (error) {
+        if (
+          (error as { name?: string; code?: string }).name === "AbortError" ||
+          (error as { code?: string }).code === "ERR_INVALID_STATE"
+        ) {
+          break;
+        }
+        throw error;
+      }
       if (done) {
         break;
       }
@@ -118,7 +130,16 @@ export async function streamAIChat(opts: {
       }
     }
   } finally {
-    reader.releaseLock();
+    try {
+      await reader.cancel();
+    } catch {
+      // ignore
+    }
+    try {
+      reader.releaseLock();
+    } catch {
+      // ignore
+    }
   }
 
   if (!full.trim()) {

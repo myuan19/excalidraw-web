@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { isDesktopEditorHub } from "./runtimePlatform";
+import { isDesktopEditorHub, canOpenRecentByCatalogPath } from "./runtimePlatform";
 
 describe("isDesktopEditorHub", () => {
   afterEach(() => {
@@ -26,5 +26,35 @@ describe("isDesktopEditorHub", () => {
 
   it("returns false on normal web", () => {
     expect(isDesktopEditorHub()).toBe(false);
+  });
+
+  it("returns true for editorhub custom protocol", () => {
+    const original = window.location.protocol;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...window.location, protocol: "editorhub:" },
+    });
+    expect(isDesktopEditorHub()).toBe(true);
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...window.location, protocol: original },
+    });
+  });
+});
+
+describe("canOpenRecentByCatalogPath", () => {
+  afterEach(() => {
+    delete (window as Window & { editorHubDesktop?: unknown }).editorHubDesktop;
+  });
+
+  it("returns true when getPathForFile is exposed", () => {
+    window.editorHubDesktop = {
+      getPathForFile: () => "C:/demo.excalidraw",
+    };
+    expect(canOpenRecentByCatalogPath()).toBe(true);
+  });
+
+  it("returns false on plain web", () => {
+    expect(canOpenRecentByCatalogPath()).toBe(false);
   });
 });

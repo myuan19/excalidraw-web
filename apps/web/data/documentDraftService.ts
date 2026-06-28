@@ -1,3 +1,4 @@
+import { traceFileListSortOrder } from "../lib/issueDiagTrace";
 import { FileSyncState } from "./FileSyncState";
 import { hashDocumentSnapshot, hashSceneSnapshot } from "./sceneHash";
 import {
@@ -10,8 +11,10 @@ import {
   markEditSessionEdited,
 } from "./editSessionService";
 import { canonicalizeExcalidrawSceneFileName } from "./excalidrawFileNameAuthority";
+import { isDebugRuntimeEnabled } from "./debugCapability";
 import { notifyLocalDraftEdited } from "./localDraftSessions";
 import { clearTabFileDirty, markTabFileDirty } from "./tabFileDirtyState";
+import { traceIssueDiag } from "../lib/issueDiagTrace";
 
 import type { ManagedDocument } from "./documentTypes";
 import type { MindMapDocumentData } from "./formats/MindMapAdapter";
@@ -20,15 +23,50 @@ import type { ForkSceneSnapshot } from "./forkFileTypes";
 export function cacheExcalidrawDraft(
   fileId: string,
   scene: ForkSceneSnapshot,
+  opts?: { emit?: boolean },
 ): string {
+  const totalStartedAt = performance.now();
+  const canonicalStartedAt = performance.now();
   const canonicalScene = canonicalizeExcalidrawSceneFileName(fileId, scene);
+  const canonicalMs = Math.round(performance.now() - canonicalStartedAt);
+  const hashStartedAt = performance.now();
   const hash = hashSceneSnapshot(canonicalScene);
-  FileSyncState.setLocalCache(fileId, {
-    elements: canonicalScene.elements,
-    appState: canonicalScene.appState ?? {},
-    files: canonicalScene.files ?? {},
-    deltas: [],
-  });
+  const hashMs = Math.round(performance.now() - hashStartedAt);
+  const cacheStartedAt = performance.now();
+  FileSyncState.setLocalCache(
+    fileId,
+    {
+      elements: canonicalScene.elements,
+      appState: canonicalScene.appState ?? {},
+      files: canonicalScene.files ?? {},
+      deltas: [],
+    },
+    opts,
+  );
+  const localCacheMs = Math.round(performance.now() - cacheStartedAt);
+  if (isDebugRuntimeEnabled()) {
+    traceIssueDiag(
+      "excalidraw.drag",
+      "draft.cache",
+      {
+        fileId8: fileId.slice(0, 8),
+        hash8: hash.slice(0, 8),
+        elements: Array.isArray(canonicalScene.elements)
+          ? canonicalScene.elements.length
+          : null,
+        files:
+          canonicalScene.files && typeof canonicalScene.files === "object"
+            ? Object.keys(canonicalScene.files).length
+            : null,
+        emitSyncState: opts?.emit !== false,
+        canonicalMs,
+        hashMs,
+        localCacheMs,
+        totalMs: Math.round(performance.now() - totalStartedAt),
+      },
+      hashMs > 16 || localCacheMs > 16 ? "fail" : "branch",
+    );
+  }
   return hash;
 }
 
@@ -105,8 +143,16 @@ export function markDocumentCommitted(fileId: string, hash: string): void {
     hash,
     fileStateBefore: readMindMapTraceFileState(fileId),
   });
-  FileSyncState.alignHashes(fileId, hash);
+  // Clear local edit time before alignHashes so sync-state listeners observe
+  // synced thumbnail slots instead of stale draft policy.
   FileSyncState.clearLocalEditTime(fileId);
+  if (isDebugRuntimeEnabled()) {
+    traceFileListSortOrder("commit.clearLocalEditTime", {
+      fileId8: fileId.slice(0, 8),
+      hash8: hash.slice(0, 8),
+    });
+  }
+  FileSyncState.alignHashes(fileId, hash);
   clearTabFileDirty(fileId);
   markEditSessionClosedCleanly(fileId);
   traceMindMapOperation("draft.markDocumentCommitted.after", {

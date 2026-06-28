@@ -12,7 +12,7 @@ import {
 } from "../../lib/editorOpenPhases";
 import {
   applyServerFileSessionVersion,
-  supplementSessionVersionIfMissing,
+  ensureSessionVersionAfterCacheOpen,
 } from "../../data/documentSessionVersionSync";
 import { DeltaStorage } from "../../data/DeltaStorage";
 import { canonicalizeExcalidrawSceneFileName } from "../../data/excalidrawFileNameAuthority";
@@ -293,14 +293,16 @@ export async function verifyExcalidrawRemoteAfterCachedOpen(opts: {
   const hasUnsavedChanges = FileSyncState.hasUnsavedChanges(fileId);
   opts.onPhase?.("checking_remote");
 
-  await supplementSessionVersionIfMissing(fileId, {
+  await ensureSessionVersionAfterCacheOpen(fileId, {
     listFileHashes: () => ServerSync.listFileHashes(),
+    cacheVersion:
+      FileSyncState.getLocalCache(fileId)?.meta?.serverVersion ?? null,
     hasUnsavedChanges,
     cachedServerSha:
       FileSyncState.getServerHash(fileId) ??
       FileSyncState.getLocalCache(fileId)?.meta?.serverContentSha256 ??
       null,
-    reason: "verify-supplement",
+    reason: "verify-cached-open",
   });
 
   let remoteHash: string | null = null;

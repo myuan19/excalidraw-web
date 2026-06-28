@@ -19,6 +19,23 @@ contextBridge.exposeInMainWorld("editorHubDesktop", {
   pickFolder: () => ipcRenderer.invoke("desktop:pickFolder"),
   getDefaultDataDirectoryPath: () =>
     ipcRenderer.invoke("desktop:getDefaultDataDirectoryPath"),
+  getAppDataDirectoryPath: () =>
+    ipcRenderer.invoke("desktop:getAppDataDirectoryPath"),
+  consumeOpenDocumentPaths: () =>
+    ipcRenderer.invoke("desktop:consumeOpenDocumentPaths"),
+  subscribeOpenDocumentPaths: (callback) => {
+    if (typeof callback !== "function") {
+      return () => {};
+    }
+    const listener = (_event, payload) => {
+      const paths = Array.isArray(payload?.paths) ? payload.paths : [];
+      callback(paths);
+    };
+    ipcRenderer.on("editorhub:open-document-paths", listener);
+    return () => {
+      ipcRenderer.removeListener("editorhub:open-document-paths", listener);
+    };
+  },
   openPath: (targetPath) => ipcRenderer.invoke("desktop:openPath", targetPath),
   showSaveDialog: (options) =>
     ipcRenderer.invoke("desktop:showSaveDialog", options),

@@ -13,7 +13,11 @@ import {
 } from "electron";
 
 import { createDesktopBackend } from "../src/bootstrapBackend.mjs";
-import { ensureLoopbackServer, closeDispatchLoopbackServer } from "../src/apiDispatcher.mjs";
+import { applyDesktopBuildFlags } from "../src/applyDesktopBuildFlags.mjs";
+import {
+  ensureLoopbackServer,
+  closeDispatchLoopbackServer,
+} from "../src/apiDispatcher.mjs";
 import { attachCatalogIpcBridge } from "../src/catalogIpcBridge.mjs";
 import {
   EDITORHUB_APP_INDEX_URL,
@@ -29,27 +33,79 @@ import {
   truncDesktopStr,
   writeDesktopLog,
 } from "../src/desktopLogger.mjs";
+import {
+  prepareDesktopPathLayout,
+  resolveAppDataDir,
+  resolveAppLogsDir,
+  resolveCatalogRoot,
+  resolveUserDataRoot,
+} from "../src/desktopPaths.mjs";
+import {
+  isOpenableDocumentPath,
+  parseOpenDocumentArgv,
+} from "../src/openDocumentPaths.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "../../..");
 const preloadPath = path.join(__dirname, "preload.mjs");
+const desktopBuildFlags = applyDesktopBuildFlags();
 
 registerEditorHubPrivileges();
+prepareDesktopPathLayout(app);
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+}
+
+let pendingOpenDocumentPaths = [];
+let mainWindowContentReady = false;
+/** Set after renderer pulls initial paths via consumeOpenDocumentPaths (cold start). */
+let rendererOpenDocumentsReady = false;
+
+function queueOpenDocumentPaths(paths) {
+  const incoming = Array.isArray(paths) ? paths : [];
+  for (const raw of incoming) {
+    const trimmed = String(raw ?? "").trim();
+    if (!trimmed || !isOpenableDocumentPath(trimmed)) {
+      continue;
+    }
+    const resolved = path.resolve(trimmed);
+    if (!pendingOpenDocumentPaths.includes(resolved)) {
+      pendingOpenDocumentPaths.push(resolved);
+    }
+  }
+  flushPendingOpenDocumentPaths();
+}
+
+function flushPendingOpenDocumentPaths() {
+  if (
+    !mainWindowContentReady ||
+    !rendererOpenDocumentsReady ||
+    !mainWindow ||
+    mainWindow.isDestroyed() ||
+    pendingOpenDocumentPaths.length === 0
+  ) {
+    return;
+  }
+  const paths = [...pendingOpenDocumentPaths];
+  pendingOpenDocumentPaths = [];
+  mainWindow.webContents.send("editorhub:open-document-paths", { paths });
+  writeDiagnostic("open-document-paths-dispatch", { count: paths.length });
+}
 
 let desktopServer;
 let desktopBackend;
 let detachCatalogIpcBridge = () => {};
 let mainWindow;
 let mainWindowCloseAllowed = false;
+let windowCloseReplyTimer = null;
+const WINDOW_CLOSE_REPLY_TIMEOUT_MS = 30_000;
+let firstWindowCloseRequestedAt = null;
+let windowCloseRequestCount = 0;
 let diagnosticLogPath;
 let currentDesktopConfig;
-
-function resolveCatalogRoot() {
-  const catalogRoot = path.join(app.getPath("userData"), "catalog");
-  mkdirSync(catalogRoot, { recursive: true });
-  return catalogRoot;
-}
 
 function resolveDefaultDataDirectory() {
   const defaultDir = path.join(app.getPath("documents"), "EditorHub");
@@ -69,6 +125,34 @@ function writeDiagnostic(event, details = {}) {
   writeDesktopLog("main", event, details);
 }
 
+function elapsedSince(startedAt) {
+  return typeof startedAt === "number" ? Date.now() - startedAt : null;
+}
+
+function clearWindowCloseReplyTimer() {
+  if (windowCloseReplyTimer != null) {
+    clearTimeout(windowCloseReplyTimer);
+    windowCloseReplyTimer = null;
+  }
+}
+
+function scheduleWindowCloseReplyFallback(reason) {
+  clearWindowCloseReplyTimer();
+  windowCloseReplyTimer = setTimeout(() => {
+    windowCloseReplyTimer = null;
+    writeDiagnostic("window-close-reply-timeout", {
+      reason,
+      requestCount: windowCloseRequestCount,
+      sinceFirstRequestMs: elapsedSince(firstWindowCloseRequestedAt),
+    });
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return;
+    }
+    mainWindowCloseAllowed = true;
+    mainWindow.close();
+  }, WINDOW_CLOSE_REPLY_TIMEOUT_MS);
+}
+
 function showStartupError(message, error) {
   writeDiagnostic("startup-error", {
     message,
@@ -84,10 +168,8 @@ function showStartupError(message, error) {
 }
 
 function configureServerEnvironment() {
-  const serverDataDir = path.join(app.getPath("userData"), "server-data");
-  const serverLogDir = path.join(app.getPath("userData"), "logs");
-  mkdirSync(serverDataDir, { recursive: true });
-  mkdirSync(serverLogDir, { recursive: true });
+  const serverDataDir = resolveAppDataDir(app);
+  const serverLogDir = resolveAppLogsDir(app);
   configureDesktopLogPaths(() => {
     const envDir = process.env.EDITORHUB_DESKTOP_LOG_DIR;
     const appDataDir =
@@ -127,9 +209,17 @@ function resolveAppBuildPath(runtimeRoot) {
 
 function resolveDesktopWindowIconPath() {
   const candidates = [
+    path.join(__dirname, "../build/icon.png"),
+    path.join(__dirname, "../build/icon.svg"),
     path.join(projectRoot, "public/icons/drawing-space.svg"),
     path.join(projectRoot, "public/favicon.svg"),
   ];
+  if (app.isPackaged) {
+    candidates.unshift(
+      path.join(process.resourcesPath, "icons/drawing-space.png"),
+      path.join(process.resourcesPath, "icons/drawing-space.svg"),
+    );
+  }
   return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
 
@@ -207,15 +297,31 @@ async function createMainWindow(url) {
       return;
     }
     if (webContents.isLoading()) {
-      writeDiagnostic("window-close-while-loading");
+      writeDiagnostic("window-close-while-loading", {
+        requestCount: windowCloseRequestCount,
+      });
       return;
     }
     event.preventDefault();
-    writeDiagnostic("window-close-requested");
+    if (firstWindowCloseRequestedAt == null) {
+      firstWindowCloseRequestedAt = Date.now();
+      windowCloseRequestCount = 0;
+    }
+    windowCloseRequestCount += 1;
+    writeDiagnostic("window-close-requested", {
+      requestCount: windowCloseRequestCount,
+      sinceFirstRequestMs: elapsedSince(firstWindowCloseRequestedAt),
+    });
     webContents.send("desktop:windowCloseRequested");
+    scheduleWindowCloseReplyFallback("renderer-no-response");
   });
   mainWindow.on("closed", () => {
+    clearWindowCloseReplyTimer();
     mainWindowCloseAllowed = false;
+    firstWindowCloseRequestedAt = null;
+    windowCloseRequestCount = 0;
+    mainWindowContentReady = false;
+    rendererOpenDocumentsReady = false;
     writeDiagnostic("window-closed");
     mainWindow = undefined;
   });
@@ -227,11 +333,12 @@ async function createMainWindow(url) {
   mainWindow.webContents.on("dom-ready", () =>
     writeDiagnostic("webcontents-dom-ready"),
   );
-  mainWindow.webContents.on("did-finish-load", () =>
+  mainWindow.webContents.on("did-finish-load", () => {
     writeDiagnostic("webcontents-did-finish-load", {
       url: mainWindow?.webContents.getURL(),
-    }),
-  );
+    });
+    mainWindowContentReady = true;
+  });
   mainWindow.webContents.on(
     "did-fail-load",
     (_event, errorCode, errorDescription, validatedURL) => {
@@ -289,17 +396,20 @@ async function createMainWindow(url) {
 }
 
 async function startDesktopApp() {
+  const startupStartedAt = Date.now();
   writeDiagnostic("startup-begin", {
     argv: process.argv,
     cwd: process.cwd(),
     resourcesPath: process.resourcesPath,
+    desktopBuildFlags,
   });
   const runtimeRoot = resolveRuntimeRoot();
+  process.env.EDITORHUB_DESKTOP_RUNTIME_ROOT = runtimeRoot;
   const config = parseDesktopArgs(process.argv.slice(2), {
     appBuildPath: resolveAppBuildPath(runtimeRoot),
     port: 0,
     projectRoot: runtimeRoot,
-    workspacePath: resolveCatalogRoot(),
+    workspacePath: resolveCatalogRoot(app),
   });
   writeDiagnostic("startup-config", {
     runtimeRoot,
@@ -309,6 +419,10 @@ async function startDesktopApp() {
     port: config.port,
   });
   currentDesktopConfig = { ...config, runtimeRoot };
+  writeDiagnostic("startup-phase", {
+    phase: "config",
+    sinceStartupMs: elapsedSince(startupStartedAt),
+  });
 
   if (!existsSync(path.join(config.appBuildPath, "index.html"))) {
     await showStartupError(
@@ -326,12 +440,19 @@ async function startDesktopApp() {
 
   configureServerEnvironment();
   writeDiagnostic("server-backend-start");
+  const backendStartedAt = Date.now();
   const serverConfig = createDesktopServerConfig(currentDesktopConfig);
   desktopBackend = await createDesktopBackend(serverConfig);
+  writeDiagnostic("startup-phase", {
+    phase: "backend-ready",
+    phaseMs: elapsedSince(backendStartedAt),
+    sinceStartupMs: elapsedSince(startupStartedAt),
+  });
   detachCatalogIpcBridge = attachCatalogIpcBridge(
     desktopBackend.catalogWatcher,
     () => mainWindow?.webContents,
   ).detach;
+  const protocolStartedAt = Date.now();
   await registerEditorHubProtocol({
     buildRoot: currentDesktopConfig.appBuildPath,
     getLoopbackPort: async () => {
@@ -339,11 +460,22 @@ async function startDesktopApp() {
       return port;
     },
   });
+  writeDiagnostic("startup-phase", {
+    phase: "protocol-ready",
+    phaseMs: elapsedSince(protocolStartedAt),
+    sinceStartupMs: elapsedSince(startupStartedAt),
+  });
   writeDiagnostic("server-backend-ready");
   const url = EDITORHUB_APP_INDEX_URL;
   desktopServer = { app: desktopBackend.app, url };
   writeDiagnostic("protocol-load-url", { url });
+  const windowStartedAt = Date.now();
   await createMainWindow(url);
+  writeDiagnostic("startup-phase", {
+    phase: "window-created",
+    phaseMs: elapsedSince(windowStartedAt),
+    sinceStartupMs: elapsedSince(startupStartedAt),
+  });
 }
 
 app.on("window-all-closed", () => {
@@ -395,8 +527,7 @@ ipcMain.handle("editorhub:api", async (_event, request = {}) => {
   if (!desktopBackend?.dispatchApi) {
     throw new Error("Desktop backend is not ready");
   }
-  const pathValue =
-    typeof request.path === "string" ? request.path.trim() : "";
+  const pathValue = typeof request.path === "string" ? request.path.trim() : "";
   if (!pathValue) {
     throw new Error("editorhub:api requires a non-empty path");
   }
@@ -428,6 +559,18 @@ ipcMain.handle("desktop:pickFolder", async () => {
 ipcMain.handle("desktop:getDefaultDataDirectoryPath", () =>
   resolveDefaultDataDirectory(),
 );
+
+ipcMain.handle("desktop:getAppDataDirectoryPath", () =>
+  resolveUserDataRoot(app),
+);
+
+ipcMain.handle("desktop:consumeOpenDocumentPaths", () => {
+  rendererOpenDocumentsReady = true;
+  const paths = [...pendingOpenDocumentPaths];
+  pendingOpenDocumentPaths = [];
+  flushPendingOpenDocumentPaths();
+  return paths;
+});
 
 ipcMain.handle("desktop:openPath", async (_event, targetPath) => {
   if (typeof targetPath !== "string" || !targetPath.trim()) {
@@ -487,8 +630,13 @@ ipcMain.handle("desktop:requestWindowClose", () => {
 });
 
 ipcMain.handle("desktop:finishWindowClose", (_event, payload = {}) => {
+  clearWindowCloseReplyTimer();
   const allow = payload?.allow === true;
-  writeDiagnostic("window-close-finished", { allow });
+  writeDiagnostic("window-close-finished", {
+    allow,
+    requestCount: windowCloseRequestCount,
+    sinceFirstRequestMs: elapsedSince(firstWindowCloseRequestedAt),
+  });
   if (!allow || !mainWindow) {
     return false;
   }
@@ -501,27 +649,56 @@ ipcMain.handle("desktop:windowIsMaximized", () => {
   return mainWindow?.isMaximized() ?? false;
 });
 
-void app
-  .whenReady()
-  .then(async () => {
-    diagnosticLogPath = getDesktopOpLogPath();
-    writeDiagnostic("app-ready", { logPath: diagnosticLogPath });
-    if (process.platform === "win32") {
-      app.setAppUserModelId("com.editorhub.desktop");
+if (gotSingleInstanceLock) {
+  app.on("second-instance", (_event, argv) => {
+    queueOpenDocumentPaths(parseOpenDocumentArgv(argv));
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.show();
+      mainWindow.focus();
     }
-    const appIcon = loadDesktopWindowIcon();
-    if (appIcon && process.platform === "darwin" && app.dock) {
-      app.dock.setIcon(appIcon);
-    }
-    Menu.setApplicationMenu(null);
-    try {
-      await startDesktopApp();
-    } catch (error) {
-      await showStartupError("桌面端启动失败", error);
-      app.quit();
-    }
-  })
-  .catch(async (error) => {
-    await showStartupError("Electron ready 阶段失败", error);
-    app.quit();
   });
+
+  app.on("open-file", (event, filePath) => {
+    event.preventDefault();
+    queueOpenDocumentPaths([filePath]);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
+  queueOpenDocumentPaths(parseOpenDocumentArgv(process.argv));
+
+  void app
+    .whenReady()
+    .then(async () => {
+      diagnosticLogPath = getDesktopOpLogPath();
+      writeDiagnostic("app-ready", { logPath: diagnosticLogPath });
+      if (process.platform === "win32") {
+        app.setAppUserModelId("com.editorhub.desktop");
+      }
+      const appIcon = loadDesktopWindowIcon();
+      if (appIcon && process.platform === "darwin" && app.dock) {
+        app.dock.setIcon(appIcon);
+      }
+      Menu.setApplicationMenu(null);
+      try {
+        await startDesktopApp();
+      } catch (error) {
+        await showStartupError("桌面端启动失败", error);
+        app.quit();
+      }
+    })
+    .catch(async (error) => {
+      await showStartupError("Electron ready 阶段失败", error);
+      app.quit();
+    });
+} else {
+  app.quit();
+}

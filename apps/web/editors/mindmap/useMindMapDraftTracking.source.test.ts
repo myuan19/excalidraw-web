@@ -16,6 +16,9 @@ describe("useMindMapDraftTracking source contract", () => {
     expect(source).toContain("matchesMindMapPersistedSnapshot");
     expect(source).toContain("!isMindMapNativeDirtyPending(fileId)");
     expect(source).toContain(
+      "draftTracking.markDocumentChanged.immediate",
+    );
+    expect(source).toContain(
       "draftTracking.markDocumentChanged.matchesPersistedSnapshot",
     );
   });

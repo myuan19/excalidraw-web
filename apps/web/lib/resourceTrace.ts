@@ -8,6 +8,7 @@
  */
 
 import { isDebugLoggingEnabled, subscribeAppSettings } from "../data/appSettings";
+import { getFileListScrollSummary } from "./fileListScrollPerf";
 
 const STORAGE_KEY = "excalidraw-resource-trace";
 const RAPID_WINDOW_MS = 2000;
@@ -244,6 +245,7 @@ export function getResourceTraceSummary(): Record<string, unknown> {
     catalogChangeCount,
     silentRefreshScheduled,
     treeStateApplies,
+    fileListScroll: getFileListScrollSummary(),
     topApis,
     redundantApis,
     areas,
@@ -295,6 +297,17 @@ export function mergeResourceTraceGlobals(
       }
       if (summary.redundantApis && Array.isArray(summary.redundantApis) && summary.redundantApis.length > 0) {
         console.warn("[resource-trace] 疑似冗余高频 API:", summary.redundantApis);
+      }
+      if (summary.fileListScroll) {
+        console.info("[resource-trace] file-list scroll", summary.fileListScroll);
+      }
+      return summary;
+    },
+    fileListScrollSummary: () => {
+      const summary = getFileListScrollSummary();
+      console.info("[filelist-scroll] summary", summary);
+      if (summary.unnecessaryHints.length > 0) {
+        console.warn("[filelist-scroll] 优化建议:", summary.unnecessaryHints);
       }
       return summary;
     },

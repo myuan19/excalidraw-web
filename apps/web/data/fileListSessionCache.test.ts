@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
+import { mergeFileListTreeWithSessionCachePatches } from "./fileListIncrementalPatch";
 import {
   patchFileListTreeCacheSavedFile,
   patchFileListTreeCacheThumbnailMissing,
@@ -86,5 +87,40 @@ describe("fileListSessionCache", () => {
       updated_at: "2026-06-22T00:00:00.000Z",
     });
     expect(sessionStorage.getItem("excalidraw-filelist-tree-etag-v1")).toBeNull();
+  });
+
+  it("prefers newer session-cache metadata when merging catalog trees", () => {
+    writeFileListTreeCache({
+      folders: [],
+      files: [
+        mockFile({
+          id: "file-1",
+          content_sha256: "sha-new",
+          version: 2,
+          has_thumbnail: true,
+          updated_at: "2026-06-22T00:01:00.000Z",
+        }),
+      ],
+    });
+
+    const merged = mergeFileListTreeWithSessionCachePatches({
+      folders: [],
+      files: [
+        mockFile({
+          id: "file-1",
+          content_sha256: "sha-old",
+          version: 1,
+          has_thumbnail: false,
+          updated_at: "2026-06-22T00:00:00.000Z",
+        }),
+      ],
+    });
+
+    expect(merged.files[0]).toMatchObject({
+      content_sha256: "sha-new",
+      version: 2,
+      has_thumbnail: true,
+      updated_at: "2026-06-22T00:01:00.000Z",
+    });
   });
 });

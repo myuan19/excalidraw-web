@@ -14,16 +14,19 @@ describe("useFileListController source contracts", () => {
     expect(source).toContain("f.content_sha256");
   });
 
-  it("invalidates fetched thumbnails when thumbnail-only saves update the file timestamp", () => {
+  it("keys fetched thumbnails by content hash only (not updated_at)", () => {
     const source = fs.readFileSync(
       path.resolve(__dirname, "useFileListController.tsx"),
       "utf8",
     );
 
     expect(source).toContain("fileThumbnailCacheKey");
-    expect(source).toContain("file.updated_at");
+    expect(source).toContain("serverThumbnailCacheKey");
     expect(source).not.toContain(
       "nextHashes[file.id] = file.content_sha256 ?? null;",
+    );
+    expect(source).not.toMatch(
+      /fileThumbnailCacheKey[\s\S]*updated_at.*content_sha256|content_sha256.*updated_at/,
     );
   });
 
@@ -34,13 +37,16 @@ describe("useFileListController source contracts", () => {
     );
 
     expect(source).toContain("fetchedThumbHashByIdRef.current[f.id]");
-    expect(source).toContain("const fetchedThumbContentSha =");
-    expect(source).toContain("fetchedThumbHashByIdRef.current[f.id] === fileThumbnailCacheKey(f)");
+    expect(source).toContain("const fetchedThumbContentSha = fetchedThumbs[f.id]");
+    expect(source).toContain("serverThumbnailCacheKey");
     expect(source).toContain(
       "chooseFileCardThumbnailForFile(\n      f.id,\n      f,\n      fetchedThumbs[f.id] ?? null,\n      fetchedThumbContentSha,",
     );
     expect(source).toContain(
       "resolveFileCardThumbDisplay(\n      f.id,\n      f,\n      fetchedThumbs[f.id] ?? null,\n      fetchedThumbContentSha,",
+    );
+    expect(source).not.toContain(
+      "fetchedThumbHashByIdRef.current[f.id] ?? f.content_sha256",
     );
   });
 
@@ -87,6 +93,9 @@ describe("useFileListController source contracts", () => {
     expect(source).toContain("handleSceneFiles");
     expect(source).toContain("resolveSceneFilesIntent");
     expect(source).toContain("generateRecentPathThumbnails");
+    expect(source).toContain("FileListVirtualGrid");
+    expect(source).toContain("FILE_LIST_VIRTUAL_THRESHOLD");
+    expect(source).toContain("fileListScrollPerf");
     expect(source).toContain("thumbSwitchLoading");
     expect(source).toContain("thumbBlank");
     expect(source).toContain("readDroppedFileAbsPaths");
@@ -131,7 +140,8 @@ describe("useFileListController source contracts", () => {
     expect(source).toContain('saveTarget: "catalog" as const');
     expect(source).toContain("FLAT_FOLDER_VIEW_LABEL");
     expect(source).toContain("DEFAULT_DATA_DIRECTORY_ONLY_LABEL");
-    expect(source).toContain("renderTopbarViewModeToggle");
+    expect(source).toContain("renderBreadcrumbFilters");
+    expect(source).toContain("bindDesktopOpenDocumentPaths");
     expect(source).toContain("flatFolderView");
     expect(source).toContain("defaultDataDirectoryOnlyView");
   });

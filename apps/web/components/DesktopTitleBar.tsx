@@ -16,6 +16,11 @@ import {
   isTitlebarTabsLayoutDebugEnabled,
 } from "../lib/devDebug";
 import { traceTab, id8 } from "../lib/interactionDebugTrace";
+import { recordTabActivateAttempt } from "../lib/editorTabCacheTrace";
+import {
+  shellThemeClassName,
+  useShellTheme,
+} from "../hooks/useShellTheme";
 import { isDesktopEditorHub } from "../lib/runtimePlatform";
 import { readFileDraftStatus, readFileDraftStatusLabel } from "../hooks/useFileDraftStatus";
 import {
@@ -145,11 +150,11 @@ function HomeIcon() {
 
 function TabCloseIcon() {
   return (
-    <svg viewBox="0 0 8 8" width="8" height="8" aria-hidden="true">
+    <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
       <path
-        d="M1.5 1.5l5 5M6.5 1.5l-5 5"
+        d="M2 2l6 6M8 2L2 8"
         stroke="currentColor"
-        strokeWidth="1.2"
+        strokeWidth="1.5"
         strokeLinecap="round"
       />
     </svg>
@@ -164,14 +169,29 @@ function useTabDraftIndicator(tab: FileEditorTab) {
 
   useEffect(() => {
     const sync = () => {
-      setIndicator({
-        unsaved: readFileDraftStatus(tab.fileId) === "draft",
+      const nextStatus = readFileDraftStatus(tab.fileId);
+      const next = {
+        unsaved: nextStatus === "draft",
         label: readFileDraftStatusLabel(tab.fileId),
+      };
+      setIndicator((prev) => {
+        if (prev.unsaved !== next.unsaved || prev.label !== next.label) {
+          traceTab("draftIndicator", {
+            tabId: tab.id,
+            fileId8: id8(tab.fileId),
+            fromUnsaved: prev.unsaved,
+            toUnsaved: next.unsaved,
+            fromLabel: prev.label ?? null,
+            toLabel: next.label ?? null,
+            status: nextStatus,
+          }, next.unsaved ? "branch" : "ok");
+        }
+        return next;
       });
     };
     window.addEventListener("excalidraw-file-sync-state", sync);
     return () => window.removeEventListener("excalidraw-file-sync-state", sync);
-  }, [tab.fileId]);
+  }, [tab.fileId, tab.id]);
 
   return indicator;
 }
@@ -193,9 +213,9 @@ function FileTab({
   dragging: boolean;
   dragOffset: number;
   shift: number;
-  onActivate: (tab: FileEditorTab) => void;
+  onActivate: (tab: FileEditorTab, via: string) => void;
   onPointerDown: (
-    tab: FileEditorTab,
+    tabId: string,
     event: ReactPointerEvent<HTMLDivElement>,
   ) => void;
   onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -215,7 +235,7 @@ function FileTab({
       className={`titlebar-tabs__tab${active ? " titlebar-tabs__tab--active" : ""}${unsaved ? " titlebar-tabs__tab--unsaved" : ""}${dragging ? " titlebar-tabs__tab--dragging" : ""}${shifting ? " titlebar-tabs__tab--shifting" : ""}`}
       data-editor-tab-id={tab.id}
       style={style}
-      onPointerDown={(event) => onPointerDown(tab, event)}
+      onPointerDown={(event) => onPointerDown(tab.id, event)}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
@@ -231,22 +251,28 @@ function FileTab({
             fileId8: id8(tab.fileId),
             unsaved,
           });
-          onActivate(tab);
+          onActivate(tab, "click");
         }}
       >
-        {unsaved ? (
-          <span
-            className="titlebar-tabs__dot"
-            aria-label={draftStatusLabel ?? "未保存"}
-          />
-        ) : null}
+        <span className="titlebar-tabs__dot-slot">
+          {unsaved ? (
+            <span
+              className="titlebar-tabs__dot"
+              aria-label={draftStatusLabel ?? "未保存"}
+            />
+          ) : null}
+        </span>
         <span className="titlebar-tabs__label">{tab.title}</span>
       </button>
       <button
         type="button"
         className="titlebar-tabs__close"
         aria-label={`关闭 ${tab.title}`}
-        onClick={() => {
+        onPointerDown={(event) => {
+          event.stopPropagation();
+        }}
+        onClick={(event) => {
+          event.stopPropagation();
           traceTab("titlebar.closeClick", {
             tabId: tab.id,
             fileId8: id8(tab.fileId),
@@ -311,19 +337,19 @@ function InlineTabs() {
   });
   const wrapperRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [draggingTabId, setDraggingTabId] = useState<FileTabId | null>(null);
+  const [draggingTabId, setDraggingTabId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState(0);
   const [dragTargetIndex, setDragTargetIndex] = useState<number | null>(null);
   const pendingDragOffsetRef = useRef(0);
   const dragOffsetFrameRef = useRef<number | null>(null);
   const dragSessionRef = useRef<{
     pointerId: number;
-    sourceTabId: FileTabId;
+    sourceTabId: string;
     sourceIndex: number;
     startX: number;
     width: number;
     centers: number[];
-    ids: FileTabId[];
+    ids: string[];
     moved: boolean;
   } | null>(null);
   const dragTargetIndexRef = useRef<number | null>(null);
@@ -511,14 +537,17 @@ function InlineTabs() {
     });
   }, []);
 
-  const onTabActivate = useCallback((tab: FileEditorTab) => {
+  const onTabActivate = useCallback((tab: FileEditorTab, via: string) => {
     if (suppressClickTabIdRef.current === tab.id) {
       suppressClickTabIdRef.current = null;
+      traceTab("titlebar.activateSuppressed", { tabId: tab.id, via }, "skip");
       return;
     }
+    recordTabActivateAttempt(tab.id, via);
     devDebug("app", "[DEBUG] InlineTabs | activateTab", {
       tabId: tab.id,
       fileId8: tab.fileId.slice(0, 8),
+      via,
     });
     void activateEditorTab(tab.id);
   }, []);
@@ -529,8 +558,8 @@ function InlineTabs() {
   // never reordered mid-drag, the dragged tab can't jump off the cursor and the
   // editor content host below is never re-rendered while dragging.
   const onTabPointerDown = useCallback(
-    (tab: FileEditorTab, event: ReactPointerEvent<HTMLDivElement>) => {
-      if (event.button !== 0) {
+    (tabId: string, event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0 || tabId === HOME_TAB_ID) {
         return;
       }
       const target = event.target;
@@ -546,16 +575,16 @@ function InlineTabs() {
       }
       const tabEls = Array.from(
         scrollEl.querySelectorAll<HTMLElement>("[data-editor-tab-id]"),
-      );
-      const ids = tabEls.map((el) => el.dataset.editorTabId as FileTabId);
-      const sourceIndex = ids.indexOf(tab.id);
+      ).filter((el) => el.dataset.editorTabId !== HOME_TAB_ID);
+      const ids = tabEls.map((el) => el.dataset.editorTabId ?? "");
+      const sourceIndex = ids.indexOf(tabId);
       if (sourceIndex < 0) {
         return;
       }
       const rects = tabEls.map((el) => el.getBoundingClientRect());
       dragSessionRef.current = {
         pointerId: event.pointerId,
-        sourceTabId: tab.id,
+        sourceTabId: tabId,
         sourceIndex,
         startX: event.clientX,
         width: rects[sourceIndex].width,
@@ -565,7 +594,7 @@ function InlineTabs() {
       };
       event.currentTarget.setPointerCapture(event.pointerId);
       devDebug("app", "[DEBUG] InlineTabs | dragStart", {
-        tabId: tab.id,
+        tabId,
         sourceIndex,
       });
     },
@@ -622,30 +651,35 @@ function InlineTabs() {
         // Pointer capture may already be released; ignore.
       }
       const targetIndex = dragTargetIndexRef.current;
-      if (!session.moved) {
+      if (session.moved) {
+        if (
+          session.sourceTabId !== HOME_TAB_ID &&
+          targetIndex != null &&
+          targetIndex !== session.sourceIndex &&
+          session.ids[targetIndex]
+        ) {
+          const targetTabId = session.ids[targetIndex];
+          const position =
+            targetIndex > session.sourceIndex ? "after" : "before";
+          devDebug("app", "[DEBUG] InlineTabs | drop", {
+            sourceTabId: session.sourceTabId,
+            targetTabId,
+            position,
+          });
+          reorderOpenFileTab({
+            sourceTabId: session.sourceTabId,
+            targetTabId,
+            position,
+          });
+        }
+        // Pointer capture on the tab shell can still emit a click; suppress it.
         suppressClickTabIdRef.current = session.sourceTabId;
-        devDebug("app", "[DEBUG] InlineTabs | pointerActivate", {
+      } else if (session.sourceTabId !== HOME_TAB_ID) {
+        recordTabActivateAttempt(session.sourceTabId, "pointer");
+        devDebug("app", "[DEBUG] InlineTabs | activateTab (pointer)", {
           tabId: session.sourceTabId,
         });
         void activateEditorTab(session.sourceTabId);
-      } else if (
-        targetIndex != null &&
-        targetIndex !== session.sourceIndex &&
-        session.ids[targetIndex]
-      ) {
-        const targetTabId = session.ids[targetIndex];
-        const position =
-          targetIndex > session.sourceIndex ? "after" : "before";
-        devDebug("app", "[DEBUG] InlineTabs | drop", {
-          sourceTabId: session.sourceTabId,
-          targetTabId,
-          position,
-        });
-        reorderOpenFileTab({
-          sourceTabId: session.sourceTabId,
-          targetTabId,
-          position,
-        });
       }
       clearDragState();
     },
@@ -655,6 +689,7 @@ function InlineTabs() {
   const onTabPointerCancel = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (dragSessionRef.current?.pointerId === event.pointerId) {
+        suppressClickTabIdRef.current = null;
         clearDragState();
       }
     },
@@ -662,11 +697,12 @@ function InlineTabs() {
   );
 
   const dragSession = dragSessionRef.current;
-  const computeTabShift = (tabId: FileTabId): number => {
+  const computeTabShift = (tabId: string): number => {
     if (
       !dragSession ||
       draggingTabId == null ||
       dragTargetIndex == null ||
+      draggingTabId === HOME_TAB_ID ||
       tabId === draggingTabId
     ) {
       return 0;
@@ -715,7 +751,12 @@ function InlineTabs() {
               <div
                 key={tab.id}
                 data-editor-tab-id={tab.id}
-                className={`titlebar-tabs__tab titlebar-tabs__tab--home${active ? " titlebar-tabs__tab--active" : ""}`}
+                className={[
+                  "titlebar-tabs__tab titlebar-tabs__tab--home",
+                  active ? "titlebar-tabs__tab--active" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
               >
                 <button
                   type="button"
@@ -767,6 +808,7 @@ function InlineTabs() {
 export function DesktopTitleBar() {
   const desktopApi = window.editorHubDesktop;
   const [maximized, setMaximized] = useState(false);
+  const { shellTheme } = useShellTheme();
 
   useEffect(() => {
     if (!desktopApi?.windowIsMaximized) {
@@ -808,7 +850,10 @@ export function DesktopTitleBar() {
   }
 
   return (
-    <header className="desktop-titlebar" data-testid="desktop-titlebar">
+    <header
+      className={`desktop-titlebar ${shellThemeClassName(shellTheme)}`}
+      data-testid="desktop-titlebar"
+    >
       <div className="desktop-titlebar__brand">
         <img
           className="desktop-titlebar__icon"

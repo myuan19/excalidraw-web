@@ -12,6 +12,7 @@ import {
   isIdleAutoSaveActive,
   subscribeAppSettings,
 } from "./appSettings";
+import { FileSyncState } from "./FileSyncState";
 import { getFileIdFromHash } from "./fileIdFromHash";
 import { isLocalDraftFileId } from "./localDraftFileId";
 import { createLogger } from "../lib/logger";
@@ -43,7 +44,69 @@ export function isAutoSaveLabel(label: string): boolean {
 // ---------------------------------------------------------------------------
 
 export type AutoSaveTriggerResult = void | "deferred";
-type AutoSaveTrigger = () => AutoSaveTriggerResult;
+export type AutoSaveTrigger = () => AutoSaveTriggerResult;
+
+export type IdleAutoSaveRearmOpts = {
+  /** 编辑器因 hydrate 等暂时无法保存时，仍应重新排队空闲保存。 */
+  pendingDeferred?: boolean | (() => boolean);
+  /** cached/pinned 后台 pane 仍应对自己的 fileId 排队空闲保存。 */
+  allowInactiveFile?: boolean;
+};
+
+function isActiveAutoSaveFile(
+  fileId: string,
+  opts?: IdleAutoSaveRearmOpts,
+): boolean {
+  if (opts?.allowInactiveFile) {
+    return true;
+  }
+  return getFileIdFromHash() === fileId;
+}
+
+function isPendingDeferred(
+  opts?: IdleAutoSaveRearmOpts,
+): boolean {
+  const pending = opts?.pendingDeferred;
+  return typeof pending === "function" ? pending() : pending === true;
+}
+
+/** 当前文件是否有待处理的空闲自动保存（未保存编辑或显式 deferred）。 */
+export function fileNeedsIdleAutoSave(
+  fileId: string,
+  opts?: IdleAutoSaveRearmOpts,
+): boolean {
+  return FileSyncState.hasUnsavedChanges(fileId) || isPendingDeferred(opts);
+}
+
+/** 仅对活跃 Tab 上的 eligible 文件，在有空闲保存待处理时返回 true。 */
+export function shouldRearmIdleAutoSave(
+  fileId: string | null | undefined,
+  opts?: IdleAutoSaveRearmOpts,
+): boolean {
+  if (!isAutoSaveEligibleFile(fileId)) {
+    return false;
+  }
+  if (!isIdleAutoSaveActive()) {
+    return false;
+  }
+  if (!fileId || !isActiveAutoSaveFile(fileId, opts)) {
+    return false;
+  }
+  return fileNeedsIdleAutoSave(fileId, opts);
+}
+
+/** 按未保存/deferred 条件重新启动全局空闲计时器。 */
+export function rearmIdleAutoSaveIfNeeded(
+  fileId: string | null | undefined,
+  opts?: IdleAutoSaveRearmOpts,
+): boolean {
+  if (!shouldRearmIdleAutoSave(fileId, opts)) {
+    return false;
+  }
+  deferredAutoSave = false;
+  startIdleTimer();
+  return true;
+}
 
 let idleTimer: number | null = null;
 let triggerFn: AutoSaveTrigger | null = null;
@@ -62,9 +125,16 @@ function refreshIdleTimerForSettingsChange() {
     clearIdleTimer();
     return;
   }
-  if (idleTimer != null && isAutoSaveEligibleForCurrentFile()) {
-    startIdleTimer();
+  const fileId = getFileIdFromHash();
+  if (!isAutoSaveEligibleFile(fileId)) {
+    clearIdleTimer();
+    return;
   }
+  if (!fileId || !FileSyncState.hasUnsavedChanges(fileId)) {
+    clearIdleTimer();
+    return;
+  }
+  startIdleTimer();
 }
 
 function startIdleTimer() {
@@ -105,17 +175,28 @@ subscribeAppSettings(refreshIdleTimerForSettingsChange);
  * 编辑器每次检测到编辑变更时调用此方法。
  * 它会重置空闲计时器——只有持续无编辑 N 秒后才触发自动保存。
  */
-export function notifyEdit(): void {
+export function notifyEditForFile(
+  fileId: string | null | undefined,
+  opts?: Pick<IdleAutoSaveRearmOpts, "allowInactiveFile">,
+): void {
   deferredAutoSave = false;
   if (!isIdleAutoSaveActive()) {
     clearIdleTimer();
     return;
   }
-  if (!isAutoSaveEligibleForCurrentFile()) {
+  if (!isAutoSaveEligibleFile(fileId)) {
+    clearIdleTimer();
+    return;
+  }
+  if (!fileId || !isActiveAutoSaveFile(fileId, opts)) {
     clearIdleTimer();
     return;
   }
   startIdleTimer();
+}
+
+export function notifyEdit(): void {
+  notifyEditForFile(getFileIdFromHash());
 }
 
 /**

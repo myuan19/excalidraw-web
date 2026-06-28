@@ -37,15 +37,15 @@ describe("editorHubProtocol", () => {
     expect(safeStaticPath(buildRoot, "/../package.json")).toBeNull();
   });
 
-  it("proxies /api paths through loopback in protocol handler source", () => {
+  it("serves static files from disk buffers in protocol handler source", () => {
     const protocolPath = path.join(
       path.dirname(fileURLToPath(import.meta.url)),
       "editorHubProtocol.mjs",
     );
     const source = readFileSync(protocolPath, "utf8");
 
-    expect(source).toContain("proxyApiRequest");
-    expect(source).toContain("url.pathname.startsWith(\"/api/\")");
-    expect(source).toContain("getLoopbackPort");
+    expect(source).toContain("readFileSync(picked.filePath)");
+    expect(source).not.toContain("createReadStream");
+    expect(source).toContain("Access-Control-Allow-Origin");
   });
 });

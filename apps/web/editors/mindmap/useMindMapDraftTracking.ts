@@ -1,7 +1,7 @@
 import { debounce } from "@excalidraw/common";
 import { useCallback, useEffect, useRef } from "react";
 
-import { notifyEdit } from "../../data/autoSaveSession";
+import { notifyEditForFile } from "../../data/autoSaveSession";
 import {
   applyFileModificationState,
   evaluateCurrentFileModificationState,
@@ -26,10 +26,15 @@ import { matchesMindMapPersistedSnapshot } from "./mindMapPersistedSnapshot";
 import { toMindMapLocalCacheRecord } from "./mindMapLocalCacheRecord";
 import { debugMindMapPersist } from "./mindMapPersistDebug";
 
-export function useMindMapDraftTracking(fileId: string | null) {
-  const debouncedRef = useRef(
+export function useMindMapDraftTracking(
+  fileId: string | null,
+  opts?: { allowInactiveFile?: boolean },
+) {
+  const allowInactiveFileRef = useRef(opts?.allowInactiveFile === true);
+  allowInactiveFileRef.current = opts?.allowInactiveFile === true;
+  const debouncedCacheRef = useRef(
     debounce((targetFileId: string, getDocument: () => MindMapSaveDocument | null) => {
-      if (getFileIdFromHash() !== targetFileId) {
+      if (!allowInactiveFileRef.current && getFileIdFromHash() !== targetFileId) {
         return;
       }
       const document = getDocument();
@@ -41,42 +46,24 @@ export function useMindMapDraftTracking(fileId: string | null) {
         kind: "mindmap",
         mindMapDocument: document,
       });
-      traceMindMapOperation("draftTracking.debounce.evaluate", {
+      traceMindMapOperation("draftTracking.debounce.cache", {
         fileId8: targetFileId.slice(0, 8),
         document: summarizeMindMapTraceDocument(document),
         modificationState: state,
-        fileStateBeforeApply: readMindMapTraceFileState(targetFileId),
-      });
-      const hash = state.modified
-        ? (state.contentHash ?? hashDocumentSnapshot(document))
-        : (state.baselineHash ??
-          state.contentHash ??
-          hashDocumentSnapshot(document));
-
-      if (state.modified) {
-        FileSyncState.setLocalCache(
-          targetFileId,
-          toMindMapLocalCacheRecord(document),
-        );
-      }
-      applyFileModificationState(targetFileId, state, {
-        reason: "draftTracking.debounce",
-      });
-      traceMindMapOperation("draftTracking.debounce.afterApply", {
-        fileId8: targetFileId.slice(0, 8),
-        modified: state.modified,
-        hash,
-        fileStateAfterApply: readMindMapTraceFileState(targetFileId),
-      });
-      debugMindMapPersist("[DEBUG] draft hash updated", {
-        fileId8: targetFileId.slice(0, 8),
-        modified: state.modified,
-        draftHash8: hash.slice(0, 8),
-        baselineHash8: state.baselineHash?.slice(0, 8) ?? null,
+        fileStateBeforeCache: readMindMapTraceFileState(targetFileId),
       });
       if (!state.modified) {
         return;
       }
+      FileSyncState.setLocalCache(
+        targetFileId,
+        toMindMapLocalCacheRecord(document),
+      );
+      traceMindMapOperation("draftTracking.debounce.afterCache", {
+        fileId8: targetFileId.slice(0, 8),
+        modified: state.modified,
+        fileStateAfterCache: readMindMapTraceFileState(targetFileId),
+      });
       if (isLocalDraftFileId(targetFileId)) {
         notifyLocalDraftEdited(targetFileId);
       }
@@ -84,7 +71,7 @@ export function useMindMapDraftTracking(fileId: string | null) {
   );
 
   useEffect(() => {
-    const debounced = debouncedRef.current;
+    const debounced = debouncedCacheRef.current;
     return () => {
       debounced.cancel();
     };
@@ -123,12 +110,26 @@ export function useMindMapDraftTracking(fileId: string | null) {
         });
         return;
       }
-      debouncedRef.current(fileId, () => document);
-      notifyEdit();
-      traceMindMapOperation("draftTracking.markDocumentChanged.queued", {
+      const state = evaluateCurrentFileModificationState({
+        fileId,
+        kind: "mindmap",
+        mindMapDocument: document,
+      });
+      applyFileModificationState(fileId, state, {
+        reason: "draftTracking.markDocumentChanged.immediate",
+      });
+      traceMindMapOperation("draftTracking.markDocumentChanged.applied", {
         fileId8: fileId.slice(0, 8),
+        modified: state.modified,
         document: summarizeMindMapTraceDocument(document),
-        fileStateAtQueue: readMindMapTraceFileState(fileId),
+        fileStateAfterApply: readMindMapTraceFileState(fileId),
+      });
+      if (!state.modified) {
+        return;
+      }
+      debouncedCacheRef.current(fileId, () => document);
+      notifyEditForFile(fileId, {
+        allowInactiveFile: allowInactiveFileRef.current,
       });
       debugMindMapPersist("[DEBUG] markDocumentChanged", {
         fileId8: fileId.slice(0, 8),
@@ -141,7 +142,7 @@ export function useMindMapDraftTracking(fileId: string | null) {
 
   const markNativeDocumentDirty = useCallback(() => {
     if (!fileId) {
-      notifyEdit();
+      notifyEditForFile(null);
       return;
     }
     const changed = markMindMapNativeDirtyPending(fileId);
@@ -156,14 +157,16 @@ export function useMindMapDraftTracking(fileId: string | null) {
       baselineHash8: FileSyncState.getBaselineHash(fileId)?.slice(0, 8) ?? null,
       draftHash8: FileSyncState.getDraftHash(fileId)?.slice(0, 8) ?? null,
     });
-    notifyEdit();
+    notifyEditForFile(fileId, {
+      allowInactiveFile: allowInactiveFileRef.current,
+    });
     if (isLocalDraftFileId(fileId)) {
       notifyLocalDraftEdited(fileId);
     }
   }, [fileId]);
 
   const flushDraft = useCallback(() => {
-    debouncedRef.current.flush();
+    debouncedCacheRef.current.flush();
   }, []);
 
   return { markDocumentChanged, markNativeDocumentDirty, flushDraft };

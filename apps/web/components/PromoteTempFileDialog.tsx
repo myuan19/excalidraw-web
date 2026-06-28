@@ -16,7 +16,7 @@ import {
   type ServerFolder,
 } from "../data/ServerSync";
 import type { OverlayDismissHandlers } from "./NewFileDialog";
-import { shellThemeClassName } from "../hooks/useShellTheme";
+import { ShellDialogOverlay } from "./ShellDialogOverlay";
 import { useEditorModalOverlayRegistration } from "../shell/editorModalOverlay";
 import {
   hasSaveNameConflict,
@@ -24,8 +24,7 @@ import {
   saveExtensionForKind,
   type DiskFolderPickResult,
 } from "./saveDialogUtils";
-
-import "./fileListDialogHost.scss";
+import { traceUserAction } from "../lib/userTrace";
 
 const LOCAL_FOLDER_ICON =
   "M21 2H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h7l-2 3v1h8v-1l-2-3h7c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 12H3V4h18v10z";
@@ -189,10 +188,18 @@ export const SaveNewDocumentDialog = memo(function SaveNewDocumentDialog({
 
   const handlePickDiskDestination = useCallback(async () => {
     if (!allowOpenLocalFolder || !onOpenLocalFolder || busy) {
+      traceUserAction(
+        "save-dialog",
+        "pickDiskDestination",
+        { allowOpenLocalFolder, busy },
+        "skip",
+      );
       return;
     }
+    traceUserAction("save-dialog", "pickDiskDestination", {}, "start");
     const picked = await onOpenLocalFolder();
     if (!picked) {
+      traceUserAction("save-dialog", "pickDiskDestination", {}, "skip");
       return;
     }
     const tree = await refreshFileTree().catch(() => null);
@@ -205,6 +212,15 @@ export const SaveNewDocumentDialog = memo(function SaveNewDocumentDialog({
         getFolderPathLabel(tree?.folders ?? [], picked.folderId) ||
         "已选磁盘目录",
     });
+    traceUserAction(
+      "save-dialog",
+      "pickDiskDestination",
+      {
+        folderId: picked.folderId,
+        pathTail: picked.absPath?.slice(-160) ?? null,
+      },
+      "ok",
+    );
   }, [
     allowOpenLocalFolder,
     busy,
@@ -217,6 +233,12 @@ export const SaveNewDocumentDialog = memo(function SaveNewDocumentDialog({
       setTargetFolderId(folderId);
       if (!folderId) {
         setSelectedDestination(null);
+        traceUserAction(
+          "save-dialog",
+          "selectCatalogFolder",
+          { folderId: null },
+          "skip",
+        );
         return;
       }
       setSelectedDestination({
@@ -225,23 +247,73 @@ export const SaveNewDocumentDialog = memo(function SaveNewDocumentDialog({
         label:
           getFolderPathLabel(fileTree?.folders ?? [], folderId) ?? "已选文件夹",
       });
+      traceUserAction(
+        "save-dialog",
+        "selectCatalogFolder",
+        { folderId },
+        "ok",
+      );
     },
     [fileTree?.folders],
   );
 
   const handleChooseDestination = useCallback(() => {
     if (!selectedDestination || busy) {
+      traceUserAction(
+        "save-dialog",
+        "chooseDestination",
+        { busy, hasDestination: !!selectedDestination },
+        "skip",
+      );
       return;
     }
+    traceUserAction(
+      "save-dialog",
+      "chooseDestination",
+      {
+        destinationType: selectedDestination.type,
+        folderId: selectedDestination.folderId,
+      },
+      "ok",
+    );
     setStep("name");
   }, [busy, selectedDestination]);
 
   const handleSave = useCallback(async () => {
     if (!canSave || !selectedDestination) {
+      traceUserAction(
+        "save-dialog",
+        "clickSave",
+        {
+          canSave,
+          hasDestination: !!selectedDestination,
+          normalizedName: normalizedSaveName,
+          validationMessage,
+          duplicateName,
+        },
+        "skip",
+      );
       return;
     }
+    traceUserAction(
+      "save-dialog",
+      "clickSave",
+      {
+        normalizedName: normalizedSaveName,
+        destinationType: selectedDestination.type,
+        folderId: selectedDestination.folderId,
+      },
+      "start",
+    );
     await onSave(normalizedSaveName, selectedDestination.folderId);
-  }, [canSave, normalizedSaveName, onSave, selectedDestination]);
+  }, [
+    canSave,
+    duplicateName,
+    normalizedSaveName,
+    onSave,
+    selectedDestination,
+    validationMessage,
+  ]);
 
   const handleTreeLoaded = useCallback((tree: FileTreeResponse) => {
     setFileTree(tree);
@@ -252,11 +324,10 @@ export const SaveNewDocumentDialog = memo(function SaveNewDocumentDialog({
   }
 
   return createPortal(
-    <div
-      className={`filelist-dialog-host ${shellThemeClassName()} filelist__detail-overlay`}
+    <ShellDialogOverlay
       role="dialog"
       aria-modal
-      {...overlayDismiss}
+      overlayDismiss={overlayDismiss}
     >
       <div
         className="filelist__detail-card filelist__move-dialog filelist__save-dialog"
@@ -406,7 +477,7 @@ export const SaveNewDocumentDialog = memo(function SaveNewDocumentDialog({
           </>
         )}
       </div>
-    </div>,
+    </ShellDialogOverlay>,
     document.body,
   );
 });

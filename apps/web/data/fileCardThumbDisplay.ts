@@ -11,6 +11,8 @@ import { toCardSvg } from "./thumbnailService";
 import { editorUsesSessionThumbnail } from "./thumbnailLifecycle";
 import { extractThumbBg } from "./thumbnailSvg";
 import { traceThumbCardDisplay } from "../lib/interactionDebugTrace";
+import { createLogger } from "../lib/logger";
+import { traceThumbCardLoadingStuck } from "../lib/thumbPipelineTrace";
 import { editorRegistry } from "../editors/registry";
 import type { ServerFile } from "./ServerSync";
 
@@ -40,7 +42,7 @@ export function resolveFileCardThumbDisplay(
   fetchedThumbContentSha?: string | null,
 ): FileCardThumbDisplay {
   const isBrowserDraft = isLocalDraftFileId(fileId);
-  const slot = buildFileCardThumbnailSlot(fileId);
+  const slot = buildFileCardThumbnailSlot(file);
   const thumbnailChoice = chooseFileCardThumbnailForFile(
     fileId,
     file,
@@ -50,6 +52,15 @@ export function resolveFileCardThumbDisplay(
   const thumbSvg = thumbnailChoice.thumbSvg;
   const cardThumbSvg =
     isCorruptCatalogFile(file) || !thumbSvg ? null : toCardSvg(thumbSvg);
+  if (thumbSvg && !cardThumbSvg && !isCorruptCatalogFile(file)) {
+    createLogger({ module: "thumbnail" }).warn("card thumb invisible after patch", {
+      fileId8: fileId.slice(0, 8),
+      kind: file.kind,
+      rawLen: thumbSvg.length,
+      finalSource: thumbnailChoice.finalSource,
+      contentSha8: file.content_sha256?.slice(0, 8) ?? null,
+    });
+  }
   const thumbSaveLoading =
     isThumbnailSavePending(fileId) && !isCorruptCatalogFile(file);
   const draftAwaitingSession =
@@ -100,6 +111,17 @@ export function resolveFileCardThumbDisplay(
           : null;
   if (thumbSaveLoading) {
     badge = null;
+  }
+
+  if (thumbFetchLoading) {
+    traceThumbCardLoadingStuck({
+      fileId,
+      kind: file.kind,
+      contentSha8: file.content_sha256?.slice(0, 8) ?? null,
+      fetchedLen: fetchedThumb?.length ?? 0,
+      fetchedHash8: fetchedThumbContentSha?.slice(0, 8) ?? null,
+      reasons,
+    });
   }
 
   const display = {

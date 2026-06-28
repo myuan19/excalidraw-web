@@ -10,6 +10,7 @@ import {
   getFileIdFromHashString,
 } from "../data/fileIdFromHash";
 import { loadEditorServerFile } from "../data/loadEditorServerFile";
+import { touchRecentOpenedFile } from "../data/recentFiles";
 import { editorRegistry } from "../editors/registry";
 import { isDesktopEditorHub } from "../lib/runtimePlatform";
 import { traceTab, id8 } from "../lib/interactionDebugTrace";
@@ -48,6 +49,16 @@ type ResolvedNavigateDeps = {
   buildHomeHash: () => string;
   resolveFileTitle: (fileId: string) => Promise<string | null>;
 };
+
+function setHashUnlessCurrent(
+  setHash: (hash: string) => void,
+  hash: string,
+): void {
+  if (window.location.hash === hash) {
+    return;
+  }
+  setHash(hash);
+}
 
 function resolveNavigateDeps(deps: NavigateDeps = {}): ResolvedNavigateDeps {
   return {
@@ -89,10 +100,13 @@ function navigateToActiveTab(deps: ResolvedNavigateDeps): boolean {
   const state = readEditorTabsState();
   const active = state.tabs.find((tab) => tab.id === state.activeTabId);
   if (active?.type === "file") {
-    deps.setHash(deps.buildFileHash(active.fileId, active.kind));
+    setHashUnlessCurrent(
+      deps.setHash,
+      deps.buildFileHash(active.fileId, active.kind),
+    );
     return true;
   }
-  deps.setHash(deps.buildHomeHash());
+  setHashUnlessCurrent(deps.setHash, deps.buildHomeHash());
   return true;
 }
 
@@ -103,7 +117,12 @@ function getKindFromHashString(hash: string): string {
 }
 
 export async function openEditorFileTab(
-  file: { fileId: string; kind: string; title?: string },
+  file: {
+    fileId: string;
+    kind: string;
+    title?: string;
+    absPath?: string | null;
+  },
   inputDeps?: NavigateDeps,
 ): Promise<boolean> {
   const deps = resolveNavigateDeps(inputDeps);
@@ -113,6 +132,11 @@ export async function openEditorFileTab(
     kind: file.kind,
     title: file.title ?? null,
     currentFileId8: id8(currentFileId),
+  });
+  // 用户点击打开后立即置顶最近，不等待离开当前编辑器时的 native snapshot（MindMap 可能较慢）。
+  touchRecentOpenedFile({
+    fileId: file.fileId,
+    absPath: file.absPath ?? null,
   });
   if (
     currentFileId &&
@@ -129,7 +153,7 @@ export async function openEditorFileTab(
       title: file.title || "未命名",
     }),
   );
-  deps.setHash(deps.buildFileHash(file.fileId, file.kind));
+  setHashUnlessCurrent(deps.setHash, deps.buildFileHash(file.fileId, file.kind));
   if (!file.title) {
     void refreshOpenFileTabTitle(file.fileId, deps);
   }
@@ -149,6 +173,7 @@ export async function activateEditorTab(
     tabType: tab?.type ?? null,
     fileId8: tab?.type === "file" ? id8(tab.fileId) : null,
     fromActiveTabId: state.activeTabId,
+    hash: window.location.hash,
   });
   if (state.activeTabId === tabId) {
     traceTab("activate", { tabId, reason: "already-active" }, "skip");
@@ -183,7 +208,9 @@ export async function closeEditorTabWithSnapshot(
   });
 
   if (closingFileId) {
-    if (!(await prepareEditorTabForClose(closingFileId))) {
+    if (
+      !(await prepareEditorTabForClose(closingFileId, "tab-close", "exit"))
+    ) {
       traceTab("close", { tabId, fileId8: id8(closingFileId), reason: "prepare-failed" }, "fail");
       return false;
     }
@@ -226,6 +253,30 @@ export async function closeEditorTabWithSnapshot(
   return ok;
 }
 
+/** 编辑器已崩溃时跳过保存/快照，直接移除标签。 */
+export function closeEditorTabWithoutPrepare(
+  tabId: string,
+  inputDeps?: NavigateDeps,
+): boolean {
+  const deps = resolveNavigateDeps(inputDeps);
+  const state = readEditorTabsState();
+  const tab = state.tabs.find((item) => item.id === tabId);
+  if (!tab) {
+    traceTab("close", { tabId, reason: "already-closed", force: true }, "ok");
+    return true;
+  }
+  const isActive = state.activeTabId === tabId;
+  traceTab("close", { tabId, force: true, isActive }, "start");
+  writeEditorTabsState(closeEditorTab(state, tabId));
+  if (!isActive) {
+    traceTab("close", { tabId, force: true, background: true }, "ok");
+    return true;
+  }
+  const ok = navigateToActiveTab(deps);
+  traceTab("close", { tabId, force: true, hash: window.location.hash }, ok ? "ok" : "fail");
+  return ok;
+}
+
 export async function activateHomeTab(
   inputDeps?: NavigateDeps,
 ): Promise<boolean> {
@@ -237,7 +288,7 @@ export function activateHomeTabWithoutSnapshot(
 ): void {
   const deps = resolveNavigateDeps(inputDeps);
   writeEditorTabsState(activateTab(readEditorTabsState(), HOME_TAB_ID));
-  deps.setHash(deps.buildHomeHash());
+  setHashUnlessCurrent(deps.setHash, deps.buildHomeHash());
 }
 
 export function replaceOpenFileTabAfterSave(opts: {
@@ -300,7 +351,7 @@ export function removeMissingEditorFileTab(
     tabs: state.tabs.filter((tab) => tab.id !== missingTabId),
   });
   if (wasActive) {
-    deps.setHash(deps.buildHomeHash());
+    setHashUnlessCurrent(deps.setHash, deps.buildHomeHash());
   }
 }
 

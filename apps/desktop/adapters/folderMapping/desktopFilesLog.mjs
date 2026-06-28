@@ -73,6 +73,7 @@ function summarizeMindMapData(data) {
     firstChildTexts: children
       .slice(0, 12)
       .map((child) => normalizeMindMapText(child.data?.text).slice(0, 80)),
+    flatNodes: flattenMindMapNodes(root),
     flatNodesTruncated: nodeCount > 500,
   };
 }

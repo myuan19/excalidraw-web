@@ -24,6 +24,13 @@ import { clearThumbnailServerMiss } from "./thumbnailServerFetchMiss";
 
 import type { ManagedDocument } from "./documentTypes";
 import type { MindMapDocumentData } from "./formats/MindMapAdapter";
+import type { SavedThumbnailPatch } from "./thumbnailLifecycle";
+import type { SaveToServerSource } from "../hooks/types";
+
+export type MindMapSavedThumbnailTarget = SavedThumbnailPatch & {
+  source: SaveToServerSource;
+  documentHash: string;
+};
 
 const logThumb = createLogger({ module: "thumbnail" });
 
@@ -94,7 +101,7 @@ export async function persistNativeMindMapThumbnail(
       svgLen: thumbnail.length,
       fileStateBeforeServer: readMindMapTraceFileState(fileId),
     });
-    const result = await ServerSync.saveThumbnailOnly(fileId, thumbnail, name);
+    const result = await ServerSync.saveThumbnailOnly(fileId, thumbnail);
     if (result?.content_sha256) {
       finalizeSavedThumbnail({
         fileId,

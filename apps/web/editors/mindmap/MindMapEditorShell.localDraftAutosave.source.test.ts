@@ -29,7 +29,8 @@ describe("MindMapEditorShell local-draft autosave source contract", () => {
       "utf8",
     );
     expect(source).toContain("ServerSync.saveFileImmediate");
-    expect(source).toContain("{ checkpointPolicy, source }");
+    expect(source).toContain("checkpointPolicy");
+    expect(source).toContain("source,");
   });
 
   it("does not adopt hydrate baseline while unsaved user edits exist", () => {
@@ -40,6 +41,54 @@ describe("MindMapEditorShell local-draft autosave source contract", () => {
     expect(shellSource).toContain("shouldSkipMindMapHydrateSettleBaselineAdopt");
     expect(shellSource).toContain("host.hydrateSettleEnd.skipAdoptBaseline");
     expect(shellSource).toContain("host.queueAutoSave.bypassIdlePolicyDueToRequestId");
+    expect(shellSource).toContain("host.queueAutoSave.requestNativeSnapshot");
+    expect(shellSource).toContain("beginMindMapNativeSavePaneBoost");
+    expect(shellSource).toContain("waitForMindMapNativeSavePaneBoost");
+    expect(shellSource).toContain("mountNativeFrame");
+    expect(shellSource).toContain("beforeDirtyCheck: flushDraft");
+    expect(shellSource).toContain("rearmKey: isPaneForeground");
+    expect(shellSource).toContain("allowInactiveFile: !!pinnedFileId");
+    expect(shellSource).toContain("queueAutoSave(pendingData)");
+    expect(shellSource).not.toContain('void requestNativeSave("auto")');
+    expect(shellSource).not.toContain("useIdleAutoSaveRearm(\n    fileId,\n    isEditorTabActive");
     expect(shellSource).toContain("host.activeEditorSave.requested");
+  });
+
+  it("flushes pending draft fingerprints before background dirty checks", () => {
+    const shellSource = fs.readFileSync(
+      path.join(__dirname, "MindMapEditorShell.tsx"),
+      "utf8",
+    );
+    const inactiveFlushBlock = shellSource.slice(
+      shellSource.indexOf("const flushMindMapAutoSaveWhenInactive = useCallback("),
+      shellSource.indexOf("const handleOpenHydrateReady"),
+    );
+    expect(inactiveFlushBlock.indexOf("flushDraft();")).toBeGreaterThan(-1);
+    expect(inactiveFlushBlock.indexOf("flushDraft();")).toBeLessThan(
+      inactiveFlushBlock.indexOf("FileSyncState.hasUnsavedChanges(fileId)"),
+    );
+  });
+
+  it("routes idle autosave through native snapshot instead of host draft data", () => {
+    const shellSource = fs.readFileSync(
+      path.join(__dirname, "MindMapEditorShell.tsx"),
+      "utf8",
+    );
+    const queueAutoSaveBlock = shellSource.slice(
+      shellSource.indexOf("const queueAutoSave = useCallback("),
+      shellSource.indexOf("useIdleAutoSaveRearm("),
+    );
+    expect(queueAutoSaveBlock).toContain(
+      "host.queueAutoSave.requestNativeSnapshot",
+    );
+    expect(queueAutoSaveBlock).toContain('requestNativeSaveRef.current?.("auto")');
+    const idlePersistIndex = queueAutoSaveBlock.indexOf(
+      "void persistMindMapDocument(",
+    );
+    const nativeSnapshotIndex = queueAutoSaveBlock.indexOf(
+      "host.queueAutoSave.requestNativeSnapshot",
+    );
+    expect(nativeSnapshotIndex).toBeGreaterThan(-1);
+    expect(idlePersistIndex).toBeGreaterThan(nativeSnapshotIndex);
   });
 });

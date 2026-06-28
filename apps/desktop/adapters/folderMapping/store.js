@@ -445,7 +445,7 @@ export class FolderMappingStore {
         },
       };
     }
-    const data = this.readData(file);
+    const data = this.readDataAndRefresh(meta, file);
     if (
       file.content_sha256 &&
       this.ifNoneMatchSatisfied(ifNoneMatch, file.content_sha256)
@@ -524,6 +524,7 @@ export class FolderMappingStore {
     if (file.origin !== "managed" && file.origin !== "external") {
       file.origin = "managed";
     }
+    this.refreshFileContentHash(meta, file);
     const hasData = Object.prototype.hasOwnProperty.call(body, "data");
     const hasThumbnail = Object.prototype.hasOwnProperty.call(
       body,
@@ -752,6 +753,36 @@ export class FolderMappingStore {
     return absPath;
   }
 
+  isCatalogFileContentCurrent(root, relPath) {
+    if (!root || !relPath) {
+      return false;
+    }
+    const absPath = path.resolve(root, relPath);
+    if (!isDocumentFile(path.basename(absPath))) {
+      return false;
+    }
+    let meta;
+    try {
+      meta = this.loadMeta();
+    } catch {
+      return false;
+    }
+    const file = meta.files.find(
+      (item) => path.resolve(this.sidecar.resolve(item.path)) === absPath,
+    );
+    if (!file?.content_sha256) {
+      return false;
+    }
+    try {
+      if (!existsSync(absPath) || !statSync(absPath).isFile()) {
+        return false;
+      }
+      return hashString(readFileSync(absPath, "utf-8")) === file.content_sha256;
+    } catch {
+      return false;
+    }
+  }
+
   saveOrder(parentId, items) {
     const meta = this.loadMeta();
     const normalizedParentId = normalizeFolderId(parentId);
@@ -784,6 +815,46 @@ export class FolderMappingStore {
       return null;
     }
     return readFileSync(thumbnailPath, "utf-8");
+  }
+
+  saveFileThumbnail(id, body) {
+    const meta = this.loadMeta();
+    const file = this.requireFile(meta, id);
+    this.refreshFileContentHash(meta, file);
+    const thumbnail =
+      typeof body?.thumbnail === "string" ? body.thumbnail.trim() : "";
+    const contentSha256 =
+      typeof body?.contentSha256 === "string"
+        ? body.contentSha256.trim()
+        : "";
+    const currentSha = file.content_sha256 ?? null;
+
+    if (!thumbnail || !/<svg\b/i.test(thumbnail) || !/<\/svg>/i.test(thumbnail)) {
+      const error = new Error("invalid_thumbnail");
+      error.status = 400;
+      throw error;
+    }
+    if (!contentSha256 || !currentSha || contentSha256 !== currentSha) {
+      const error = new Error("stale_thumbnail");
+      error.status = 409;
+      error.payload = {
+        error: "stale_thumbnail",
+        content_sha256: currentSha,
+        version: currentFileVersion(file.version),
+        updated_at: file.updated_at,
+      };
+      throw error;
+    }
+
+    this.writeThumbnail(file, thumbnail);
+    file.updated_at = nowIso();
+    this.sidecar.save(meta);
+    return {
+      ok: true,
+      content_sha256: currentSha,
+      version: currentFileVersion(file.version),
+      updated_at: file.updated_at,
+    };
   }
 
   createArchive(fileId, { label = "", deltas } = {}) {
@@ -908,6 +979,55 @@ export class FolderMappingStore {
       throw error;
     }
     return validation.data;
+  }
+
+  readDataAndRefresh(meta, file) {
+    if (file.health === "corrupt") {
+      const error = new Error(file.parse_error || "corrupt document");
+      error.status = 422;
+      error.code = "corrupt_document";
+      throw error;
+    }
+    const raw = readFileSync(this.sidecar.resolve(file.path), "utf-8");
+    const validation = validateCatalogDocument(raw, file.kind);
+    if (!validation.ok) {
+      const error = new Error(validation.message || "corrupt document");
+      error.status = 422;
+      error.code = "corrupt_document";
+      throw error;
+    }
+    this.applyDiskContentHash(meta, file, hashString(raw));
+    return validation.data;
+  }
+
+  refreshFileContentHash(meta, file) {
+    if (file.health === "corrupt") {
+      return false;
+    }
+    let raw;
+    try {
+      raw = readFileSync(this.sidecar.resolve(file.path), "utf-8");
+    } catch {
+      return false;
+    }
+    const validation = validateCatalogDocument(raw, file.kind);
+    if (!validation.ok) {
+      return false;
+    }
+    return this.applyDiskContentHash(meta, file, hashString(raw));
+  }
+
+  applyDiskContentHash(meta, file, nextSha) {
+    if (!nextSha || nextSha === file.content_sha256) {
+      return false;
+    }
+    file.content_sha256 = nextSha;
+    file.version = nextFileVersion(file.version);
+    file.updated_at = nowIso();
+    file.health = "ok";
+    file.parse_error = null;
+    this.sidecar.save(meta);
+    return true;
   }
 
   appendArchive(file, data, label = "") {

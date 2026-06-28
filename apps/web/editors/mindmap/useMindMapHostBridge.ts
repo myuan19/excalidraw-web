@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  useEditorPaneLifecycle,
+} from "../../shell/editorPaneLifecycle";
+import {
   editorOpenPhaseFromBridgeStatus,
   logEditorOpenPhase,
 } from "../../lib/editorOpenPhases";
@@ -13,15 +16,28 @@ import type { NativeMindMapBridgePayload } from "./mindMapBridgeProtocol";
 type UseMindMapHostBridgeOptions = {
   fileId: string | null;
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
+  /** When false, defer iframe session boot (background pane). */
+  sessionEnabled?: boolean;
+  isPaneForeground?: boolean;
+  onPaneForeground?: () => void;
+  onPaneBackground?: () => void;
   debugOpen?: (label: string, data?: Record<string, unknown>) => void;
 };
 
 export function useMindMapHostBridge({
   fileId,
   iframeRef,
+  sessionEnabled = true,
+  isPaneForeground = true,
+  onPaneForeground,
+  onPaneBackground,
   debugOpen,
 }: UseMindMapHostBridgeOptions) {
   const bridgeRef = useRef<MindMapHostBridge | null>(null);
+  const onPaneForegroundRef = useRef(onPaneForeground);
+  onPaneForegroundRef.current = onPaneForeground;
+  const onPaneBackgroundRef = useRef(onPaneBackground);
+  onPaneBackgroundRef.current = onPaneBackground;
   const [snapshot, setSnapshot] = useState<MindMapHostBridgeSnapshot>({
     phase: "idle",
     bootKey: 0,
@@ -32,6 +48,11 @@ export function useMindMapHostBridge({
   });
   const [bridgeError, setBridgeError] = useState<string | null>(null);
   const [isNativeReady, setIsNativeReady] = useState(false);
+
+  const handlePaneForeground = useCallback(() => {
+    bridgeRef.current?.onForeground();
+    onPaneForegroundRef.current?.();
+  }, []);
 
   useEffect(() => {
     const bridge = new MindMapHostBridge({
@@ -61,8 +82,17 @@ export function useMindMapHostBridge({
   }, [debugOpen, iframeRef]);
 
   useEffect(() => {
+    if (!sessionEnabled) {
+      return;
+    }
     bridgeRef.current?.beginSession();
-  }, [fileId, snapshot.bootKey]);
+  }, [fileId, snapshot.bootKey, sessionEnabled]);
+
+  useEditorPaneLifecycle({
+    isForeground: isPaneForeground,
+    onForeground: handlePaneForeground,
+    onBackground: () => onPaneBackgroundRef.current?.(),
+  });
 
   const publishDocument = useCallback(
     (payload: NativeMindMapBridgePayload, reason: string) => {

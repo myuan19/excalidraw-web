@@ -50,14 +50,18 @@ const pwaEnabled = import.meta.env.VITE_APP_ENABLE_PWA === "true";
 // from older deployments so stale bundles stop shadowing freshly deployed code.
 if (!pwaEnabled) {
   if ("serviceWorker" in navigator) {
-    void navigator.serviceWorker.getRegistrations().then((regs) =>
-      Promise.all(regs.map((r) => r.unregister())),
-    );
+    void navigator.serviceWorker
+      .getRegistrations()
+      .then((regs) => Promise.all(regs.map((r) => r.unregister())))
+      .catch(() => {
+        // Electron custom protocol pages can reject SW access during early boot.
+      });
   }
   if ("caches" in window) {
-    void caches.keys().then((keys) =>
-      Promise.all(keys.map((k) => caches.delete(k))),
-    );
+    void caches
+      .keys()
+      .then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
+      .catch(() => {});
   }
 }
 

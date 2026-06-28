@@ -9,9 +9,9 @@ import {
 export function createDesktopAiSettingsRouter() {
   const router = Router();
 
-  router.get("/", (_req, res) => {
+  router.get("/", async (_req, res) => {
     try {
-      return res.json(readDesktopAiConfig());
+      return res.json(await readDesktopAiConfig());
     } catch (error) {
       return res.status(500).json({
         error: "failed to read ai settings",
@@ -20,10 +20,10 @@ export function createDesktopAiSettingsRouter() {
     }
   });
 
-  router.put("/", (req, res) => {
+  router.put("/", async (req, res) => {
     try {
-      writeDesktopAiConfig(req.body);
-      return res.json(readDesktopAiConfig());
+      await writeDesktopAiConfig(req.body);
+      return res.json(await readDesktopAiConfig());
     } catch (error) {
       return res.status(500).json({
         error: "failed to save ai settings",

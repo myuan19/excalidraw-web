@@ -2,6 +2,8 @@ import { devDebug } from "../lib/devDebug";
 import { traceUserAction, traceUserError } from "../lib/userTrace";
 
 import { FileSyncState } from "./FileSyncState";
+import { getDocumentSessionVersion } from "./documentSessionVersion";
+import { ensureSessionVersionAfterCacheOpen } from "./documentSessionVersionSync";
 import { isLocalDraftFileId } from "./localDraftFileId";
 import { isLocalCacheConsistentWithServerHash } from "./localCacheServerConsistency";
 import { LocalDraftSessions } from "./localDraftSessions";
@@ -127,6 +129,17 @@ export async function loadEditorServerFile(
         devDebug("api-sync", "loadEditorServerFile | local-cache recovery", {
           fileId8: fileId.slice(0, 8),
         });
+        await ensureSessionVersionAfterCacheOpen(fileId, {
+          listFileHashes: () => ServerSync.listFileHashes(),
+          cacheVersion:
+            rebuilt.version ??
+            FileSyncState.getLocalCache(fileId)?.meta?.serverVersion ??
+            null,
+          hasUnsavedChanges: FileSyncState.hasUnsavedChanges(fileId),
+          cachedServerSha: serverHash,
+          reason: "loadEditorServerFile-cache",
+        });
+        rebuilt.version = getDocumentSessionVersion(fileId) ?? rebuilt.version;
         traceUserAction("editor-open", "loadEditorServerFile", {
           fileId8: fileId.slice(0, 8),
           kind: rebuilt.kind,

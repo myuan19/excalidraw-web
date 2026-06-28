@@ -1,15 +1,11 @@
 import { Router } from "express";
 
-import {
-  AI_PROXY_FEATURE,
-  buildAIProxyChatRequest,
-  buildAIProxyVisionRequest,
-  streamProxyResponse,
-} from "../../../server/lib/aiProxy.js";
-
 import { readDesktopAiConfig } from "./desktopAiConfigStore.js";
+import { loadRuntimeServerModule } from "./runtimeServerLib.mjs";
 
-export function buildMindMapAIProxyRequest(config, body = {}) {
+export async function buildMindMapAIProxyRequest(config, body = {}) {
+  const { AI_PROXY_FEATURE, buildAIProxyChatRequest } =
+    await loadRuntimeServerModule("lib/aiProxy.js");
   return buildAIProxyChatRequest(config, {
     ...body,
     feature: AI_PROXY_FEATURE.MINDMAP_CHAT,
@@ -18,15 +14,21 @@ export function buildMindMapAIProxyRequest(config, body = {}) {
 }
 
 /** Desktop MindMap AI proxy — JSON ai-settings, no SQLite. */
-export function createDesktopMindMapAiRouter() {
+export async function createDesktopMindMapAiRouter() {
+  const { AI_PROXY_FEATURE, streamProxyResponse } =
+    await loadRuntimeServerModule("lib/aiProxy.js");
+
   const router = Router();
 
   router.post("/chat", async (req, res) => {
     try {
-      const proxyRequest = buildMindMapAIProxyRequest(readDesktopAiConfig(), {
-        ...req.body,
-        stream: true,
-      });
+      const proxyRequest = await buildMindMapAIProxyRequest(
+        await readDesktopAiConfig(),
+        {
+          ...req.body,
+          stream: true,
+        },
+      );
       return streamProxyResponse(proxyRequest, req, res);
     } catch (error) {
       if (error?.name === "AbortError") {
@@ -41,5 +43,3 @@ export function createDesktopMindMapAiRouter() {
 
   return router;
 }
-
-export { AI_PROXY_FEATURE };

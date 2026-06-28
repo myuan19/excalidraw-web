@@ -64,11 +64,11 @@ describe("useMindMapFileSave checkpoint orchestration", () => {
     expect(ServerSync.saveThumbnailOnly).toHaveBeenCalledWith(
       fileId,
       "<svg></svg>",
-      "Map",
+      undefined,
     );
   });
 
-  it("keeps the existing file name when saving after the root was cleared", async () => {
+  it("does not send a rename on content saves after the root was cleared", async () => {
     const fileId = "mindmap-cleared-root-file";
     const document = MindMapAdapter.toDocument({
       ...MindMapAdapter.createEmpty("Map"),
@@ -88,7 +88,7 @@ describe("useMindMapFileSave checkpoint orchestration", () => {
     expect(ServerSync.saveFileImmediate).toHaveBeenCalledWith(
       fileId,
       document,
-      "和",
+      undefined,
       undefined,
       expect.any(Object),
     );
@@ -108,7 +108,7 @@ describe("useMindMapFileSave checkpoint orchestration", () => {
     expect(ServerSync.saveFileImmediate).toHaveBeenCalledWith(
       fileId,
       document,
-      "Map",
+      undefined,
       undefined,
       expect.objectContaining({
         forceOverwrite: true,

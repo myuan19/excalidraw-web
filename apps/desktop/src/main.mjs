@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { parseDesktopArgs } from "./config.mjs";
 import { listenDesktopServer } from "./bootstrapServer.mjs";
@@ -9,14 +10,29 @@ import {
   getDesktopOpLogPath,
   writeDesktopLog,
 } from "./desktopLogger.mjs";
+import {
+  resolveAppDataDir,
+  resolveAppLogsDir,
+} from "./desktopPaths.mjs";
 
 const config = parseDesktopArgs();
+process.env.EDITORHUB_DESKTOP_RUNTIME_ROOT = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../..",
+);
+const mockApp = {
+  getPath: (name) => {
+    if (name === "userData") {
+      return config.workspacePath;
+    }
+    throw new Error(`unexpected getPath: ${name}`);
+  },
+};
 const logDir =
   process.env.EDITORHUB_DESKTOP_LOG_DIR?.trim() ||
-  path.join(config.workspacePath, ".editorhub", "logs");
+  resolveAppLogsDir(mockApp);
 const dataDir =
-  process.env.EXCALIDRAW_DATA_DIR?.trim() ||
-  path.join(config.workspacePath, ".editorhub", "server-data");
+  process.env.EXCALIDRAW_DATA_DIR?.trim() || resolveAppDataDir(mockApp);
 mkdirSync(logDir, { recursive: true });
 mkdirSync(dataDir, { recursive: true });
 configureDesktopLogPaths(() => [logDir]);

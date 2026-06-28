@@ -11,6 +11,8 @@
 import { devDebug } from "./devDebug";
 import { createLogger } from "./logger";
 import { enableResourceTracePersistence, mergeResourceTraceGlobals } from "./resourceTrace";
+import { getThumbPipelineTraceSummary } from "./thumbPipelineTrace";
+import { getTabCacheTraceSummary } from "./editorTabCacheTrace";
 import { isDebugAllowed } from "../data/debugCapability";
 import { updateAppSettings } from "../data/appSettings";
 
@@ -113,6 +115,8 @@ export type EditorHubDebugGlobals = {
   trace: typeof traceUserAction;
   sessionId: string;
   resourceSummary: () => Record<string, unknown>;
+  thumbPipelineSummary: () => Record<string, unknown>;
+  tabCacheSummary: () => Record<string, unknown>;
   enableResourceTrace: () => void;
 };
 
@@ -131,6 +135,8 @@ export function installUserTraceGlobals(): void {
     enable: enableFullDebugMode,
     trace: traceUserAction,
     sessionId: getSessionId(),
+    thumbPipelineSummary: getThumbPipelineTraceSummary,
+    tabCacheSummary: getTabCacheTraceSummary,
   }) as EditorHubDebugGlobals;
   if (new URLSearchParams(window.location.search).get("debug") === "1") {
     enableFullDebugMode();

@@ -13,7 +13,7 @@ describe("MindMap editor snapshot source contract", () => {
       "utf8",
     );
 
-    expect(source).toContain("registerActiveEditorSnapshotHandler");
+    expect(source).toContain("registerEditorTabSnapshotHandler");
     expect(source).toContain("requestNativeSnapshot");
     expect(source).toContain("pendingNativeSnapshotRequestIdRef");
     expect(source).toContain("isCurrentSnapshotResponse");
@@ -23,26 +23,18 @@ describe("MindMap editor snapshot source contract", () => {
     expect(source).not.toContain('requestNativeSave("tab-close"');
   });
 
-  it("notifies the mounted FileList after a saved thumbnail is finalized", () => {
+  it("schedules async thumbnail upload after server save commits", () => {
     const source = fs.readFileSync(
       path.join(__dirname, "MindMapEditorShell.tsx"),
       "utf8",
     );
-    const finalizeIndex = source.indexOf("finalizeSavedThumbnail({");
-    const afterFinalizeBlock = source.slice(
-      finalizeIndex,
-      source.indexOf("traceMindMapOperation(\"host.persistMindMapDocument.server.after\"", finalizeIndex),
+    const scheduleIndex = source.indexOf("scheduleSavedFileThumbnailUpload({");
+    const afterScheduleBlock = source.slice(
+      scheduleIndex,
+      source.indexOf("traceMindMapOperation(\"host.persistMindMapDocument.server.after\"", scheduleIndex),
     );
 
-    expect(finalizeIndex).toBeGreaterThan(-1);
-    expect(afterFinalizeBlock).toContain(
-      'new CustomEvent("excalidraw-file-sync-state"',
-    );
-    expect(afterFinalizeBlock).toContain(
-      'new CustomEvent("excalidraw-file-list-refresh"',
-    );
-    expect(source).not.toContain(
-      'new CustomEvent("cross-tab-file-saved"',
-    );
+    expect(scheduleIndex).toBeGreaterThan(-1);
+    expect(source).toContain("lastSavedThumbnailTargetRef");
   });
 });

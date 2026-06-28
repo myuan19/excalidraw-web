@@ -55,10 +55,64 @@ function runStore(res, fn) {
   }
 }
 
+function summarizeStoreError(error) {
+  return {
+    message: error instanceof Error ? error.message : String(error),
+    code: error?.code ?? error?.payload?.error ?? null,
+    status: error?.status ?? null,
+    path: error?.payload?.path ?? null,
+    expectedVersion: error?.payload?.expectedVersion ?? null,
+    serverVersion: error?.payload?.version ?? null,
+  };
+}
+
+const OWN_WRITE_SUPPRESSION_TTL_MS = 3000;
+
+function normalizeSuppressionPath(value) {
+  return path.resolve(String(value || "")).toLowerCase();
+}
+
+export function createOwnWritePathSuppressor({
+  ttlMs = OWN_WRITE_SUPPRESSION_TTL_MS,
+  now = Date.now,
+} = {}) {
+  const suppressedUntilByPath = new Map();
+
+  const pruneExpired = (at = now()) => {
+    for (const [absPath, expiresAt] of suppressedUntilByPath) {
+      if (expiresAt <= at) {
+        suppressedUntilByPath.delete(absPath);
+      }
+    }
+  };
+
+  return {
+    mark(absPath) {
+      if (!absPath) {
+        return;
+      }
+      const at = now();
+      pruneExpired(at);
+      suppressedUntilByPath.set(normalizeSuppressionPath(absPath), at + ttlMs);
+    },
+    shouldSuppress(root, relPath) {
+      if (!root || !relPath) {
+        return false;
+      }
+      const at = now();
+      pruneExpired(at);
+      const absPath = normalizeSuppressionPath(path.resolve(root, relPath));
+      const expiresAt = suppressedUntilByPath.get(absPath);
+      return typeof expiresAt === "number" && expiresAt > at;
+    },
+  };
+}
+
 function createFilesystemWatcher({ store, workspacePath }) {
   const clients = new Set();
   const watchers = new Map();
   const changeListeners = new Set();
+  const ownWriteSuppressor = createOwnWritePathSuppressor();
   let debounceTimer = null;
 
   const send = (payload) => {
@@ -148,6 +202,18 @@ function createFilesystemWatcher({ store, workspacePath }) {
               });
               return;
             }
+            if (
+              ownWriteSuppressor.shouldSuppress(root, relPath) &&
+              store.isCatalogFileContentCurrent(root, relPath)
+            ) {
+              logFilesOperation("[DEBUG] catalog-watch | ignored-own-write", {
+                eventType,
+                root,
+                path: relPath,
+                hasFileName: fileName != null && String(fileName).length > 0,
+              });
+              return;
+            }
             logFilesOperation("[DEBUG] catalog-watch | fs-event", {
               eventType,
               root,
@@ -209,6 +275,9 @@ function createFilesystemWatcher({ store, workspacePath }) {
     syncRoots,
     scheduleChange,
     onChange,
+    suppressOwnWrite(absPath) {
+      ownWriteSuppressor.mark(absPath);
+    },
     close() {
       if (debounceTimer) {
         clearTimeout(debounceTimer);
@@ -494,16 +563,42 @@ export async function createFolderMappingRouter({
   });
 
   router.post("/", (req, res) => {
-    const result = runStore(res, () =>
-      store.createFile({
+    let result;
+    try {
+      result = store.createFile({
         name: req.body.name,
         folder_id: req.body.folder_id,
         kind: req.body.kind,
-      }),
-    );
+      });
+    } catch (error) {
+      logFilesOperation("create-file", {
+        outcome: "error",
+        requestedName: req.body.name,
+        folderId: req.body.folder_id,
+        kind: req.body.kind,
+        ...summarizeStoreError(error),
+      });
+      sendStoreError(res, error);
+      return undefined;
+    }
     if (!result) {
       return undefined;
     }
+    try {
+      filesystemWatcher.suppressOwnWrite(store.getLocalFilePath(result.id));
+    } catch {
+      // The create response remains authoritative; suppression is best-effort.
+    }
+    logFilesOperation("create-file", {
+      outcome: "created",
+      id: `${String(result.id).slice(0, 8)}…`,
+      requestedName: req.body.name,
+      actualName: result.name,
+      folderId: result.folder_id,
+      kind: result.kind,
+      version: result.version ?? null,
+      sha: result.content_sha256?.slice(0, 8) ?? null,
+    });
     return res.status(201).json(result);
   });
 
@@ -577,9 +672,16 @@ export async function createFolderMappingRouter({
       logPutFile(req.params.id, req.body, {
         outcome: "error",
         source: req.query?.source ? String(req.query.source) : "",
-        message: error instanceof Error ? error.message : String(error),
+        ...summarizeStoreError(error),
       });
       return sendStoreError(res, error);
+    }
+    if (!result.skipped) {
+      try {
+        filesystemWatcher.suppressOwnWrite(store.getLocalFilePath(req.params.id));
+      } catch {
+        // Saving has already completed; missing local paths should not fail PUT.
+      }
     }
     logPutFile(req.params.id, req.body, {
       outcome: result.skipped ? "skipped" : "saved",
@@ -608,6 +710,27 @@ export async function createFolderMappingRouter({
         : "public, max-age=300",
     );
     return res.send(svg);
+  });
+
+  router.put("/:id/thumbnail", (req, res) => {
+    let result;
+    try {
+      result = store.saveFileThumbnail(req.params.id, req.body);
+    } catch (error) {
+      logPutFile(req.params.id, req.body, {
+        outcome: "error",
+        source: "thumbnail",
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return sendStoreError(res, error);
+    }
+    logPutFile(req.params.id, req.body, {
+      outcome: "saved",
+      source: "thumbnail",
+      sha: result.content_sha256?.slice(0, 8),
+      updated_at: result.updated_at,
+    });
+    return res.json(result);
   });
 
   router.patch("/:id", (req, res) => {

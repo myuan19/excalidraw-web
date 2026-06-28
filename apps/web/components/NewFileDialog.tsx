@@ -8,15 +8,13 @@ import {
 
 import { editorRegistry } from "../editors";
 import type { EditorPlugin } from "../editors/types";
-import { shellThemeClassName } from "../hooks/useShellTheme";
 
-import "./fileListDialogHost.scss";
+import {
+  ShellDialogOverlay,
+  type ShellOverlayDismissHandlers,
+} from "./ShellDialogOverlay";
 
-export type OverlayDismissHandlers = {
-  onPointerDown: (e: PointerEvent) => void;
-  onPointerUp: (e: PointerEvent) => void;
-  onPointerCancel: () => void;
-};
+export type OverlayDismissHandlers = ShellOverlayDismissHandlers;
 
 type EditorKindDialogProps = {
   open: boolean;
@@ -82,11 +80,10 @@ export const EditorKindDialog = memo(function EditorKindDialog({
   }
 
   return (
-    <div
-      className={`filelist-dialog-host ${shellThemeClassName()} filelist__detail-overlay`}
+    <ShellDialogOverlay
       role="dialog"
       aria-modal
-      {...overlayDismiss}
+      overlayDismiss={overlayDismiss}
     >
       <div
         className="filelist__detail-card filelist__new-file-dialog"
@@ -122,7 +119,7 @@ export const EditorKindDialog = memo(function EditorKindDialog({
           </button>
         </div>
       </div>
-    </div>
+    </ShellDialogOverlay>
   );
 });
 

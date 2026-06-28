@@ -57,7 +57,7 @@ describe("resolveMindMapOpenDisplayName", () => {
 });
 
 describe("resolveMindMapSaveDisplayName", () => {
-  it("keeps the current file name when saving even if the root was cleared", () => {
+  it("omits file name on content saves so disk rename is not attempted", () => {
     const data = {
       ...createEmptyMindMapData(),
       root: {
@@ -69,22 +69,22 @@ describe("resolveMindMapSaveDisplayName", () => {
         children: [],
       },
     };
-    expect(resolveMindMapSaveDisplayName(data, "和")).toBe("和");
+    expect(resolveMindMapSaveDisplayName(data, "和")).toBeUndefined();
   });
 
-  it("keeps the current file name for non-empty roots", () => {
-    expect(
-      resolveMindMapSaveDisplayName(createEmptyMindMapData("根标题"), "文件名"),
-    ).toBe("文件名");
-  });
-
-  it("keeps the default file name for existing files even if the root changed", () => {
+  it("omits file name even when the root title changed", () => {
     expect(
       resolveMindMapSaveDisplayName(
         createEmptyMindMapData("新的标题"),
         "未命名",
       ),
-    ).toBe("未命名");
+    ).toBeUndefined();
+  });
+
+  it("omits file name for customized display names", () => {
+    expect(
+      resolveMindMapSaveDisplayName(createEmptyMindMapData("根标题"), "文件名"),
+    ).toBeUndefined();
   });
 });
 

@@ -47,11 +47,19 @@ describe("documentSessionVersionSync", () => {
   });
 
   it("ensureSessionVersionAfterCacheOpen falls back to cache meta when reconcile fails", async () => {
+    FileSyncState.setLocalCache(FILE_ID, {
+      elements: [],
+      appState: {},
+      files: {},
+      deltas: [],
+      meta: { serverContentSha256: "local-cache-sha", serverVersion: 12 },
+    });
     const listFileHashes = vi.fn().mockRejectedValue(new Error("offline"));
     await ensureSessionVersionAfterCacheOpen(FILE_ID, {
       listFileHashes,
       cacheVersion: 12,
-      hasUnsavedChanges: false,
+      hasUnsavedChanges: true,
+      cachedServerSha: "local-cache-sha",
       reason: "open-cache",
     });
     expect(getDocumentSessionVersion(FILE_ID)).toBe(12);

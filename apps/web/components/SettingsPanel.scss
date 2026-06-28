@@ -35,6 +35,44 @@
 }
 
 .settings-panel {
+  --settings-surface-bg: var(--nb-fill-ghost);
+  --settings-surface-border: color-mix(
+    in srgb,
+    var(--nb-border) 42%,
+    var(--settings-surface-bg)
+  );
+  --settings-input-bg: var(--nb-ai-input-bg);
+  --settings-input-border: color-mix(
+    in srgb,
+    var(--nb-border-input) 38%,
+    var(--settings-input-bg)
+  );
+  --settings-open-btn-color: color-mix(
+    in srgb,
+    var(--nb-primary) 72%,
+    var(--nb-text-muted)
+  );
+  --settings-open-btn-bg: color-mix(
+    in srgb,
+    var(--nb-primary) 6%,
+    var(--settings-input-bg)
+  );
+  --settings-open-btn-border: color-mix(
+    in srgb,
+    var(--nb-primary) 14%,
+    var(--settings-input-border)
+  );
+  --settings-open-btn-bg-hover: color-mix(
+    in srgb,
+    var(--nb-primary) 10%,
+    var(--settings-input-bg)
+  );
+  --settings-open-btn-border-hover: color-mix(
+    in srgb,
+    var(--nb-primary) 24%,
+    var(--settings-input-border)
+  );
+
   position: absolute;
   top: 0;
   right: 0;
@@ -137,9 +175,11 @@
   .settings-panel__section {
     margin-bottom: var(--nb-space-8);
     padding: var(--nb-space-7);
-    border: var(--nb-border-width) solid var(--nb-border);
+    border: var(--nb-border-width) solid var(--settings-surface-border);
     border-radius: var(--nb-radius-xl);
-    background: var(--nb-fill-ghost);
+    background: var(--settings-surface-bg);
+    box-sizing: border-box;
+    min-width: 0;
 
     h3 {
       margin: 0 0 var(--nb-space-2);
@@ -162,7 +202,7 @@
     padding: var(--nb-space-4) 0;
 
     &:not(:last-child) {
-      border-bottom: var(--nb-border-width) solid var(--nb-border);
+      border-bottom: var(--nb-border-width) solid var(--settings-surface-border);
     }
 
     &--sub {
@@ -215,29 +255,92 @@
     }
   }
 
-  .settings-panel__path-row {
+  .settings-panel__path-block {
     display: flex;
     flex-direction: column;
     align-items: stretch;
     gap: var(--nb-space-3);
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .settings-panel__path-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--nb-space-2);
+    justify-content: flex-end;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .settings-panel__path-btn {
+    flex: 0 0 auto;
+    min-width: 4.5rem;
+    padding: var(--nb-space-2) var(--nb-space-4);
+    border: var(--nb-border-width) solid var(--settings-input-border);
+    border-radius: var(--nb-radius-md);
+    font-size: var(--nb-font-body-sm);
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    color: var(--nb-text-muted);
+    background: var(--settings-input-bg);
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+
+    &:hover:not(:disabled) {
+      background: var(--nb-fill-hover);
+      border-color: color-mix(
+        in srgb,
+        var(--nb-border-input) 72%,
+        var(--settings-input-bg)
+      );
+      color: var(--nb-ai-dialog-text);
+    }
+
+    &:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    &--accent {
+      color: var(--settings-open-btn-color);
+      border-color: var(--settings-open-btn-border);
+      background: var(--settings-open-btn-bg);
+
+      &:hover:not(:disabled) {
+        border-color: var(--settings-open-btn-border-hover);
+        background: var(--settings-open-btn-bg-hover);
+        color: var(--settings-open-btn-color);
+      }
+    }
+  }
+
+  .settings-panel__option .settings-panel__path-btn {
+    flex-shrink: 0;
+    align-self: center;
   }
 
   .settings-panel__path {
-    display: flex;
-    align-items: center;
+    display: block;
     width: 100%;
-    height: 2.25rem;
-    padding: 0 var(--nb-space-4);
-    border: var(--nb-border-width) solid var(--nb-border-input);
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+    min-height: 2.25rem;
+    padding: var(--nb-space-3) var(--nb-space-4);
+    border: var(--nb-border-width) solid var(--settings-input-border);
     border-radius: var(--nb-radius-lg);
     color: var(--nb-text-muted);
-    background: var(--nb-ai-input-bg);
+    background: var(--settings-input-bg);
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: var(--nb-font-small);
-    line-height: 1;
+    line-height: 1.35;
     white-space: nowrap;
     overflow: hidden;
+    overflow-x: auto;
     text-overflow: ellipsis;
+    scrollbar-width: thin;
   }
 
   /* --- iOS-style toggle --- */
@@ -293,12 +396,12 @@
   /* --- Select dropdown --- */
   .settings-panel__select {
     padding: var(--nb-space-3) var(--nb-space-4);
-    border: var(--nb-border-width) solid var(--nb-border-input);
+    border: var(--nb-border-width) solid var(--settings-input-border);
     border-radius: var(--nb-radius-lg);
     font-size: var(--nb-font-body-sm);
     font-family: inherit;
     color: var(--nb-ai-dialog-text);
-    background: var(--nb-ai-input-bg);
+    background: var(--settings-input-bg);
     cursor: pointer;
     outline: none;
 
@@ -320,14 +423,14 @@
 
     input {
       padding: var(--nb-space-4) var(--nb-space-5);
-      border: var(--nb-border-width) solid var(--nb-border-input);
+      border: var(--nb-border-width) solid var(--settings-input-border);
       border-radius: var(--nb-radius-lg);
       font-size: var(--nb-font-body);
       font-weight: 400;
       outline: none;
       font-family: inherit;
       color: var(--nb-ai-dialog-text);
-      background: var(--nb-ai-input-bg);
+      background: var(--settings-input-bg);
       transition: border-color 0.15s ease, box-shadow 0.15s ease;
 
       &::placeholder {
@@ -397,49 +500,6 @@
     &:disabled {
       opacity: 0.55;
       cursor: not-allowed;
-    }
-  }
-
-  .settings-panel__btn-secondary {
-    flex-shrink: 0;
-    padding: var(--nb-space-3) var(--nb-space-5);
-    border: var(--nb-border-width) solid var(--nb-border-input);
-    border-radius: var(--nb-radius-lg);
-    font-size: var(--nb-font-body-sm);
-    font-weight: 600;
-    font-family: inherit;
-    cursor: pointer;
-    color: var(--nb-ai-dialog-text);
-    background: var(--nb-ai-input-bg);
-    transition: background 0.15s ease, border-color 0.15s ease;
-
-    &:hover {
-      background: var(--nb-fill-hover);
-      border-color: var(--nb-ai-focus-border);
-    }
-
-    &:disabled {
-      opacity: 0.55;
-      cursor: not-allowed;
-    }
-
-    &--accent {
-      color: var(--nb-primary);
-      border-color: color-mix(in srgb, var(--nb-primary) 40%, transparent);
-      background: color-mix(
-        in srgb,
-        var(--nb-primary) 8%,
-        var(--nb-ai-input-bg)
-      );
-
-      &:hover {
-        border-color: var(--nb-primary);
-        background: color-mix(
-          in srgb,
-          var(--nb-primary) 14%,
-          var(--nb-ai-input-bg)
-        );
-      }
     }
   }
 }

@@ -21,6 +21,11 @@ declare global {
       ) => () => void;
       pickFolder?: () => Promise<string | null>;
       getDefaultDataDirectoryPath?: () => Promise<string | null>;
+      getAppDataDirectoryPath?: () => Promise<string | null>;
+      consumeOpenDocumentPaths?: () => Promise<string[]>;
+      subscribeOpenDocumentPaths?: (
+        callback: (paths: string[]) => void,
+      ) => () => void;
       openPath?: (targetPath: string) => Promise<string>;
       showSaveDialog?: (options?: {
         title?: string;

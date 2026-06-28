@@ -53,12 +53,12 @@ describe("resolveFileCardThumbDisplay", () => {
     expect(display.thumbLoading).toBe(false);
   });
 
-  it("shows unsaved badge for local drafts", () => {
+  it("shows temporary badge for browser-local drafts", () => {
     const display = resolveFileCardThumbDisplay(
       "local-draft:abc",
       mockFile({ id: "local-draft:abc", has_thumbnail: false }),
     );
-    expect(display.badge).toBe("draft");
+    expect(display.badge).toBe("temporary");
   });
 
   it("shows draft badge when sync state is draft", () => {
@@ -113,6 +113,18 @@ describe("resolveFileCardThumbDisplay", () => {
     const display = resolveFileCardThumbDisplay("file-1", mockFile());
     expect(display.thumbLoading).toBe(false);
     clearThumbnailServerMiss("file-1");
+  });
+
+  it("does not trust fetched thumbnails without a matching content hash", () => {
+    const display = resolveFileCardThumbDisplay(
+      "file-1",
+      mockFile({ has_thumbnail: true, content_sha256: "sha-new" }),
+      '<svg><path data-thumb="old" d="M0 0 L10 10"/></svg>',
+      null,
+    );
+
+    expect(display.cardThumbSvg).toBeNull();
+    expect(display.thumbLoading).toBe(true);
   });
 
   it("shows light blue save loading while thumbnail save is pending", () => {

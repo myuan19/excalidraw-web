@@ -1,32 +1,49 @@
-<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><script>// webpack-dynamic-public-path：lazy chunk 须由此前缀解析为 dist/js、dist/css
-      window.externalPublicPath = './dist/'
-      window.takeOverApp = window.parent !== window
-      window.addEventListener('message', function (event) {
-        var message = event.data || {}
-        if (message.type !== 'host_restore_preview_view') {
-          return
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <script>
+      // webpack-dynamic-public-path：lazy chunk 须由此前缀解析为 dist/js、dist/css
+      window.externalPublicPath = "./dist/";
+      window.takeOverApp = window.parent !== window;
+      window.addEventListener("message", function (event) {
+        var message = event.data || {};
+        if (message.type !== "host_restore_preview_view") {
+          return;
         }
         // 优先走 Vue Edit 的聚焦视口逻辑，避免旧版 stub 直接回传 ok
-        if (window.$bus && typeof window.$bus.$emit === 'function') {
+        if (window.$bus && typeof window.$bus.$emit === "function") {
           window.$bus.$emit(
-            'host_restore_preview_view',
-            message.payload || message
-          )
-          return
+            "host_restore_preview_view",
+            message.payload || message,
+          );
+          return;
         }
-        if (typeof window.__nbApplyHostViewport === 'function') {
+        if (typeof window.__nbApplyHostViewport === "function") {
           try {
-            window.__nbApplyHostViewport(message.payload || message)
+            window.__nbApplyHostViewport(message.payload || message);
           } catch (error) {
             window.parent.postMessage(
               {
-                source: 'simple-mind-map-native',
-                type: 'mindMapIframeError',
+                source: "simple-mind-map-native",
+                type: "mindMapIframeError",
                 ok: false,
-                message: String((error && error.message) || error)
+                message: String((error && error.message) || error),
               },
-              '*'
-            )
+              "*",
+            );
           }
         }
-      })</script><link href="dist/css/chunk-vendors.e7dc80de.css" rel="stylesheet"><link href="dist/css/app.37be37c5.css" rel="stylesheet"></head><body><div id="app"></div><script src="dist/bridge/takeover-shell.js"></script><script src="dist/js/chunk-vendors.c3ab3ca8.js"></script><script src="dist/js/app.e835a69d.js"></script></body></html>
+      });
+    </script>
+    <link href="dist/css/chunk-vendors.e7dc80de.css" rel="stylesheet" />
+    <link href="dist/css/app.37be37c5.css" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <script src="dist/bridge/takeover-shell.js"></script>
+    <script src="dist/js/chunk-vendors.c3ab3ca8.js"></script>
+    <script src="dist/js/app.4abe18c3.js"></script>
+  </body>
+</html>

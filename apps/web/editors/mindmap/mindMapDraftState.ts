@@ -50,7 +50,12 @@ export function adoptMindMapNativeBaseline(
  * 先保守标记为草稿，等后续 saveMindMapData / 保存快照到达后再用真实 hash 对齐。
  */
 export function markMindMapNativeDirtyPending(fileId: string): boolean {
-  if (FileSyncState.getSyncState(fileId) === "synced") {
+  if (isMindMapNativeDirtyPending(fileId)) {
+    return false;
+  }
+  if (FileSyncState.hasUnsavedChanges(fileId)) {
+    markTabFileDirty(fileId);
+    FileSyncState.setLocalEditTime(fileId);
     return false;
   }
   const baselineHash = FileSyncState.getBaselineHash(fileId);

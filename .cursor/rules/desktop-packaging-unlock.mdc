@@ -1,0 +1,24 @@
+---
+description: Desktop 打包前先解锁 dist/desktop 下的 exe，避免 electron-builder 卡住
+alwaysApply: true
+---
+
+# Desktop 打包：先解锁再构建
+
+当用户要求打包桌面版（`yarn dist`、`electron-builder`、`EditorHub 0.0.0.exe` 等）时：
+
+1. **先解锁输出文件**（不要直接跑 `yarn dist`）：
+   - 结束正在运行的 `EditorHub.exe` / `EditorHub 0.0.0.exe` 进程
+   - 若删除/覆盖失败，说明文件仍被占用（IDE 预览、资源管理器、杀毒扫描等），先让用户关闭或自行结束占用后再继续
+   - 必要时删除或移走旧产物：`dist/desktop/EditorHub 0.0.0.exe`（便携单文件最容易被锁）
+
+2. **确认可写后再打包**（完整桌面包需同步 server runtime）：
+   ```powershell
+   yarn build:desktop:dist          # 正式包
+   yarn build:desktop:dist:debug    # 调试包（产物名 EditorHub Debug，内置 debug 能力）
+   ```
+   或手动：`EDITORHUB_DESKTOP_DEBUG_PACK=1` + `bash scripts/build-desktop.sh dist-debug`；Windows 也可用 `node scripts/build-desktop-dist.mjs --debug`
+
+3. **打包完成后**核对 `LastWriteTime`：`EditorHub Setup 0.0.0.exe`、`EditorHub 0.0.0.exe`、`win-unpacked\EditorHub.exe` 均应为本次构建时间；若便携 exe 时间未变，说明仍被锁或未写入成功。
+
+4. 若便携单文件持续被锁，安装包 `EditorHub Setup 0.0.0.exe` 与 `win-unpacked\EditorHub.exe` 仍可用于验证最新构建。

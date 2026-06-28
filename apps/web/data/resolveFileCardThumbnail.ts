@@ -19,8 +19,8 @@ import { toCardSvg } from "./thumbnailService";
 import type { ServerFile } from "./ServerSync";
 
 /** 列表卡片缩略图槽（与 draftStateById 一致）。 */
-export function buildFileCardThumbnailSlot(fileId: string) {
-  return buildThumbnailDraftSlot({ id: fileId } as ServerFile);
+export function buildFileCardThumbnailSlot(file: ServerFile) {
+  return buildThumbnailDraftSlot(file);
 }
 
 /** Excalidraw/MindMap：session 实时预览未就绪时不拉服务器 GET。 */
@@ -43,7 +43,10 @@ export function chooseFileCardThumbnailForFile(
   fetchedThumbContentSha?: string | null,
 ) {
   const draftSlot = buildThumbnailDraftSlot(file);
-  const localThumb = draftSlot.listLocalThumb;
+  const localThumb =
+    draftSlot.syncState === "draft" && draftSlot.localDraftThumb
+      ? draftSlot.localDraftThumb
+      : (draftSlot.listLocalThumb ?? draftSlot.localDraftThumb);
   const fetchedMindMapIsNonNative =
     file.kind === "mindmap" &&
     fetchedThumb &&
@@ -64,6 +67,7 @@ export function chooseFileCardThumbnailForFile(
     ? null
     : (fetchedThumb ?? null);
   const choice = chooseFileCardThumbnail({
+    fileId,
     syncState: draftSlot.syncState,
     listLocalPolicy: draftSlot.listLocalPolicy,
     preferLocalThumb: draftSlot.preferLocalThumb,

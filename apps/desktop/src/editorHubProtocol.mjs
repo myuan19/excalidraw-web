@@ -1,4 +1,4 @@
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 import { protocol, net } from "electron";
@@ -103,15 +103,17 @@ async function serveStaticFile(buildRoot, request) {
     return new Response("Not Found", { status: 404 });
   }
   const picked = pickPrecompressedPath(filePath, request);
-  const headers = {
-    "Content-Type": resolveMimeType(filePath),
-    "Cache-Control": "no-cache",
-  };
+  // Buffer the file — streaming bodies from net.fetch break Vite CSS/module preloads.
+  const data = readFileSync(picked.filePath);
+  const headers = new Headers();
+  headers.set("Content-Type", resolveMimeType(filePath));
+  headers.set("Cache-Control", "no-cache");
+  headers.set("Access-Control-Allow-Origin", "*");
   if (picked.contentEncoding) {
-    headers["Content-Encoding"] = picked.contentEncoding;
+    headers.set("Content-Encoding", picked.contentEncoding);
+    headers.set("Vary", "Accept-Encoding");
   }
-  const stream = createReadStream(picked.filePath);
-  return new Response(stream, { status: 200, headers });
+  return new Response(data, { status: 200, headers });
 }
 
 async function proxyApiRequest(request, getLoopbackPort) {
@@ -140,16 +142,27 @@ export async function registerEditorHubProtocol(options) {
   }
 
   protocol.handle(EDITORHUB_SCHEME, async (request) => {
-    const url = new URL(request.url);
-    if (url.hostname !== EDITORHUB_APP_HOST) {
-      return new Response("Forbidden", { status: 403 });
-    }
+    try {
+      const url = new URL(request.url);
+      if (url.hostname !== EDITORHUB_APP_HOST) {
+        return new Response("Forbidden", { status: 403 });
+      }
 
-    if (url.pathname.startsWith("/api/")) {
-      return proxyApiRequest(request, getLoopbackPort);
-    }
+      if (url.pathname.startsWith("/api/")) {
+        return proxyApiRequest(request, getLoopbackPort);
+      }
 
-    return serveStaticFile(buildRoot, request);
+      return serveStaticFile(buildRoot, request);
+    } catch (error) {
+      writeDesktopLog("protocol", "handler-error", {
+        url: request.url,
+        error:
+          error instanceof Error
+            ? { name: error.name, message: error.message, stack: error.stack }
+            : String(error),
+      });
+      return new Response("Internal Server Error", { status: 500 });
+    }
   });
 
   writeDesktopLog("protocol", "editorhub-registered", {

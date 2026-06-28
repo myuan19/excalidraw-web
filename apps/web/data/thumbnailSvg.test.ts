@@ -497,6 +497,26 @@ describe("MindMap SVG thumbnails", () => {
     );
   });
 
+  it("re-applies focused MindMap card framing even when svg is already normalized", () => {
+    const svg =
+      '<svg width="3200" height="900" viewBox="0 0 3200 900" data-excal-mindmap-thumb-normalized="1">' +
+      '<g class="smm-container" transform="matrix(1,0,0,1,0,0)">' +
+      '<g class="smm-node" transform="matrix(1,0,0,1,600,420)">' +
+      '<rect width="154" height="45"></rect>' +
+      "</g>" +
+      '<g class="smm-node" transform="matrix(1,0,0,1,1700,420)">' +
+      '<rect width="120" height="38"></rect>' +
+      "</g>" +
+      "</g></svg>";
+
+    expect(getViewBoxNumbers(patchThumbnailSvgForCard(svg))).toEqual(
+      getViewBoxNumbers(normalizeMindMapThumbnailSvg(svg)),
+    );
+    expect(getViewBoxNumbers(patchThumbnailSvgForCard(svg))[2]).toBeLessThan(
+      3200,
+    );
+  });
+
   it("does not log MindMap thumbnail geometry from stale browser flags in production", () => {
     vi.stubEnv("PROD", true);
     vi.stubEnv("DEV", false);

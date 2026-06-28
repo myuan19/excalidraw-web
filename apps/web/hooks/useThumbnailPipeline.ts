@@ -3,8 +3,13 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 
 import { createLogger } from "../lib/logger";
 import { devDebug } from "../lib/devDebug";
-import { traceThumb } from "../lib/interactionDebugTrace";
 import { traceResourceOp } from "../lib/resourceTrace";
+import {
+  nextThumbPipelineTick,
+  traceThumbFetchEnd,
+  traceThumbFetchStart,
+  traceThumbPipelineTick,
+} from "../lib/thumbPipelineTrace";
 import { fetchThumbnailSvgForCard } from "../data/fetchThumbnailSvgForCard";
 import { patchFileListTreeCacheThumbnailMissing } from "../data/fileListSessionCache";
 import { buildServerThumbnailRequestPath } from "../data/serverThumbnailUrl";
@@ -21,7 +26,6 @@ import { shouldAwaitSessionThumbnailBeforeServerFetch } from "../data/resolveFil
 import type { ServerFile } from "../data/ServerSync";
 
 const logPipe = createLogger({ module: "thumbPipeline" });
-const logThumb = createLogger({ module: "thumbnail" });
 
 function debugThumbnailPipeline(
   label: string,
@@ -74,6 +78,7 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
   }, []);
 
   useEffect(() => {
+    const tick = nextThumbPipelineTick();
     const skipped = {
       notInAllowSet: 0,
       localDraftThumb: 0,
@@ -218,33 +223,25 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
         cacheKey,
         url: buildServerThumbnailRequestPath(f.id, f),
       });
-      traceThumb("pipeline.queueFetch", {
-        fileId8: f.id.slice(0, 8),
-        contentSha8: contentSha?.slice(0, 8) ?? null,
-        syncState,
-      });
     }
 
-    logPipe.debug("thumb effect tick", {
+    traceThumbPipelineTick({
+      tick,
       scopeN: thumbLoadScopeFiles.length,
       allowN: thumbFetchAllowIds.size,
-      skipped,
+      fetchedN: Object.keys(fetchedThumbSvgByIdRef.current).length,
+      inFlightN: thumbFetchingRef.current.size,
       toFetchN: toFetch.length,
-      toFetchIds: toFetch.map((t) => t.id.slice(0, 8)),
+      toFetchIds8: toFetch.map((t) => t.id.slice(0, 8)),
+      skipped,
     });
     traceResourceOp("thumbnail", "effectTick", "ok", {
       scopeN: thumbLoadScopeFiles.length,
       allowN: thumbFetchAllowIds.size,
       toFetchN: toFetch.length,
     });
-    traceThumb("pipeline.tick", {
-      scopeN: thumbLoadScopeFiles.length,
-      allowN: thumbFetchAllowIds.size,
-      toFetchN: toFetch.length,
-      toFetchIds8: toFetch.map((t) => t.id.slice(0, 8)),
-      skipped,
-    });
     debugThumbnailPipeline("effect tick", {
+      tick,
       scopeN: thumbLoadScopeFiles.length,
       allowN: thumbFetchAllowIds.size,
       skipped,
@@ -253,36 +250,70 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
     });
 
     for (const item of toFetch) {
+      const alreadyInflight = thumbFetchingRef.current.has(item.id);
       thumbFetchingRef.current.add(item.id);
       const id8 = item.id.slice(0, 8);
+      traceThumbFetchStart({
+        fileId: item.id,
+        tick,
+        cacheKey: item.cacheKey,
+        contentSha8: item.contentSha?.slice(0, 8) ?? null,
+        alreadyInflight,
+      });
+      const fetchStartedAt = performance.now();
       void fetchThumbnailSvgForCard(item.url, { id8 })
         .then(({ svg, status, errPreview }) => {
+          const ms = performance.now() - fetchStartedAt;
           if (!mountedRef.current) {
-            logPipe.debug("GET thumb ignored (FileList unmounted)", {
-              id8,
+            traceThumbFetchEnd({
+              fileId: item.id,
+              tick,
+              outcome: "unmounted",
+              ms,
+              status,
             });
             return;
           }
           if (fileThumbHashByIdRef.current[item.id] !== item.cacheKey) {
-            logPipe.debug("GET thumb ignored (stale content hash)", {
+            const currentHash = fileThumbHashByIdRef.current[item.id];
+            const contentStillMatches =
+              item.contentSha &&
+              currentHash === item.contentSha &&
+              item.cacheKey === item.contentSha;
+            if (!contentStillMatches) {
+              traceThumbFetchEnd({
+                fileId: item.id,
+                tick,
+                outcome: "stale",
+                ms,
+                status,
+                detail: {
+                  fetchedHash: item.cacheKey,
+                  currentHash,
+                },
+              });
+              logPipe.warn("GET thumb ignored (stale content hash)", {
+                id8,
+                fetchedHash: item.cacheKey,
+                currentHash,
+                contentSha8: item.contentSha?.slice(0, 8) ?? null,
+              });
+              return;
+            }
+            logPipe.info("GET thumb apply despite hash drift (same content)", {
               id8,
               fetchedHash: item.cacheKey,
-              currentHash: fileThumbHashByIdRef.current[item.id],
+              currentHash,
             });
-            return;
           }
           if (!svg) {
-            debugThumbnailPipeline("GET thumb empty/failed", {
-              id: item.id,
-              id8,
+            traceThumbFetchEnd({
+              fileId: item.id,
+              tick,
+              outcome: status >= 400 ? "fail" : "empty",
+              ms,
               status,
-              errPreview,
-            });
-            logThumb.debug("GET /thumbnail failed or empty SVG", {
-              id8,
-              status,
-              errPreview,
-              url: item.url.slice(0, 160),
+              detail: { errPreview: errPreview?.slice(0, 120) },
             });
             if (
               status === 404 &&
@@ -293,25 +324,26 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
             }
             return;
           }
-          logPipe.debug("setFetchedThumbs apply", {
-            id8,
-            svgLen: svg.length,
-          });
-          debugThumbnailPipeline("GET thumb OK", {
-            id: item.id,
-            id8,
-            svgLen: svg.length,
-            contentSha: item.contentSha,
-          });
           fetchedThumbHashByIdRef.current[item.id] = item.cacheKey;
           setFetchedThumbs((prev) => ({ ...prev, [item.id]: svg }));
+          traceThumbFetchEnd({
+            fileId: item.id,
+            tick,
+            outcome: "apply",
+            ms,
+            status,
+            svgLen: svg.length,
+          });
         })
         .catch((err: unknown) => {
-          debugThumbnailPipeline("GET thumb threw", {
-            id: item.id,
-            id8,
-            error: err instanceof Error ? err.message : String(err),
-            stack: err instanceof Error ? err.stack : undefined,
+          traceThumbFetchEnd({
+            fileId: item.id,
+            tick,
+            outcome: "error",
+            ms: performance.now() - fetchStartedAt,
+            detail: {
+              error: err instanceof Error ? err.message : String(err),
+            },
           });
           logPipe.debug("GET thumb promise threw", { id8, err: String(err) });
         })

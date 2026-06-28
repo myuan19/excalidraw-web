@@ -26,8 +26,7 @@ import {
 } from "./documentSessionVersion";
 import {
   applyServerFileSessionVersion,
-  reconcileSessionVersionFromHashList,
-  supplementSessionVersionIfMissing,
+  ensureSessionVersionAfterCacheOpen,
   updateLocalCacheServerVersionMeta,
 } from "./documentSessionVersionSync";
 import { logDocumentVersion } from "./documentVersionLog";
@@ -149,7 +148,11 @@ export class ServerSyncError extends Error {
 }
 
 export function isServerSyncVersionConflictError(error: unknown): boolean {
-  return error instanceof ServerSyncError && error.status === 409;
+  if (!(error instanceof ServerSyncError) || error.status !== 409) {
+    return false;
+  }
+  const body = getServerSyncErrorJson(error) as { error?: unknown } | null;
+  return body?.error === "version_conflict";
 }
 
 export function isServerSyncNotFoundError(error: unknown): boolean {
@@ -526,6 +529,13 @@ export interface PutFileResult {
   };
 }
 
+export interface PutFileThumbnailResult {
+  ok?: boolean;
+  updated_at?: string;
+  content_sha256?: string;
+  version?: number;
+}
+
 export interface ServerFileHash {
   id: string;
   content_sha256: string | null;
@@ -832,8 +842,12 @@ export const ServerSync = {
         )
       ) {
         logSync.debug(`getFile 304 cache hit`, { id: id.slice(0, 8) });
-        const reconciled = await reconcileSessionVersionFromHashList(id, {
+        await ensureSessionVersionAfterCacheOpen(id, {
           listFileHashes: () => ServerSync.listFileHashes(),
+          cacheVersion:
+            cached.version ??
+            FileSyncState.getLocalCache(id)?.meta?.serverVersion ??
+            null,
           hasUnsavedChanges: FileSyncState.hasUnsavedChanges(id),
           cachedServerSha:
             cached.content_sha256 ??
@@ -842,13 +856,6 @@ export const ServerSync = {
             null,
           reason: "getFile-304",
         });
-        if (!reconciled && typeof cached.version === "number") {
-          applyServerFileSessionVersion(
-            id,
-            cached.version,
-            "getFile-304-cache-fallback",
-          );
-        }
         cached.version =
           getDocumentSessionVersion(id) ??
           FileSyncState.getLocalCache(id)?.meta?.serverVersion ??
@@ -919,8 +926,10 @@ export const ServerSync = {
       const expectedVersionBeforePreflight =
         opts?.expectedVersion ?? getDocumentSessionVersion(id) ?? null;
       if (expectedVersionBeforePreflight === null) {
-        await supplementSessionVersionIfMissing(id, {
+        await ensureSessionVersionAfterCacheOpen(id, {
           listFileHashes: () => ServerSync.listFileHashes(),
+          cacheVersion:
+            FileSyncState.getLocalCache(id)?.meta?.serverVersion ?? null,
           hasUnsavedChanges: FileSyncState.hasUnsavedChanges(id),
           cachedServerSha:
             FileSyncState.getServerHash(id) ??
@@ -1030,6 +1039,51 @@ export const ServerSync = {
       if (!opts?.suppressSavedEvent) {
         dispatchServerSavedEvents(id, data, result);
       }
+      return result;
+    });
+  },
+
+  async saveFileThumbnail(
+    id: string,
+    thumbnail: string,
+    opts: {
+      contentSha256: string;
+      source?: string;
+    },
+  ): Promise<PutFileThumbnailResult> {
+    return withFileSaveLock(id, opts.source ?? "thumbnail", async () => {
+      logSave.info("saveFileThumbnail start", {
+        clientTabId: getClientTabId(),
+        id8: id.slice(0, 8),
+        source: opts.source ?? "thumbnail",
+        contentHash8: opts.contentSha256.slice(0, 8),
+        thumbLen: thumbnail.length,
+      });
+      const result = await api<PutFileThumbnailResult>(
+        `/files/${id}/thumbnail`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            thumbnail,
+            contentSha256: opts.contentSha256,
+            clientDebug: {
+              tabId: getClientTabId(),
+              source: opts.source ?? "thumbnail",
+              contentHash: opts.contentSha256,
+              sessionVersion: getDocumentSessionVersion(id) ?? null,
+              clientTime: new Date().toISOString(),
+            },
+          }),
+        },
+        opts.source ?? "thumbnail",
+      );
+      logSave.info("saveFileThumbnail done", {
+        clientTabId: getClientTabId(),
+        id8: id.slice(0, 8),
+        source: opts.source ?? "thumbnail",
+        contentHash8: result.content_sha256?.slice(0, 8) ?? null,
+        version: result.version ?? null,
+      });
       return result;
     });
   },

@@ -90,8 +90,13 @@ run_app_build() {
       (cd "$WEB_DIR" && run_yarn build:app:docker)
       ;;
     *)
-      log "app vite build"
-      (cd "$WEB_DIR" && run_yarn build:app-only && run_yarn build:version)
+      if [[ "${VITE_APP_DEPLOY_DEBUG:-}" == "true" ]]; then
+        log "app vite build (VITE_APP_DEPLOY_DEBUG=true)"
+        (cd "$WEB_DIR" && cross-env VITE_APP_DEPLOY_DEBUG=true run_yarn build:app-only && run_yarn build:version)
+      else
+        log "app vite build"
+        (cd "$WEB_DIR" && run_yarn build:app-only && run_yarn build:version)
+      fi
       ;;
   esac
   verify_mindmap_in_app_build

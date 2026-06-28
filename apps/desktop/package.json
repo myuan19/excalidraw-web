@@ -9,7 +9,9 @@
     "start": "electron .",
     "start:server": "node src/main.mjs",
     "pack": "electron-builder --dir",
-    "dist": "electron-builder --win nsis portable"
+    "pack:debug": "electron-builder --dir --config electron-builder.debug.cjs",
+    "dist": "electron-builder --win nsis portable",
+    "dist:debug": "electron-builder --win nsis portable --config electron-builder.debug.cjs"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -23,6 +25,7 @@
   "build": {
     "appId": "com.editorhub.desktop",
     "productName": "EditorHub",
+    "icon": "build/icon.png",
     "directories": {
       "output": "../../dist/desktop"
     },
@@ -31,6 +34,7 @@
       "electron/**",
       "src/**",
       "adapters/**",
+      "build/**",
       ".runtime/**",
       "package.json"
     ],
@@ -38,6 +42,14 @@
       {
         "from": "../../apps/web/build",
         "to": "apps/web/build"
+      },
+      {
+        "from": "build/icon.png",
+        "to": "icons/drawing-space.png"
+      },
+      {
+        "from": "build/icon.svg",
+        "to": "icons/drawing-space.svg"
       }
     ],
     "win": {
@@ -45,11 +57,35 @@
         "nsis",
         "portable"
       ],
-      "signAndEditExecutable": false
+      "signExecutable": false
     },
+    "fileAssociations": [
+      {
+        "ext": "excalidraw",
+        "name": "Excalidraw Drawing",
+        "description": "EditorHub Excalidraw document",
+        "role": "Editor",
+        "mimeType": "application/vnd.excalidraw+json"
+      },
+      {
+        "ext": "smm",
+        "name": "Simple Mind Map",
+        "description": "EditorHub mind map document",
+        "role": "Editor",
+        "mimeType": "application/vnd.simple-mind-map+json"
+      },
+      {
+        "ext": "excalidrawlib",
+        "name": "Excalidraw Library",
+        "description": "EditorHub Excalidraw library",
+        "role": "Editor",
+        "mimeType": "application/vnd.excalidrawlib+json"
+      }
+    ],
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
     }
   }
 }

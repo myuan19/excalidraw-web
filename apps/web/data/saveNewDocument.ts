@@ -59,7 +59,7 @@ export async function saveNewDocument(opts: {
   mindMapThumbnail?: string | null;
   /** Native save dialog chose an existing catalog file; save into it instead of unique-renaming. */
   overwriteFile?: ServerFile | null;
-}): Promise<{ id: string; kind: string }> {
+}): Promise<{ id: string; kind: string; name: string }> {
   const finalName = opts.name.trim() || DEFAULT_DOCUMENT_DISPLAY_NAME;
   const kind = opts.kind;
   const draftId = opts.draftId ?? null;
@@ -72,6 +72,9 @@ export async function saveNewDocument(opts: {
       draftId8: draftId?.slice(0, 12) ?? null,
       hasMindMap: !!opts.mindMapDocument,
       hasExcalidraw: !!opts.excalidrawScene,
+      folderId: opts.folderId,
+      overwriteFileId8: opts.overwriteFile?.id?.slice(0, 8) ?? null,
+      overwriteFileName: opts.overwriteFile?.name ?? null,
     },
     "start",
   );
@@ -85,6 +88,20 @@ export async function saveNewDocument(opts: {
       opts.overwriteFile ??
       (await ServerSync.createFile(finalName, opts.folderId, kind));
     const fileName = created.name || finalName;
+    traceUserAction(
+      "file-list",
+      "saveNewDocument.createTarget",
+      {
+        id8: created.id.slice(0, 8),
+        kind,
+        requestedName: finalName,
+        actualName: fileName,
+        folderId: created.folder_id ?? opts.folderId,
+        overwrite: !!opts.overwriteFile,
+        version: created.version ?? null,
+      },
+      "ok",
+    );
     const initialExpectedVersion =
       typeof created.version === "number" ? created.version : null;
 
@@ -247,14 +264,19 @@ export async function saveNewDocument(opts: {
       {
         id8: created.id.slice(0, 8),
         kind,
+        requestedName: finalName,
+        actualName: fileName,
       },
       "ok",
     );
-    return { id: created.id, kind };
+    return { id: created.id, kind, name: fileName };
   } catch (error) {
     traceUserError("file-list", "saveNewDocument", error, {
       kind,
       name: finalName,
+      folderId: opts.folderId,
+      draftId8: draftId?.slice(0, 12) ?? null,
+      overwriteFileId8: opts.overwriteFile?.id?.slice(0, 8) ?? null,
     });
     throw error;
   }

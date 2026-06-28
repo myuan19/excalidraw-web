@@ -1,22 +1,23 @@
 import { Router } from "express";
 
-import {
-  buildAIProxyChatRequest,
-  buildAIProxyVisionRequest,
-  jsonProxyResponse,
-  streamProxyResponse,
-} from "../../../server/lib/aiProxy.js";
-
 import { readDesktopAiConfig } from "./desktopAiConfigStore.js";
+import { loadRuntimeServerModule } from "./runtimeServerLib.mjs";
 
 /** Desktop AI proxy — reads JSON ai-settings, no SQLite. */
-export function createDesktopAiProxyRouter() {
+export async function createDesktopAiProxyRouter() {
+  const {
+    buildAIProxyChatRequest,
+    buildAIProxyVisionRequest,
+    jsonProxyResponse,
+    streamProxyResponse,
+  } = await loadRuntimeServerModule("lib/aiProxy.js");
+
   const router = Router();
 
   router.post("/chat", async (req, res) => {
     try {
       const proxyRequest = buildAIProxyChatRequest(
-        readDesktopAiConfig(),
+        await readDesktopAiConfig(),
         req.body,
       );
       return streamProxyResponse(proxyRequest, req, res);
@@ -34,7 +35,7 @@ export function createDesktopAiProxyRouter() {
   router.post("/vision", async (req, res) => {
     try {
       const proxyRequest = buildAIProxyVisionRequest(
-        readDesktopAiConfig(),
+        await readDesktopAiConfig(),
         req.body,
       );
       return jsonProxyResponse(proxyRequest, req, res);

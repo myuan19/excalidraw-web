@@ -29,7 +29,7 @@ describe("MindMapEditorShell hydrate source contract", () => {
 
     expect(source).toContain("rearmDeferredAutoSave");
     expect(source).toContain("clearDeferredAutoSave");
-    expect(source).toContain('return "deferred"');
+    expect(source).toContain("flushDeferredMindMapAutoSave(\"adopt-baseline\")");
   });
 
   it("handles native config persistence without clearing pending dirty state", () => {
@@ -52,6 +52,21 @@ describe("MindMapEditorShell hydrate source contract", () => {
     expect(source).toContain("cacheDraftThumbnailIfVisible");
     expect(source).not.toContain("LocalThumbnailCache.set(fileId, resolvedThumbnail)");
     expect(source).not.toContain("LocalThumbnailCache.set(fileId, decodedThumb)");
+  });
+
+  it("queues idle auto-save when native reports dirty state in foreground", () => {
+    const source = fs.readFileSync(
+      path.join(__dirname, "MindMapEditorShell.tsx"),
+      "utf8",
+    );
+    const dirtyStateBlock = source.slice(
+      source.indexOf('event.data.type === "mindMapDirtyState"'),
+      source.indexOf('event.data.type === "saveMindMapThumbnail"'),
+    );
+
+    expect(dirtyStateBlock).toContain("markNativeDocumentDirty()");
+    expect(dirtyStateBlock).toContain("queueAutoSave(pendingData)");
+    expect(dirtyStateBlock).not.toContain("!isPaneForeground");
   });
 
   it("keeps expand/collapse dirty state through hydrate draft pushes", () => {

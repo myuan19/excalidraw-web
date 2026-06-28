@@ -14,6 +14,8 @@ export type FileEditorTab = {
   kind: string;
   title: string;
   lastActiveAt: string;
+  /** Stable pane-stack order; independent of title-bar tab strip order. */
+  stackOrder: number;
 };
 
 export type EditorTabRecord = HomeEditorTab | FileEditorTab;
@@ -52,10 +54,25 @@ export function createInitialEditorTabsState(): EditorTabsState {
   };
 }
 
-function normalizeFileTab(tab: EditorTabRecord): FileEditorTab | null {
+function maxFileTabStackOrder(tabs: EditorTabRecord[]): number {
+  let max = 0;
+  for (const tab of tabs) {
+    if (tab.type === "file" && typeof tab.stackOrder === "number") {
+      max = Math.max(max, tab.stackOrder);
+    }
+  }
+  return max;
+}
+
+function normalizeFileTab(
+  tab: EditorTabRecord,
+  fallbackStackOrder: number,
+): FileEditorTab | null {
   if (tab.type !== "file" || !tab.fileId) {
     return null;
   }
+  const stackOrder =
+    typeof tab.stackOrder === "number" ? tab.stackOrder : fallbackStackOrder;
   return {
     id: fileTabId(tab.fileId),
     type: "file",
@@ -63,6 +80,7 @@ function normalizeFileTab(tab: EditorTabRecord): FileEditorTab | null {
     kind: editorRegistry.resolveKind(tab.kind),
     title: tab.title || UNTITLED_TAB_TITLE,
     lastActiveAt: tab.lastActiveAt || nowIso(),
+    stackOrder,
   };
 }
 
@@ -71,14 +89,16 @@ export function normalizeEditorTabsState(
 ): EditorTabsState {
   const seen = new Set<string>([HOME_TAB_ID]);
   const tabs: EditorTabRecord[] = [createHomeTab()];
+  let nextStackFallback = 1;
 
   for (const tab of state?.tabs ?? []) {
-    const fileTab = normalizeFileTab(tab);
+    const fileTab = normalizeFileTab(tab, nextStackFallback);
     if (!fileTab || seen.has(fileTab.id)) {
       continue;
     }
     seen.add(fileTab.id);
     tabs.push(fileTab);
+    nextStackFallback = Math.max(nextStackFallback, fileTab.stackOrder + 1);
   }
 
   const activeTabId =
@@ -97,6 +117,7 @@ export function openFileTab(
   const id = fileTabId(file.fileId);
   const activeAt = nowIso();
   const existing = normalized.tabs.find((tab) => tab.id === id);
+  const nextStackOrder = maxFileTabStackOrder(normalized.tabs) + 1;
 
   if (existing?.type === "file") {
     const nextTitle =
@@ -129,6 +150,7 @@ export function openFileTab(
         kind: file.kind,
         title: file.title || UNTITLED_TAB_TITLE,
         lastActiveAt: activeAt,
+        stackOrder: nextStackOrder,
       },
     ],
   };
@@ -200,6 +222,8 @@ export function replaceFileTab(
           kind: opts.kind,
           title: opts.title || UNTITLED_TAB_TITLE,
           lastActiveAt: nowIso(),
+          stackOrder:
+            tab.type === "file" ? tab.stackOrder : maxFileTabStackOrder(normalized.tabs) + 1,
         }
       : tab,
   );
@@ -226,6 +250,19 @@ export function updateFileTabTitle(
       tab.id === id && tab.type === "file" ? { ...tab, title } : tab,
     ),
   };
+}
+
+/**
+ * File tabs for the cached editor pane stack. Order is stable (by tab id) and
+ * intentionally independent of title-bar tab strip order — reordering tabs in
+ * the strip must not reorder iframe-backed panes in the DOM.
+ */
+export function listFileEditorTabsForPaneStack(
+  state: EditorTabsState,
+): FileEditorTab[] {
+  return normalizeEditorTabsState(state).tabs
+    .filter((tab): tab is FileEditorTab => tab.type === "file")
+    .sort((a, b) => a.stackOrder - b.stackOrder || a.id.localeCompare(b.id));
 }
 
 export function reorderFileTab(
