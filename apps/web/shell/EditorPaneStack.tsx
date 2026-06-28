@@ -73,6 +73,8 @@ function EditorPaneStackItem({
     return null;
   }
 
+  const shouldMountEditor = isForeground || keepRunning;
+
   return (
     <EditorPaneErrorBoundary
       tabId={tab.id}
@@ -104,10 +106,18 @@ function EditorPaneStackItem({
             />
           }
         >
-          <LazyEditor
-            pinnedFileId={tab.fileId}
-            isPaneForeground={isForeground}
-          />
+          {shouldMountEditor ? (
+            <LazyEditor
+              pinnedFileId={tab.fileId}
+              isPaneForeground={isForeground}
+            />
+          ) : (
+            <EditorShellChunkFallback
+              editorKind={tab.kind}
+              tabId={tab.id}
+              fileId8={id8(tab.fileId)}
+            />
+          )}
         </Suspense>
       </div>
     </EditorPaneErrorBoundary>

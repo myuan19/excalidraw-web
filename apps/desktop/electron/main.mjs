@@ -211,6 +211,7 @@ function resolveDesktopWindowIconPath() {
   const candidates = [
     path.join(__dirname, "../build/icon.png"),
     path.join(__dirname, "../build/icon.svg"),
+    path.join(projectRoot, "public/icons/drawing-space.png"),
     path.join(projectRoot, "public/icons/drawing-space.svg"),
     path.join(projectRoot, "public/favicon.svg"),
   ];

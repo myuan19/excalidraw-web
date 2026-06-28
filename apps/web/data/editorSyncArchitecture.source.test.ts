@@ -16,16 +16,16 @@ describe("editor sync architecture source contract", () => {
     const versionSync = read("data/documentSessionVersionSync.ts");
     const loadFile = read("data/loadEditorServerFile.ts");
     const serverSync = read("data/ServerSync.ts");
-    const excalidrawInit = read("editors/excalidraw/initializeExcalidrawScene.ts");
+    const excalidrawVerify = read("editors/excalidraw/verifyExcalidrawCachedOpen.ts");
 
     expect(loadFile).toContain("ensureSessionVersionAfterCacheOpen");
     expect(serverSync).toContain("ensureSessionVersionAfterCacheOpen");
-    expect(excalidrawInit).toContain("ensureSessionVersionAfterCacheOpen");
+    expect(excalidrawVerify).toContain("ensureSessionVersionAfterCacheOpen");
 
     expect(serverSync).not.toContain("reconcileSessionVersionFromHashList");
     expect(serverSync).not.toContain("supplementSessionVersionIfMissing");
     expect(loadFile).not.toContain("supplementSessionVersionIfMissing");
-    expect(excalidrawInit).not.toContain("supplementSessionVersionIfMissing");
+    expect(excalidrawVerify).not.toContain("supplementSessionVersionIfMissing");
     expect(versionSync).toContain("applySessionVersionFromHashEntry");
   });
 

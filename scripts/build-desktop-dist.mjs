@@ -16,6 +16,9 @@ const debug = process.argv.includes("--debug");
 if (debug) {
   process.env.EDITORHUB_DESKTOP_DEBUG_PACK = "1";
   process.env.VITE_APP_DEPLOY_DEBUG = "true";
+} else {
+  delete process.env.EDITORHUB_DESKTOP_DEBUG_PACK;
+  delete process.env.VITE_APP_DEPLOY_DEBUG;
 }
 
 function run(label, command, args, options = {}) {

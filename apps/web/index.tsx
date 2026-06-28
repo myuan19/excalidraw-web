@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 
 import ExcalidrawApp from "./App";
+import "./editors/eagerEditorChunkStyles";
 import { initGlobalErrorCapture } from "./lib/logger";
 import { installUserTraceGlobals } from "./lib/userTrace";
 import { bootResourceTrace } from "./lib/resourceTrace";

@@ -21,7 +21,8 @@ import type { ServerFileHash } from "./ServerSync";
  * - `loadEditorServerFile` local-cache recovery
  * - `ServerSync.getFile` 304 cache hit
  * - `ServerSync.saveFileImmediate` preflight
- * - `initializeExcalidrawScene.verifyExcalidrawRemoteAfterCachedOpen`
+ * - `loadEditorServerFile` local-cache recovery
+ * - `verifyExcalidrawRemoteAfterCachedOpen`
  *
  * Flow: reconcile from hash-list → cache-meta fallback → supplement if still empty.
  *

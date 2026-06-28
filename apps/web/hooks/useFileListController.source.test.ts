@@ -93,8 +93,8 @@ describe("useFileListController source contracts", () => {
     expect(source).toContain("handleSceneFiles");
     expect(source).toContain("resolveSceneFilesIntent");
     expect(source).toContain("generateRecentPathThumbnails");
-    expect(source).toContain("FileListVirtualGrid");
-    expect(source).toContain("FILE_LIST_VIRTUAL_THRESHOLD");
+    expect(source).not.toContain("FileListVirtualGrid");
+    expect(source).toContain("computeFileListGridListedCellCount");
     expect(source).toContain("fileListScrollPerf");
     expect(source).toContain("thumbSwitchLoading");
     expect(source).toContain("thumbBlank");

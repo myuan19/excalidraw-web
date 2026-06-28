@@ -1,7 +1,7 @@
 /**
  * Per-file browser snapshot in localStorage — mirrors upstream app's
  * strategy of saving non-deleted elements + clearAppStateForLocalStorage(appState)
- * together (see LocalData.saveDataStateToLocalStorage in github/excalidraw).
+ * together (upstream Excalidraw local persistence).
  *
  * Fork uses one JSON blob per fileId so updates stay atomic and multi-file tabs
  * do not collide with global LOCAL_STORAGE_* keys.

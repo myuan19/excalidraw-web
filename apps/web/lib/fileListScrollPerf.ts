@@ -8,6 +8,7 @@
  */
 
 import { isResourceTraceEnabled } from "./resourceTrace";
+import { FILE_LIST_LARGE_DOM_THRESHOLD } from "./fileListGridLayout";
 
 const FPS_SAMPLE_MS = 250;
 const LONG_TASK_MS = 50;
@@ -77,11 +78,11 @@ function finishScrollSession(): void {
   stats.avgFps = Math.round((prevTotal + fps) / stats.scrollSessions);
 
   const hints: string[] = [];
-  if (!activeSession.virtualized && activeSession.listedFiles >= 36) {
-    hints.push("大列表未虚拟化：DOM 节点数≈文件数，滚动会随列表增大线性变慢");
+  if (activeSession.listedFiles >= FILE_LIST_LARGE_DOM_THRESHOLD) {
+    hints.push("大列表 DOM 节点数≈文件数，滚动会随列表增大线性变慢");
   }
   if (activeSession.domCards > 80) {
-    hints.push("可见 DOM 卡片过多：检查虚拟滚动是否生效");
+    hints.push("DOM 卡片过多：检查列表渲染开销");
   }
   if (fps < 45) {
     hints.push("滚动帧率偏低：优先减少滚动期重渲染（缩略图批量更新、动画）");

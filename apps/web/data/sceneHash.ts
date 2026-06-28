@@ -5,7 +5,7 @@ import type { ForkSceneSnapshot } from "./forkFileTypes";
  *
  * Every "is this modified?" decision funnels through {@link hashSceneSnapshot} /
  * {@link hashDocumentSnapshot}: the live editor (`EditorShell.handleChange`), the
- * load/baseline paths (`initializeExcalidrawScene`, `loadEditorServerFile`),
+ * load/baseline paths (`loadEditorServerFile`, `EditorShell.handleChange`),
  * saves, remote/cross-tab apply, the draft cache and the thumbnail pipeline all
  * establish or compare baselines via these fingerprints. Those producers hand us
  * RAW scenes — the baseline paths in particular hash the server/cache payload

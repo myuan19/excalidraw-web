@@ -61,7 +61,6 @@ import {
 } from "../data/localThumbnailCache";
 import { detectImportCandidateKinds } from "../data/detectImportCandidates";
 import { FileCardThumb } from "../components/FileCardThumb";
-import { FileListVirtualGrid } from "../components/FileListVirtualGrid";
 import { EditorKindDialog, NewFileDialog } from "../components/NewFileDialog";
 import { SaveNewDocumentDialog } from "../components/PromoteTempFileDialog";
 import type { DiskFolderPickResult } from "../components/saveDialogUtils";
@@ -95,7 +94,9 @@ import {
   resolveDefaultDataDirectoryPath,
 } from "../data/mappedFolderClient";
 import { readDroppedFileAbsPaths } from "../lib/droppedFilePath";
-import { FILE_LIST_VIRTUAL_THRESHOLD } from "../lib/fileListGridLayout";
+import {
+  computeFileListGridListedCellCount,
+} from "../lib/fileListGridLayout";
 import {
   attachFileListScrollElement,
   recordFileListScrollContext,
@@ -941,7 +942,6 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const topbarRef = useRef<HTMLElement | null>(null);
   const mainRef = useRef<HTMLDivElement | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
-  const visibleDomCardCountRef = useRef(0);
   const topbarHeightRef = useRef<number | null>(null);
   const pendingLayoutDebugRef = useRef<{
     label: string;
@@ -2076,6 +2076,21 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     syncVersion,
   ]);
 
+  const showNewEntryCard = useMemo(
+    () =>
+      !searchQuery.trim() &&
+      (sidebarView === "recent" ||
+        isLocalDirectoryRoot ||
+        isSelectedFolderId(currentFolderId, foldersById)),
+    [
+      currentFolderId,
+      foldersById,
+      isLocalDirectoryRoot,
+      searchQuery,
+      sidebarView,
+    ],
+  );
+
   const fileListSortPosRef = useRef<Map<string, number>>(new Map());
   useEffect(() => {
     if (!isDebugRuntimeEnabled() || sortKey === "name") {
@@ -2852,13 +2867,18 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   useEffect(() => {
     recordFileListScrollContext({
       listedFileCount: filteredFiles.length,
-      domCardCount:
-        visibleDomCardCountRef.current > 0
-          ? visibleDomCardCountRef.current
-          : filteredFiles.length,
-      virtualized: filteredFiles.length >= FILE_LIST_VIRTUAL_THRESHOLD,
+      domCardCount: computeFileListGridListedCellCount(
+        filteredFiles.length,
+        showNewEntryCard,
+      ),
+      virtualized: false,
     });
-  }, [filteredFiles.length, fetchedThumbs, visibleThumbIds.size]);
+  }, [
+    filteredFiles.length,
+    fetchedThumbs,
+    showNewEntryCard,
+    visibleThumbIds.size,
+  ]);
 
   useEffect(() => {
     setVisibleThumbIds(new Set());
@@ -3445,15 +3465,6 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     },
     [currentFolderId, openTrackedCatalogFile, sidebarView, touchRecentTrackedFiles],
   );
-
-  const onVirtualGridDomCountChange = useCallback((count: number) => {
-    visibleDomCardCountRef.current = count;
-    recordFileListScrollContext({
-      listedFileCount: filteredFiles.length,
-      domCardCount: count,
-      virtualized: true,
-    });
-  }, [filteredFiles.length]);
 
   const handleSceneAbsPaths = useCallback(
     async (absPaths: string[], opts?: { intent?: SceneFilesIntent }) => {
@@ -5522,11 +5533,6 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     );
   };
 
-  const showNewEntryCard =
-    !searchQuery.trim() &&
-    (sidebarView === "recent" ||
-      isLocalDirectoryRoot ||
-      isSelectedFolderId(currentFolderId, foldersById));
   const showLocalDirectoryHub = false;
   const empty =
     !loading &&
@@ -5542,25 +5548,6 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     ]
       .filter(Boolean)
       .join(" ");
-    const useVirtualizedGrid =
-      filteredFiles.length >= FILE_LIST_VIRTUAL_THRESHOLD;
-
-    if (useVirtualizedGrid) {
-      return (
-        <FileListVirtualGrid
-          scrollRef={mainRef}
-          gridRef={gridRef}
-          files={filteredFiles}
-          listKey={gridListKey}
-          gridClassName={gridClassName}
-          leadingSlot={showNewEntryCard ? renderNewEntryCard(0) : null}
-          renderFile={(file, index) =>
-            renderFileCard(file, showNewEntryCard ? index + 1 : index)
-          }
-          onVisibleDomCountChange={onVirtualGridDomCountChange}
-        />
-      );
-    }
 
     return (
       <div className={gridClassName} ref={gridRef} key={gridListKey}>

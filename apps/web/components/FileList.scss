@@ -1409,31 +1409,6 @@
       animation: none;
     }
   }
-
-  &[data-virtualized="true"] {
-    display: block;
-    padding-top: var(--nb-space-9);
-    padding-bottom: var(--nb-space-16);
-  }
-}
-
-.filelist__virtual-leading {
-  display: grid;
-  grid-template-columns: repeat(
-    auto-fill,
-    minmax(var(--nb-filelist-grid-min), 1fr)
-  );
-  gap: var(--nb-space-8);
-  padding: 0 var(--nb-space-12) var(--nb-space-8);
-}
-
-.filelist__virtual-spacer {
-  position: relative;
-  width: 100%;
-}
-
-.filelist__virtual-row {
-  will-change: transform;
 }
 
 .filelist__body--scrolling {
@@ -1445,14 +1420,6 @@
       transform: none;
       box-shadow: var(--fl-shadow-card);
     }
-  }
-}
-
-.filelist__grid:not([data-virtualized="true"]) {
-  .filelist__card,
-  .filelist__folder-card {
-    content-visibility: auto;
-    contain-intrinsic-size: auto 17.5rem;
   }
 }
 

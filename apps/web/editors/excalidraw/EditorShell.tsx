@@ -135,7 +135,14 @@ import "../../components/ExcalToolbar.scss";
 import { SaveNewDocumentDialog } from "../../components/PromoteTempFileDialog";
 
 import { applyRemoteExcalidrawScene } from "./applyRemoteExcalidrawScene";
+import {
+  flushExcalidrawBrowserSceneSave,
+  resolveExcalidrawBrowserViewportOverlay,
+  scheduleExcalidrawBrowserSceneSave,
+} from "./excalidrawBrowserViewport";
 import { useForkFileSave } from "./useForkFileSave";
+import { verifyExcalidrawRemoteAfterCachedOpen } from "./verifyExcalidrawCachedOpen";
+import { revealForkCanvasAfterFit } from "../../data/scrollEditorToFit";
 
 import type { ActiveEditorSaveSource } from "../../data/activeEditorSaveBridge";
 import type { ExcalidrawThumbnailScene } from "../../data/excalidrawThumbnail";
@@ -237,6 +244,8 @@ export default function ExcalidrawEditorShell(
   /** 本会话内已建立 dirty（避免拖动时每帧读 localStorage / 全量 sync）。保存成功后清零。 */
   const excalidrawDirtySessionRef = useRef(false);
   const pendingRawChangeRef = useRef<RawExcalidrawChange | null>(null);
+  const hasBrowserViewportRef = useRef(false);
+  const pendingCachedOpenVerifyRef = useRef(false);
   const flushPendingExcalidrawDraftRef = useRef<
     (opts?: {
       scheduleThumbnail?: boolean;
@@ -322,6 +331,15 @@ export default function ExcalidrawEditorShell(
           scheduleExcalidrawThumbnailAndCache(fileId, canonicalScene);
         }
       }
+      if (fileId && excalidrawAPIRef.current) {
+        const api = excalidrawAPIRef.current;
+        scheduleExcalidrawBrowserSceneSave(
+          fileId,
+          api.getSceneElementsIncludingDeleted(),
+          api.getAppState(),
+        );
+        flushExcalidrawBrowserSceneSave();
+      }
       if (!fileId || !FileSyncState.hasUnsavedChanges(fileId)) {
         return;
       }
@@ -404,6 +422,7 @@ export default function ExcalidrawEditorShell(
     });
     editorOpenSettledRef.current = false;
     excalidrawDirtySessionRef.current = false;
+    pendingCachedOpenVerifyRef.current = false;
     const preferLocalRecovery = FileSyncState.hasUnsavedChanges(fileId);
     preferLocalRecoveryRef.current = preferLocalRecovery;
     loadEditorServerFile(fileId, { force: !preferLocalRecovery })
@@ -434,6 +453,9 @@ export default function ExcalidrawEditorShell(
           } else {
             editorOpenSettledRef.current = true;
             excalidrawDirtySessionRef.current = true;
+            if (!isLocalDraftFileId(fileId)) {
+              pendingCachedOpenVerifyRef.current = true;
+            }
           }
         }
       })
@@ -467,15 +489,21 @@ export default function ExcalidrawEditorShell(
       file?.name,
       latestDocumentRef.current,
     );
+    const sceneForOverlay = normalizeExcalidrawData(data, file?.name);
+    const overlay = fileId
+      ? resolveExcalidrawBrowserViewportOverlay(fileId, sceneForOverlay)
+      : null;
+    hasBrowserViewportRef.current = !!overlay;
     return {
       elements: restoreSceneElements(data.elements ?? []),
       appState: restoreSceneAppState(data.appState ?? {}, {
         name: file?.name,
+        ...(overlay ?? {}),
       }),
       files: data.files ?? {},
-      scrollToContent: true,
+      ...(overlay ? {} : { scrollToContent: true }),
     };
-  }, [documentData, file?.data, file?.name, shouldMountExcalidrawCanvas]);
+  }, [documentData, file?.data, file?.name, fileId, shouldMountExcalidrawCanvas]);
 
   const reloadFromServer = useCallback(
     async (opts?: {
@@ -1025,6 +1053,15 @@ export default function ExcalidrawEditorShell(
         }
       } finally {
         endExcalidrawPointerDrag();
+        if (fileId && excalidrawAPIRef.current) {
+          const api = excalidrawAPIRef.current;
+          scheduleExcalidrawBrowserSceneSave(
+            fileId,
+            api.getSceneElementsIncludingDeleted(),
+            api.getAppState(),
+          );
+          flushExcalidrawBrowserSceneSave();
+        }
         if (flushed) {
           const notifyStartedAt = performance.now();
           FileSyncState.notifySyncState();
@@ -1291,6 +1328,10 @@ export default function ExcalidrawEditorShell(
 
       pendingRawChangeRef.current = { elements, appState, files };
 
+      if (!isExcalidrawPointerDragActive()) {
+        scheduleExcalidrawBrowserSceneSave(fileId, elements, appState);
+      }
+
       if (isExcalidrawPointerDragActive()) {
         recordExcalidrawDragHostChange(elapsedMs(handleStartedAt));
         return;
@@ -1403,6 +1444,7 @@ export default function ExcalidrawEditorShell(
       if (localDraftTimerRef.current !== null) {
         window.clearTimeout(localDraftTimerRef.current);
       }
+      flushExcalidrawBrowserSceneSave();
       releaseEditorPaneEditPipelineHold(releaseAutoSavePipelineRef);
       releaseEditorPaneEditPipelineHold(releaseSavePipelineRef);
     };
@@ -1489,6 +1531,16 @@ export default function ExcalidrawEditorShell(
             viewModeEnabled={!isPaneForeground}
             onExcalidrawAPI={(api) => {
               excalidrawAPIRef.current = api;
+              if (hasBrowserViewportRef.current) {
+                revealForkCanvasAfterFit(api, () => {}, { skipFit: true });
+              }
+              if (pendingCachedOpenVerifyRef.current && fileId) {
+                pendingCachedOpenVerifyRef.current = false;
+                void verifyExcalidrawRemoteAfterCachedOpen({
+                  fileId,
+                  excalidrawAPI: api,
+                });
+              }
             }}
             onChange={handleChange}
             onPointerDown={() => {

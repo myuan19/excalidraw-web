@@ -218,6 +218,9 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       outDir: "build",
+      /** Avoid lazy-chunk CSS preload on desktop editorhub:// (custom protocol). */
+      modulePreload: false,
+      cssCodeSplit: false,
       /** 大包告警阈值；主包与 mermaid 子包体积大，提高阈值避免误报（仍会通过 manualChunks 拆分） */
       chunkSizeWarningLimit: 1200,
       sourcemap: envVars.VITE_BUILD_SOURCEMAP === "true",
