@@ -39,7 +39,6 @@ import {
   type FileDraftStatus,
 } from "../hooks/useFileDraftStatus";
 import { useAppShellGoHomeListener } from "../hooks/useAppShellGoHomeListener";
-import { useDesktopWindowCloseGuard } from "../hooks/useDesktopWindowCloseGuard";
 import { editorIconForKind, getDocumentKindFromHash } from "../lib/appBranding";
 import { devDebug } from "../lib/devDebug";
 import { createLogger } from "../lib/logger";
@@ -1687,7 +1686,6 @@ export function EditorPlatformSidebar() {
 
 export function EditorPlatformShell({ children }: { children: ReactNode }) {
   useAppShellGoHomeListener();
-  useDesktopWindowCloseGuard();
   const { shellTheme } = useShellTheme();
 
   return (

@@ -12,8 +12,8 @@ describe("useDesktopWindowCloseGuard source contract", () => {
       path.join(__dirname, "useDesktopWindowCloseGuard.ts"),
       "utf8",
     );
-    const sidebarSource = fs.readFileSync(
-      path.join(__dirname, "../components/EditorPlatformSidebar.tsx"),
+    const appSource = fs.readFileSync(
+      path.join(__dirname, "../App.tsx"),
       "utf8",
     );
     const mainSource = fs.readFileSync(
@@ -30,9 +30,11 @@ describe("useDesktopWindowCloseGuard source contract", () => {
     );
 
     expect(hookSource).toContain("prepareDesktopWindowClose");
+    expect(hookSource).toContain("snapshotDesktopWindowCloseSession");
+    expect(hookSource).not.toContain("WINDOW_CLOSE_PREPARE_TIMEOUT_MS");
     expect(hookSource).toContain("onWindowCloseRequested");
     expect(hookSource).toContain("finishWindowClose");
-    expect(sidebarSource).toContain("useDesktopWindowCloseGuard");
+    expect(appSource).toContain("useDesktopWindowCloseGuard");
     expect(mainSource).toContain("desktop:windowCloseRequested");
     expect(mainSource).toContain("desktop:finishWindowClose");
     expect(mainSource).toContain("mainWindowCloseAllowed");

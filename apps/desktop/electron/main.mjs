@@ -225,8 +225,7 @@ let desktopBackend;
 let detachCatalogIpcBridge = () => {};
 let mainWindow;
 let mainWindowCloseAllowed = false;
-let windowCloseReplyTimer = null;
-const WINDOW_CLOSE_REPLY_TIMEOUT_MS = 30_000;
+let windowCloseAwaitingRenderer = false;
 let firstWindowCloseRequestedAt = null;
 let windowCloseRequestCount = 0;
 let diagnosticLogPath;
@@ -254,28 +253,18 @@ function elapsedSince(startedAt) {
   return typeof startedAt === "number" ? Date.now() - startedAt : null;
 }
 
-function clearWindowCloseReplyTimer() {
-  if (windowCloseReplyTimer != null) {
-    clearTimeout(windowCloseReplyTimer);
-    windowCloseReplyTimer = null;
+function forceAllowWindowClose(reason) {
+  windowCloseAwaitingRenderer = false;
+  writeDiagnostic("window-close-force", {
+    reason,
+    requestCount: windowCloseRequestCount,
+    sinceFirstRequestMs: elapsedSince(firstWindowCloseRequestedAt),
+  });
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
   }
-}
-
-function scheduleWindowCloseReplyFallback(reason) {
-  clearWindowCloseReplyTimer();
-  windowCloseReplyTimer = setTimeout(() => {
-    windowCloseReplyTimer = null;
-    writeDiagnostic("window-close-reply-timeout", {
-      reason,
-      requestCount: windowCloseRequestCount,
-      sinceFirstRequestMs: elapsedSince(firstWindowCloseRequestedAt),
-    });
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      return;
-    }
-    mainWindowCloseAllowed = true;
-    mainWindow.close();
-  }, WINDOW_CLOSE_REPLY_TIMEOUT_MS);
+  mainWindowCloseAllowed = true;
+  mainWindow.close();
 }
 
 function showStartupError(message, error) {
@@ -382,31 +371,12 @@ function closeDesktopServer(serverHandle) {
   return closeDispatchLoopbackServer(serverHandle.app);
 }
 
-async function createMainWindow(url) {
-  writeDiagnostic("window-create-start", { url, preloadPath });
-  const windowIcon = loadDesktopWindowIcon();
-  mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 860,
-    minWidth: 960,
-    minHeight: 640,
-    title: "EditorHub",
-    show: false,
-    autoHideMenuBar: true,
-    frame: false,
-    ...(windowIcon ? { icon: windowIcon } : {}),
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      preload: preloadPath,
-      sandbox: false,
-    },
-  });
+const DESKTOP_WINDOW_BACKGROUND = "#121212";
 
-  mainWindow.once("ready-to-show", () => {
-    writeDiagnostic("window-ready-to-show");
-    mainWindow.show();
-  });
+function attachMainWindowHandlers() {
+  if (!mainWindow) {
+    return;
+  }
   mainWindow.on("maximize", () => {
     mainWindow?.webContents.send("desktop:windowMaximized", true);
   });
@@ -438,11 +408,11 @@ async function createMainWindow(url) {
       requestCount: windowCloseRequestCount,
       sinceFirstRequestMs: elapsedSince(firstWindowCloseRequestedAt),
     });
+    windowCloseAwaitingRenderer = true;
     webContents.send("desktop:windowCloseRequested");
-    scheduleWindowCloseReplyFallback("renderer-no-response");
   });
   mainWindow.on("closed", () => {
-    clearWindowCloseReplyTimer();
+    windowCloseAwaitingRenderer = false;
     mainWindowCloseAllowed = false;
     firstWindowCloseRequestedAt = null;
     windowCloseRequestCount = 0;
@@ -478,6 +448,9 @@ async function createMainWindow(url) {
   );
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
     writeDiagnostic("webcontents-render-process-gone", details);
+    if (windowCloseAwaitingRenderer) {
+      forceAllowWindowClose("render-process-gone");
+    }
   });
   mainWindow.webContents.on(
     "console-message",
@@ -530,7 +503,48 @@ async function createMainWindow(url) {
 
   const desktopUserAgent = `${mainWindow.webContents.getUserAgent()} EditorHub/${app.getVersion()}`;
   mainWindow.webContents.setUserAgent(desktopUserAgent);
+}
 
+function ensureMainWindowShell() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    return mainWindow;
+  }
+  writeDiagnostic("window-create-start", { preloadPath });
+  const windowIcon = loadDesktopWindowIcon();
+  mainWindow = new BrowserWindow({
+    width: 1280,
+    height: 860,
+    minWidth: 960,
+    minHeight: 640,
+    title: "EditorHub",
+    show: false,
+    backgroundColor: DESKTOP_WINDOW_BACKGROUND,
+    autoHideMenuBar: true,
+    frame: false,
+    ...(windowIcon ? { icon: windowIcon } : {}),
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: preloadPath,
+      sandbox: false,
+    },
+  });
+
+  mainWindow.once("ready-to-show", () => {
+    writeDiagnostic("window-ready-to-show");
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+      mainWindow.show();
+    }
+  });
+  attachMainWindowHandlers();
+  writeDiagnostic("window-early-show");
+  mainWindow.show();
+  return mainWindow;
+}
+
+async function loadMainWindowUrl(url) {
+  ensureMainWindowShell();
+  writeDiagnostic("window-load-url-start", { url });
   await mainWindow.loadURL(url);
   writeDiagnostic("window-load-url-resolved", {
     visible: mainWindow.isVisible(),
@@ -544,6 +558,10 @@ async function createMainWindow(url) {
       mainWindow.show();
     }
   }, 5000);
+}
+
+async function createMainWindow(url) {
+  await loadMainWindowUrl(url);
 }
 
 async function startDesktopApp() {
@@ -592,6 +610,11 @@ async function startDesktopApp() {
   configureServerEnvironment();
   writeDiagnostic("server-backend-start");
   const backendStartedAt = Date.now();
+  writeDiagnostic("startup-phase", {
+    phase: "window-shell",
+    sinceStartupMs: elapsedSince(startupStartedAt),
+  });
+  ensureMainWindowShell();
   const serverConfig = createDesktopServerConfig(currentDesktopConfig);
   desktopBackend = await createDesktopBackend(serverConfig);
   writeDiagnostic("startup-phase", {
@@ -622,7 +645,7 @@ async function startDesktopApp() {
   desktopServer = { app: desktopBackend.app, url };
   writeDiagnostic("protocol-load-url", { url });
   const windowStartedAt = Date.now();
-  await createMainWindow(url);
+  await loadMainWindowUrl(url);
   writeDiagnostic("startup-phase", {
     phase: "window-created",
     phaseMs: elapsedSince(windowStartedAt),
@@ -791,7 +814,7 @@ ipcMain.handle("desktop:requestWindowClose", () => {
 });
 
 ipcMain.handle("desktop:finishWindowClose", (_event, payload = {}) => {
-  clearWindowCloseReplyTimer();
+  windowCloseAwaitingRenderer = false;
   const allow = payload?.allow === true;
   writeDiagnostic("window-close-finished", {
     allow,

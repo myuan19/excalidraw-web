@@ -1,16 +1,26 @@
 import { useEffect, useRef } from "react";
 
+import { snapshotDesktopWindowCloseSession } from "../data/desktopWindowCloseSession";
 import { prepareDesktopWindowClose } from "../data/editorTabLeave";
 import { devDebug } from "../lib/devDebug";
 import { traceIssueDiag } from "../lib/issueDiagTrace";
 import { isDesktopEditorHub } from "../lib/runtimePlatform";
 
-/**
- * 拦截 Electron 系统级关窗（标题栏 X、Alt+F4、任务栏关闭等），
- * 在真正关闭前先走与标签关闭相同的保存流程。
- */
-const WINDOW_CLOSE_PREPARE_TIMEOUT_MS = 30_000;
+let closePreparePromise: Promise<boolean> | null = null;
 
+function runDesktopClosePrepare(): Promise<boolean> {
+  if (!closePreparePromise) {
+    closePreparePromise = prepareDesktopWindowClose().finally(() => {
+      closePreparePromise = null;
+    });
+  }
+  return closePreparePromise;
+}
+
+/**
+ * 拦截 Electron 系统级关窗（标题栏 X、Alt+F4、任务栏关闭等）。
+ * 等待 prepareDesktopWindowClose 内各 tab 保存状态全部 settled 后再 finishWindowClose。
+ */
 export function useDesktopWindowCloseGuard() {
   const prepareGenerationRef = useRef(0);
 
@@ -24,7 +34,9 @@ export function useDesktopWindowCloseGuard() {
       return;
     }
 
+    traceIssueDiag("desktop.close", "guard.registered", {}, "ok");
     devDebug("shell-nav", "desktop window close guard registered");
+
     return api.onWindowCloseRequested(() => {
       const requestedAt = performance.now();
       const generation = ++prepareGenerationRef.current;
@@ -37,26 +49,8 @@ export function useDesktopWindowCloseGuard() {
       devDebug("shell-nav", "desktop window close requested — preparing tabs", {
         generation,
       });
-      const prepare = prepareDesktopWindowClose();
-      const timeout = new Promise<boolean>((resolve) => {
-        window.setTimeout(() => {
-          traceIssueDiag(
-            "desktop.close",
-            "window.prepare",
-            {
-              generation,
-              reason: "renderer-timeout",
-              totalMs: Math.round(performance.now() - requestedAt),
-            },
-            "fail",
-          );
-          devDebug("shell-nav", "desktop window close prepare timed out", {
-            generation,
-          });
-          resolve(true);
-        }, WINDOW_CLOSE_PREPARE_TIMEOUT_MS);
-      });
-      void Promise.race([prepare, timeout])
+
+      void runDesktopClosePrepare()
         .then((allow) => {
           if (generation !== prepareGenerationRef.current) {
             traceIssueDiag(
@@ -72,6 +66,7 @@ export function useDesktopWindowCloseGuard() {
             );
             return;
           }
+          const snapshot = snapshotDesktopWindowCloseSession();
           traceIssueDiag(
             "desktop.close",
             "window.prepare",
@@ -79,25 +74,18 @@ export function useDesktopWindowCloseGuard() {
               generation,
               allow,
               totalMs: Math.round(performance.now() - requestedAt),
+              snapshot,
             },
             allow ? "ok" : "fail",
           );
-          devDebug("shell-nav", "desktop window close prepare done", { allow });
+          devDebug("shell-nav", "desktop window close prepare done", {
+            allow,
+            snapshot,
+          });
           void api.finishWindowClose?.(allow);
         })
         .catch((error) => {
           if (generation !== prepareGenerationRef.current) {
-            traceIssueDiag(
-              "desktop.close",
-              "window.prepare",
-              {
-                generation,
-                currentGeneration: prepareGenerationRef.current,
-                reason: "abandoned-after-error",
-                totalMs: Math.round(performance.now() - requestedAt),
-              },
-              "fail",
-            );
             return;
           }
           traceIssueDiag(

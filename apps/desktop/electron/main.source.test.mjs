@@ -25,8 +25,9 @@ describe("desktop main source contracts", () => {
     expect(source).toContain('ipcMain.handle("desktop:windowClose"');
     expect(source).toContain('ipcMain.handle("desktop:requestWindowClose"');
     expect(source).toContain('ipcMain.handle("desktop:finishWindowClose"');
-    expect(source).toContain("window-close-reply-timeout");
-    expect(source).toContain("scheduleWindowCloseReplyFallback");
+    expect(source).toContain("window-close-force");
+    expect(source).toContain("windowCloseAwaitingRenderer");
+    expect(source).not.toContain("window-close-reply-timeout");
     expect(source).toContain("desktop:windowCloseRequested");
     expect(source).toContain("desktopPaths");
     expect(source).not.toContain("function resolveCatalogRoot()");
@@ -44,6 +45,8 @@ describe("desktop main source contracts", () => {
     expect(source).toContain("attachCatalogIpcBridge");
     expect(source).toContain("registerEditorHubProtocol");
     expect(source).toContain("EDITORHUB_APP_INDEX_URL");
+    expect(source).toContain("ensureMainWindowShell");
+    expect(source).toContain("window-early-show");
     expect(source).toContain('ipcMain.handle("editorhub:api"');
     expect(source).toContain("parseEditorHubDeepLinkFromArgv");
     expect(source).toContain("queueDeepLinkNavigation");

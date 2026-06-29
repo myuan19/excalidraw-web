@@ -172,7 +172,16 @@ import {
   isAIConfigured,
   subscribeAIConfig,
 } from "../data/aiConfig";
-import { computeThumbFetchAllowIds, THUMB_PREFETCH_FIRST_N, THUMB_PREFETCH_RECENT_ALL } from "../data/thumbCoverage";
+import { useStartupFileListGate, useRegisterStartupHomeTreeLoader } from "../startup/StartupCoordinatorProvider";
+import {
+  notifyStartupHomeTreeReady,
+  STARTUP_LOAD_HOME_TREE_EVENT,
+} from "../startup/StartupCoordinator";
+import {
+  computeThumbFetchAllowIds,
+  THUMB_PREFETCH_FIRST_N,
+  THUMB_PREFETCH_RECENT_ALL,
+} from "../data/thumbCoverage";
 import { buildThumbnailDraftSlot } from "../data/thumbnailLifecycle";
 import { EmbedTokenManager } from "../components/EmbedTokenManager";
 import { DocumentPreviewDialog } from "../components/DocumentPreviewDialog";
@@ -816,39 +825,48 @@ function expandFolderAncestorIds(
   );
 }
 
-function getInitialFileListStateFromCache(): {
+function getInitialFileListStateFromCache(skipCache: boolean): {
   files: ServerFile[];
   folders: ServerFolder[];
-  loading: boolean;
+  hasCache: boolean;
 } {
+  if (skipCache) {
+    return { files: [], folders: [], hasCache: false };
+  }
   const cached = readFileListTreeCache();
   if (!cached) {
-    return { files: [], folders: [], loading: true };
+    return { files: [], folders: [], hasCache: false };
   }
   return {
     files: cached.files,
     folders: cached.folders,
-    loading: false,
+    hasCache: true,
   };
 }
 
 export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const { shellTheme, toggleShellTheme } = useShellTheme();
+  const startupGate = useStartupFileListGate();
   const showWebOnlyFileActions = !isDesktopEditorHub();
-  const initialList = getInitialFileListStateFromCache();
+  const initialList = getInitialFileListStateFromCache(
+    startupGate.skipInitialCache,
+  );
   useEffect(() => {
     purgeLegacyTempArtifacts();
     applyMainSiteDocumentBranding();
-    const bootList = getInitialFileListStateFromCache();
+    const bootList = getInitialFileListStateFromCache(
+      startupGate.skipInitialCache,
+    );
     traceHomeRenderMount({
       cachedFiles: bootList.files.length,
       cachedFolders: bootList.folders.length,
-      initialLoading: bootList.loading,
+      hasCache: bootList.hasCache,
+      skipInitialCache: startupGate.skipInitialCache,
     });
     return () => {
       traceIssueDiag("home.render", "unmount", {}, "ok");
     };
-  }, []);
+  }, [startupGate.skipInitialCache]);
 
   const [files, setFiles] = useState<ServerFile[]>(initialList.files);
   const filesRef = useRef(files);
@@ -915,7 +933,10 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   >({});
   const [allFilesTreeExpanded, setAllFilesTreeExpanded] = useState(false);
   const [mobileTreeOpen, setMobileTreeOpen] = useState(false);
-  const [loading, setLoading] = useState(initialList.loading);
+  const [loading, setLoading] = useState(false);
+  const [awaitingFirstFetch, setAwaitingFirstFetch] = useState(
+    startupGate.skipInitialCache || !initialList.hasCache,
+  );
   const [error, setError] = useState<string | null>(null);
   const [importNotice, setImportNotice] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -1242,10 +1263,13 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   }, [files]);
 
   useEffect(() => {
+    if (!startupGate.canLoadAiConfig) {
+      return;
+    }
     const syncAiDot = () => setAiDotOk(isAIConfigured());
     ensureAIConfigLoaded().then(syncAiDot).catch(syncAiDot);
     return subscribeAIConfig(syncAiDot);
-  }, []);
+  }, [startupGate.canLoadAiConfig]);
 
   useEffect(() => {
     const nextHashes: Record<string, string | null> = {};
@@ -1772,9 +1796,23 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     return () => window.clearTimeout(timer);
   }, [importNotice]);
 
-  useEffect(() => {
-    void refresh({ silent: !!readFileListTreeCache() });
+  const runStartupTreeLoad = useCallback(async () => {
+    await refresh({ silent: true });
+    setAwaitingFirstFetch(false);
+    notifyStartupHomeTreeReady();
   }, [refresh]);
+
+  useRegisterStartupHomeTreeLoader(runStartupTreeLoad);
+
+  useEffect(() => {
+    const onLoadTree = () => {
+      void runStartupTreeLoad();
+    };
+    window.addEventListener(STARTUP_LOAD_HOME_TREE_EVENT, onLoadTree);
+    return () => {
+      window.removeEventListener(STARTUP_LOAD_HOME_TREE_EVENT, onLoadTree);
+    };
+  }, [runStartupTreeLoad]);
 
   useEffect(() => {
     if (!isDesktopEditorHub() || !catalogCapabilities.folderMapping) {
@@ -2154,6 +2192,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   useEffect(() => {
     traceHomeRenderPaint("loading", {
       loading,
+      awaitingFirstFetch,
       files: files.length,
       folders: folders.length,
       sidebarView,
@@ -2161,6 +2200,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       filteredFiles: filteredFiles.length,
     });
   }, [
+    awaitingFirstFetch,
     loading,
     files.length,
     folders.length,
@@ -2538,6 +2578,8 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     fileThumbHashByIdRef,
     setFetchedThumbs: setFetchedThumbsWithLayoutDebug,
     onThumbnailServerMiss,
+    serialFetch: startupGate.isColdStart && startupGate.canFetchThumbnails,
+    fetchEnabled: startupGate.canFetchThumbnails,
   });
 
   const clearFetchedThumbForFile = useCallback((fileId: string) => {
@@ -5559,8 +5601,14 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   };
 
   const showLocalDirectoryHub = false;
+  const showBootstrapSkeleton =
+    (startupGate.showBootstrapSkeleton ||
+      awaitingFirstFetch ||
+      loading) &&
+    filteredFiles.length === 0 &&
+    !showLocalDirectoryHub;
   const empty =
-    !loading &&
+    !showBootstrapSkeleton &&
     filteredFiles.length === 0 &&
     !showNewEntryCard &&
     !showLocalDirectoryHub;
@@ -5814,7 +5862,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         </header>
 
         <div className="filelist__body" ref={mainRef}>
-          {loading ? (
+          {showBootstrapSkeleton ? (
             <div className="filelist__grid" ref={gridRef}>
               {Array.from({ length: 6 }, (_, i) => (
                 <div

@@ -13,6 +13,10 @@ import {
   shouldKeepEditorPaneRunningInBackground,
   subscribeEditorPaneRunState,
 } from "./editorPaneRunState";
+import {
+  useStartupBackgroundEditorGate,
+  useStartupForegroundEditorGate,
+} from "../startup/StartupCoordinatorProvider";
 
 import "./EditorPaneStack.scss";
 
@@ -73,7 +77,15 @@ function EditorPaneStackItem({
     return null;
   }
 
-  const shouldMountEditor = isForeground || keepRunning;
+  const canMountForeground = useStartupForegroundEditorGate(isForeground);
+  const canMountBackground = useStartupBackgroundEditorGate(
+    isForeground,
+    keepRunning,
+  );
+
+  const shouldMountEditor = isForeground
+    ? canMountForeground
+    : canMountBackground;
 
   return (
     <EditorPaneErrorBoundary

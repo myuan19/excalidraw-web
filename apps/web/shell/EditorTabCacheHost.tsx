@@ -14,10 +14,12 @@ import {
 } from "../lib/editorTabCacheTrace";
 import { traceUserAction } from "../lib/userTrace";
 import { editorRegistry } from "../editors";
+import { hashNeedsEditorRoute } from "../data/documentHash";
 import { stashLibraryUrlImportFromHash } from "../data/libraryUrlImport";
 import { useHomePageWheelZoom } from "../hooks/useHomePageWheelZoom";
+import { useStartupShellMode } from "../startup/StartupCoordinatorProvider";
 import { EditorPaneStack } from "./EditorPaneStack";
-import { openEditorFileTab, reconcileEditorTabsWithHash, restoreDesktopEditorSession } from "./editorTabNavigation";
+import { openEditorFileTab, reconcileEditorTabsWithHash } from "./editorTabNavigation";
 import {
   EDITOR_TABS_CHANGE_EVENT,
   HOME_TAB_ID,
@@ -25,7 +27,6 @@ import {
   readEditorTabsState,
   type EditorTabsState,
 } from "./editorTabs";
-import { isDesktopEditorHub } from "../lib/runtimePlatform";
 
 import "./EditorTabCacheHost.scss";
 
@@ -33,22 +34,11 @@ function buildFileHash(id: string, kind?: string): string {
   return editorRegistry.buildFileHash(id, kind);
 }
 
-/** 桌面冷启动：首帧前恢复 hash + tab，避免 file-active 却无 pane 的白屏。 */
+/** P0: read tabs only; hash reconcile for deep links; session restore is coordinator-owned. */
 function bootstrapEditorTabCacheState(): EditorTabsState {
   stashLibraryUrlImportFromHash();
-  const state = readEditorTabsState();
-  if (!isDesktopEditorHub()) {
-    return state;
-  }
-  restoreDesktopEditorSession();
-  reconcileEditorTabsWithHash(window.location.hash);
-  const next = readEditorTabsState();
-  const fileTabs = listFileEditorTabsForPaneStack(next);
-  if (next.activeTabId === HOME_TAB_ID) {
-    return next;
-  }
-  if (fileTabs.some((tab) => tab.id === next.activeTabId)) {
-    return next;
+  if (hashNeedsEditorRoute(window.location.hash)) {
+    reconcileEditorTabsWithHash(window.location.hash);
   }
   return readEditorTabsState();
 }
@@ -58,12 +48,12 @@ export function EditorTabCacheHost({
 }: {
   onFileListReady: () => void;
 }) {
+  const shellMode = useStartupShellMode();
   const [tabState, setTabState] = useState<EditorTabsState>(() =>
     bootstrapEditorTabCacheState(),
   );
   const homeContainerRef = useRef<HTMLDivElement>(null);
   const lastReconcileKeyRef = useRef<string | null>(null);
-  const homeActive = tabState.activeTabId === HOME_TAB_ID;
   const fileTabs = useMemo(
     () => listFileEditorTabsForPaneStack(tabState),
     [tabState],
@@ -73,9 +63,9 @@ export function EditorTabCacheHost({
     tabState.activeTabId === HOME_TAB_ID
       ? null
       : fileTabs.find((tab) => tab.id === tabState.activeTabId) ?? null;
-  const hasRenderableFilePane = Boolean(activeFileTab) && hasFileTabs;
-  const showHomePane = !hasRenderableFilePane;
-  const showEditorShell = hasRenderableFilePane;
+  const showEditorShell = shellMode === "editor";
+  const showHomePane = !showEditorShell;
+  const homeActive = showHomePane;
 
   useEffect(() => {
     const sync = () => {
@@ -134,23 +124,10 @@ export function EditorTabCacheHost({
       return;
     }
     lastReconcileKeyRef.current = null;
-
-    if (showHomePane && hasFileTabs && tabState.activeTabId !== HOME_TAB_ID) {
-      traceTabCache(
-        "hostModeMismatch",
-        {
-          activeTabId: tabState.activeTabId,
-          homeActive,
-          hash: window.location.hash,
-        },
-        "branch",
-      );
-    }
   }, [
     activeFileTab,
     fileTabs,
     hasFileTabs,
-    homeActive,
     showHomePane,
     tabState.activeTabId,
     tabState.tabs,

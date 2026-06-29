@@ -23,12 +23,15 @@ import { editorRegistry } from "./editors";
 import { getLazyEditorShell } from "./editors/lazyViews";
 import { hashNeedsEditorRoute } from "./data/documentHash";
 import { useGlobalLibraryUrlImport } from "./hooks/useGlobalLibraryUrlImport";
+import { useDesktopWindowCloseGuard } from "./hooks/useDesktopWindowCloseGuard";
+import { installDesktopWindowCloseStateProbe } from "./data/desktopWindowCloseSession";
 import { getDocumentKindFromHash } from "./lib/appBranding";
 import { isDesktopEditorHub } from "./lib/runtimePlatform";
 import { EditorShellChunkFallback } from "./components/EditorShellChunkFallback";
 import { logEditorOpenPhase } from "./lib/editorOpenPhases";
 import { useHomePageWheelZoom } from "./hooks/useHomePageWheelZoom";
 import { EditorTabCacheHost } from "./shell/EditorTabCacheHost";
+import { StartupCoordinatorProvider, useStartupWebEditorGate } from "./startup/StartupCoordinatorProvider";
 import {
   openEditorFileTab,
   reconcileEditorTabsWithHash,
@@ -41,26 +44,13 @@ import "./components/DesktopTitleBar.scss";
 const LazyEmbedApp = lazy(() => import("./embed/EmbedApp"));
 
 /**
- * Prefetch the editor chunk in the background, but only AFTER the file list
- * has finished loading its data (signalled via `onReady`).  This avoids
- * flooding the network during initial page load while still making the first
- * file-open feel fast.
+ * Legacy hook: file list still signals readiness for callers; idle prefetch
+ * is owned by StartupCoordinator.
  */
-function useDeferredEditorPrefetch() {
-  const firedRef = useRef(false);
-
-  const onFileListReady = useCallback(() => {
-    if (firedRef.current) {
-      return;
-    }
-    firedRef.current = true;
-    // Small delay so thumbnails can start loading first.
-    setTimeout(() => {
-      editorRegistry.prefetchOnFileListReady();
-    }, 150);
+function useFileListReadySignal() {
+  return useCallback(() => {
+    /* onReady retained for API compatibility */
   }, []);
-
-  return onFileListReady;
 }
 
 /** Returns true if the URL hash requires the editor (not just the file list). */
@@ -131,19 +121,10 @@ const ForkRoot = () => {
   }, []);
 
   const needsEditor = hashNeedsEditor();
-  const onFileListReady = useDeferredEditorPrefetch();
+  const onFileListReady = useFileListReadySignal();
   const documentKind = getDocumentKindFromHash();
+  const canMountWebEditor = useStartupWebEditorGate();
   useHomePageWheelZoom(homeContainerRef, !needsEditor);
-
-  useEffect(() => {
-    if (!needsEditor || documentKind !== "mindmap") {
-      return;
-    }
-    editorRegistry
-      .getByKind("mindmap")
-      ?.loadEditorShell()
-      .catch(() => {});
-  }, [needsEditor, documentKind]);
 
   if (isDesktopEditorHub()) {
     return <EditorTabCacheHost onFileListReady={onFileListReady} />;
@@ -214,7 +195,11 @@ const ForkRoot = () => {
       <Suspense
         fallback={<EditorShellChunkFallback editorKind={documentKind} />}
       >
-        <LazyEditor />
+        {canMountWebEditor ? (
+          <LazyEditor />
+        ) : (
+          <EditorShellChunkFallback editorKind={documentKind} />
+        )}
       </Suspense>
     </EditorPlatformShell>
   );
@@ -228,6 +213,10 @@ const EmbedChunkFallback = () => {
 };
 
 const ExcalidrawApp = () => {
+  useDesktopWindowCloseGuard();
+  useEffect(() => {
+    installDesktopWindowCloseStateProbe();
+  }, []);
   const embedMode = isEmbedMode();
   debugApp("render root", { embedMode });
   if (embedMode) {
@@ -252,7 +241,9 @@ const ExcalidrawApp = () => {
           >
             <DesktopTitleBar />
             <div className="app-shell--desktop__body">
+            <StartupCoordinatorProvider>
               <ForkRoot />
+            </StartupCoordinatorProvider>
             </div>
           </div>
           <DebugModeTrigger />

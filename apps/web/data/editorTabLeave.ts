@@ -8,6 +8,14 @@ import { listOpenFileEditorTabs } from "./editorTabForeground";
 import { confirmEditorLeaveForFile } from "../shell/editorLeaveFlow";
 import { resolveEditorHomeNavPlan } from "./editorLeaveHome";
 import { requestEditorTabSave } from "./activeEditorSaveBridge";
+import {
+  beginDesktopWindowCloseSession,
+  finishDesktopWindowCloseSession,
+  markDesktopCloseSaveSettled,
+  setDesktopWindowClosePhase,
+  snapshotDesktopWindowCloseSession,
+  waitForDesktopCloseSavesSettled,
+} from "./desktopWindowCloseSession";
 import { isDesktopEditorHub } from "../lib/runtimePlatform";
 import { persistEditorTabsSnapshot } from "../shell/editorTabs";
 
@@ -194,8 +202,7 @@ export async function prepareAllOpenEditorTabsForClose(): Promise<boolean> {
 }
 
 /**
- * 桌面关窗专用：并行自动保存 dirty 标签、跳过 snapshot/确认对话框、持久化标签状态。
- * 避免 prepareAllOpenEditorTabsForClose 对每个缓存标签串行 snapshot 导致关窗卡数十秒。
+ * 桌面关窗专用：并行自动保存 dirty 标签，按运行态等待全部 settled 后再持久化 tab。
  */
 export async function prepareDesktopWindowClose(): Promise<boolean> {
   const totalStartedAt = performance.now();
@@ -213,60 +220,92 @@ export async function prepareDesktopWindowClose(): Promise<boolean> {
       "prompt-leave",
   );
 
+  const session = beginDesktopWindowCloseSession(
+    tabs.map((tab) => ({
+      fileId: tab.fileId,
+      kind: tab.kind,
+      dirty: dirtyTabs.some((dirty) => dirty.fileId === tab.fileId),
+    })),
+  );
+
+  traceIssueDiag(
+    "desktop.close",
+    "prepareWindow.session",
+    {
+      sessionId: session.id,
+      dirtyCount: dirtyTabs.length,
+      snapshot: snapshotDesktopWindowCloseSession(),
+    },
+    "start",
+  );
+
   if (dirtyTabs.length > 0) {
-    const saveResults = await Promise.all(
-      dirtyTabs.map(async (tab) => {
+    for (const tab of dirtyTabs) {
+      void (async () => {
         const startedAt = performance.now();
         try {
           const saved = await requestEditorTabSave(tab.fileId, "exit");
+          markDesktopCloseSaveSettled(tab.fileId, saved);
           traceIssueDiag(
             "desktop.close",
             "prepareWindow.save",
             {
+              sessionId: session.id,
               fileId8: tab.fileId.slice(0, 8),
               kind: tab.kind,
               saved,
               ms: elapsedMs(startedAt),
+              snapshot: snapshotDesktopWindowCloseSession(),
             },
             saved ? "ok" : "fail",
           );
-          return saved;
         } catch (error) {
+          markDesktopCloseSaveSettled(tab.fileId, false);
           traceIssueDiag(
             "desktop.close",
             "prepareWindow.save",
             {
+              sessionId: session.id,
               fileId8: tab.fileId.slice(0, 8),
               kind: tab.kind,
               message:
                 error instanceof Error ? error.message : String(error),
               ms: elapsedMs(startedAt),
+              snapshot: snapshotDesktopWindowCloseSession(),
             },
             "fail",
           );
-          return false;
         }
-      }),
-    );
+      })();
+    }
+
+    await waitForDesktopCloseSavesSettled(session.id);
     traceIssueDiag(
       "desktop.close",
       "prepareWindow.saves",
       {
-        dirtyCount: dirtyTabs.length,
-        savedCount: saveResults.filter(Boolean).length,
+        sessionId: session.id,
+        snapshot: snapshotDesktopWindowCloseSession(),
       },
       "ok",
     );
   }
 
+  setDesktopWindowClosePhase("persisting");
   if (isDesktopEditorHub()) {
     persistEditorTabsSnapshot();
   }
+  finishDesktopWindowCloseSession();
 
   traceIssueDiag(
     "desktop.close",
     "prepareWindow",
-    { tabCount: tabs.length, totalMs: elapsedMs(totalStartedAt) },
+    {
+      tabCount: tabs.length,
+      sessionId: session.id,
+      totalMs: elapsedMs(totalStartedAt),
+      snapshot: snapshotDesktopWindowCloseSession(),
+    },
     "ok",
   );
   return true;

@@ -10,6 +10,7 @@ import {
   traceThumbFetchStart,
   traceThumbPipelineTick,
 } from "../lib/thumbPipelineTrace";
+import { enqueueStartupLightTask } from "../startup/StartupCoordinator";
 import { fetchThumbnailSvgForCard } from "../data/fetchThumbnailSvgForCard";
 import { patchFileListTreeCacheThumbnailMissing } from "../data/fileListSessionCache";
 import { buildServerThumbnailRequestPath } from "../data/serverThumbnailUrl";
@@ -48,6 +49,8 @@ export type ThumbPipelineDeps = {
   fileThumbHashByIdRef: MutableRefObject<Record<string, string | null>>;
   setFetchedThumbs: Dispatch<SetStateAction<Record<string, string>>>;
   onThumbnailServerMiss?: (fileId: string, contentSha: string | null) => void;
+  serialFetch?: boolean;
+  fetchEnabled?: boolean;
 };
 
 /**
@@ -66,6 +69,8 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
     fileThumbHashByIdRef,
     setFetchedThumbs,
     onThumbnailServerMiss,
+    serialFetch = false,
+    fetchEnabled = true,
   } = deps;
 
   const thumbFetchingRef = useRef<Set<string>>(new Set());
@@ -78,6 +83,9 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
   }, []);
 
   useEffect(() => {
+    if (!fetchEnabled) {
+      return;
+    }
     const tick = nextThumbPipelineTick();
     const skipped = {
       notInAllowSet: 0,
@@ -249,7 +257,7 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
       toFetchIds: toFetch.map((t) => t.id.slice(0, 8)),
     });
 
-    for (const item of toFetch) {
+    for (const [index, item] of toFetch.entries()) {
       const alreadyInflight = thumbFetchingRef.current.has(item.id);
       thumbFetchingRef.current.add(item.id);
       const id8 = item.id.slice(0, 8);
@@ -261,8 +269,13 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
         alreadyInflight,
       });
       const fetchStartedAt = performance.now();
-      void fetchThumbnailSvgForCard(item.url, { id8 })
-        .then(({ svg, status, errPreview }) => {
+
+      const runFetch = async () => {
+        try {
+          const { svg, status, errPreview } = await fetchThumbnailSvgForCard(
+            item.url,
+            { id8 },
+          );
           const ms = performance.now() - fetchStartedAt;
           if (!mountedRef.current) {
             traceThumbFetchEnd({
@@ -334,8 +347,7 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
             status,
             svgLen: svg.length,
           });
-        })
-        .catch((err: unknown) => {
+        } catch (err: unknown) {
           traceThumbFetchEnd({
             fileId: item.id,
             tick,
@@ -346,13 +358,26 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
             },
           });
           logPipe.debug("GET thumb promise threw", { id8, err: String(err) });
-        })
-        .finally(() => {
+        } finally {
           thumbFetchingRef.current.delete(item.id);
+        }
+      };
+
+      if (serialFetch) {
+        enqueueStartupLightTask({
+          id: `thumb-${item.id}`,
+          coalesceKey: `thumb-${item.id}`,
+          priority: 1000 - index,
+          run: runFetch,
         });
+      } else {
+        void runFetch();
+      }
     }
   }, [
     draftStateById,
+    fetchEnabled,
+    serialFetch,
     thumbLoadScopeFiles,
     thumbFetchAllowIds,
     fetchedThumbSvgByIdRef,
