@@ -26,13 +26,36 @@ const requestEditorTabSnapshot = vi.fn(
   ): Promise<{ ok: boolean; reason?: string }> => ({ ok: true }),
 );
 
+const requestEditorTabSave = vi.fn(async () => true);
+vi.mock("./activeEditorSaveBridge", () => ({
+  requestEditorTabSave: (fileId: string, source: string) =>
+    requestEditorTabSave(fileId, source),
+}));
+
 vi.mock("./activeEditorSnapshotBridge", () => ({
   requestEditorTabSnapshot: (fileId: string, source: string) =>
     requestEditorTabSnapshot(fileId, source),
 }));
 
+vi.mock("../lib/runtimePlatform", () => ({
+  isDesktopEditorHub: () => true,
+}));
+
+const persistEditorTabsSnapshot = vi.fn(() => ({
+  activeTabId: "home",
+  tabs: [],
+}));
+vi.mock("../shell/editorTabs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../shell/editorTabs")>();
+  return {
+    ...actual,
+    persistEditorTabsSnapshot: () => persistEditorTabsSnapshot(),
+  };
+});
+
 import {
   prepareAllOpenEditorTabsForClose,
+  prepareDesktopWindowClose,
   prepareEditorTabForClose,
 } from "./editorTabLeave";
 import { listOpenFileEditorTabs } from "./editorTabForeground";
@@ -169,5 +192,24 @@ describe("editorTabLeave", () => {
       "tab-close",
     );
     expect(confirmEditorLeaveForFile).toHaveBeenCalledTimes(2);
+  });
+
+  it("prepareDesktopWindowClose auto-saves dirty tabs in parallel without snapshot", async () => {
+    FileSyncState.setBaselineHash("a", "baseline");
+    FileSyncState.setDraftHash("a", "draft");
+    FileSyncState.setBaselineHash("b", "baseline");
+    FileSyncState.setDraftHash("b", "draft");
+    vi.mocked(listOpenFileEditorTabs).mockReturnValue([
+      makeFileTab("a", "mindmap", 1),
+      makeFileTab("b", "excalidraw", 2),
+    ]);
+
+    await expect(prepareDesktopWindowClose()).resolves.toBe(true);
+    expect(requestEditorTabSnapshot).not.toHaveBeenCalled();
+    expect(confirmEditorLeaveForFile).not.toHaveBeenCalled();
+    expect(requestEditorTabSave).toHaveBeenCalledTimes(2);
+    expect(requestEditorTabSave).toHaveBeenCalledWith("a", "exit");
+    expect(requestEditorTabSave).toHaveBeenCalledWith("b", "exit");
+    expect(persistEditorTabsSnapshot).toHaveBeenCalled();
   });
 });

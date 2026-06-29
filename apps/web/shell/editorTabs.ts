@@ -1,4 +1,5 @@
 import { editorRegistry } from "../editors";
+import { isDesktopEditorHub } from "../lib/runtimePlatform";
 
 export type HomeEditorTab = {
   id: "home";
@@ -29,6 +30,30 @@ export const EDITOR_TABS_STORAGE_KEY = "editorhub-editor-tabs-v1";
 export const EDITOR_TABS_CHANGE_EVENT = "editorhub-editor-tabs-change";
 export const HOME_TAB_ID = "home";
 const UNTITLED_TAB_TITLE = "未命名";
+
+function resolveEditorTabsStorage(): Storage | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return isDesktopEditorHub() ? localStorage : sessionStorage;
+}
+
+function readPersistedEditorTabsRaw(): string | null {
+  const storage = resolveEditorTabsStorage();
+  if (!storage) {
+    return null;
+  }
+  const raw = storage.getItem(EDITOR_TABS_STORAGE_KEY);
+  if (raw || !isDesktopEditorHub()) {
+    return raw;
+  }
+  // 桌面首次升级：若 localStorage 为空，尝试迁移仍存活的 session 标签。
+  try {
+    return sessionStorage.getItem(EDITOR_TABS_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -265,6 +290,22 @@ export function listFileEditorTabsForPaneStack(
     .sort((a, b) => a.stackOrder - b.stackOrder || a.id.localeCompare(b.id));
 }
 
+export function findFirstFileTabByKind(
+  state: EditorTabsState,
+  kind: string,
+): FileEditorTab | null {
+  const resolvedKind = editorRegistry.resolveKind(kind);
+  for (const tab of normalizeEditorTabsState(state).tabs) {
+    if (
+      tab.type === "file" &&
+      editorRegistry.resolveKind(tab.kind) === resolvedKind
+    ) {
+      return tab;
+    }
+  }
+  return null;
+}
+
 export function reorderFileTab(
   state: EditorTabsState,
   opts: {
@@ -310,7 +351,7 @@ export function reorderFileTab(
 
 export function readEditorTabsState(): EditorTabsState {
   try {
-    const raw = sessionStorage.getItem(EDITOR_TABS_STORAGE_KEY);
+    const raw = readPersistedEditorTabsRaw();
     return normalizeEditorTabsState(raw ? JSON.parse(raw) : null);
   } catch {
     return createInitialEditorTabsState();
@@ -320,10 +361,18 @@ export function readEditorTabsState(): EditorTabsState {
 export function writeEditorTabsState(state: EditorTabsState): EditorTabsState {
   const normalized = normalizeEditorTabsState(state);
   try {
-    sessionStorage.setItem(EDITOR_TABS_STORAGE_KEY, JSON.stringify(normalized));
+    resolveEditorTabsStorage()?.setItem(
+      EDITOR_TABS_STORAGE_KEY,
+      JSON.stringify(normalized),
+    );
   } catch {
-    // Ignore storage failures; tabs are session UI state only.
+    // Ignore storage failures; tabs are best-effort UI state.
   }
   window.dispatchEvent(new CustomEvent(EDITOR_TABS_CHANGE_EVENT));
   return normalized;
+}
+
+/** 桌面退出前再写一次，确保 localStorage 与内存一致。 */
+export function persistEditorTabsSnapshot(): EditorTabsState {
+  return writeEditorTabsState(readEditorTabsState());
 }

@@ -45,7 +45,19 @@ describe("desktop main source contracts", () => {
     expect(source).toContain("registerEditorHubProtocol");
     expect(source).toContain("EDITORHUB_APP_INDEX_URL");
     expect(source).toContain('ipcMain.handle("editorhub:api"');
+    expect(source).toContain("parseEditorHubDeepLinkFromArgv");
+    expect(source).toContain("queueDeepLinkNavigation");
+    expect(source).toContain('app.setAsDefaultProtocolClient("editorhub")');
     expect(source).not.toContain("loadURL(\"http://127.0.0.1:3033");
+  });
+
+  it("registers editorhub protocol scheme for packaged installs", () => {
+    const pkg = JSON.parse(
+      fs.readFileSync(path.join(__dirname, "../package.json"), "utf8"),
+    );
+    expect(pkg.build.protocols).toEqual([
+      { name: "EditorHub", schemes: ["editorhub"] },
+    ]);
   });
 
   it("registers document file associations for packaged default-open support", () => {

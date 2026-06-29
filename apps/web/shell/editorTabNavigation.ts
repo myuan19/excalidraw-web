@@ -4,7 +4,7 @@ import {
   type ActiveEditorSnapshotSource,
 } from "../data/activeEditorSnapshotBridge";
 import { prepareEditorTabForClose } from "../data/editorTabLeave";
-import { hashNeedsEditorRoute } from "../data/documentHash";
+import { hashNeedsEditorRoute, isAddLibraryHash } from "../data/documentHash";
 import {
   getFileIdFromHash,
   getFileIdFromHashString,
@@ -19,6 +19,7 @@ import {
   activateTab,
   closeEditorTab,
   fileTabId,
+  findFirstFileTabByKind,
   HOME_TAB_ID,
   openFileTab,
   readEditorTabsState,
@@ -372,8 +373,44 @@ export function reconcileEditorTabsWithHash(
     void refreshOpenFileTabTitle(fileId, inputDeps);
     return;
   }
+  if (isAddLibraryHash(hash)) {
+    const state = readEditorTabsState();
+    const excalidrawTab = findFirstFileTabByKind(state, "excalidraw");
+    if (excalidrawTab && state.activeTabId !== excalidrawTab.id) {
+      writeEditorTabsState(activateTab(state, excalidrawTab.id));
+    }
+    return;
+  }
   if (hashNeedsEditorRoute(hash)) {
     return;
   }
   writeEditorTabsState(activateTab(readEditorTabsState(), HOME_TAB_ID));
+}
+
+/**
+ * 桌面冷启动：从 localStorage 恢复上次激活的标签页 hash。
+ * 仅在当前 hash 不是编辑器路由时生效（避免覆盖深链接 / 外部打开）。
+ */
+export function restoreDesktopEditorSession(
+  inputDeps?: Pick<NavigateDeps, "setHash" | "buildFileHash" | "buildHomeHash">,
+): boolean {
+  if (!isDesktopEditorHub()) {
+    return false;
+  }
+  const deps = resolveNavigateDeps(inputDeps);
+  const hash = window.location.hash;
+  if (hashNeedsEditorRoute(hash)) {
+    return false;
+  }
+  const state = readEditorTabsState();
+  if (state.activeTabId === HOME_TAB_ID) {
+    return false;
+  }
+  const active = state.tabs.find((tab) => tab.id === state.activeTabId);
+  if (active?.type !== "file") {
+    return false;
+  }
+  const targetHash = deps.buildFileHash(active.fileId, active.kind);
+  setHashUnlessCurrent(deps.setHash, targetHash);
+  return true;
 }

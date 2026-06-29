@@ -7,6 +7,9 @@ import { requestEditorTabSnapshot } from "./activeEditorSnapshotBridge";
 import { listOpenFileEditorTabs } from "./editorTabForeground";
 import { confirmEditorLeaveForFile } from "../shell/editorLeaveFlow";
 import { resolveEditorHomeNavPlan } from "./editorLeaveHome";
+import { requestEditorTabSave } from "./activeEditorSaveBridge";
+import { isDesktopEditorHub } from "../lib/runtimePlatform";
+import { persistEditorTabsSnapshot } from "../shell/editorTabs";
 
 import type { ActiveEditorSnapshotSource } from "./activeEditorSnapshotBridge";
 import type { ActiveEditorSaveSource } from "./activeEditorSaveBridge";
@@ -187,5 +190,84 @@ export async function prepareAllOpenEditorTabsForClose(): Promise<boolean> {
     "ok",
   );
   traceUserAction("tab", "prepareAllForClose", { tabCount: tabs.length }, "ok");
+  return true;
+}
+
+/**
+ * 桌面关窗专用：并行自动保存 dirty 标签、跳过 snapshot/确认对话框、持久化标签状态。
+ * 避免 prepareAllOpenEditorTabsForClose 对每个缓存标签串行 snapshot 导致关窗卡数十秒。
+ */
+export async function prepareDesktopWindowClose(): Promise<boolean> {
+  const totalStartedAt = performance.now();
+  const tabs = listOpenFileEditorTabs();
+  traceIssueDiag(
+    "desktop.close",
+    "prepareWindow",
+    { tabCount: tabs.length, fileIds8: tabs.map((t) => t.fileId.slice(0, 8)) },
+    "start",
+  );
+
+  const dirtyTabs = tabs.filter(
+    (tab) =>
+      resolveEditorHomeNavPlan(tab.fileId, { kind: tab.kind }).action ===
+      "prompt-leave",
+  );
+
+  if (dirtyTabs.length > 0) {
+    const saveResults = await Promise.all(
+      dirtyTabs.map(async (tab) => {
+        const startedAt = performance.now();
+        try {
+          const saved = await requestEditorTabSave(tab.fileId, "exit");
+          traceIssueDiag(
+            "desktop.close",
+            "prepareWindow.save",
+            {
+              fileId8: tab.fileId.slice(0, 8),
+              kind: tab.kind,
+              saved,
+              ms: elapsedMs(startedAt),
+            },
+            saved ? "ok" : "fail",
+          );
+          return saved;
+        } catch (error) {
+          traceIssueDiag(
+            "desktop.close",
+            "prepareWindow.save",
+            {
+              fileId8: tab.fileId.slice(0, 8),
+              kind: tab.kind,
+              message:
+                error instanceof Error ? error.message : String(error),
+              ms: elapsedMs(startedAt),
+            },
+            "fail",
+          );
+          return false;
+        }
+      }),
+    );
+    traceIssueDiag(
+      "desktop.close",
+      "prepareWindow.saves",
+      {
+        dirtyCount: dirtyTabs.length,
+        savedCount: saveResults.filter(Boolean).length,
+      },
+      "ok",
+    );
+  }
+
+  if (isDesktopEditorHub()) {
+    persistEditorTabsSnapshot();
+  }
+
+  traceIssueDiag(
+    "desktop.close",
+    "prepareWindow",
+    { tabCount: tabs.length, totalMs: elapsedMs(totalStartedAt) },
+    "ok",
+  );
   return true;
 }

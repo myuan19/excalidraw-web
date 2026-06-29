@@ -75,9 +75,18 @@ function runWebAppBuild() {
     ]);
     return;
   }
-  if (!existsSync(path.join(repoRoot, "apps", "web", "build", "index.html"))) {
-    run("build web", "bash", ["scripts/build-production.sh", "app"]);
-  }
+  run("verify mind-map public", "node", ["scripts/verify-mind-map-public.mjs"]);
+  run("build web app (release)", "yarn", ["build:app-only"], {
+    cwd: path.join(repoRoot, "apps", "web"),
+  });
+  run("build web version (release)", "yarn", ["build:version"], {
+    cwd: path.join(repoRoot, "apps", "web"),
+  });
+  run("verify mind-map in app build", "node", [
+    "scripts/verify-mind-map-public.mjs",
+    "--root",
+    "apps/web/build/mind-map",
+  ]);
 }
 
 runWebAppBuild();

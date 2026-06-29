@@ -14,9 +14,13 @@ import {
 } from "../lib/editorTabCacheTrace";
 import { traceUserAction } from "../lib/userTrace";
 import { editorRegistry } from "../editors";
+import { isAddLibraryHash } from "../data/documentHash";
+import { LIBRARY_URL_IMPORT_DONE_EVENT } from "../data/libraryUrlImport";
 import { useHomePageWheelZoom } from "../hooks/useHomePageWheelZoom";
 import { EditorPaneStack } from "./EditorPaneStack";
-import { openEditorFileTab, reconcileEditorTabsWithHash } from "./editorTabNavigation";
+import { LibraryImportEditorPane } from "./LibraryImportEditorPane";
+import { openEditorFileTab, reconcileEditorTabsWithHash, restoreDesktopEditorSession } from "./editorTabNavigation";
+import { APP_SHELL_GO_HOME } from "./Sidebar";
 import {
   EDITOR_TABS_CHANGE_EVENT,
   HOME_TAB_ID,
@@ -24,11 +28,32 @@ import {
   readEditorTabsState,
   type EditorTabsState,
 } from "./editorTabs";
+import { isDesktopEditorHub } from "../lib/runtimePlatform";
 
 import "./EditorTabCacheHost.scss";
 
 function buildFileHash(id: string, kind?: string): string {
   return editorRegistry.buildFileHash(id, kind);
+}
+
+/** 桌面冷启动：首帧前恢复 hash + tab，避免 file-active 却无 pane 的白屏。 */
+function bootstrapEditorTabCacheState(): EditorTabsState {
+  const state = readEditorTabsState();
+  if (!isDesktopEditorHub()) {
+    return state;
+  }
+  restoreDesktopEditorSession();
+  reconcileEditorTabsWithHash(window.location.hash);
+  const next = readEditorTabsState();
+  const fileTabs = listFileEditorTabsForPaneStack(next);
+  if (next.activeTabId === HOME_TAB_ID) {
+    return next;
+  }
+  if (fileTabs.some((tab) => tab.id === next.activeTabId)) {
+    return next;
+  }
+  reconcileEditorTabsWithHash(window.location.hash);
+  return readEditorTabsState();
 }
 
 export function EditorTabCacheHost({
@@ -37,7 +62,10 @@ export function EditorTabCacheHost({
   onFileListReady: () => void;
 }) {
   const [tabState, setTabState] = useState<EditorTabsState>(() =>
-    readEditorTabsState(),
+    bootstrapEditorTabCacheState(),
+  );
+  const [holdLibraryImportEditor, setHoldLibraryImportEditor] = useState(() =>
+    isAddLibraryHash(window.location.hash),
   );
   const homeContainerRef = useRef<HTMLDivElement>(null);
   const lastReconcileKeyRef = useRef<string | null>(null);
@@ -51,6 +79,13 @@ export function EditorTabCacheHost({
     tabState.activeTabId === HOME_TAB_ID
       ? null
       : fileTabs.find((tab) => tab.id === tabState.activeTabId) ?? null;
+  const hasRenderableFilePane = Boolean(activeFileTab) && hasFileTabs;
+  const libraryImportHashActive = isAddLibraryHash(window.location.hash);
+  const showLibraryImportEditor =
+    !hasRenderableFilePane &&
+    (libraryImportHashActive || holdLibraryImportEditor);
+  const showHomePane = !hasRenderableFilePane && !showLibraryImportEditor;
+  const showEditorShell = hasRenderableFilePane || showLibraryImportEditor;
 
   useEffect(() => {
     const sync = () => {
@@ -68,28 +103,57 @@ export function EditorTabCacheHost({
       });
       setTabState(next);
     };
+    const onHashChange = () => {
+      if (isAddLibraryHash(window.location.hash)) {
+        setHoldLibraryImportEditor(true);
+        reconcileEditorTabsWithHash(window.location.hash);
+      }
+      sync();
+    };
+    const onLibraryImportDone = () => {
+      setHoldLibraryImportEditor(true);
+    };
+    const onAppShellGoHome = () => {
+      setHoldLibraryImportEditor(false);
+    };
     window.addEventListener(EDITOR_TABS_CHANGE_EVENT, sync);
-    window.addEventListener("hashchange", sync);
+    window.addEventListener("hashchange", onHashChange);
+    window.addEventListener(LIBRARY_URL_IMPORT_DONE_EVENT, onLibraryImportDone);
+    window.addEventListener(APP_SHELL_GO_HOME, onAppShellGoHome);
     return () => {
       window.removeEventListener(EDITOR_TABS_CHANGE_EVENT, sync);
-      window.removeEventListener("hashchange", sync);
+      window.removeEventListener("hashchange", onHashChange);
+      window.removeEventListener(
+        LIBRARY_URL_IMPORT_DONE_EVENT,
+        onLibraryImportDone,
+      );
+      window.removeEventListener(APP_SHELL_GO_HOME, onAppShellGoHome);
     };
   }, []);
 
-  useHomePageWheelZoom(homeContainerRef, homeActive);
+  useHomePageWheelZoom(homeContainerRef, showHomePane);
+
+  useEffect(() => {
+    if (
+      tabState.activeTabId === HOME_TAB_ID &&
+      !isAddLibraryHash(window.location.hash)
+    ) {
+      setHoldLibraryImportEditor(false);
+    }
+  }, [tabState.activeTabId]);
 
   useEffect(() => {
     const snapshot = buildTabCacheHostSnapshot({
       activeTabId: tabState.activeTabId,
       hash: window.location.hash,
-      homeActive,
+      homeActive: showHomePane,
       hasFileTabs,
       activeFileTab,
       fileTabs,
     });
     publishTabCacheHostSnapshot(snapshot);
 
-    if (!homeActive && !activeFileTab) {
+    if (!showHomePane && !activeFileTab) {
       traceTabCacheWhiteScreen(snapshot, "no-active-file-pane");
       devDebug("app", "[DEBUG] EditorTabCacheHost | active tab has no pane", {
         activeTabId: tabState.activeTabId,
@@ -106,7 +170,7 @@ export function EditorTabCacheHost({
     }
     lastReconcileKeyRef.current = null;
 
-    if (homeActive && hasFileTabs && tabState.activeTabId !== HOME_TAB_ID) {
+    if (showHomePane && hasFileTabs && tabState.activeTabId !== HOME_TAB_ID) {
       traceTabCache(
         "hostModeMismatch",
         {
@@ -122,6 +186,7 @@ export function EditorTabCacheHost({
     fileTabs,
     hasFileTabs,
     homeActive,
+    showHomePane,
     tabState.activeTabId,
     tabState.tabs,
   ]);
@@ -173,7 +238,7 @@ export function EditorTabCacheHost({
 
   const hostClassName = [
     "editor-tab-cache-host",
-    homeActive
+    showHomePane
       ? "editor-tab-cache-host--home-active"
       : "editor-tab-cache-host--file-active",
   ].join(" ");
@@ -187,7 +252,7 @@ export function EditorTabCacheHost({
         className={[
           "editor-tab-cache-pane",
           "editor-tab-cache-pane--home",
-          homeActive
+          showHomePane
             ? "editor-tab-cache-pane--active"
             : "editor-tab-cache-pane--cached",
         ]
@@ -198,9 +263,13 @@ export function EditorTabCacheHost({
           <FileList onOpenFile={onOpenFile} onReady={onFileListReady} />
         </div>
       </div>
-      {hasFileTabs ? (
+      {showEditorShell ? (
         <EditorPlatformShell>
-          <EditorPaneStack tabState={tabState} />
+          {showLibraryImportEditor ? (
+            <LibraryImportEditorPane />
+          ) : (
+            <EditorPaneStack tabState={tabState} />
+          )}
         </EditorPlatformShell>
       ) : null}
     </div>

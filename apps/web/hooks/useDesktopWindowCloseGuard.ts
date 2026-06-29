@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-import { prepareAllOpenEditorTabsForClose } from "../data/editorTabLeave";
+import { prepareDesktopWindowClose } from "../data/editorTabLeave";
 import { devDebug } from "../lib/devDebug";
 import { traceIssueDiag } from "../lib/issueDiagTrace";
 import { isDesktopEditorHub } from "../lib/runtimePlatform";
@@ -37,7 +37,7 @@ export function useDesktopWindowCloseGuard() {
       devDebug("shell-nav", "desktop window close requested — preparing tabs", {
         generation,
       });
-      const prepare = prepareAllOpenEditorTabsForClose();
+      const prepare = prepareDesktopWindowClose();
       const timeout = new Promise<boolean>((resolve) => {
         window.setTimeout(() => {
           traceIssueDiag(

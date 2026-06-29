@@ -29,7 +29,7 @@ describe("useDesktopWindowCloseGuard source contract", () => {
       "utf8",
     );
 
-    expect(hookSource).toContain("prepareAllOpenEditorTabsForClose");
+    expect(hookSource).toContain("prepareDesktopWindowClose");
     expect(hookSource).toContain("onWindowCloseRequested");
     expect(hookSource).toContain("finishWindowClose");
     expect(sidebarSource).toContain("useDesktopWindowCloseGuard");

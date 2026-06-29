@@ -87,6 +87,12 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "perMachine": false
-    }
+    },
+    "protocols": [
+      {
+        "name": "EditorHub",
+        "schemes": ["editorhub"]
+      }
+    ]
   }
 }

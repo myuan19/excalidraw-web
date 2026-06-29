@@ -9,7 +9,14 @@ import {
   MainMenu,
   THEME,
   CaptureUpdateAction,
+  useHandleLibrary,
 } from "@excalidraw/excalidraw";
+
+import {
+  CombinedLibraryAdapter,
+  setCombinedLibraryFileId,
+} from "../../data/CombinedLibraryAdapter";
+import { AppSidebar } from "../../components/AppSidebar";
 
 import type {
   AppState,
@@ -50,6 +57,11 @@ import { bumpRecentEditOrder } from "../../data/recentFiles";
 import { notifyLocalDraftEdited } from "../../data/localDraftSessions";
 import { FileSyncState } from "../../data/FileSyncState";
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
+import {
+  createLibraryImportPlaceholderFile,
+  finishLibraryUrlImportNavigation,
+  resolveLibraryReturnUrl,
+} from "../../data/libraryUrlImport";
 import { ExcalidrawAdapter } from "../../data/formats/ExcalidrawAdapter";
 import { isLocalDraftFileId } from "../../data/localDraftFileId";
 import { LocalThumbnailCache } from "../../data/localThumbnailCache";
@@ -131,6 +143,8 @@ import {
 } from "../../shell/editorHostCommand";
 
 import { AppWelcomeScreen } from "../../components/AppWelcomeScreen";
+import { LanguageList } from "../../app-language/LanguageList";
+import { useAppLangCode } from "../../app-language/language-state";
 import { ArchivePanel } from "../../components/ArchivePanel";
 import { EmbedTokenManager } from "../../components/EmbedTokenManager";
 import "../../components/ExcalToolbar.scss";
@@ -219,12 +233,17 @@ export default function ExcalidrawEditorShell(
 ) {
   const isPaneForeground = resolvePaneForeground(props);
   const pinnedFileId = props.pinnedFileId;
-  const [file, setFile] = useState<ServerFile | null>(null);
+  const libraryImportOnly = props.libraryImportOnly ?? false;
+  const [file, setFile] = useState<ServerFile | null>(() =>
+    libraryImportOnly && !pinnedFileId
+      ? createLibraryImportPlaceholderFile()
+      : null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
   const [showEmbedManager, setShowEmbedManager] = useState(false);
   const [saving, setSaving] = useState(false);
-  const fileId = props.pinnedFileId ?? getFileIdFromHash();
+  const fileId = pinnedFileId ?? (libraryImportOnly ? null : getFileIdFromHash());
   const saveFile = useForkFileSave(fileId);
   const localDraftTimerRef = useRef<number | null>(null);
   const autoSaveTimerRef = useRef<number | null>(null);
@@ -240,6 +259,27 @@ export default function ExcalidrawEditorShell(
     (source?: ActiveEditorSaveSource) => Promise<boolean> | boolean
   >(() => false);
   const excalidrawAPIRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  /**
+   * 素材库（Library）持久化需要把 API 作为响应式值传给 useHandleLibrary，
+   * 因此在 ref 之外再保留一份 state（ref 仍用于命令式调用，避免大改既有逻辑）。
+   */
+  const [excalidrawAPI, setExcalidrawAPI] =
+    useState<ExcalidrawImperativeAPI | null>(null);
+  // 让素材库的 canvas 作用域跟随当前文件（per-file library items）。
+  useEffect(() => {
+    setCombinedLibraryFileId(fileId ?? null);
+  }, [fileId]);
+  // 把素材库面板接到服务端 + IDB 持久化适配器：
+  // 没有它，面板能开但永远为空、加项不持久、不发 /api/library 请求。
+  useHandleLibrary({
+    excalidrawAPI,
+    adapter: CombinedLibraryAdapter,
+    onLibraryUrlImport: async () => {
+      finishLibraryUrlImportNavigation({ libraryImportOnly });
+    },
+  });
+  const libraryReturnUrl = resolveLibraryReturnUrl();
+  const [langCode] = useAppLangCode();
   const editorOpenSettledRef = useRef(false);
   const preferLocalRecoveryRef = useRef(false);
   const paneForegroundSettlePendingRef = useRef(false);
@@ -416,6 +456,9 @@ export default function ExcalidrawEditorShell(
 
   useEffect(() => {
     let cancelled = false;
+    if (libraryImportOnly) {
+      return;
+    }
     if (!fileId) {
       setFile(null);
       return;
@@ -479,7 +522,7 @@ export default function ExcalidrawEditorShell(
     return () => {
       cancelled = true;
     };
-  }, [fileId, handleMissingServerFile]);
+  }, [fileId, handleMissingServerFile, libraryImportOnly]);
 
   const documentData = useMemo(
     () => normalizeExcalidrawData(file?.data, file?.name),
@@ -1493,8 +1536,15 @@ export default function ExcalidrawEditorShell(
   }
 
   if (!file) {
-    return <div style={{ padding: 24 }}>正在加载...</div>;
+    return (
+      <div style={{ padding: 24 }}>
+        {libraryImportOnly ? "正在打开素材库…" : "正在加载..."}
+      </div>
+    );
   }
+
+  const excalidrawDocumentKey =
+    libraryImportOnly && !fileId ? "library-import" : file.id;
 
   return (
     <div
@@ -1563,7 +1613,7 @@ export default function ExcalidrawEditorShell(
       {shouldMountExcalidrawCanvas ? (
         <ExcalidrawAPIProvider>
           <Excalidraw
-            key={file.id}
+            key={excalidrawDocumentKey}
             initialData={initialData as never}
             name={file.name}
             theme={
@@ -1576,6 +1626,7 @@ export default function ExcalidrawEditorShell(
             viewModeEnabled={!isPaneForeground}
             onExcalidrawAPI={(api) => {
               excalidrawAPIRef.current = api;
+              setExcalidrawAPI(api);
               if (hasBrowserViewportRef.current) {
                 revealForkCanvasAfterFit(api, () => {}, { skipFit: true });
               }
@@ -1606,8 +1657,11 @@ export default function ExcalidrawEditorShell(
             }}
             UIOptions={EXCALIDRAW_UI_OPTIONS}
             handleKeyboardGlobally={isPaneForeground}
+            libraryReturnUrl={libraryReturnUrl}
+            langCode={langCode}
           >
             <AppWelcomeScreen />
+            <AppSidebar />
             <MainMenu>
               <MainMenu.DefaultItems.Export />
               <MainMenu.DefaultItems.SaveAsImage />
@@ -1616,6 +1670,10 @@ export default function ExcalidrawEditorShell(
               <MainMenu.DefaultItems.ClearCanvas />
               <MainMenu.Separator />
               <MainMenu.DefaultItems.ChangeCanvasBackground />
+              <MainMenu.Separator />
+              <MainMenu.ItemCustom>
+                <LanguageList style={{ width: "100%" }} />
+              </MainMenu.ItemCustom>
             </MainMenu>
             {fileId && !isLocalDraftFileId(fileId) && showHistoryPanel && (
               <ArchivePanel

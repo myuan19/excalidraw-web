@@ -48,6 +48,12 @@ import {
   isOpenableDocumentPath,
   parseOpenDocumentArgv,
 } from "../src/openDocumentPaths.mjs";
+import {
+  editorHubHashFromUrl,
+  editorHubUrlsShareAppDocument,
+  normalizeEditorHubDeepLink,
+  parseEditorHubDeepLinkFromArgv,
+} from "../src/parseEditorHubDeepLink.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -89,6 +95,7 @@ if (!gotSingleInstanceLock) {
 }
 
 let pendingOpenDocumentPaths = [];
+let pendingDeepLinkUrl = null;
 let mainWindowContentReady = false;
 /** Set after renderer pulls initial paths via consumeOpenDocumentPaths (cold start). */
 let rendererOpenDocumentsReady = false;
@@ -106,6 +113,76 @@ function queueOpenDocumentPaths(paths) {
     }
   }
   flushPendingOpenDocumentPaths();
+}
+
+function focusMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function queueDeepLinkNavigation(url) {
+  const normalized = normalizeEditorHubDeepLink(url);
+  if (!normalized) {
+    return false;
+  }
+  pendingDeepLinkUrl = normalized;
+  writeDiagnostic("deep-link-queued", { url: normalized.slice(0, 200) });
+  flushPendingDeepLinkNavigation();
+  return true;
+}
+
+function flushPendingDeepLinkNavigation() {
+  if (
+    !pendingDeepLinkUrl ||
+    !mainWindowContentReady ||
+    !mainWindow ||
+    mainWindow.isDestroyed()
+  ) {
+    return;
+  }
+  const targetUrl = pendingDeepLinkUrl;
+  pendingDeepLinkUrl = null;
+  const webContents = mainWindow.webContents;
+  const currentUrl = webContents.getURL();
+  writeDiagnostic("deep-link-dispatch", {
+    targetUrl: targetUrl.slice(0, 200),
+    currentUrl: currentUrl.slice(0, 200),
+  });
+
+  const navigate = () => {
+    if (
+      editorHubUrlsShareAppDocument(currentUrl, targetUrl) &&
+      !webContents.isLoading()
+    ) {
+      const hash = editorHubHashFromUrl(targetUrl);
+      void webContents
+        .executeJavaScript(
+          `(function () {
+            const next = ${JSON.stringify(hash)};
+            if (window.location.hash !== next) {
+              window.location.hash = next;
+            }
+          })();`,
+        )
+        .catch((error) => {
+          writeDiagnostic("deep-link-hash-nav-failed", {
+            message: formatDesktopError(error),
+          });
+          void webContents.loadURL(targetUrl);
+        });
+      return;
+    }
+    void webContents.loadURL(targetUrl);
+  };
+
+  navigate();
+  focusMainWindow();
 }
 
 function flushPendingOpenDocumentPaths() {
@@ -368,6 +445,7 @@ async function createMainWindow(url) {
       url: mainWindow?.webContents.getURL(),
     });
     mainWindowContentReady = true;
+    flushPendingDeepLinkNavigation();
   });
   mainWindow.webContents.on(
     "did-fail-load",
@@ -520,7 +598,8 @@ async function startDesktopApp() {
     sinceStartupMs: elapsedSince(startupStartedAt),
   });
   writeDiagnostic("server-backend-ready");
-  const url = EDITORHUB_APP_INDEX_URL;
+  const initialDeepLink = parseEditorHubDeepLinkFromArgv(process.argv);
+  const url = initialDeepLink ?? EDITORHUB_APP_INDEX_URL;
   desktopServer = { app: desktopBackend.app, url };
   writeDiagnostic("protocol-load-url", { url });
   const windowStartedAt = Date.now();
@@ -714,13 +793,12 @@ ipcMain.handle("desktop:windowIsMaximized", () => {
 
 if (gotSingleInstanceLock) {
   app.on("second-instance", (_event, argv) => {
-    queueOpenDocumentPaths(parseOpenDocumentArgv(argv));
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      if (mainWindow.isMinimized()) {
-        mainWindow.restore();
-      }
-      mainWindow.show();
-      mainWindow.focus();
+    const deepLink = parseEditorHubDeepLinkFromArgv(argv);
+    if (deepLink) {
+      queueDeepLinkNavigation(deepLink);
+    } else {
+      queueOpenDocumentPaths(parseOpenDocumentArgv(argv));
+      focusMainWindow();
     }
   });
 
@@ -745,6 +823,9 @@ if (gotSingleInstanceLock) {
       writeDiagnostic("app-ready", { logPath: diagnosticLogPath });
       if (process.platform === "win32") {
         app.setAppUserModelId("com.editorhub.desktop");
+        if (gotSingleInstanceLock) {
+          app.setAsDefaultProtocolClient("editorhub");
+        }
       }
       const appIcon = loadDesktopWindowIcon();
       if (appIcon && process.platform === "darwin" && app.dock) {

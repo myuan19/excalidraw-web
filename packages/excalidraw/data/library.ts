@@ -698,7 +698,14 @@ export const useHandleLibrary = (
           clearedHashOrQuery = true;
           const hash = new URLSearchParams(window.location.hash.slice(1));
           hash.delete(URL_HASH_KEYS.addLibrary);
-          window.history.replaceState({}, APP_NAME, `#${hash.toString()}`);
+          hash.delete("token");
+          const nextParams = hash.toString();
+          const base = `${window.location.origin}${window.location.pathname}${window.location.search}`;
+          window.history.replaceState(
+            {},
+            APP_NAME,
+            nextParams ? `${base}#${nextParams}` : base,
+          );
         } else if (window.location.search.includes(URL_QUERY_KEYS.addLibrary)) {
           clearedHashOrQuery = true;
           const query = new URLSearchParams(window.location.search);

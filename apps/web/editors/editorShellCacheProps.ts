@@ -7,6 +7,11 @@ export type EditorShellCacheProps = {
    * `useEditorPaneLifecycle`.
    */
   isPaneForeground?: boolean;
+  /**
+   * Transient Excalidraw session for `#addLibrary=` deep links when no file tab
+   * is open (desktop tab cache / web cold start).
+   */
+  libraryImportOnly?: boolean;
 };
 
 export function resolvePaneForeground(props: EditorShellCacheProps): boolean {

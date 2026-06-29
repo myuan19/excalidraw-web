@@ -17,10 +17,14 @@ export function isNewDocumentHash(hash?: string): boolean {
   return parseHashParams(hash).get("new") === "1";
 }
 
+export function isAddLibraryHash(hash?: string): boolean {
+  return parseHashParams(hash).has("addLibrary");
+}
+
 export function hashNeedsEditorRoute(hash?: string): boolean {
   const h =
     hash ?? (typeof window !== "undefined" ? window.location.hash : "");
-  if (h.startsWith("#file=") || h.startsWith("#addLibrary=")) {
+  if (h.startsWith("#file=") || isAddLibraryHash(h)) {
     return true;
   }
   return isNewDocumentHash(h);

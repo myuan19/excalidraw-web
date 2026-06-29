@@ -25,7 +25,9 @@ import {
   renameOpenFileTab,
   replaceOpenFileTabAfterSave,
   refreshOpenFileTabTitle,
+  restoreDesktopEditorSession,
 } from "./editorTabNavigation";
+import * as runtimePlatform from "../lib/runtimePlatform";
 
 const snapshot = vi.fn(async (): Promise<{ ok: boolean; reason?: string }> => ({
   ok: true,
@@ -35,7 +37,9 @@ const setHash = vi.fn();
 describe("editorTabNavigation", () => {
   beforeEach(() => {
     sessionStorage.clear();
+    localStorage.clear();
     vi.clearAllMocks();
+    vi.spyOn(runtimePlatform, "isDesktopEditorHub").mockReturnValue(false);
     prepareEditorTabForClose.mockResolvedValue(true);
     writeEditorTabsState(createInitialEditorTabsState());
   });
@@ -369,5 +373,51 @@ describe("editorTabNavigation", () => {
     expect(
       next.tabs.find((tab: { id: string }) => tab.id === "file:file-1"),
     ).toMatchObject({ title: "保留名字" });
+  });
+
+  it("restoreDesktopEditorSession navigates to last active file tab on cold start", () => {
+    vi.spyOn(runtimePlatform, "isDesktopEditorHub").mockReturnValue(true);
+    writeEditorTabsState(
+      openFileTab(createInitialEditorTabsState(), {
+        fileId: "file-abc",
+        kind: "excalidraw",
+        title: "Diagram",
+      }),
+    );
+
+    const restored = restoreDesktopEditorSession({
+      setHash,
+      buildFileHash: (fileId, kind) => `#file=${fileId}&kind=${kind}`,
+      buildHomeHash: () => "#home",
+    });
+
+    expect(restored).toBe(true);
+    expect(setHash).toHaveBeenCalledWith("#file=file-abc&kind=excalidraw");
+  });
+
+  it("restoreDesktopEditorSession skips when hash already points at an editor", () => {
+    vi.spyOn(runtimePlatform, "isDesktopEditorHub").mockReturnValue(true);
+    writeEditorTabsState(
+      openFileTab(createInitialEditorTabsState(), {
+        fileId: "file-abc",
+        kind: "excalidraw",
+        title: "Diagram",
+      }),
+    );
+
+    Object.defineProperty(window, "location", {
+      value: { hash: "#file=other&kind=mindmap" },
+      writable: true,
+      configurable: true,
+    });
+
+    const skipped = restoreDesktopEditorSession({
+      setHash,
+      buildFileHash: (fileId, kind) => `#file=${fileId}&kind=${kind}`,
+      buildHomeHash: () => "#home",
+    });
+
+    expect(skipped).toBe(false);
+    expect(setHash).not.toHaveBeenCalled();
   });
 });
