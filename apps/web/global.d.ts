@@ -16,6 +16,18 @@ declare global {
         headers: Record<string, string>;
         bodyText: string;
       }>;
+      dragPerf?: (payload: {
+        phase: "start" | "end";
+        sessionId?: number;
+        reason?: string;
+        raf?: Record<string, unknown> | null;
+      }) => Promise<{ ok: boolean }>;
+      issueDiag?: (payload: {
+        area: string;
+        action: string;
+        phase?: string;
+        data?: Record<string, unknown>;
+      }) => Promise<{ ok: boolean; reason?: string }>;
       subscribeCatalogChanges?: (
         callback: (payload: Record<string, unknown>) => void,
       ) => () => void;

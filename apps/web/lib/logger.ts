@@ -20,6 +20,15 @@ import { isDesktopEditorHub } from "./runtimePlatform";
 
 class ConsoleTransport implements LogTransport {
   write(entry: LogEntry): void {
+    // Desktop debug 诊断走 desktop-op.log；控制台只保留 warn/error，避免 DevTools 被 [DEBUG] 刷屏。
+    if (
+      isDesktopEditorHub() &&
+      (entry.level === "debug" ||
+        entry.level === "trace" ||
+        entry.level === "info")
+    ) {
+      return;
+    }
     const fn =
       entry.level === "critical" || entry.level === "error"
         ? nativeConsole.error

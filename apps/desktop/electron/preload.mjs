@@ -3,6 +3,8 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 contextBridge.exposeInMainWorld("editorHubDesktop", {
   platform: process.platform,
   invokeApi: (request) => ipcRenderer.invoke("editorhub:api", request),
+  dragPerf: (payload) => ipcRenderer.invoke("editorhub:dragPerf", payload),
+  issueDiag: (payload) => ipcRenderer.invoke("editorhub:issueDiag", payload),
   subscribeCatalogChanges: (callback) => {
     if (typeof callback !== "function") {
       return () => {};

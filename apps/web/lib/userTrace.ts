@@ -1,6 +1,6 @@
 /**
  * 用户操作追踪：统一 `[DEBUG] user-trace | area | action | phase` 前缀。
- * 同时写入 devDebug（控制台）与 createLogger（Web: POST /api/logs；Desktop: IPC → desktop-op.log）。
+ * Desktop：devDebug 仅写入 desktop-op.log，不刷控制台；Web dev 仍 mirror 到 DevTools。
  *
  * 启用方式：
  * - Desktop：`EDITORHUB_DESKTOP_DEBUG=1` 启动（自动开启调试日志）

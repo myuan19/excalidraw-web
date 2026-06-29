@@ -1119,18 +1119,38 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const mobileTreeBackdropDismiss = useStrictOverlayDismiss(dismissMobileTree);
 
   useEffect(() => {
-    const bumpRecent = (event?: Event) => {
-      const reason = event?.type ?? "manual";
+    // 一次拖拽保存会在 ~70ms 内连发多个 RECENT_FILES / sync 事件，逐个 setRecentRevision
+    // 会触发多次首页重渲染。用 rAF 把同一帧内的多次 bump 归并为一次状态更新，
+    // 既保留最终一致性，又避免拖拽期间首页被反复重渲染拖累主线程。
+    let rafHandle: number | null = null;
+    let coalescedCount = 0;
+    let lastReason = "manual";
+    const flushBump = () => {
+      rafHandle = null;
+      const merged = coalescedCount;
+      coalescedCount = 0;
       setRecentRevision((value) => {
         const next = value + 1;
         traceIssueDiag(
           "home.render",
           "recentRevision.bump",
-          { from: value, to: next, reason },
+          { from: value, to: next, reason: lastReason, coalesced: merged },
           "branch",
         );
         return next;
       });
+    };
+    const bumpRecent = (event?: Event) => {
+      lastReason = event?.type ?? "manual";
+      coalescedCount += 1;
+      if (rafHandle != null) {
+        return;
+      }
+      if (typeof requestAnimationFrame === "function") {
+        rafHandle = requestAnimationFrame(flushBump);
+      } else {
+        flushBump();
+      }
     };
     window.addEventListener(RECENT_FILES_CHANGE_EVENT, bumpRecent);
     window.addEventListener(LOCAL_DRAFT_SESSIONS_CHANGE_EVENT, bumpRecent);
@@ -1147,6 +1167,9 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     return () => {
       window.removeEventListener(RECENT_FILES_CHANGE_EVENT, bumpRecent);
       window.removeEventListener(LOCAL_DRAFT_SESSIONS_CHANGE_EVENT, bumpRecent);
+      if (rafHandle != null && typeof cancelAnimationFrame === "function") {
+        cancelAnimationFrame(rafHandle);
+      }
       unsubCrossTab();
     };
   }, []);

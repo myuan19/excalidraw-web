@@ -14,6 +14,10 @@ import {
 
 import { createDesktopBackend } from "../src/bootstrapBackend.mjs";
 import { applyDesktopBuildFlags } from "../src/applyDesktopBuildFlags.mjs";
+import { createDragPerfSampler } from "../src/dragPerfSampler.mjs";
+import { createIssueDiagDesktopBridge } from "../src/issueDiagDesktopBridge.mjs";
+import { applyDesktopGpuSwitches } from "../src/desktopGpuPolicy.mjs";
+import { createGpuDiagnostics } from "../src/gpuDiagnostics.mjs";
 import {
   ensureLoopbackServer,
   closeDispatchLoopbackServer,
@@ -50,6 +54,31 @@ const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "../../..");
 const preloadPath = path.join(__dirname, "preload.mjs");
 const desktopBuildFlags = applyDesktopBuildFlags();
+
+const dragPerfSampler = createDragPerfSampler({
+  getAppMetrics: () => app.getAppMetrics(),
+  writeLog: (event, action, details) =>
+    writeDesktopLog("perf", `${event}.${action}`, details),
+});
+
+const issueDiagDesktopBridge = createIssueDiagDesktopBridge({
+  writeLog: (category, event, details) =>
+    writeDesktopLog(category, event, details),
+});
+
+// GPU/呈现策略：必须在 app ready 之前应用（详见 desktopGpuPolicy.mjs）。
+const gpuPolicy = applyDesktopGpuSwitches(app.commandLine, {
+  platform: process.platform,
+  env: process.env,
+});
+
+const gpuDiagnostics = createGpuDiagnostics({
+  getFeatureStatus: () => app.getGPUFeatureStatus(),
+  getGpuInfo: (level) => app.getGPUInfo(level),
+  hasSwitch: (name) => app.commandLine.hasSwitch(name),
+  writeLog: (action, details) =>
+    writeDesktopLog("perf", `drag.perf.${action}`, details),
+});
 
 registerEditorHubPrivileges();
 prepareDesktopPathLayout(app);
@@ -373,6 +402,30 @@ async function createMainWindow(url) {
     },
   );
 
+  if (desktopBuildFlags.debugPack) {
+    // 应用菜单被置空（Menu.setApplicationMenu(null)），默认的 DevTools 快捷键也随之失效。
+    // Debug 包补回一个开关：F12 或 Ctrl/Cmd+Shift+I 切换；设置
+    // EDITORHUB_DESKTOP_OPEN_DEVTOOLS=1 时随窗口加载完成自动打开。
+    mainWindow.webContents.on("before-input-event", (event, input) => {
+      if (input.type !== "keyDown") {
+        return;
+      }
+      const key = String(input.key ?? "").toLowerCase();
+      const isToggleDevTools =
+        key === "f12" ||
+        ((input.control || input.meta) && input.shift && key === "i");
+      if (isToggleDevTools) {
+        mainWindow?.webContents.toggleDevTools();
+        event.preventDefault();
+      }
+    });
+    if (process.env.EDITORHUB_DESKTOP_OPEN_DEVTOOLS === "1") {
+      mainWindow.webContents.once("did-finish-load", () => {
+        mainWindow?.webContents.openDevTools({ mode: "detach" });
+      });
+    }
+  }
+
   mainWindow.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
     void shell.openExternal(targetUrl);
     return { action: "deny" };
@@ -477,6 +530,7 @@ async function startDesktopApp() {
     phaseMs: elapsedSince(windowStartedAt),
     sinceStartupMs: elapsedSince(startupStartedAt),
   });
+  gpuDiagnostics.log({ appliedGpuSwitches: gpuPolicy.applied });
 }
 
 app.on("window-all-closed", () => {
@@ -544,6 +598,14 @@ ipcMain.handle("editorhub:api", async (_event, request = {}) => {
         ? null
         : String(request.body),
   });
+});
+
+ipcMain.handle("editorhub:dragPerf", (_event, payload = {}) => {
+  return dragPerfSampler.handle(payload);
+});
+
+ipcMain.handle("editorhub:issueDiag", (_event, payload = {}) => {
+  return issueDiagDesktopBridge.handle(payload);
 });
 
 ipcMain.handle("desktop:pickFolder", async () => {

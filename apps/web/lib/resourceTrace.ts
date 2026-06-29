@@ -8,6 +8,7 @@
  */
 
 import { isDebugLoggingEnabled, subscribeAppSettings } from "../data/appSettings";
+import { devDebug } from "./devDebug";
 import { getFileListScrollSummary } from "./fileListScrollPerf";
 
 const STORAGE_KEY = "excalidraw-resource-trace";
@@ -60,13 +61,10 @@ export function isResourceTraceEnabled(): boolean {
 }
 
 function emit(label: string, data?: Record<string, unknown>): void {
-  const payload = { ...(data ?? {}), resourceTrace: true };
-  const prefix = `[DEBUG] user-trace | resource | ${label}`;
-  try {
-    console.warn(prefix, payload);
-  } catch {
-    console.warn(prefix);
-  }
+  devDebug("user-trace", `resource | ${label}`, {
+    ...(data ?? {}),
+    resourceTrace: true,
+  });
 }
 
 function normalizeApiKey(method: string, path: string): string {

@@ -80,6 +80,8 @@ import {
   beginExcalidrawPointerDrag,
   endExcalidrawPointerDrag,
   isExcalidrawPointerDragActive,
+  runAfterExcalidrawPointerDrag,
+  shouldDeferHeavyHostWorkForExcalidraw,
 } from "./excalidrawPointerDrag";
 import {
   isServerSyncNotFoundError,
@@ -140,6 +142,7 @@ import {
   resolveExcalidrawBrowserViewportOverlay,
   scheduleExcalidrawBrowserSceneSave,
 } from "./excalidrawBrowserViewport";
+import { traceExcalidrawDragGeometry } from "./excalidrawDragGeometry";
 import { useForkFileSave } from "./useForkFileSave";
 import { verifyExcalidrawRemoteAfterCachedOpen } from "./verifyExcalidrawCachedOpen";
 import { revealForkCanvasAfterFit } from "../../data/scrollEditorToFit";
@@ -660,6 +663,12 @@ export default function ExcalidrawEditorShell(
 
   const saveCurrentDocumentInner = useCallback(
     async (source: ActiveEditorSaveSource = "manual") => {
+      if (source === "auto" && shouldDeferHeavyHostWorkForExcalidraw()) {
+        runAfterExcalidrawPointerDrag(() => {
+          void saveCurrentDocumentInner("auto");
+        });
+        return false;
+      }
       if (fileId) {
         transferEditorPaneEditPipelineHold(
           releaseAutoSavePipelineRef,
@@ -760,10 +769,21 @@ export default function ExcalidrawEditorShell(
     if (autoSaveTimerRef.current !== null) {
       window.clearTimeout(autoSaveTimerRef.current);
     }
-    autoSaveTimerRef.current = window.setTimeout(() => {
-      autoSaveTimerRef.current = null;
-      void saveCurrentDocument("auto");
-    }, settings.autoSaveIdleSec * 1000);
+    const schedule = () => {
+      autoSaveTimerRef.current = window.setTimeout(() => {
+        autoSaveTimerRef.current = null;
+        if (shouldDeferHeavyHostWorkForExcalidraw()) {
+          runAfterExcalidrawPointerDrag(schedule);
+          return;
+        }
+        void saveCurrentDocument("auto");
+      }, settings.autoSaveIdleSec * 1000);
+    };
+    if (shouldDeferHeavyHostWorkForExcalidraw()) {
+      runAfterExcalidrawPointerDrag(schedule);
+      return;
+    }
+    schedule();
   }, [fileId, saveCurrentDocument]);
 
   const touchExcalidrawIdleAutoSaveTimer = useCallback(() => {
@@ -911,7 +931,13 @@ export default function ExcalidrawEditorShell(
       let thumbnailScheduleMs = 0;
       if (opts?.scheduleThumbnail !== false) {
         const thumbnailStartedAt = performance.now();
-        scheduleExcalidrawThumbnailAndCache(fileId, canonicalScene);
+        const scheduleThumb = () =>
+          scheduleExcalidrawThumbnailAndCache(fileId, canonicalScene);
+        if (shouldDeferHeavyHostWorkForExcalidraw()) {
+          runAfterExcalidrawPointerDrag(scheduleThumb);
+        } else {
+          scheduleThumb();
+        }
         thumbnailScheduleMs = elapsedMs(thumbnailStartedAt);
       }
       latestThumbnailRef.current = null;
@@ -1039,14 +1065,18 @@ export default function ExcalidrawEditorShell(
         window.clearTimeout(localDraftTimerRef.current);
         localDraftTimerRef.current = null;
       }
+      if (autoSaveTimerRef.current !== null) {
+        window.clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
       let flushed = false;
       try {
         if (pendingRawChangeRef.current) {
           flushed = true;
           flushPendingExcalidrawDraft({
-            scheduleThumbnail: true,
-            bumpRecent: true,
-            forceRecent: true,
+            scheduleThumbnail: false,
+            bumpRecent: false,
+            forceRecent: false,
             silentModificationState: true,
             reason,
           });
@@ -1063,15 +1093,23 @@ export default function ExcalidrawEditorShell(
           flushExcalidrawBrowserSceneSave();
         }
         if (flushed) {
-          const notifyStartedAt = performance.now();
-          FileSyncState.notifySyncState();
-          const notifyMs = elapsedMs(notifyStartedAt);
-          if (isDebugRuntimeEnabled() && notifyMs > 4) {
-            traceExcalidrawDragStage("pointer.notifySyncState", {
-              reason,
-              notifyMs,
-            });
-          }
+          runAfterExcalidrawPointerDrag(() => {
+            const scene = latestSceneRef.current;
+            if (fileId && scene) {
+              scheduleExcalidrawThumbnailAndCache(fileId, scene);
+              bumpRecentEditOrder({ fileId }, { force: true });
+            }
+            const notifyStartedAt = performance.now();
+            FileSyncState.notifySyncState();
+            const notifyMs = elapsedMs(notifyStartedAt);
+            if (isDebugRuntimeEnabled() && notifyMs > 4) {
+              traceExcalidrawDragStage("pointer.notifySyncState", {
+                reason,
+                notifyMs,
+                deferred: true,
+              });
+            }
+          });
         }
       }
       const totalMs = elapsedMs(totalStartedAt);
@@ -1084,7 +1122,7 @@ export default function ExcalidrawEditorShell(
       }
       return { flushed, totalMs };
     },
-    [flushPendingExcalidrawDraft],
+    [fileId, flushPendingExcalidrawDraft],
   );
 
   flushPendingExcalidrawDraftRef.current = flushPendingExcalidrawDraft;
@@ -1470,12 +1508,19 @@ export default function ExcalidrawEditorShell(
           window.clearTimeout(localDraftTimerRef.current);
           localDraftTimerRef.current = null;
         }
+        if (autoSaveTimerRef.current !== null) {
+          window.clearTimeout(autoSaveTimerRef.current);
+          autoSaveTimerRef.current = null;
+        }
         if (isDebugRuntimeEnabled()) {
           traceExcalidrawDragPointer("down", {
             fileId8: fileId ? fileId.slice(0, 8) : null,
             pointerType: event.pointerType,
             isPaneForeground,
             source: "wrapper.capture",
+          });
+          traceExcalidrawDragGeometry(excalidrawAPIRef.current, event.currentTarget, {
+            fileId8: fileId ? fileId.slice(0, 8) : null,
           });
         }
       }}

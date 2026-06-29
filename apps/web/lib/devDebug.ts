@@ -1,6 +1,6 @@
 /**
  * Central development diagnostics for the host app (MindMap shell, file list, embed).
- * EDITORHUB_DESKTOP_DEBUG / 设置内调试日志开启后：全部通道 + IPC/协议 → desktop-op.log。
+ * EDITORHUB_DESKTOP_DEBUG / 设置内调试日志开启后：全部通道 → desktop-op.log（Desktop 不经 DevTools）。
  * 未开调试时：Vite dev 全开；生产仅 VITE_APP_DEPLOY_DEBUG 或 per-channel VITE_APP_ENABLE_*_DEBUG。
  */
 
@@ -89,16 +89,6 @@ function getDesktopDebugLog() {
   return desktopDebugLog;
 }
 
-function formatDevDebugConsoleData(
-  data: Record<string, unknown>,
-): string | undefined {
-  try {
-    return JSON.stringify(data);
-  } catch {
-    return undefined;
-  }
-}
-
 function isDesktopEditorHubLocal(): boolean {
   return isDesktopEditorHub();
 }
@@ -114,13 +104,8 @@ export function devDebug(
   const prefix = `[DEBUG] ${channel} | ${label}`;
 
   if (isDesktopEditorHubLocal()) {
+    // Desktop：仅写入 desktop-op.log（经 /api/logs IPC），不刷 DevTools 控制台。
     getDesktopDebugLog().debug(label, { channel, ...(data ?? {}) });
-    if (data === undefined) {
-      console.warn(prefix);
-      return;
-    }
-    const serialized = formatDevDebugConsoleData(data);
-    console.warn(prefix, serialized ?? "");
     return;
   }
 

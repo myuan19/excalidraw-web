@@ -1,4 +1,4 @@
-import { readFileListTreeCache } from "./fileListSessionCache";
+import { findFileInTreeCache } from "./fileListSessionCache";
 import { mergeAppStateWithServerFileName } from "./forkFileScene";
 import { getLocalDraftDisplayName } from "./localDraftDisplayName";
 import { isLocalDraftFileId } from "./localDraftFileId";
@@ -17,11 +17,7 @@ export function resolveCanonicalExcalidrawFileName(
   if (isLocalDraftFileId(fileId)) {
     return getLocalDraftDisplayName(fileId);
   }
-  return (
-    readFileListTreeCache()
-      ?.files.find((file) => file.id === fileId)
-      ?.name?.trim() || null
-  );
+  return findFileInTreeCache(fileId)?.name?.trim() || null;
 }
 
 export function canonicalizeExcalidrawSceneFileName<

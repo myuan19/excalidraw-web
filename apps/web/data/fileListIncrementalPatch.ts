@@ -1,6 +1,4 @@
-import {
-  readFileListTreeCache,
-} from "./fileListSessionCache";
+import { findFileInTreeCache } from "./fileListSessionCache";
 import type { FileTreeResponse, ServerFile } from "./ServerSync";
 
 export type FileListIncrementalPatch = Partial<
@@ -18,11 +16,7 @@ export type FileListIncrementalPatch = Partial<
 export function readFileListIncrementalPatch(
   fileId: string,
 ): FileListIncrementalPatch | null {
-  const tree = readFileListTreeCache();
-  if (!tree) {
-    return null;
-  }
-  const file = tree.files.find((item) => item.id === fileId);
+  const file = findFileInTreeCache(fileId);
   if (!file) {
     return null;
   }

@@ -41,9 +41,33 @@
   overflow: hidden;
 }
 
+/*
+ * 缓存态【首页】pane（纯 React/DOM 的 FileList，承载数千文件夹的 catalog 巨树）：
+ * 用 content-visibility:hidden 把整棵 catalog 子树移出 Chromium 的 style/layout/paint。
+ *
+ * 必要性（renderer 长任务实测）：桌面端首页常驻挂载，仅 visibility:hidden 时该巨树
+ * 仍参与布局树；编辑器内每次拖拽保存触发首页重渲染 → 5831 文件夹隐藏子树全量重排
+ * → 486~687ms 长任务 → 拖拽掉帧（Web 端首页不挂载故不卡）。content-visibility 直接
+ * 跳过隐藏子树的渲染工作，根除该长任务。
+ *
+ * 安全性：上面那条「缓存态不能用 content-visibility」的限制只针对 iframe-backed editor
+ * 子树（MindMap 的 <foreignObject> 行盒恢复问题）。首页是纯 DOM、无 iframe，且仅作用于
+ * 本 --home pane，不波及编辑器 pane，因此安全。
+ * contain-intrinsic-size 占位避免回切激活态时的尺寸抖动。
+ */
+.editor-tab-cache-pane--home.editor-tab-cache-pane--cached {
+  content-visibility: hidden;
+  contain-intrinsic-size: auto 100%;
+}
+
 .editor-tab-cache-pane--cached.editor-tab-cache-pane--save-active {
   visibility: visible;
   pointer-events: none;
+}
+
+/* 缩略图保存需要短暂参与渲染时，恢复首页子树的渲染。 */
+.editor-tab-cache-pane--home.editor-tab-cache-pane--cached.editor-tab-cache-pane--save-active {
+  content-visibility: visible;
 }
 
 .editor-tab-cache-pool {

@@ -2,6 +2,56 @@ import type { FileTreeResponse, ServerFile } from "./ServerSync";
 
 const CACHE_KEY = "excalidraw-filelist-tree-v1";
 const CACHE_ETAG_KEY = "excalidraw-filelist-tree-etag-v1";
+// 轻量版本哨兵：每次写缓存自增并写入一个很短的字符串。读取热路径只需比较这个短串，
+// 即可判断 memParsed 是否仍然有效，而无需 getItem 拷贝并逐字符比较整棵大树字符串。
+const CACHE_VERSION_KEY = "excalidraw-filelist-tree-ver-v1";
+
+/**
+ * 内存记忆层：sessionStorage 里整棵文件树（可达数千文件夹）的 JSON 体量很大（可达 1-2MB）。
+ * 该缓存仅由本 tab 通过 writeFileListTreeCache 写入（CACHE_KEY 仅在本文件读写、sessionStorage
+ * 又是单 tab 隔离），因此一旦解析过一次，memParsed 即为权威副本。
+ *
+ * 两类重复成本（renderer CPU profile 实测）：
+ *  1) JSON.parse 整树：Excalidraw 拖拽时一度占 ~22% 主线程 CPU。
+ *  2) getItem + 整串比较：findFileInTreeCache 在列表排序/合并里被每项 ×每帧调用，
+ *     冷启动时反复 getItem 拷贝并比较 1-2MB 字符串，占 ~20% 主线程 CPU。
+ * 通过版本哨兵（短串）判定有效性后直接复用 memParsed，两类成本在树不变期间均归零。
+ */
+let memParsed: FileTreeResponse | null = null;
+let memVersion: string | null = null;
+let writeCounter = 0;
+
+/**
+ * id → file 索引：列表渲染/排序热路径上需要按 id 取文件元数据（如
+ * readFileListIncrementalPatch / resolveListSortUpdatedAt）。在数千文件下，
+ * 逐次 `files.find()` 是 O(n)，被每个列表行 ×每帧调用即退化为 O(n²)，
+ * 在 Excalidraw 拖拽重渲染时可占据 ~19% 主线程 CPU（renderer CPU profile 实测）。
+ * 索引只在解析结果对象（memParsed）变化时重建一次，拖拽期间整树不变即全程复用。
+ */
+let memIndex: Map<string, ServerFile> | null = null;
+let memIndexFor: FileTreeResponse | null = null;
+
+function getTreeFileIndex(tree: FileTreeResponse): Map<string, ServerFile> {
+  if (memIndex && memIndexFor === tree) {
+    return memIndex;
+  }
+  const index = new Map<string, ServerFile>();
+  for (const file of tree.files) {
+    index.set(file.id, file);
+  }
+  memIndex = index;
+  memIndexFor = tree;
+  return index;
+}
+
+/** O(1) 按 id 取列表缓存中的文件（基于 memParsed 索引，热路径专用）。 */
+export function findFileInTreeCache(fileId: string): ServerFile | null {
+  const tree = readFileListTreeCache();
+  if (!tree) {
+    return null;
+  }
+  return getTreeFileIndex(tree).get(fileId) ?? null;
+}
 
 /** 去掉可能很大的字段，避免撑满 sessionStorage */
 function stripFilesForCache(files: ServerFile[]): ServerFile[] {
@@ -13,8 +63,16 @@ function stripFilesForCache(files: ServerFile[]): ServerFile[] {
 
 export function readFileListTreeCache(): FileTreeResponse | null {
   try {
+    const version = sessionStorage.getItem(CACHE_VERSION_KEY);
+    // 命中：仅比较了一个很短的版本串，未触碰可达 1-2MB 的整树字符串。
+    // 仅在 version 非空时短路，确保 sessionStorage 被外部清空（version 变 null）时回退整读。
+    if (version !== null && version === memVersion && memParsed) {
+      return memParsed;
+    }
     const raw = sessionStorage.getItem(CACHE_KEY);
     if (!raw) {
+      memParsed = null;
+      memVersion = null;
       return null;
     }
     const parsed = JSON.parse(raw) as FileTreeResponse;
@@ -23,8 +81,12 @@ export function readFileListTreeCache(): FileTreeResponse | null {
       !Array.isArray(parsed.folders) ||
       !Array.isArray(parsed.files)
     ) {
+      memParsed = null;
+      memVersion = null;
       return null;
     }
+    memParsed = parsed;
+    memVersion = version;
     return parsed;
   } catch {
     return null;
@@ -39,7 +101,13 @@ export function writeFileListTreeCache(tree: FileTreeResponse): void {
       capabilities: tree.capabilities,
       scan: tree.scan,
     };
-    sessionStorage.setItem(CACHE_KEY, JSON.stringify(payload));
+    const raw = JSON.stringify(payload);
+    sessionStorage.setItem(CACHE_KEY, raw);
+    // 写入后同步记忆层与版本哨兵，使后续读取无需再解析或拷贝整树字符串。
+    const nextVersion = String(++writeCounter);
+    sessionStorage.setItem(CACHE_VERSION_KEY, nextVersion);
+    memParsed = payload;
+    memVersion = nextVersion;
   } catch {
     // 配额或隐私模式：忽略
   }

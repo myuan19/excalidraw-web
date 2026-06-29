@@ -929,7 +929,33 @@ export function thumbnailSvgHasVisibleContent(svgMarkup: string): boolean {
  * 留白区域由父容器背景色（与画布底色一致，见 extractThumbBg）填充，确保四周留白均等。
  * 父级 `overflow: hidden` + 圆角负责裁切。
  */
+/*
+ * 卡片缩略图规范化是纯函数，但单张 SVG 的正则规范化（normalizeMindMapThumbnailSvg
+ * 含数十条 smm-* / foreignObject / @font-face 正则）成本不低。首页列表在启动 / 拖拽
+ * 保存期间会多次重渲染，每次对同一张未变的缩略图重复规范化（冷启动 renderer profile
+ * 实测 ~2s）。这里按输入字符串做有界 memo，相同输入直接命中缓存，避免重复正则。
+ * 仅缓存有界条数，超出按插入顺序淘汰最旧项，防止内存无界增长。
+ */
+const CARD_SVG_CACHE_MAX = 256;
+const cardSvgCache = new Map<string, string>();
+
 export function patchThumbnailSvgForCard(svgMarkup: string): string {
+  const cached = cardSvgCache.get(svgMarkup);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const result = computePatchedThumbnailSvgForCard(svgMarkup);
+  if (cardSvgCache.size >= CARD_SVG_CACHE_MAX) {
+    const oldest = cardSvgCache.keys().next().value;
+    if (oldest !== undefined) {
+      cardSvgCache.delete(oldest);
+    }
+  }
+  cardSvgCache.set(svgMarkup, result);
+  return result;
+}
+
+function computePatchedThumbnailSvgForCard(svgMarkup: string): string {
   const normalized = isMindMapThumbnailSvg(svgMarkup)
     ? normalizeMindMapThumbnailSvg(
         svgMarkup,

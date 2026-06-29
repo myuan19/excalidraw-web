@@ -8,6 +8,7 @@
  */
 
 import { isResourceTraceEnabled } from "./resourceTrace";
+import { devDebug } from "./devDebug";
 import { FILE_LIST_LARGE_DOM_THRESHOLD } from "./fileListGridLayout";
 
 const FPS_SAMPLE_MS = 250;
@@ -54,12 +55,10 @@ let longTaskObserver: PerformanceObserver | null = null;
 let monitoringEnabled = false;
 
 function emit(label: string, data?: Record<string, unknown>): void {
-  const payload = { ...(data ?? {}), fileListScrollPerf: true };
-  try {
-    console.warn(`[DEBUG] user-trace | filelist-scroll | ${label}`, payload);
-  } catch {
-    console.warn(`[DEBUG] user-trace | filelist-scroll | ${label}`);
-  }
+  devDebug("user-trace", `filelist-scroll | ${label}`, {
+    ...(data ?? {}),
+    fileListScrollPerf: true,
+  });
 }
 
 function finishScrollSession(): void {
