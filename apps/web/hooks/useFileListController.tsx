@@ -854,6 +854,8 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const filesRef = useRef(files);
   filesRef.current = files;
   const [folders, setFolders] = useState<ServerFolder[]>(initialList.folders);
+  const foldersRef = useRef(folders);
+  foldersRef.current = folders;
   const [currentFolderId, setCurrentFolderIdRaw] = useState<string | null>(
     () => {
       try {
