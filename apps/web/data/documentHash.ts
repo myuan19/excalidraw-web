@@ -18,13 +18,18 @@ export function isNewDocumentHash(hash?: string): boolean {
 }
 
 export function isAddLibraryHash(hash?: string): boolean {
-  return parseHashParams(hash).has("addLibrary");
+  const h =
+    hash ?? (typeof window !== "undefined" ? window.location.hash : "");
+  return h.includes("addLibrary");
 }
 
 export function hashNeedsEditorRoute(hash?: string): boolean {
   const h =
     hash ?? (typeof window !== "undefined" ? window.location.hash : "");
-  if (h.startsWith("#file=") || isAddLibraryHash(h)) {
+  if (isAddLibraryHash(h)) {
+    return false;
+  }
+  if (h.startsWith("#file=")) {
     return true;
   }
   return isNewDocumentHash(h);

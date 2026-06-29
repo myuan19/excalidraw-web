@@ -112,6 +112,14 @@ export async function queueLibrarySync(
   scheduleDebouncedSync();
 }
 
+function postPendingSyncBody(body: object): Promise<void> {
+  return new Promise((resolve, reject) => {
+    stringifyInIdle(body, (serialized) => {
+      void postSyncJson(serialized).then(resolve).catch(reject);
+    });
+  });
+}
+
 export function flushPendingLibrarySync(): void {
   if (debounceTimer) {
     clearTimeout(debounceTimer);
@@ -121,25 +129,47 @@ export function flushPendingLibrarySync(): void {
     return;
   }
   const body = pendingSyncBody;
-  let json: string;
-  try {
-    json = JSON.stringify(body);
-  } catch {
-    return;
-  }
   pendingSyncBody = null;
-  try {
-    void apiTransport
-      .request({
-        method: "POST",
-        path: "/api/library/sync",
-        headers: { "Content-Type": "application/json" },
-        body: json,
-      })
-      .catch(() => {});
-  } catch {
-    // ignore
+  void postPendingSyncBody(body).catch(() => {
+    pendingSyncBody = body;
+  });
+}
+
+/** Await debounced library POST (used after background URL import). */
+export async function awaitPendingLibrarySync(
+  timeoutMs = 8000,
+): Promise<void> {
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
   }
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (inFlight) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      continue;
+    }
+    if (!pendingSyncBody) {
+      return;
+    }
+    const body = pendingSyncBody;
+    pendingSyncBody = null;
+    inFlight = true;
+    try {
+      await postPendingSyncBody(body);
+      return;
+    } catch {
+      pendingSyncBody = body;
+      throw new Error("Library sync failed");
+    } finally {
+      inFlight = false;
+      if (pendingSyncBody) {
+        continue;
+      }
+      return;
+    }
+  }
+  throw new Error("Library sync timed out");
 }
 
 if (typeof window !== "undefined") {

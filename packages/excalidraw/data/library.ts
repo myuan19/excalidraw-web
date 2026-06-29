@@ -57,23 +57,6 @@ const ALLOWED_LIBRARY_URLS = [
   "raw.githubusercontent.com/excalidraw/excalidraw-libraries",
 ];
 
-/** Console filter: `[lib-url-import]` — diagnostics for #addLibrary / ?addLibrary= flows (does not change behavior). */
-const LIB_URL_IMPORT_LOG = "[lib-url-import]";
-function logLibUrlImport(
-  phase: string,
-  detail?: Record<string, unknown> | string,
-) {
-  try {
-    if (typeof detail === "string") {
-      console.info(LIB_URL_IMPORT_LOG, phase, detail);
-    } else {
-      console.info(LIB_URL_IMPORT_LOG, phase, detail ?? "");
-    }
-  } catch {
-    /* ignore */
-  }
-}
-
 // an object so that we can later add more properties to it without breaking,
 // such as schema version
 export type LibraryPersistedData = { libraryItems: LibraryItems };
@@ -477,17 +460,6 @@ export const parseLibraryTokensFromUrl = () => {
     ? new URLSearchParams(window.location.hash.slice(1)).get("token")
     : null;
 
-  if (libraryUrl) {
-    logLibUrlImport("parseTokens", {
-      fromHash: window.location.hash.includes(URL_HASH_KEYS.addLibrary),
-      fromQuery: new URLSearchParams(window.location.search).has(
-        URL_QUERY_KEYS.addLibrary,
-      ),
-      hasToken: !!idToken,
-      urlLen: libraryUrl.length,
-    });
-  }
-
   return libraryUrl ? { libraryUrl, idToken } : null;
 };
 
@@ -568,6 +540,8 @@ export const useHandleLibrary = (
       libraryUrl: string;
       addedItemIds: LibraryItem["id"][];
     }) => void | Promise<void>;
+    /** When true, skip `#addLibrary=` handling (host app imports in the background). */
+    disableUrlImport?: boolean;
   } & (
     | {
         /** @deprecated we recommend using `opts.adapter` instead */
@@ -608,11 +582,6 @@ export const useHandleLibrary = (
       libraryUrl: string;
       idToken: string | null;
     }) => {
-      logLibUrlImport("import:start", {
-        idTokenMatch: idToken === excalidrawAPI.id,
-        documentHidden: document.hidden,
-      });
-
       const libraryPromise = new Promise<Blob>(async (resolve, reject) => {
         try {
           libraryUrl = decodeURIComponent(libraryUrl);
@@ -622,16 +591,9 @@ export const useHandleLibrary = (
           validateLibraryUrl(libraryUrl, optsRef.current.validateLibraryUrl);
 
           const request = await fetch(libraryUrl);
-          logLibUrlImport("fetch:response", {
-            ok: request.ok,
-            status: request.status,
-            ct: request.headers.get("content-type"),
-          });
           const blob = await request.blob();
-          logLibUrlImport("fetch:blob", { size: blob.size, type: blob.type });
           resolve(blob);
         } catch (error: any) {
-          logLibUrlImport("fetch:error", { message: error?.message });
           reject(error);
         }
       });
@@ -652,11 +614,6 @@ export const useHandleLibrary = (
         const before = await excalidrawAPI.getLibraryItems();
         const beforeIds = new Set(before.map((i) => i.id));
 
-        logLibUrlImport("merge:before", {
-          beforeCount: before.length,
-          shouldPrompt,
-        });
-
         const merged = await excalidrawAPI.updateLibrary({
           libraryItems: libraryPromise,
           prompt: shouldPrompt,
@@ -672,20 +629,11 @@ export const useHandleLibrary = (
           )
           .map((i) => i.id);
 
-        logLibUrlImport("merge:after", {
-          mergedCount: merged.length,
-          addedCount: addedItemIds.length,
-        });
-
         await optsRef.current.onLibraryUrlImport?.({
           libraryUrl,
           addedItemIds,
         });
       } catch (error: any) {
-        logLibUrlImport("import:error", {
-          message: error?.message,
-          name: error?.name,
-        });
         excalidrawAPI.updateScene({
           appState: {
             errorMessage: error.message,
@@ -693,9 +641,7 @@ export const useHandleLibrary = (
         });
         throw error;
       } finally {
-        let clearedHashOrQuery = false;
         if (window.location.hash.includes(URL_HASH_KEYS.addLibrary)) {
-          clearedHashOrQuery = true;
           const hash = new URLSearchParams(window.location.hash.slice(1));
           hash.delete(URL_HASH_KEYS.addLibrary);
           hash.delete("token");
@@ -707,22 +653,16 @@ export const useHandleLibrary = (
             nextParams ? `${base}#${nextParams}` : base,
           );
         } else if (window.location.search.includes(URL_QUERY_KEYS.addLibrary)) {
-          clearedHashOrQuery = true;
           const query = new URLSearchParams(window.location.search);
           query.delete(URL_QUERY_KEYS.addLibrary);
           window.history.replaceState({}, APP_NAME, `?${query.toString()}`);
         }
-        logLibUrlImport("import:finally", { clearedHashOrQuery });
       }
     };
     const onHashChange = (event: HashChangeEvent) => {
       event.preventDefault();
       const libraryUrlTokens = parseLibraryTokensFromUrl();
       if (libraryUrlTokens) {
-        logLibUrlImport("hashchange", {
-          oldURL: event.oldURL?.slice(0, 120),
-          newURL: event.newURL?.slice(0, 120),
-        });
         event.stopImmediatePropagation();
         // If hash changed and it contains library url, import it and replace
         // the url to its previous state (important in case of collaboration
@@ -740,8 +680,12 @@ export const useHandleLibrary = (
 
     const libraryUrlTokens = parseLibraryTokensFromUrl();
 
-    if (libraryUrlTokens) {
-      importLibraryFromURL(libraryUrlTokens);
+    if (!optsRef.current.disableUrlImport) {
+      if (libraryUrlTokens) {
+        importLibraryFromURL(libraryUrlTokens);
+      }
+
+      window.addEventListener(EVENT.HASHCHANGE, onHashChange);
     }
 
     // ------ (A) init load (legacy) -------------------------------------------
@@ -861,9 +805,10 @@ export const useHandleLibrary = (
     }
     // ---------------------------------------------- data source datapter -----
 
-    window.addEventListener(EVENT.HASHCHANGE, onHashChange);
     return () => {
-      window.removeEventListener(EVENT.HASHCHANGE, onHashChange);
+      if (!optsRef.current.disableUrlImport) {
+        window.removeEventListener(EVENT.HASHCHANGE, onHashChange);
+      }
     };
   }, [
     // important this useEffect only depends on excalidrawAPI so it only reruns

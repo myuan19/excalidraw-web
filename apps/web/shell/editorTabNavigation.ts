@@ -19,7 +19,6 @@ import {
   activateTab,
   closeEditorTab,
   fileTabId,
-  findFirstFileTabByKind,
   HOME_TAB_ID,
   openFileTab,
   readEditorTabsState,
@@ -54,8 +53,14 @@ type ResolvedNavigateDeps = {
 function setHashUnlessCurrent(
   setHash: (hash: string) => void,
   hash: string,
+  opts?: { replace?: boolean },
 ): void {
   if (window.location.hash === hash) {
+    return;
+  }
+  if (opts?.replace) {
+    const base = `${window.location.pathname}${window.location.search}`;
+    window.history.replaceState({}, "", `${base}${hash}`);
     return;
   }
   setHash(hash);
@@ -128,6 +133,19 @@ export async function openEditorFileTab(
 ): Promise<boolean> {
   const deps = resolveNavigateDeps(inputDeps);
   const currentFileId = deps.getCurrentFileId();
+  const state = readEditorTabsState();
+  const targetTabId = fileTabId(file.fileId);
+  if (
+    currentFileId === file.fileId &&
+    state.activeTabId === targetTabId
+  ) {
+    traceTab(
+      "openFileTab",
+      { fileId8: id8(file.fileId), reason: "already-active" },
+      "skip",
+    );
+    return true;
+  }
   traceTab("openFileTab", {
     fileId8: id8(file.fileId),
     kind: file.kind,
@@ -363,8 +381,19 @@ export function reconcileEditorTabsWithHash(
   const fileId = getFileIdFromHashString(hash);
   if (fileId) {
     const kind = getKindFromHashString(hash);
+    const state = readEditorTabsState();
+    const targetTabId = fileTabId(fileId);
+    const active = state.tabs.find((tab) => tab.id === state.activeTabId);
+    if (
+      state.activeTabId === targetTabId &&
+      active?.type === "file" &&
+      active.fileId === fileId &&
+      editorRegistry.resolveKind(active.kind) === editorRegistry.resolveKind(kind)
+    ) {
+      return;
+    }
     writeEditorTabsState(
-      openFileTab(readEditorTabsState(), {
+      openFileTab(state, {
         fileId,
         kind,
         title: "未命名",
@@ -374,11 +403,6 @@ export function reconcileEditorTabsWithHash(
     return;
   }
   if (isAddLibraryHash(hash)) {
-    const state = readEditorTabsState();
-    const excalidrawTab = findFirstFileTabByKind(state, "excalidraw");
-    if (excalidrawTab && state.activeTabId !== excalidrawTab.id) {
-      writeEditorTabsState(activateTab(state, excalidrawTab.id));
-    }
     return;
   }
   if (hashNeedsEditorRoute(hash)) {
@@ -411,6 +435,6 @@ export function restoreDesktopEditorSession(
     return false;
   }
   const targetHash = deps.buildFileHash(active.fileId, active.kind);
-  setHashUnlessCurrent(deps.setHash, targetHash);
+  setHashUnlessCurrent(deps.setHash, targetHash, { replace: true });
   return true;
 }

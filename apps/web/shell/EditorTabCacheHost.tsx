@@ -14,13 +14,10 @@ import {
 } from "../lib/editorTabCacheTrace";
 import { traceUserAction } from "../lib/userTrace";
 import { editorRegistry } from "../editors";
-import { isAddLibraryHash } from "../data/documentHash";
-import { LIBRARY_URL_IMPORT_DONE_EVENT } from "../data/libraryUrlImport";
+import { stashLibraryUrlImportFromHash } from "../data/libraryUrlImport";
 import { useHomePageWheelZoom } from "../hooks/useHomePageWheelZoom";
 import { EditorPaneStack } from "./EditorPaneStack";
-import { LibraryImportEditorPane } from "./LibraryImportEditorPane";
 import { openEditorFileTab, reconcileEditorTabsWithHash, restoreDesktopEditorSession } from "./editorTabNavigation";
-import { APP_SHELL_GO_HOME } from "./Sidebar";
 import {
   EDITOR_TABS_CHANGE_EVENT,
   HOME_TAB_ID,
@@ -38,6 +35,7 @@ function buildFileHash(id: string, kind?: string): string {
 
 /** 桌面冷启动：首帧前恢复 hash + tab，避免 file-active 却无 pane 的白屏。 */
 function bootstrapEditorTabCacheState(): EditorTabsState {
+  stashLibraryUrlImportFromHash();
   const state = readEditorTabsState();
   if (!isDesktopEditorHub()) {
     return state;
@@ -52,7 +50,6 @@ function bootstrapEditorTabCacheState(): EditorTabsState {
   if (fileTabs.some((tab) => tab.id === next.activeTabId)) {
     return next;
   }
-  reconcileEditorTabsWithHash(window.location.hash);
   return readEditorTabsState();
 }
 
@@ -63,9 +60,6 @@ export function EditorTabCacheHost({
 }) {
   const [tabState, setTabState] = useState<EditorTabsState>(() =>
     bootstrapEditorTabCacheState(),
-  );
-  const [holdLibraryImportEditor, setHoldLibraryImportEditor] = useState(() =>
-    isAddLibraryHash(window.location.hash),
   );
   const homeContainerRef = useRef<HTMLDivElement>(null);
   const lastReconcileKeyRef = useRef<string | null>(null);
@@ -80,12 +74,8 @@ export function EditorTabCacheHost({
       ? null
       : fileTabs.find((tab) => tab.id === tabState.activeTabId) ?? null;
   const hasRenderableFilePane = Boolean(activeFileTab) && hasFileTabs;
-  const libraryImportHashActive = isAddLibraryHash(window.location.hash);
-  const showLibraryImportEditor =
-    !hasRenderableFilePane &&
-    (libraryImportHashActive || holdLibraryImportEditor);
-  const showHomePane = !hasRenderableFilePane && !showLibraryImportEditor;
-  const showEditorShell = hasRenderableFilePane || showLibraryImportEditor;
+  const showHomePane = !hasRenderableFilePane;
+  const showEditorShell = hasRenderableFilePane;
 
   useEffect(() => {
     const sync = () => {
@@ -104,43 +94,18 @@ export function EditorTabCacheHost({
       setTabState(next);
     };
     const onHashChange = () => {
-      if (isAddLibraryHash(window.location.hash)) {
-        setHoldLibraryImportEditor(true);
-        reconcileEditorTabsWithHash(window.location.hash);
-      }
+      reconcileEditorTabsWithHash(window.location.hash);
       sync();
-    };
-    const onLibraryImportDone = () => {
-      setHoldLibraryImportEditor(true);
-    };
-    const onAppShellGoHome = () => {
-      setHoldLibraryImportEditor(false);
     };
     window.addEventListener(EDITOR_TABS_CHANGE_EVENT, sync);
     window.addEventListener("hashchange", onHashChange);
-    window.addEventListener(LIBRARY_URL_IMPORT_DONE_EVENT, onLibraryImportDone);
-    window.addEventListener(APP_SHELL_GO_HOME, onAppShellGoHome);
     return () => {
       window.removeEventListener(EDITOR_TABS_CHANGE_EVENT, sync);
       window.removeEventListener("hashchange", onHashChange);
-      window.removeEventListener(
-        LIBRARY_URL_IMPORT_DONE_EVENT,
-        onLibraryImportDone,
-      );
-      window.removeEventListener(APP_SHELL_GO_HOME, onAppShellGoHome);
     };
   }, []);
 
   useHomePageWheelZoom(homeContainerRef, showHomePane);
-
-  useEffect(() => {
-    if (
-      tabState.activeTabId === HOME_TAB_ID &&
-      !isAddLibraryHash(window.location.hash)
-    ) {
-      setHoldLibraryImportEditor(false);
-    }
-  }, [tabState.activeTabId]);
 
   useEffect(() => {
     const snapshot = buildTabCacheHostSnapshot({
@@ -265,11 +230,7 @@ export function EditorTabCacheHost({
       </div>
       {showEditorShell ? (
         <EditorPlatformShell>
-          {showLibraryImportEditor ? (
-            <LibraryImportEditorPane />
-          ) : (
-            <EditorPaneStack tabState={tabState} />
-          )}
+          <EditorPaneStack tabState={tabState} />
         </EditorPlatformShell>
       ) : null}
     </div>

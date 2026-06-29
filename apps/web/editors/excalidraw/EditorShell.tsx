@@ -59,9 +59,17 @@ import { FileSyncState } from "../../data/FileSyncState";
 import { getFileIdFromHash } from "../../data/fileIdFromHash";
 import {
   createLibraryImportPlaceholderFile,
-  finishLibraryUrlImportNavigation,
+  importLibraryTokensViaApi,
+  LIBRARY_URL_IMPORT_ACK_EVENT,
+  LIBRARY_URL_IMPORT_DONE_EVENT,
+  LIBRARY_URL_IMPORT_REQUEST_EVENT,
   resolveLibraryReturnUrl,
+  type LibraryUrlImportTokens,
 } from "../../data/libraryUrlImport";
+import {
+  logLibraryUrlImport,
+  logLibraryUrlImportError,
+} from "../../data/libraryUrlImportDiag";
 import { ExcalidrawAdapter } from "../../data/formats/ExcalidrawAdapter";
 import { isLocalDraftFileId } from "../../data/localDraftFileId";
 import { LocalThumbnailCache } from "../../data/localThumbnailCache";
@@ -274,10 +282,79 @@ export default function ExcalidrawEditorShell(
   useHandleLibrary({
     excalidrawAPI,
     adapter: CombinedLibraryAdapter,
-    onLibraryUrlImport: async () => {
-      finishLibraryUrlImportNavigation({ libraryImportOnly });
-    },
+    disableUrlImport: true,
   });
+  useEffect(() => {
+    const refreshLibraryFromServer = async () => {
+      const api = excalidrawAPIRef.current;
+      if (!api) {
+        return;
+      }
+      try {
+        const data = await CombinedLibraryAdapter.load();
+        await api.updateLibrary({
+          libraryItems: data?.libraryItems ?? [],
+          merge: false,
+        });
+      } catch (error) {
+        console.error("[library-url-import] refresh mounted editor failed", error);
+      }
+    };
+    const onImportRequest = async (event: Event) => {
+      const detail = (event as CustomEvent<LibraryUrlImportTokens>).detail;
+      logLibraryUrlImport("shell.request", {
+        isPaneForeground,
+        hasDetail: !!detail?.libraryUrl,
+        fileId8: fileId ? fileId.slice(0, 8) : null,
+      });
+      if (!isPaneForeground) {
+        logLibraryUrlImport("shell.skip", { reason: "background-pane" });
+        return;
+      }
+      if (!detail?.libraryUrl) {
+        logLibraryUrlImport("shell.skip", { reason: "missing-detail" }, "fail");
+        return;
+      }
+      for (let attempt = 0; attempt < 50; attempt += 1) {
+        const api = excalidrawAPIRef.current;
+        if (api) {
+          try {
+            const result = await importLibraryTokensViaApi(api, detail);
+            logLibraryUrlImport(
+              "shell.importOk",
+              { addedCount: result.addedCount, attempt },
+              "ok",
+            );
+            window.dispatchEvent(new Event(LIBRARY_URL_IMPORT_ACK_EVENT));
+          } catch (error) {
+            logLibraryUrlImportError("shell.importFail", error, { attempt });
+          }
+          return;
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 100));
+      }
+      logLibraryUrlImport(
+        "shell.skip",
+        { reason: "api-not-ready", waitedMs: 5000 },
+        "fail",
+      );
+    };
+    window.addEventListener(
+      LIBRARY_URL_IMPORT_DONE_EVENT,
+      refreshLibraryFromServer,
+    );
+    window.addEventListener(LIBRARY_URL_IMPORT_REQUEST_EVENT, onImportRequest);
+    return () => {
+      window.removeEventListener(
+        LIBRARY_URL_IMPORT_DONE_EVENT,
+        refreshLibraryFromServer,
+      );
+      window.removeEventListener(
+        LIBRARY_URL_IMPORT_REQUEST_EVENT,
+        onImportRequest,
+      );
+    };
+  }, [isPaneForeground]);
   const libraryReturnUrl = resolveLibraryReturnUrl();
   const [langCode] = useAppLangCode();
   const editorOpenSettledRef = useRef(false);

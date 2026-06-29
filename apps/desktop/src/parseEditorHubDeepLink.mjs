@@ -68,3 +68,98 @@ export function editorHubHashFromUrl(url) {
   const index = url.indexOf("#");
   return index >= 0 ? url.slice(index) : "";
 }
+
+const FILE_ID_RE =
+  /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+
+/**
+ * @param {string} rawFileParam
+ * @returns {string}
+ */
+export function sanitizeFileIdFromHashValue(rawFileParam) {
+  let value = rawFileParam;
+  try {
+    value = decodeURIComponent(rawFileParam);
+  } catch {
+    /* keep raw */
+  }
+  const nestedIdx = value.search(/#addLibrary=|addLibrary=/i);
+  if (nestedIdx >= 0) {
+    value = value.slice(0, nestedIdx).replace(/[&?]$/, "");
+  }
+  const uuidMatch = value.match(FILE_ID_RE);
+  if (uuidMatch) {
+    return uuidMatch[1];
+  }
+  return value.split("&")[0]?.split("#")[0]?.trim() ?? value;
+}
+
+/**
+ * @param {string} hash
+ * @returns {{ libraryUrl: string, idToken: string | null } | null}
+ */
+export function parseLibraryImportTokensFromHashString(hash) {
+  if (!hash || !hash.includes("addLibrary")) {
+    return null;
+  }
+  const raw = hash.startsWith("#") ? hash.slice(1) : hash;
+  let libraryUrl = null;
+  let idToken = null;
+
+  const params = new URLSearchParams(raw.split("#").pop() ?? raw);
+  libraryUrl = params.get("addLibrary");
+  idToken = params.get("token");
+
+  if (!libraryUrl) {
+    const match = raw.match(/addLibrary=([^&]+)/);
+    libraryUrl = match?.[1] ?? null;
+  }
+  if (!idToken) {
+    const match = raw.match(/(?:^|&)token=([^&]+)/);
+    idToken = match?.[1] ?? null;
+  }
+  if (!libraryUrl) {
+    try {
+      const decoded = decodeURIComponent(raw);
+      const match = decoded.match(/addLibrary=([^&]+)/);
+      libraryUrl = match?.[1] ?? null;
+    } catch {
+      /* ignore */
+    }
+  }
+  if (!libraryUrl) {
+    return null;
+  }
+  try {
+    libraryUrl = decodeURIComponent(libraryUrl);
+  } catch {
+    /* keep raw */
+  }
+  return { libraryUrl, idToken };
+}
+
+/**
+ * Normalize mangled library-install deep links to a clean file hash + tokens.
+ * @param {string} hash
+ * @returns {{ navigationHash: string, tokens: { libraryUrl: string, idToken: string | null } | null }}
+ */
+export function normalizeLibraryImportDeepLinkHash(hash) {
+  if (!hash || !hash.includes("addLibrary")) {
+    return { navigationHash: hash, tokens: null };
+  }
+
+  const tokens = parseLibraryImportTokensFromHashString(hash);
+  const raw = hash.startsWith("#") ? hash.slice(1) : hash;
+  const params = new URLSearchParams(raw.split("#")[0] ?? raw);
+  const fileParam = params.get("file");
+  if (!fileParam) {
+    return { navigationHash: "", tokens };
+  }
+  const fileId = sanitizeFileIdFromHashValue(fileParam);
+  const kind = params.get("kind");
+  const next = new URLSearchParams({ file: fileId });
+  if (kind) {
+    next.set("kind", kind);
+  }
+  return { navigationHash: `#${next.toString()}`, tokens };
+}

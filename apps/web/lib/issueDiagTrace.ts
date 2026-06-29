@@ -30,6 +30,7 @@ export const ISSUE_DIAG_GREP = {
   excalidrawGeometry: String.raw`issue\.diag\.excalidraw\.drag\.geometry|excalidraw\.drag \| geometry`,
   excalidrawSession: String.raw`excalidraw\.drag \| session\.(start|end)|issue\.diag\.excalidraw\.drag\.session`,
   dragPerf: String.raw`drag\.perf`,
+  libraryUrlImport: String.raw`library\.url-import|lib-url-import`,
 } as const;
 
 /** Desktop：经 IPC 直写 desktop-op.log（不依赖 /api/logs 批处理延迟）。 */
@@ -64,7 +65,8 @@ export type IssueDiagArea =
   | "recent.flyout"
   | "sidebar.tree"
   | "home.render"
-  | "filelist.sort";
+  | "filelist.sort"
+  | "library.url-import";
 
 export function traceIssueDiag(
   area: IssueDiagArea,

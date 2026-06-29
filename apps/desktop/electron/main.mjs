@@ -52,6 +52,7 @@ import {
   editorHubHashFromUrl,
   editorHubUrlsShareAppDocument,
   normalizeEditorHubDeepLink,
+  normalizeLibraryImportDeepLinkHash,
   parseEditorHubDeepLinkFromArgv,
 } from "../src/parseEditorHubDeepLink.mjs";
 
@@ -153,6 +154,7 @@ function flushPendingDeepLinkNavigation() {
   writeDiagnostic("deep-link-dispatch", {
     targetUrl: targetUrl.slice(0, 200),
     currentUrl: currentUrl.slice(0, 200),
+    hasAddLibrary: targetUrl.includes("addLibrary"),
   });
 
   const navigate = () => {
@@ -160,13 +162,30 @@ function flushPendingDeepLinkNavigation() {
       editorHubUrlsShareAppDocument(currentUrl, targetUrl) &&
       !webContents.isLoading()
     ) {
-      const hash = editorHubHashFromUrl(targetUrl);
+      const rawHash = editorHubHashFromUrl(targetUrl);
+      const { navigationHash, tokens } =
+        normalizeLibraryImportDeepLinkHash(rawHash);
+      writeDiagnostic("deep-link-normalized", {
+        navigationHash: navigationHash.slice(0, 120),
+        hasTokens: !!tokens,
+      });
       void webContents
         .executeJavaScript(
           `(function () {
-            const next = ${JSON.stringify(hash)};
-            if (window.location.hash !== next) {
-              window.location.hash = next;
+            const nav = ${JSON.stringify(navigationHash)};
+            const tokens = ${JSON.stringify(tokens)};
+            const base = window.location.pathname + window.location.search;
+            const next = nav ? base + nav : base;
+            const current = base + (window.location.hash || "");
+            if (current !== next) {
+              window.history.replaceState({}, document.title, next);
+            }
+            if (tokens) {
+              window.dispatchEvent(
+                new CustomEvent("editorhub:library-url-import-deep-link", {
+                  detail: tokens,
+                }),
+              );
             }
           })();`,
         )

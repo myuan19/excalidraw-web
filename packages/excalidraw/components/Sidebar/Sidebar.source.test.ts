@@ -10,5 +10,7 @@ describe("Sidebar source wiring", () => {
     );
     expect(source).toContain('import "./Sidebar.scss"');
     expect(source).toContain("appState.openSidebar?.name === name");
+    expect(source).toContain("onCloseRequest: closeSidebar");
+    expect(source).toContain("setAppState({ openSidebar: null })");
   });
 });

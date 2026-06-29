@@ -21,9 +21,8 @@ import { isEmbedMode } from "./embed/embedMode";
 import { ShellThemeProvider } from "./hooks/useShellTheme";
 import { editorRegistry } from "./editors";
 import { getLazyEditorShell } from "./editors/lazyViews";
-import { hashNeedsEditorRoute, isAddLibraryHash } from "./data/documentHash";
-import { getFileIdFromHash } from "./data/fileIdFromHash";
-import { LIBRARY_URL_IMPORT_DONE_EVENT } from "./data/libraryUrlImport";
+import { hashNeedsEditorRoute } from "./data/documentHash";
+import { useGlobalLibraryUrlImport } from "./hooks/useGlobalLibraryUrlImport";
 import { getDocumentKindFromHash } from "./lib/appBranding";
 import { isDesktopEditorHub } from "./lib/runtimePlatform";
 import { EditorShellChunkFallback } from "./components/EditorShellChunkFallback";
@@ -109,15 +108,10 @@ const UnsupportedDocumentFallback = ({ kind }: { kind: string }) => (
 /** File list home when URL has no `#file=`; editor mounts only after opening. */
 const ForkRoot = () => {
   const [, bump] = useState(0);
-  const [holdLibraryImportEditor, setHoldLibraryImportEditor] = useState(() =>
-    isAddLibraryHash(window.location.hash),
-  );
+  useGlobalLibraryUrlImport();
   const homeContainerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const h = () => {
-      if (isAddLibraryHash(window.location.hash)) {
-        setHoldLibraryImportEditor(true);
-      }
       reconcileEditorTabsWithHash(window.location.hash);
       logFileListOpen("App hashchange (ForkRoot)", {
         hash: window.location.hash,
@@ -125,15 +119,7 @@ const ForkRoot = () => {
       });
       bump((n) => n + 1);
     };
-    const onLibraryImportDone = () => {
-      setHoldLibraryImportEditor(true);
-    };
-    const onAppShellGoHome = () => {
-      setHoldLibraryImportEditor(false);
-    };
     window.addEventListener("hashchange", h);
-    window.addEventListener(LIBRARY_URL_IMPORT_DONE_EVENT, onLibraryImportDone);
-    window.addEventListener(APP_SHELL_GO_HOME, onAppShellGoHome);
     reconcileEditorTabsWithHash(window.location.hash);
     logFileListOpen("App ForkRoot mount", {
       hash: window.location.hash,
@@ -141,18 +127,10 @@ const ForkRoot = () => {
     });
     return () => {
       window.removeEventListener("hashchange", h);
-      window.removeEventListener(
-        LIBRARY_URL_IMPORT_DONE_EVENT,
-        onLibraryImportDone,
-      );
-      window.removeEventListener(APP_SHELL_GO_HOME, onAppShellGoHome);
     };
   }, []);
 
-  const needsEditor = hashNeedsEditor() || holdLibraryImportEditor;
-  const libraryImportOnly =
-    (isAddLibraryHash(window.location.hash) || holdLibraryImportEditor) &&
-    !getFileIdFromHash();
+  const needsEditor = hashNeedsEditor();
   const onFileListReady = useDeferredEditorPrefetch();
   const documentKind = getDocumentKindFromHash();
   useHomePageWheelZoom(homeContainerRef, !needsEditor);
@@ -236,7 +214,7 @@ const ForkRoot = () => {
       <Suspense
         fallback={<EditorShellChunkFallback editorKind={documentKind} />}
       >
-        <LazyEditor libraryImportOnly={libraryImportOnly || undefined} />
+        <LazyEditor />
       </Suspense>
     </EditorPlatformShell>
   );

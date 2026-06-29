@@ -105,6 +105,33 @@ describe("editorTabNavigation", () => {
     ).toHaveLength(1);
   });
 
+  it("skips reopening when the same file tab is already active", async () => {
+    await openEditorFileTab(
+      { fileId: "file-1", kind: "mindmap", title: "A" },
+      {
+        snapshot,
+        setHash,
+        getCurrentFileId: () => null,
+        buildFileHash: (fileId, kind) => `#file=${fileId}&kind=${kind}`,
+      },
+    );
+    vi.clearAllMocks();
+
+    const ok = await openEditorFileTab(
+      { fileId: "file-1", kind: "mindmap", title: "A" },
+      {
+        snapshot,
+        setHash,
+        getCurrentFileId: () => "file-1",
+        buildFileHash: (fileId, kind) => `#file=${fileId}&kind=${kind}`,
+      },
+    );
+
+    expect(ok).toBe(true);
+    expect(snapshot).not.toHaveBeenCalled();
+    expect(setHash).not.toHaveBeenCalled();
+  });
+
   it("does not change hash when snapshot fails", async () => {
     snapshot.mockResolvedValueOnce({ ok: false, reason: "blocked" });
 
@@ -304,6 +331,12 @@ describe("editorTabNavigation", () => {
       "file:direct-file",
     ]);
 
+    const before = sessionStorage.getItem(EDITOR_TABS_STORAGE_KEY);
+    reconcileEditorTabsWithHash("#file=direct-file&kind=mindmap", {
+      resolveFileTitle: async () => null,
+    });
+    expect(sessionStorage.getItem(EDITOR_TABS_STORAGE_KEY)).toBe(before);
+
     reconcileEditorTabsWithHash("#view=files", {
       resolveFileTitle: async () => null,
     });
@@ -392,7 +425,8 @@ describe("editorTabNavigation", () => {
     });
 
     expect(restored).toBe(true);
-    expect(setHash).toHaveBeenCalledWith("#file=file-abc&kind=excalidraw");
+    expect(window.location.hash).toBe("#file=file-abc&kind=excalidraw");
+    expect(setHash).not.toHaveBeenCalled();
   });
 
   it("restoreDesktopEditorSession skips when hash already points at an editor", () => {

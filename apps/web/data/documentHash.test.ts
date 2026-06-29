@@ -17,8 +17,8 @@ describe("documentHash", () => {
   it("treats new-document and file routes as editor routes", () => {
     expect(hashNeedsEditorRoute("#new=1")).toBe(true);
     expect(hashNeedsEditorRoute("#file=abc")).toBe(true);
-    expect(hashNeedsEditorRoute("#addLibrary=foo")).toBe(true);
-    expect(hashNeedsEditorRoute("#token=x&addLibrary=foo")).toBe(true);
+    expect(hashNeedsEditorRoute("#addLibrary=foo")).toBe(false);
+    expect(hashNeedsEditorRoute("#token=x&addLibrary=foo")).toBe(false);
     expect(hashNeedsEditorRoute("")).toBe(false);
   });
 

@@ -7,36 +7,56 @@ import { describe, expect, it } from "vitest";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 describe("library import routing source contract", () => {
-  it("EditorTabCacheHost mounts a dedicated import editor when addLibrary hash is present", () => {
-    const source = fs.readFileSync(
+  it("uses global background import instead of a dedicated import editor pane", () => {
+    const hostSource = fs.readFileSync(
       path.join(__dirname, "EditorTabCacheHost.tsx"),
       "utf8",
     );
+    const appSource = fs.readFileSync(
+      path.join(__dirname, "../App.tsx"),
+      "utf8",
+    );
 
-    expect(source).toContain("LibraryImportEditorPane");
-    expect(source).toContain("showLibraryImportEditor");
-    expect(source).toContain("isAddLibraryHash");
+    expect(hostSource).not.toContain("LibraryImportEditorPane");
+    expect(hostSource).not.toContain("showLibraryImportEditor");
+    expect(appSource).toContain("useGlobalLibraryUrlImport");
+    expect(appSource).not.toContain("libraryImportOnly");
   });
 
-  it("EditorShell supports transient libraryImportOnly sessions", () => {
+  it("libraryUrlImport delegates to excalidraw API when foreground editor is ready", () => {
+    const source = fs.readFileSync(
+      path.join(__dirname, "../data/libraryUrlImport.ts"),
+      "utf8",
+    );
+
+    expect(source).toContain("importLibraryTokensViaApi");
+    expect(source).toContain("LIBRARY_URL_IMPORT_REQUEST_EVENT");
+    expect(source).toContain("LIBRARY_URL_IMPORT_ACK_EVENT");
+    expect(source).toContain("openLibraryMenu: false");
+    expect(source).toContain("awaitPendingLibrarySync");
+  });
+
+  it("EditorShell handles foreground library import requests", () => {
     const source = fs.readFileSync(
       path.join(__dirname, "../editors/excalidraw/EditorShell.tsx"),
       "utf8",
     );
 
-    expect(source).toContain("libraryImportOnly");
-    expect(source).toContain("createLibraryImportPlaceholderFile");
-    expect(source).toContain("finishLibraryUrlImportNavigation");
+    expect(source).toContain("disableUrlImport: true");
+    expect(source).toContain("LIBRARY_URL_IMPORT_REQUEST_EVENT");
+    expect(source).toContain("importLibraryTokensViaApi");
+    expect(source).toContain("logLibraryUrlImport");
     expect(source).toContain("resolveLibraryReturnUrl");
   });
 
-  it("reconcileEditorTabsWithHash activates an excalidraw tab without rewriting addLibrary hash", () => {
+  it("reconcileEditorTabsWithHash skips when the active tab already matches hash", () => {
     const source = fs.readFileSync(
       path.join(__dirname, "editorTabNavigation.ts"),
       "utf8",
     );
 
     expect(source).toContain("isAddLibraryHash(hash)");
-    expect(source).toContain('findFirstFileTabByKind(state, "excalidraw")');
+    expect(source).toContain("already-active");
+    expect(source).toContain("active.fileId === fileId");
   });
 });
