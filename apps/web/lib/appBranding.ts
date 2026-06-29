@@ -9,7 +9,7 @@ import { editorRegistry } from "../editors";
  * - 文件列表顶栏、文件卡片：主站标题 + `editorIconForKind`
  */
 export const HOME_APP_TITLE = "EditorHub";
-export const MAIN_SITE_ICON = "/icons/drawing-space.svg";
+export const MAIN_SITE_ICON = "/maskable_icon_x512.png";
 
 export function getDocumentKindFromHash(hash?: string): string {
   const rawHash =

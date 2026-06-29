@@ -32,7 +32,9 @@ describe("desktop main source contracts", () => {
     expect(source).toContain("desktopPaths");
     expect(source).not.toContain("function resolveCatalogRoot()");
     expect(source).toContain("loadDesktopWindowIcon");
-    expect(source).toContain("drawing-space.svg");
+    expect(source).toContain("maskable_icon_x512.png");
+    expect(source).not.toContain("drawing-space.svg");
+    expect(source).not.toContain("public/favicon.svg");
     expect(source).toContain("desktop:consumeOpenDocumentPaths");
     expect(source).toContain("rendererOpenDocumentsReady");
     expect(source).toContain("requestSingleInstanceLock");
@@ -73,6 +75,8 @@ describe("desktop main source contracts", () => {
     expect(pkg.build.fileAssociations.every((item) => item.role === "Editor")).toBe(
       true,
     );
+    expect(pkg.build.icon).toBe("build/icon.ico");
+    expect(pkg.build.win.icon).toBe("build/icon.ico");
     expect(pkg.build.win.signExecutable).toBe(false);
     expect(pkg.build.win.signAndEditExecutable).toBeUndefined();
   });

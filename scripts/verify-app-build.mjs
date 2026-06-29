@@ -28,16 +28,21 @@ if (!fs.existsSync(path.join(buildRoot, "index.html"))) {
 }
 
 for (const name of [
-  "icons/drawing-space.svg",
+  "maskable_icon_x512.png",
+  "maskable_icon_x192.png",
   "icons/excalidraw.svg",
   "icons/mindmap.ico",
+  "favicon-16x16.png",
+  "favicon-32x32.png",
+  "apple-touch-icon.png",
+  "android-chrome-192x192.png",
 ]) {
   const p = path.join(buildRoot, name);
   if (!fs.statSync(p).isFile()) {
     fail(`missing ${p}`);
   }
 }
-ok("icons: drawing-space.svg, excalidraw.svg, mindmap.ico");
+ok("icons: maskable_icon, excalidraw.svg, mindmap.ico, favicon assets");
 
 const indexHtml = fs.readFileSync(path.join(buildRoot, "index.html"), "utf8");
 const assetRefs = [

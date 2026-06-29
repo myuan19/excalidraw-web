@@ -8,6 +8,9 @@
   "scripts": {
     "start": "electron .",
     "start:server": "node src/main.mjs",
+    "sync-icon": "node scripts/sync-app-icon.mjs",
+    "prepack": "node scripts/sync-app-icon.mjs",
+    "predist": "node scripts/sync-app-icon.mjs",
     "pack": "electron-builder --dir",
     "pack:debug": "electron-builder --dir --config electron-builder.debug.cjs",
     "dist": "electron-builder --win nsis portable",
@@ -26,7 +29,7 @@
   "build": {
     "appId": "com.editorhub.desktop",
     "productName": "EditorHub",
-    "icon": "build/icon.png",
+    "icon": "build/icon.ico",
     "directories": {
       "output": "../../dist/desktop"
     },
@@ -46,14 +49,15 @@
       },
       {
         "from": "build/icon.png",
-        "to": "icons/drawing-space.png"
+        "to": "icons/app-icon.png"
       },
       {
-        "from": "build/icon.svg",
-        "to": "icons/drawing-space.svg"
+        "from": "../../public/maskable_icon_x512.png",
+        "to": "icons/maskable_icon_x512.png"
       }
     ],
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         "nsis",
         "portable"

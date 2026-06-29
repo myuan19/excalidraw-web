@@ -28,7 +28,7 @@ describe("File list branding source contract", () => {
       'export const HOME_APP_TITLE = "EditorHub"',
     );
     expect(brandingSource).toContain(
-      'export const MAIN_SITE_ICON = "/icons/drawing-space.svg"',
+      'export const MAIN_SITE_ICON = "/maskable_icon_x512.png"',
     );
     expect(source).toContain("applyMainSiteDocumentBranding");
     expect(source).toContain("HOME_APP_TITLE");
@@ -36,7 +36,8 @@ describe("File list branding source contract", () => {
     expect(source).toContain("{HOME_APP_TITLE}");
     expect(source).toContain("MAIN_SITE_ICON");
     expect(htmlSource).toContain("<title>EditorHub</title>");
-    expect(htmlSource).toContain('href="/icons/drawing-space.svg"');
+    expect(htmlSource).toContain('href="/favicon-32x32.png"');
+    expect(htmlSource).toContain('href="/apple-touch-icon.png"');
     expect(htmlSource).toContain('content="EditorHub"');
     expect(htmlSource).toContain('content="统一管理多种编辑器与文档。"');
     expect(viteSource).toContain('short_name: "EditorHub"');
@@ -61,7 +62,10 @@ describe("File list branding source contract", () => {
     const publicRoot = path.resolve(appRoot, "../../public");
 
     expect(
-      fs.existsSync(path.join(publicRoot, "icons/drawing-space.svg")),
+      fs.existsSync(path.join(publicRoot, "maskable_icon_x512.png")),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(publicRoot, "maskable_icon_x192.png")),
     ).toBe(true);
     expect(fs.existsSync(path.join(publicRoot, "icons/excalidraw.svg"))).toBe(
       true,

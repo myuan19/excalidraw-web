@@ -321,30 +321,31 @@ function resolveAppBuildPath(runtimeRoot) {
     : path.join(runtimeRoot, "apps/web/build");
 }
 
-function resolveDesktopWindowIconPath() {
+function resolveDesktopWindowIconCandidates() {
   const candidates = [
     path.join(__dirname, "../build/icon.png"),
-    path.join(__dirname, "../build/icon.svg"),
-    path.join(projectRoot, "public/icons/drawing-space.png"),
-    path.join(projectRoot, "public/icons/drawing-space.svg"),
-    path.join(projectRoot, "public/favicon.svg"),
+    path.join(__dirname, "../build/icon.ico"),
+    path.join(projectRoot, "public/maskable_icon_x512.png"),
+    path.join(projectRoot, "public/android-chrome-192x192.png"),
+    path.join(projectRoot, "public/favicon-32x32.png"),
   ];
   if (app.isPackaged) {
     candidates.unshift(
-      path.join(process.resourcesPath, "icons/drawing-space.png"),
-      path.join(process.resourcesPath, "icons/drawing-space.svg"),
+      path.join(process.resourcesPath, "icons/maskable_icon_x512.png"),
+      path.join(process.resourcesPath, "icons/app-icon.png"),
     );
   }
-  return candidates.find((candidate) => existsSync(candidate)) ?? null;
+  return candidates.filter((candidate) => existsSync(candidate));
 }
 
 function loadDesktopWindowIcon() {
-  const iconPath = resolveDesktopWindowIconPath();
-  if (!iconPath) {
-    return null;
+  for (const iconPath of resolveDesktopWindowIconCandidates()) {
+    const image = nativeImage.createFromPath(iconPath);
+    if (!image.isEmpty()) {
+      return image;
+    }
   }
-  const image = nativeImage.createFromPath(iconPath);
-  return image.isEmpty() ? null : image;
+  return null;
 }
 
 function createDesktopServerConfig(config) {

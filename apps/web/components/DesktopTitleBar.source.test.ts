@@ -20,7 +20,7 @@ describe("Desktop title bar source contract", () => {
 
     expect(mainSource).toContain("frame: false");
     expect(mainSource).toContain("loadDesktopWindowIcon");
-    expect(mainSource).toContain("drawing-space.svg");
+    expect(mainSource).toContain("maskable_icon_x512.png");
     expect(mainSource).toContain('ipcMain.handle("desktop:windowMinimize"');
     expect(mainSource).toContain('ipcMain.handle("desktop:windowToggleMaximize"');
     expect(mainSource).toContain('ipcMain.handle("desktop:windowClose"');

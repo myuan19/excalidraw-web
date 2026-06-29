@@ -3,51 +3,77 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Resvg } from "@resvg/resvg-js";
-
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = path.resolve(desktopRoot, "../..");
-const sourceSvg = path.join(repoRoot, "public/icons/drawing-space.svg");
-const sourcePng = path.join(repoRoot, "public/icons/drawing-space.png");
+const sourcePng512 = path.join(repoRoot, "public/maskable_icon_x512.png");
 const buildDir = path.join(desktopRoot, "build");
 const iconPng = path.join(buildDir, "icon.png");
-const iconSvg = path.join(buildDir, "icon.svg");
+const iconIco = path.join(buildDir, "icon.ico");
 
-function readLegacyEmbeddedPng(svgSource) {
-  const match = svgSource.match(
-    /href="data:image\/png;base64,([A-Za-z0-9+/=]+)"/,
-  );
-  if (!match) {
-    return null;
-  }
-  return Buffer.from(match[1], "base64");
+const ICO_PARTS = [
+  path.join(repoRoot, "public/favicon-16x16.png"),
+  path.join(repoRoot, "public/favicon-32x32.png"),
+  path.join(repoRoot, "public/android-chrome-192x192.png"),
+  sourcePng512,
+];
+
+function readPngSize(png) {
+  return { width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
 }
 
-function rasterizeSvg(svgSource) {
-  const resvg = new Resvg(svgSource, {
-    fitTo: { mode: "width", value: 512 },
+function encodeIco(pngFiles) {
+  const images = pngFiles.map((file) => {
+    const png = fs.readFileSync(file);
+    const { width, height } = readPngSize(png);
+    const size = Math.max(width, height);
+    return { size, png };
   });
-  return resvg.render().asPng();
+
+  const count = images.length;
+  const header = Buffer.alloc(6);
+  header.writeUInt16LE(0, 0);
+  header.writeUInt16LE(1, 2);
+  header.writeUInt16LE(count, 4);
+
+  const directories = [];
+  const payloads = [];
+  let offset = 6 + count * 16;
+
+  for (const { size, png } of images) {
+    const directory = Buffer.alloc(16);
+    directory.writeUInt8(size >= 256 ? 0 : size, 0);
+    directory.writeUInt8(size >= 256 ? 0 : size, 1);
+    directory.writeUInt8(0, 2);
+    directory.writeUInt8(0, 3);
+    directory.writeUInt16LE(1, 4);
+    directory.writeUInt16LE(32, 6);
+    directory.writeUInt32LE(png.length, 8);
+    directory.writeUInt32LE(offset, 12);
+    directories.push(directory);
+    payloads.push(png);
+    offset += png.length;
+  }
+
+  return Buffer.concat([header, ...directories, ...payloads]);
 }
 
-function resolveIconPng(svgSource) {
-  if (fs.existsSync(sourcePng)) {
-    return fs.readFileSync(sourcePng);
-  }
-  const legacyEmbedded = readLegacyEmbeddedPng(svgSource);
-  if (legacyEmbedded) {
-    return legacyEmbedded;
-  }
-  return rasterizeSvg(svgSource);
+if (!fs.existsSync(sourcePng512)) {
+  throw new Error(`Missing web icon source: ${sourcePng512}`);
 }
 
-if (!fs.existsSync(sourceSvg)) {
-  throw new Error(`Missing web icon source: ${sourceSvg}`);
+for (const part of ICO_PARTS) {
+  if (!fs.existsSync(part)) {
+    throw new Error(`Missing icon raster for desktop pack: ${part}`);
+  }
 }
 
 fs.mkdirSync(buildDir, { recursive: true });
-const svgSource = fs.readFileSync(sourceSvg, "utf8");
-fs.writeFileSync(iconSvg, svgSource);
-fs.writeFileSync(iconPng, resolveIconPng(svgSource));
+fs.copyFileSync(sourcePng512, iconPng);
+fs.writeFileSync(iconIco, encodeIco(ICO_PARTS));
 
-console.log(`[desktop-icon] synced ${path.relative(repoRoot, iconPng)}`);
+console.log(
+  `[desktop-icon] synced ${[
+    path.relative(repoRoot, iconPng),
+    path.relative(repoRoot, iconIco),
+  ].join(", ")} from public/maskable_icon_x512.png`,
+);
