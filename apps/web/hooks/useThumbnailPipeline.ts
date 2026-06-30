@@ -10,7 +10,6 @@ import {
   traceThumbFetchStart,
   traceThumbPipelineTick,
 } from "../lib/thumbPipelineTrace";
-import { enqueueStartupLightTask } from "../startup/StartupCoordinator";
 import { fetchThumbnailSvgForCard } from "../data/fetchThumbnailSvgForCard";
 import { patchFileListTreeCacheThumbnailMissing } from "../data/fileListSessionCache";
 import { buildServerThumbnailRequestPath } from "../data/serverThumbnailUrl";
@@ -27,6 +26,9 @@ import { shouldAwaitSessionThumbnailBeforeServerFetch } from "../data/resolveFil
 import type { ServerFile } from "../data/ServerSync";
 
 const logPipe = createLogger({ module: "thumbPipeline" });
+
+/** 列表 GET /thumbnail 并发上限（冷启动亦适用，避免 PriorityTaskQueue 串行逐张加载）。 */
+export const THUMB_SERVER_FETCH_CONCURRENCY = 8;
 
 function debugThumbnailPipeline(
   label: string,
@@ -49,7 +51,7 @@ export type ThumbPipelineDeps = {
   fileThumbHashByIdRef: MutableRefObject<Record<string, string | null>>;
   setFetchedThumbs: Dispatch<SetStateAction<Record<string, string>>>;
   onThumbnailServerMiss?: (fileId: string, contentSha: string | null) => void;
-  serialFetch?: boolean;
+  maxConcurrentFetches?: number;
   fetchEnabled?: boolean;
 };
 
@@ -69,7 +71,7 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
     fileThumbHashByIdRef,
     setFetchedThumbs,
     onThumbnailServerMiss,
-    serialFetch = false,
+    maxConcurrentFetches = THUMB_SERVER_FETCH_CONCURRENCY,
     fetchEnabled = true,
   } = deps;
 
@@ -257,7 +259,9 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
       toFetchIds: toFetch.map((t) => t.id.slice(0, 8)),
     });
 
-    for (const [index, item] of toFetch.entries()) {
+    const fetchRunners: Array<() => Promise<void>> = [];
+
+    for (const item of toFetch) {
       const alreadyInflight = thumbFetchingRef.current.has(item.id);
       thumbFetchingRef.current.add(item.id);
       const id8 = item.id.slice(0, 8);
@@ -363,21 +367,31 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
         }
       };
 
-      if (serialFetch) {
-        enqueueStartupLightTask({
-          id: `thumb-${item.id}`,
-          coalesceKey: `thumb-${item.id}`,
-          priority: 1000 - index,
-          run: runFetch,
-        });
-      } else {
-        void runFetch();
-      }
+      fetchRunners.push(runFetch);
     }
+
+    const concurrency = Math.max(
+      1,
+      Math.min(maxConcurrentFetches, fetchRunners.length || 1),
+    );
+    let nextIndex = 0;
+    let activeCount = 0;
+
+    const pumpFetches = () => {
+      while (activeCount < concurrency && nextIndex < fetchRunners.length) {
+        const run = fetchRunners[nextIndex++]!;
+        activeCount += 1;
+        void run().finally(() => {
+          activeCount -= 1;
+          pumpFetches();
+        });
+      }
+    };
+    pumpFetches();
   }, [
     draftStateById,
     fetchEnabled,
-    serialFetch,
+    maxConcurrentFetches,
     thumbLoadScopeFiles,
     thumbFetchAllowIds,
     fetchedThumbSvgByIdRef,

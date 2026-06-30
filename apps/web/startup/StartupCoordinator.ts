@@ -37,7 +37,7 @@ class StartupCoordinatorImpl {
   private phase: StartupPhase = "pending";
   private intent: StartupIntent | null = null;
   private readonly listeners = new Set<() => void>();
-  private readonly queue = new PriorityTaskQueue({ lightMaxConcurrency: 1 });
+  private readonly queue = new PriorityTaskQueue();
   private started = false;
   private coldStart = true;
   private homeTreeLoader: HomeTreeLoader | null = null;
@@ -75,15 +75,6 @@ class StartupCoordinatorImpl {
 
   registerIdleTask(task: IdleTask): void {
     this.idleTasks.push(task);
-  }
-
-  enqueueLightTask(task: {
-    id: string;
-    priority: number;
-    coalesceKey?: string;
-    run: () => Promise<void>;
-  }): void {
-    this.queue.enqueueLight(task);
   }
 
   notifyHomeTreeReady(): void {
@@ -232,13 +223,4 @@ export function startStartupCoordinator(): void {
 
 export function notifyStartupHomeTreeReady(): void {
   getStartupCoordinator().notifyHomeTreeReady();
-}
-
-export function enqueueStartupLightTask(task: {
-  id: string;
-  priority: number;
-  coalesceKey?: string;
-  run: () => Promise<void>;
-}): void {
-  getStartupCoordinator().enqueueLightTask(task);
 }

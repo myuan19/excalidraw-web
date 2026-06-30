@@ -39,6 +39,11 @@ describe("resource trace wiring", () => {
     expect(fileListSource).toContain('"filelist", "refresh"');
     expect(fileListSource).toContain('"filelist", "applyCatalogTree"');
     expect(thumbPipelineSource).toContain('"thumbnail", "effectTick"');
+    expect(thumbPipelineSource).toContain("THUMB_SERVER_FETCH_CONCURRENCY");
+    expect(thumbPipelineSource).toContain("pumpFetches");
+    expect(thumbPipelineSource).not.toContain("enqueueStartupLightTask");
+    expect(thumbPipelineSource).not.toContain("serialFetch");
+    expect(fileListSource).not.toContain("serialFetch:");
     expect(saveQueueSource).toContain('"saveQueue", "drain"');
     expect(userTraceSource).toContain("mergeResourceTraceGlobals");
     expect(userTraceSource).toContain("resourceSummary");

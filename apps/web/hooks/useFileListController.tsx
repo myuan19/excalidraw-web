@@ -2585,7 +2585,6 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     fileThumbHashByIdRef,
     setFetchedThumbs: setFetchedThumbsWithLayoutDebug,
     onThumbnailServerMiss,
-    serialFetch: startupGate.isColdStart,
     fetchEnabled: startupGate.canFetchThumbnails,
   });
 
