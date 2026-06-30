@@ -48,9 +48,12 @@ describe("cross-tab file sync source contract", () => {
     expect(mindMapShell).toContain(
       "loadEditorServerFile(fileId, { force: true })",
     );
-    expect(mindMapShell).toContain("cross-tab-file-saved");
+    // 跨标签 file-saved 决策已收敛进 useRemoteFileRefresh，shell 只需订阅该 hook。
+    expect(remoteRefreshHook).toContain("cross-tab file-saved decision");
     expect(serverSyncSource).toContain("opts?: { force?: boolean }");
     expect(serverSyncSource).toContain("priorHash && !force");
-    expect(serverSyncSource).toContain('cache: force ? "no-store" : "default"');
+    // 强制刷新改为「force 查询 nonce + no-cache 头」绕过缓存，替代旧的 fetch cache 选项。
+    expect(serverSyncSource).toContain("?force=${forceNonce()}");
+    expect(serverSyncSource).toContain('"Cache-Control": "no-cache"');
   });
 });

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -372,7 +372,36 @@ function closeDesktopServer(serverHandle) {
   return closeDispatchLoopbackServer(serverHandle.app);
 }
 
-const DESKTOP_WINDOW_BACKGROUND = "#121212";
+const SHELL_PAGE_BACKGROUND = {
+  light: "#f8fcff",
+  dark: "#121212",
+};
+
+function shellThemePersistPath() {
+  return path.join(resolveUserDataRoot(), "shell-theme.json");
+}
+
+function readPersistedShellTheme() {
+  try {
+    const raw = readFileSync(shellThemePersistPath(), "utf8");
+    const parsed = JSON.parse(raw);
+    return parsed?.theme === "dark" ? "dark" : "light";
+  } catch {
+    return "light";
+  }
+}
+
+function shellThemeBackground(theme) {
+  return SHELL_PAGE_BACKGROUND[theme === "dark" ? "dark" : "light"];
+}
+
+let currentShellThemeBackground = shellThemeBackground(readPersistedShellTheme());
+
+function applyMainWindowShellBackground() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setBackgroundColor(currentShellThemeBackground);
+  }
+}
 
 function attachMainWindowHandlers() {
   if (!mainWindow) {
@@ -519,7 +548,7 @@ function ensureMainWindowShell() {
     minHeight: 640,
     title: "EditorHub",
     show: false,
-    backgroundColor: DESKTOP_WINDOW_BACKGROUND,
+    backgroundColor: currentShellThemeBackground,
     autoHideMenuBar: true,
     frame: false,
     ...(windowIcon ? { icon: windowIcon } : {}),
@@ -828,6 +857,23 @@ ipcMain.handle("desktop:finishWindowClose", (_event, payload = {}) => {
   mainWindowCloseAllowed = true;
   mainWindow.close();
   return true;
+});
+
+ipcMain.handle("desktop:syncShellTheme", (_event, payload = {}) => {
+  const theme = payload?.theme === "dark" ? "dark" : "light";
+  currentShellThemeBackground = shellThemeBackground(theme);
+  try {
+    mkdirSync(resolveUserDataRoot(), { recursive: true });
+    writeFileSync(
+      shellThemePersistPath(),
+      JSON.stringify({ theme }),
+      "utf8",
+    );
+  } catch {
+    /* ignore persist errors */
+  }
+  applyMainWindowShellBackground();
+  return { ok: true };
 });
 
 ipcMain.handle("desktop:windowIsMaximized", () => {

@@ -40,7 +40,9 @@ export function resolveFileCardThumbDisplay(
   file: ServerFile,
   fetchedThumb?: string | null,
   fetchedThumbContentSha?: string | null,
+  opts?: { showFetchLoading?: boolean },
 ): FileCardThumbDisplay {
+  const showFetchLoading = opts?.showFetchLoading === true;
   const isBrowserDraft = isLocalDraftFileId(fileId);
   const slot = buildFileCardThumbnailSlot(file);
   const thumbnailChoice = chooseFileCardThumbnailForFile(
@@ -68,6 +70,7 @@ export function resolveFileCardThumbDisplay(
     editorUsesSessionThumbnail(file.kind) &&
     !slot.localDraftThumb;
   const thumbFetchLoading =
+    showFetchLoading &&
     !thumbSaveLoading &&
     !isCorruptCatalogFile(file) &&
     !thumbSvg &&
@@ -158,8 +161,15 @@ export function mergeFileCardThumbDisplay(
   fileId: string,
   file: ServerFile,
   cachedCardThumbSvg?: string | null,
+  opts?: { showFetchLoading?: boolean },
 ): FileCardThumbDisplay {
-  const fresh = resolveFileCardThumbDisplay(fileId, file);
+  const fresh = resolveFileCardThumbDisplay(
+    fileId,
+    file,
+    undefined,
+    undefined,
+    opts,
+  );
   if (!cachedCardThumbSvg) {
     return fresh;
   }

@@ -17,7 +17,6 @@ import { editorRegistry } from "../editors";
 import { hashNeedsEditorRoute } from "../data/documentHash";
 import { stashLibraryUrlImportFromHash } from "../data/libraryUrlImport";
 import { useHomePageWheelZoom } from "../hooks/useHomePageWheelZoom";
-import { useStartupShellMode } from "../startup/StartupCoordinatorProvider";
 import { EditorPaneStack } from "./EditorPaneStack";
 import { openEditorFileTab, reconcileEditorTabsWithHash } from "./editorTabNavigation";
 import {
@@ -48,7 +47,6 @@ export function EditorTabCacheHost({
 }: {
   onFileListReady: () => void;
 }) {
-  const shellMode = useStartupShellMode();
   const [tabState, setTabState] = useState<EditorTabsState>(() =>
     bootstrapEditorTabCacheState(),
   );
@@ -63,8 +61,9 @@ export function EditorTabCacheHost({
     tabState.activeTabId === HOME_TAB_ID
       ? null
       : fileTabs.find((tab) => tab.id === tabState.activeTabId) ?? null;
-  const showEditorShell = shellMode === "editor";
-  const showHomePane = !showEditorShell;
+  /** 运行时以标签页为准；冷启动 intent 的 shellMode 不会随打开文件更新。 */
+  const showHomePane = tabState.activeTabId === HOME_TAB_ID;
+  const showEditorShell = !showHomePane;
   const homeActive = showHomePane;
 
   useEffect(() => {

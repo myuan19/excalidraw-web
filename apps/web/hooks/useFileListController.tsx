@@ -172,15 +172,16 @@ import {
   isAIConfigured,
   subscribeAIConfig,
 } from "../data/aiConfig";
-import { useStartupFileListGate, useRegisterStartupHomeTreeLoader } from "../startup/StartupCoordinatorProvider";
+import { useStartupFileListGate, useRegisterStartupHomeTreeLoader, useStartupPhase } from "../startup/StartupCoordinatorProvider";
 import {
   notifyStartupHomeTreeReady,
   STARTUP_LOAD_HOME_TREE_EVENT,
 } from "../startup/StartupCoordinator";
+import { isStartupPhaseAtLeast } from "../startup/startupPhases";
 import {
   computeThumbFetchAllowIds,
-  THUMB_PREFETCH_FIRST_N,
-  THUMB_PREFETCH_RECENT_ALL,
+  measureVisibleThumbIdsInRoot,
+  THUMB_VISIBILITY_ROOT_MARGIN_PX,
 } from "../data/thumbCoverage";
 import { buildThumbnailDraftSlot } from "../data/thumbnailLifecycle";
 import { EmbedTokenManager } from "../components/EmbedTokenManager";
@@ -847,26 +848,23 @@ function getInitialFileListStateFromCache(skipCache: boolean): {
 export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const { shellTheme, toggleShellTheme } = useShellTheme();
   const startupGate = useStartupFileListGate();
+  const startupPhase = useStartupPhase();
   const showWebOnlyFileActions = !isDesktopEditorHub();
-  const initialList = getInitialFileListStateFromCache(
-    startupGate.skipInitialCache,
-  );
+  const initialList = getInitialFileListStateFromCache(false);
   useEffect(() => {
     purgeLegacyTempArtifacts();
     applyMainSiteDocumentBranding();
-    const bootList = getInitialFileListStateFromCache(
-      startupGate.skipInitialCache,
-    );
+    const bootList = getInitialFileListStateFromCache(false);
     traceHomeRenderMount({
       cachedFiles: bootList.files.length,
       cachedFolders: bootList.folders.length,
       hasCache: bootList.hasCache,
-      skipInitialCache: startupGate.skipInitialCache,
+      skipInitialCache: false,
     });
     return () => {
       traceIssueDiag("home.render", "unmount", {}, "ok");
     };
-  }, [startupGate.skipInitialCache]);
+  }, []);
 
   const [files, setFiles] = useState<ServerFile[]>(initialList.files);
   const filesRef = useRef(files);
@@ -935,7 +933,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const [mobileTreeOpen, setMobileTreeOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [awaitingFirstFetch, setAwaitingFirstFetch] = useState(
-    startupGate.skipInitialCache || !initialList.hasCache,
+    !initialList.hasCache,
   );
   const [error, setError] = useState<string | null>(null);
   const [importNotice, setImportNotice] = useState<string | null>(null);
@@ -1315,6 +1313,13 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     fileThumbHashByIdRef.current = nextHashes;
     pruneThumbnailServerMisses(nextHashes);
 
+    if (
+      startupGate.isColdStart &&
+      !isStartupPhaseAtLeast(startupPhase, "idle")
+    ) {
+      return;
+    }
+
     setFetchedThumbs((prev) => {
       let changed = false;
       const next = { ...prev };
@@ -1330,7 +1335,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       }
       return changed ? next : prev;
     });
-  }, [files, recentPathCatalogFiles]);
+  }, [files, recentPathCatalogFiles, startupGate.isColdStart, startupPhase]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -1341,8 +1346,8 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
             const fileId = (entry.target as HTMLElement).dataset.thumbFileId;
             if (fileId) {
               newIds.push(fileId);
+              // 只停订阅，保留节点在 map 中，确保布局重测仍能命中这些卡片。
               observer.unobserve(entry.target);
-              thumbNodeMap.current.delete(fileId);
             }
           }
         }
@@ -1354,13 +1359,34 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
           });
         }
       },
-      { rootMargin: "400px" },
+      { rootMargin: `${THUMB_VISIBILITY_ROOT_MARGIN_PX}px` },
     );
     thumbObserverRef.current = observer;
     return () => {
       observer.disconnect();
       thumbObserverRef.current = null;
     };
+  }, []);
+
+  const syncVisibleThumbIdsFromLayout = useCallback(() => {
+    const measured = measureVisibleThumbIdsInRoot(
+      mainRef.current,
+      thumbNodeMap.current,
+    );
+    if (measured.size === 0) {
+      return;
+    }
+    setVisibleThumbIds((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const id of measured) {
+        if (!next.has(id)) {
+          next.add(id);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
   }, []);
 
   const thumbRefCallback = useCallback(
@@ -1754,8 +1780,15 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   }, [refresh]);
 
   const scheduleSilentRefresh = useCallback(() => {
+    if (startupGate.isColdStart && !startupGate.canRefreshTree) {
+      return;
+    }
     scheduleDebouncedFileListRefresh(runSilentRefresh);
-  }, [runSilentRefresh]);
+  }, [
+    runSilentRefresh,
+    startupGate.canRefreshTree,
+    startupGate.isColdStart,
+  ]);
 
   useEffect(() => {
     const onListRefresh = () => scheduleSilentRefresh();
@@ -1796,7 +1829,14 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     return () => window.clearTimeout(timer);
   }, [importNotice]);
 
+  const startupTreeLoadDoneRef = useRef(false);
+
   const runStartupTreeLoad = useCallback(async () => {
+    if (startupTreeLoadDoneRef.current) {
+      notifyStartupHomeTreeReady();
+      return;
+    }
+    startupTreeLoadDoneRef.current = true;
     await refresh({ silent: true });
     setAwaitingFirstFetch(false);
     notifyStartupHomeTreeReady();
@@ -2529,23 +2569,16 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
 
   /**
    * 当前视图内的文件均参与缩略图拉取/生成，包括嵌套子文件夹中的文件。
-   * thumbCoverage 机制（visibleIds ∪ 前 N 条）已通过 IntersectionObserver 控制优先级。
+   * thumbCoverage：可见 id 即拉取准入，无 off-screen prefetch。
    */
   const thumbLoadScopeFiles = useMemo(() => filteredFiles, [filteredFiles]);
 
   /**
-   * 首屏必须与 IntersectionObserver 可见集合并：可见 id ∪ 当前作用域排序前 N 条（见 thumbCoverage）。
+   * 缩略图拉取/UI loading 均只对可见卡片（layout 同步 + IntersectionObserver）。
    */
   const thumbFetchAllowIds = useMemo(
-    () =>
-      computeThumbFetchAllowIds(
-        visibleThumbIds,
-        thumbLoadScopeFiles,
-        sidebarView === "recent" && !searchQuery.trim()
-          ? THUMB_PREFETCH_RECENT_ALL
-          : THUMB_PREFETCH_FIRST_N,
-      ),
-    [visibleThumbIds, thumbLoadScopeFiles, sidebarView, searchQuery],
+    () => computeThumbFetchAllowIds(visibleThumbIds),
+    [visibleThumbIds],
   );
 
   useEffect(() => {
@@ -2559,7 +2592,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         scopeN: thumbLoadScopeFiles.length,
         addedVisible8: added.map((id) => id8(id) ?? id.slice(0, 8)),
         removedVisible8: removed.map((id) => id8(id) ?? id.slice(0, 8)),
-        allowDelta: thumbFetchAllowIds.size - computeThumbFetchAllowIds(prev, thumbLoadScopeFiles).size,
+        allowDelta: thumbFetchAllowIds.size - prev.size,
       });
     }
     prevVisibleThumbIdsRef.current = new Set(visibleThumbIds);
@@ -2578,7 +2611,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     fileThumbHashByIdRef,
     setFetchedThumbs: setFetchedThumbsWithLayoutDebug,
     onThumbnailServerMiss,
-    serialFetch: startupGate.isColdStart && startupGate.canFetchThumbnails,
+    serialFetch: startupGate.isColdStart,
     fetchEnabled: startupGate.canFetchThumbnails,
   });
 
@@ -2720,7 +2753,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       return;
     }
     const candidates = thumbLoadScopeFiles.filter((file) => {
-      if (!thumbFetchAllowIds.has(file.id)) {
+      if (!visibleThumbIds.has(file.id)) {
         return false;
       }
       if (editorRegistry.resolveKind(file.kind) !== "mindmap") {
@@ -2802,8 +2835,8 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   }, [
     fetchedThumbs,
     setFetchedThumbsWithLayoutDebug,
-    thumbFetchAllowIds,
     thumbLoadScopeFiles,
+    visibleThumbIds,
   ]);
 
   const openNewFileDialog = useCallback(() => {
@@ -2912,7 +2945,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const GRID_ENTER_ANIM_MS = 280;
   const [gridEnterAnimate, setGridEnterAnimate] = useState(true);
   useLayoutEffect(() => {
-    if (filteredFiles.length > 24) {
+    if (startupGate.isColdStart || filteredFiles.length > 24) {
       setGridEnterAnimate(false);
       return;
     }
@@ -2922,7 +2955,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       GRID_ENTER_ANIM_MS,
     );
     return () => window.clearTimeout(timer);
-  }, [gridListKey, filteredFiles.length]);
+  }, [gridListKey, filteredFiles.length, startupGate.isColdStart]);
 
   useEffect(() => {
     startFileListScrollMonitoring();
@@ -2947,14 +2980,20 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     visibleThumbIds.size,
   ]);
 
-  useEffect(() => {
+  // 切换作用域（文件夹/视图/排序/搜索）时重置可见集，卡片会随 gridListKey 重新挂载再测量。
+  useLayoutEffect(() => {
     setVisibleThumbIds(new Set());
-  }, [
-    currentFolderId,
-    defaultDataDirectoryOnlyView,
-    flatFolderView,
-    sidebarView,
-  ]);
+  }, [gridListKey]);
+
+  // 网格渲染后按布局一次性测量视口内卡片并入可见集（只增不减），
+  // 保证「真实需加载的缩略图」同时进入蓝色 loading，而非分批/只剩一个。
+  // 滚动进入的卡片由 IntersectionObserver 补充，故无需随 fetchedThumbs 重测。
+  useLayoutEffect(() => {
+    if (filteredFiles.length === 0) {
+      return;
+    }
+    syncVisibleThumbIdsFromLayout();
+  }, [filteredFiles.length, gridListKey, syncVisibleThumbIdsFromLayout]);
 
   const openNewDocument = useCallback(
     (kind: string) => {
@@ -5324,6 +5363,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       f,
       fetchedThumbs[f.id] ?? null,
       fetchedThumbContentSha,
+      { showFetchLoading: visibleThumbIds.has(f.id) },
     );
     const cardThumbSvg = thumbDisplay.cardThumbSvg;
     if (syncState === "draft" || !thumbSvg) {
@@ -5602,9 +5642,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
 
   const showLocalDirectoryHub = false;
   const showBootstrapSkeleton =
-    (startupGate.showBootstrapSkeleton ||
-      awaitingFirstFetch ||
-      loading) &&
+    (awaitingFirstFetch || loading) &&
     filteredFiles.length === 0 &&
     !showLocalDirectoryHub;
   const empty =

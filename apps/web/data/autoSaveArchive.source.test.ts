@@ -39,13 +39,21 @@ describe("checkpoint save source contract", () => {
       path.join(appRoot, "editors/mindmap/useMindMapFileSave.ts"),
       "utf8",
     );
+    const orchestratorSource = fs.readFileSync(
+      path.join(appRoot, "data/checkpointSaveOrchestrator.ts"),
+      "utf8",
+    );
 
+    // 两个编辑器统一经 executeCheckpointSave 把 save source 交给编排器，
+    // 由编排器解析 checkpointPolicy 并回传给 ServerSync.saveFileImmediate。
     for (const source of [excalidrawSaveSource, mindMapSaveSource]) {
-      expect(source).toContain("resolveCheckpointPolicy");
-      expect(source).toContain(
-        "checkpointPolicy: resolveCheckpointPolicy(toSaveToServerSource(source))",
-      );
+      expect(source).toContain("executeCheckpointSave");
+      expect(source).toContain("source: toSaveToServerSource(source)");
+      expect(source).toContain("checkpointPolicy,");
     }
+    expect(orchestratorSource).toContain(
+      "resolveCheckpointPolicy(input.source)",
+    );
   });
 
   it("creates interval checkpoints inside the backend PUT flow", () => {

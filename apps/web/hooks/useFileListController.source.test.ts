@@ -45,6 +45,10 @@ describe("useFileListController source contracts", () => {
     expect(source).toContain(
       "resolveFileCardThumbDisplay(\n      f.id,\n      f,\n      fetchedThumbs[f.id] ?? null,\n      fetchedThumbContentSha,",
     );
+    expect(source).toContain("showFetchLoading: visibleThumbIds.has(f.id)");
+    expect(source).not.toContain("thumbFetchAllowIds.has(f.id)");
+    expect(source).not.toContain("THUMB_PREFETCH_RECENT_ALL");
+    expect(source).not.toContain("THUMB_PREFETCH_FIRST_N");
     expect(source).not.toContain(
       "fetchedThumbHashByIdRef.current[f.id] ?? f.content_sha256",
     );

@@ -64,7 +64,9 @@ describe("resolveFileCardThumbDisplay", () => {
   it("shows draft badge when sync state is draft", () => {
     FileSyncState.setDraftHash("file-1", "draft-hash");
     FileSyncState.setBaselineHash("file-1", "baseline-hash");
-    const display = resolveFileCardThumbDisplay("file-1", mockFile());
+    const display = resolveFileCardThumbDisplay("file-1", mockFile(), null, null, {
+      showFetchLoading: true,
+    });
     expect(display.badge).toBe("draft");
   });
 
@@ -121,6 +123,7 @@ describe("resolveFileCardThumbDisplay", () => {
       mockFile({ has_thumbnail: true, content_sha256: "sha-new" }),
       '<svg><path data-thumb="old" d="M0 0 L10 10"/></svg>',
       null,
+      { showFetchLoading: true },
     );
 
     expect(display.cardThumbSvg).toBeNull();
@@ -181,6 +184,18 @@ describe("resolveFileCardThumbDisplay", () => {
     expect(display.thumbSwitchLoading).toBe(false);
   });
 
+  it("does not show fetch loading unless showFetchLoading is true", () => {
+    const display = resolveFileCardThumbDisplay(
+      "file-1",
+      mockFile({ has_thumbnail: true }),
+      null,
+      null,
+      { showFetchLoading: false },
+    );
+    expect(display.thumbLoading).toBe(false);
+    expect(display.cardThumbSvg).toBeNull();
+  });
+
   it("falls back to placeholder when native generation is not pending", () => {
     const display = resolveFileCardThumbDisplay(
       "file-1",
@@ -196,7 +211,9 @@ describe("resolveFileCardThumbDisplay", () => {
       "file-1",
       '<svg data-excal-filelist-thumb="1"><path d="M0 0 L10 10"/></svg>',
     );
-    const display = resolveFileCardThumbDisplay("file-1", mockFile());
+    const display = resolveFileCardThumbDisplay("file-1", mockFile(), null, null, {
+      showFetchLoading: true,
+    });
     expect(display.cardThumbSvg).toBeNull();
     expect(display.thumbBlank).toBe(false);
   });

@@ -9,12 +9,15 @@ import {
   type ReactNode,
 } from "react";
 
-/** 首页/外壳主题，与编辑器内 excalidraw-theme 独立存储 */
-const SHELL_THEME_STORAGE_KEY = "editorhub-shell-theme";
+import {
+  readShellThemeFromStorage,
+  SHELL_THEME_STORAGE_KEY,
+  type ShellTheme,
+} from "../lib/shellThemeConstants";
+
+export { SHELL_THEME_STORAGE_KEY, type ShellTheme };
 
 export const SHELL_THEME_CHANGE_EVENT = "editorhub-shell-theme-change";
-
-export type ShellTheme = "light" | "dark";
 
 export type ShellThemeContextValue = {
   shellTheme: ShellTheme;
@@ -25,12 +28,7 @@ export type ShellThemeContextValue = {
 const ShellThemeContext = createContext<ShellThemeContextValue | null>(null);
 
 export function readShellTheme(): ShellTheme {
-  try {
-    const raw = localStorage.getItem(SHELL_THEME_STORAGE_KEY);
-    return raw === "dark" ? "dark" : "light";
-  } catch {
-    return "light";
-  }
+  return readShellThemeFromStorage();
 }
 
 export function shellThemeClassName(theme?: ShellTheme): `theme--${ShellTheme}` {
@@ -43,6 +41,7 @@ function publishShellTheme(theme: ShellTheme) {
   } catch {
     // ignore quota / private mode
   }
+  void window.editorHubDesktop?.syncShellTheme?.(theme);
   window.dispatchEvent(
     new CustomEvent<ShellTheme>(SHELL_THEME_CHANGE_EVENT, {
       detail: theme,

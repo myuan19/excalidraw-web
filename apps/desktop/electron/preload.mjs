@@ -48,6 +48,8 @@ contextBridge.exposeInMainWorld("editorHubDesktop", {
   finishWindowClose: (allow) =>
     ipcRenderer.invoke("desktop:finishWindowClose", { allow }),
   windowIsMaximized: () => ipcRenderer.invoke("desktop:windowIsMaximized"),
+  syncShellTheme: (theme) =>
+    ipcRenderer.invoke("desktop:syncShellTheme", { theme }),
   onWindowCloseRequested: (callback) => {
     if (typeof callback !== "function") {
       return () => {};

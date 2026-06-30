@@ -39,10 +39,24 @@
     <link rel="canonical" href="https://excalidraw.com" />
 
     <!------------------------------------------------------------------------->
-    <!--   to minimize white flash on load when user has dark mode enabled   -->
+    <!-- 首屏底色与外壳主题一致，避免 Electron 窗口色与 React 壳层闪烁 -->
     <script>
       try {
-        function setTheme(theme) {
+        var SHELL_THEME_KEY = "editorhub-shell-theme";
+        var SHELL_PAGE_BG = { light: "#f8fcff", dark: "#121212" };
+
+        function getShellTheme() {
+          var theme = window.localStorage.getItem(SHELL_THEME_KEY);
+          return theme === "dark" ? "dark" : "light";
+        }
+
+        function applyShellPageBackground(theme) {
+          var resolved = theme === "dark" ? "dark" : "light";
+          document.documentElement.style.backgroundColor =
+            SHELL_PAGE_BG[resolved];
+        }
+
+        function setEditorTheme(theme) {
           if (theme === "dark") {
             document.documentElement.classList.add("dark");
           } else {
@@ -50,24 +64,27 @@
           }
         }
 
-        function getTheme() {
-          const theme = window.localStorage.getItem("excalidraw-theme");
+        function getEditorTheme() {
+          var theme = window.localStorage.getItem("excalidraw-theme");
 
           if (theme && theme === "system") {
             return window.matchMedia("(prefers-color-scheme: dark)").matches
               ? "dark"
               : "light";
-          } else {
-            return theme || "light";
           }
+          return theme || "light";
         }
 
-        setTheme(getTheme());
+        applyShellPageBackground(getShellTheme());
+        setEditorTheme(getEditorTheme());
       } catch (e) {
-        console.error("Error setting dark mode", e);
+        console.error("Error setting shell theme", e);
       }
     </script>
     <style>
+      html {
+        background-color: #f8fcff;
+      }
       html.dark {
         background-color: #121212;
         color: #fff;

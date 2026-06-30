@@ -734,11 +734,13 @@ function SidebarRecentList({
 
       const thumbCacheKey = getRecentThumbCacheKey(file);
       const cachedSvg = thumbSvgCacheRef.current[thumbCacheKey];
-      const display = mergeFileCardThumbDisplay(item.id, file, cachedSvg);
+      const needsFetch =
+        !cachedSvg && shouldFetchServerThumbnail(item.id, file);
+      const display = mergeFileCardThumbDisplay(item.id, file, cachedSvg, {
+        showFetchLoading: needsFetch,
+      });
       setPreviewDisplay(display);
 
-      const needsFetch =
-        !display.cardThumbSvg && shouldFetchServerThumbnail(item.id, file);
       if (!needsFetch) {
         return;
       }
@@ -759,6 +761,7 @@ function SidebarRecentList({
             item.id,
             latestFile,
             cardThumbSvg ?? undefined,
+            { showFetchLoading: false },
           ),
         );
       });

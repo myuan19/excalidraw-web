@@ -3,7 +3,7 @@
  *
  * 架构（自上而下）：
  * 1. useFileListController — 文件树、可见区 IO、hash 缓存、fetchedThumbs 状态
- * 2. thumbCoverage — visibleIds ∪ 前 N 条 → thumbFetchAllowIds
+ * 2. thumbCoverage — 可见 id → thumbFetchAllowIds（无 off-screen prefetch）
  * 3. useThumbnailPipeline — 跳过/排队 GET /thumbnail
  * 4. fetchThumbnailSvgForCard — HTTP + 空 body bust 重试
  * 5. chooseFileCardThumbnail / resolveFileCardThumbDisplay — 本地/已拉取/展示

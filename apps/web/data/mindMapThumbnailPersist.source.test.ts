@@ -66,7 +66,7 @@ describe("MindMap thumbnail persistence source contract", () => {
     expect(hookTypesSource).toContain('"thumbnail"');
 
     expect(putRouteSource).toContain(
-      'Object.prototype.hasOwnProperty.call(req.body, "thumbnail")',
+      "const hasThumbnailField = Object.prototype.hasOwnProperty.call(",
     );
     expect(putRouteSource).toContain(
       "const clearThumb = req.body.thumbnail === null",

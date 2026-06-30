@@ -93,19 +93,18 @@ export function useStartupColdStart(): boolean {
   return useStartupContext().isColdStart;
 }
 
-/** P0–P1: file list renders layout only, no tree cache / refresh. */
+/**
+ * 冷启动用 session 树缓存做 SWR 首屏（skeleton 由列表按 awaitingFirstFetch 本地判定）；
+ * 刷新 / 缩略图拉取 / AI 配置按启动阶段逐步放行。
+ */
 export function useStartupFileListGate() {
   const { phase, isColdStart } = useStartupContext();
   return {
     isColdStart,
-    skipInitialCache: isColdStart,
-    showBootstrapSkeleton:
-      isColdStart &&
-      !isStartupPhaseAtLeast(phase, "foreground-ready"),
     canRefreshTree:
-      !isColdStart || isStartupPhaseAtLeast(phase, "loading-foreground"),
+      !isColdStart || isStartupPhaseAtLeast(phase, "catalog-synced"),
     canFetchThumbnails:
-      !isColdStart || isStartupPhaseAtLeast(phase, "enriching"),
+      !isColdStart || isStartupPhaseAtLeast(phase, "foreground-ready"),
     canLoadAiConfig:
       !isColdStart || isStartupPhaseAtLeast(phase, "idle"),
   };

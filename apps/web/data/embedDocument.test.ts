@@ -5,6 +5,10 @@ import {
   getExcalidrawEmbedData,
   getMindMapEmbedData,
 } from "./embedDocument";
+import previewViewportConfig from "../editors/mindmap/native/previewViewportConfig.json";
+
+const EMBED_FOCUS_MULTIPLIER =
+  previewViewportConfig.embedFocusedRootScreenRatioMultiplier;
 
 describe("embed document helpers", () => {
   it("defaults unknown embed kinds to excalidraw", () => {
@@ -122,35 +126,27 @@ describe("embed document helpers", () => {
       lang: "zh",
     });
 
-    expect(buildMindMapEmbedBridgePayload(data)).toEqual({
-      mindMapData: {
-        ...data,
-        config: {
-          enableFreeDrag: true,
-          __nbPreviewTargetX: 0.5,
-          __nbPreviewTargetY: 0.5,
-          __nbPreviewRootScreenRatioMultiplier: 0.12,
-          maxNodeImageStorageBytes: 8388608,
-          maxNodeImageStorageHeight: 8192,
-          maxNodeImageStorageWidth: 8192,
-        },
-      },
-      mindMapConfig: {
-        enableFreeDrag: true,
-        __nbPreviewTargetX: 0.5,
-        __nbPreviewTargetY: 0.5,
-        __nbPreviewRootScreenRatioMultiplier: 0.12,
-        maxNodeImageStorageBytes: 8388608,
-        maxNodeImageStorageHeight: 8192,
-        maxNodeImageStorageWidth: 8192,
-      },
-      lang: "zh",
-      localConfig: {
-        isDark: false,
-      },
-      embedMode: true,
-      readOnly: true,
-    });
+    const expectedConfig = {
+      enableFreeDrag: true,
+      __nbPreviewTargetX: 0.5,
+      __nbPreviewTargetY: 0.5,
+      __nbPreviewRootScreenRatioMultiplier: EMBED_FOCUS_MULTIPLIER,
+      maxNodeImageStorageBytes: 8388608,
+      maxNodeImageStorageHeight: 8192,
+      maxNodeImageStorageWidth: 8192,
+    };
+
+    const payload = buildMindMapEmbedBridgePayload(data);
+
+    expect(payload.embedMode).toBe(true);
+    expect(payload.readOnly).toBe(true);
+    expect(payload.lang).toBe("zh");
+    expect(payload.localConfig).toEqual({ isDark: false });
+    expect(payload.mindMapConfig).toEqual(expectedConfig);
+    // mindMapData 复用同一 config，并由 stamp/normalize 补齐 source 版本与主题。
+    expect(payload.mindMapData.config).toEqual(expectedConfig);
+    expect(payload.mindMapData.root).toMatchObject({ data: { text: "根节点" } });
+    expect(payload.mindMapData.view).toBeUndefined();
   });
 
   it("strips stale MindMap view data from readonly embed payloads", () => {
@@ -176,10 +172,11 @@ describe("embed document helpers", () => {
 
     const payload = buildMindMapEmbedBridgePayload(data);
 
+    // 过期 view 被剥离，预览焦点统一居中（不再被陈旧 viewport 偏置）。
     expect(payload.mindMapData.view).toBeUndefined();
-    expect(payload.mindMapData.config?.__nbPreviewTargetX).toBeLessThan(0.5);
+    expect(payload.mindMapData.config?.__nbPreviewTargetX).toBe(0.5);
     expect(payload.mindMapData.config?.__nbPreviewTargetY).toBe(0.5);
     expect(payload.mindMapData.config?.__nbPreviewRootScreenRatioMultiplier)
-      .toBe(0.12);
+      .toBe(EMBED_FOCUS_MULTIPLIER);
   });
 });

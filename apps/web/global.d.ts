@@ -51,6 +51,7 @@ declare global {
       requestWindowClose?: () => Promise<void>;
       finishWindowClose?: (allow: boolean) => Promise<boolean>;
       windowIsMaximized?: () => Promise<boolean>;
+      syncShellTheme?: (theme: "light" | "dark") => Promise<{ ok: boolean }>;
       onWindowCloseRequested?: (callback: () => void) => () => void;
       onWindowMaximized?: (callback: (maximized: boolean) => void) => () => void;
       versions?: {

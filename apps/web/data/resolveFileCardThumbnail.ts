@@ -43,10 +43,12 @@ export function chooseFileCardThumbnailForFile(
   fetchedThumbContentSha?: string | null,
 ) {
   const draftSlot = buildThumbnailDraftSlot(file);
-  const localThumb =
-    draftSlot.syncState === "draft" && draftSlot.localDraftThumb
-      ? draftSlot.localDraftThumb
-      : (draftSlot.listLocalThumb ?? draftSlot.localDraftThumb);
+  // listLocalThumb 已按 listLocalPolicy 解析好正确来源：
+  //  - live-draft-preview → 实时草稿预览
+  //  - last-saved-until-sync → 上次已保存图（草稿态下也固定展示，仅角标标未保存）
+  //  - synced-session → contentSha 绑定图
+  // 故以 policy 结果为准，仅在其缺失时回退到草稿实时预览，避免草稿态强选预览而压过已保存图。
+  const localThumb = draftSlot.listLocalThumb ?? draftSlot.localDraftThumb;
   const fetchedMindMapIsNonNative =
     file.kind === "mindmap" &&
     fetchedThumb &&

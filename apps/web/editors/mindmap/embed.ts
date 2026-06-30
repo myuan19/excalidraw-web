@@ -23,34 +23,17 @@ export function prepareMindMapEmbedData(raw: unknown): MindMapDocumentData {
   return MindMapAdapter.parse(raw);
 }
 
-function getEmbedPreviewTarget(view: unknown): {
-  x: number;
-  y: number;
-} {
-  const state =
-    view && typeof view === "object" && !Array.isArray(view)
-      ? (view as Record<string, unknown>).state
-      : null;
-  const x =
-    state && typeof state === "object" && !Array.isArray(state)
-      ? (state as Record<string, unknown>).x
-      : null;
-  return {
-    x: typeof x === "number" && Number.isFinite(x) ? (x < 0 ? 0.4 : 0.6) : 0.5,
-    y: 0.5,
-  };
-}
-
 export function buildMindMapEmbedBridgePayload(
   data: unknown,
 ): MindMapEmbedBridgePayload {
   const parsed = prepareMindMapEmbedData(data);
   const stripped = stripMindMapViewportState(parsed);
-  const previewTarget = getEmbedPreviewTarget(parsed.view);
+  // 只读 embed 预览统一居中：视图状态（含过期 viewport）已在 parse/normalize 阶段剥离，
+  // 不再用其偏置预览焦点，避免按陈旧 viewport 漂移。
   const mindMapConfig = applyMindMapMediaLimitsToConfig({
     ...(stripped.config ?? {}),
-    __nbPreviewTargetX: previewTarget.x,
-    __nbPreviewTargetY: previewTarget.y,
+    __nbPreviewTargetX: 0.5,
+    __nbPreviewTargetY: 0.5,
     __nbPreviewRootScreenRatioMultiplier:
       previewViewportConfig.embedFocusedRootScreenRatioMultiplier,
   });

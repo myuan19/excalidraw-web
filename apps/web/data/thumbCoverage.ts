@@ -1,21 +1,64 @@
 /**
- * 缩略图拉取准入范围：可见卡片 ∪ 「当前作用域排序列表」前 N 条（首屏不依赖 IO 下一轮）。
+ * 缩略图可见性：UI loading 与网络拉取均只对视口内（含 margin）卡片生效，不做列表前 N 条 prefetch。
  */
 
-export const THUMB_PREFETCH_FIRST_N = 16;
-/** 「最近」视图条目通常较少，首屏一次性 prefetch 全部，避免 16+N 分两批出现。 */
-export const THUMB_PREFETCH_RECENT_ALL = Number.MAX_SAFE_INTEGER;
+/** 与 file list IntersectionObserver rootMargin 一致 */
+export const THUMB_VISIBILITY_ROOT_MARGIN_PX = 400;
 
-/** 合并：IntersectionObserver 可见 id + scope 排序前 prefetchFirstN 个文件 id（去重）。 */
+type RectLike = {
+  top: number;
+  left: number;
+  right: number;
+  bottom: number;
+};
+
+function rectsOverlap(a: RectLike, b: RectLike): boolean {
+  return (
+    a.bottom >= b.top &&
+    a.top <= b.bottom &&
+    a.right >= b.left &&
+    a.left <= b.right
+  );
+}
+
+function expandRect(rect: RectLike, marginPx: number): RectLike {
+  return {
+    top: rect.top - marginPx,
+    left: rect.left - marginPx,
+    right: rect.right + marginPx,
+    bottom: rect.bottom + marginPx,
+  };
+}
+
+/** 首帧 layout 同步可见缩略图 id，避免 IO 分批导致蓝色 loading 逐个弹出。 */
+export function measureVisibleThumbIdsInRoot(
+  scrollRoot: HTMLElement | null,
+  thumbNodesByFileId: ReadonlyMap<string, HTMLElement>,
+  rootMarginPx: number = THUMB_VISIBILITY_ROOT_MARGIN_PX,
+): Set<string> {
+  const viewport: RectLike =
+    typeof window !== "undefined"
+      ? {
+          top: 0,
+          left: 0,
+          right: window.innerWidth,
+          bottom: window.innerHeight,
+        }
+      : { top: 0, left: 0, right: 0, bottom: 0 };
+  const rootRect = scrollRoot?.getBoundingClientRect() ?? viewport;
+  const probe = expandRect(rootRect, rootMarginPx);
+  const visible = new Set<string>();
+  for (const [fileId, node] of thumbNodesByFileId) {
+    if (rectsOverlap(node.getBoundingClientRect(), probe)) {
+      visible.add(fileId);
+    }
+  }
+  return visible;
+}
+
+/** 网络拉取准入 = 可见集（与 UI loading 一致，无 off-screen prefetch）。 */
 export function computeThumbFetchAllowIds(
   visibleThumbIds: ReadonlySet<string>,
-  scopeFilesOrdered: readonly { id: string }[],
-  prefetchFirstN: number = THUMB_PREFETCH_FIRST_N,
 ): Set<string> {
-  const next = new Set<string>(visibleThumbIds);
-  const limit = Math.min(prefetchFirstN, scopeFilesOrdered.length);
-  for (let i = 0; i < limit; i++) {
-    next.add(scopeFilesOrdered[i].id);
-  }
-  return next;
+  return new Set(visibleThumbIds);
 }

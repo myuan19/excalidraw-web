@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 describe("EditorTabCacheHost source contract", () => {
-  it("delegates file panes to EditorPaneStack and uses startup shell mode", () => {
+  it("delegates file panes to EditorPaneStack and switches home/editor by active tab", () => {
     const source = fs.readFileSync(
       path.join(__dirname, "EditorTabCacheHost.tsx"),
       "utf8",
@@ -15,7 +15,8 @@ describe("EditorTabCacheHost source contract", () => {
 
     expect(source).toContain("EditorPaneStack");
     expect(source).not.toContain("CachedFileEditorPane");
-    expect(source).toContain("useStartupShellMode");
+    expect(source).toContain("tabState.activeTabId === HOME_TAB_ID");
+    expect(source).not.toContain("shellMode === \"editor\"");
     expect(source).not.toContain("restoreDesktopEditorSession");
   });
 });

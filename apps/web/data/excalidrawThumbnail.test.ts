@@ -39,11 +39,14 @@ describe("generateExcalidrawThumbnailAndCache", () => {
 
     expect(buildExcalidrawSceneThumbnailSvgMock).toHaveBeenCalled();
     expect(svg).toContain("<svg");
+    // 本地缩略图缓存为 draft/saved 双槽布局，编辑预览写入 draft 槽键。
     expect(
-      sessionStorage.getItem("excalidraw-web-local-thumb-file-id-123"),
+      sessionStorage.getItem("excalidraw-web-local-thumb-draft-file-id-123"),
     ).toContain("<svg");
     expect(
-      sessionStorage.getItem("excalidraw-web-local-thumb-meta-file-id-123"),
+      sessionStorage.getItem(
+        "excalidraw-web-local-thumb-draft-meta-file-id-123",
+      ),
     ).toContain("sceneHash");
   });
 
