@@ -27,8 +27,11 @@ import type { ServerFile } from "../data/ServerSync";
 
 const logPipe = createLogger({ module: "thumbPipeline" });
 
-/** 列表 GET /thumbnail 并发上限（冷启动亦适用，避免 PriorityTaskQueue 串行逐张加载）。 */
-export const THUMB_SERVER_FETCH_CONCURRENCY = 8;
+/**
+ * 列表 GET /thumbnail 并发上限（冷启动亦适用，避免 PriorityTaskQueue 串行逐张加载）。
+ * 取较小值：既比串行快，又保留缩略图先后到达的「逐个浮现」节奏，不一次性全部刷出。
+ */
+export const THUMB_SERVER_FETCH_CONCURRENCY = 3;
 
 function debugThumbnailPipeline(
   label: string,

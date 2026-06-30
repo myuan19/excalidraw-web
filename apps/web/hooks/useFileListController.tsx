@@ -5453,6 +5453,11 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       >
         <FileCardThumb
           kind={kind}
+          style={
+            {
+              "--fl-thumb-reveal-delay": `${Math.min(index, 12) * 30}ms`,
+            } as React.CSSProperties
+          }
           cardThumbSvg={cardThumbSvg}
           thumbLoading={thumbLoading}
           thumbSwitchLoading={thumbSwitchLoading}

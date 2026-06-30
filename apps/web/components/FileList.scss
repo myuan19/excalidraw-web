@@ -1570,6 +1570,18 @@
   }
 }
 
+/* 缩略图到达时柔和浮现：配合较低并发，按到达/索引先后逐个淡入，而非一次性刷出 */
+@keyframes fileCardThumbReveal {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .filelist__card-thumb-badge {
   position: absolute;
   top: var(--nb-space-3);
@@ -1607,6 +1619,8 @@
   width: 100%;
   height: 100%;
   line-height: 0;
+  animation: fileCardThumbReveal 0.34s var(--nb-ease-ui) both;
+  animation-delay: var(--fl-thumb-reveal-delay, 0ms);
 
   svg {
     display: block;
@@ -1624,6 +1638,15 @@
   height: 100%;
   object-fit: contain;
   pointer-events: none;
+  animation: fileCardThumbReveal 0.34s var(--nb-ease-ui) both;
+  animation-delay: var(--fl-thumb-reveal-delay, 0ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .filelist__card-thumb-svg,
+  .filelist__card-thumb-img {
+    animation: none;
+  }
 }
 
 .filelist__card-thumb-placeholder {
