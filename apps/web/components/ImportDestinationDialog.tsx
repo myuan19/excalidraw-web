@@ -8,7 +8,8 @@ import {
 import { FolderPathPicker } from "./FolderPathPicker";
 
 import type { OverlayDismissHandlers } from "./NewFileDialog";
-import { ShellDialogOverlay } from "./ShellDialogOverlay";
+import { ShellDialogActions } from "./ShellDialogActions";
+import { ShellDialogPortal } from "./ShellDialogPortal";
 
 type ImportDestinationDialogProps = {
   open: boolean;
@@ -70,7 +71,8 @@ export const ImportDestinationDialog = memo(function ImportDestinationDialog({
   const canConfirm = files.length > 0 && selectedFolderId !== null && !busy;
 
   return (
-    <ShellDialogOverlay
+    <ShellDialogPortal
+      open={open}
       role="dialog"
       aria-modal
       overlayDismiss={overlayDismiss}
@@ -146,25 +148,20 @@ export const ImportDestinationDialog = memo(function ImportDestinationDialog({
           />
         </section>
 
-        <div className="filelist__detail-actions filelist__import-dialog-actions">
-          <button
-            type="button"
-            className="filelist__new-btn"
-            disabled={!canConfirm}
-            onClick={onConfirm}
-          >
-            {importing ? "导入中…" : "导入"}
-          </button>
-          <button
-            type="button"
-            className="filelist__import-scene-btn"
-            disabled={busy}
-            onClick={onCancel}
-          >
-            取消
-          </button>
-        </div>
+        <ShellDialogActions
+          className="filelist__import-dialog-actions"
+          primary={{
+            label: importing ? "导入中…" : "导入",
+            disabled: !canConfirm,
+            onClick: onConfirm,
+          }}
+          secondary={{
+            label: "取消",
+            disabled: busy,
+            onClick: onCancel,
+          }}
+        />
       </div>
-    </ShellDialogOverlay>
+    </ShellDialogPortal>
   );
 });

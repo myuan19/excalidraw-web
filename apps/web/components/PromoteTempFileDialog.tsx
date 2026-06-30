@@ -6,7 +6,6 @@ import {
   useState,
   type PointerEvent,
 } from "react";
-import { createPortal } from "react-dom";
 
 import { FolderPathPicker } from "./FolderPathPicker";
 
@@ -16,7 +15,8 @@ import {
   type ServerFolder,
 } from "../data/ServerSync";
 import type { OverlayDismissHandlers } from "./NewFileDialog";
-import { ShellDialogOverlay } from "./ShellDialogOverlay";
+import { ShellDialogActions } from "./ShellDialogActions";
+import { ShellDialogPortal } from "./ShellDialogPortal";
 import { useEditorModalOverlayRegistration } from "../shell/editorModalOverlay";
 import {
   hasSaveNameConflict,
@@ -323,8 +323,9 @@ export const SaveNewDocumentDialog = memo(function SaveNewDocumentDialog({
     return null;
   }
 
-  return createPortal(
-    <ShellDialogOverlay
+  return (
+    <ShellDialogPortal
+      open={open}
       role="dialog"
       aria-modal
       overlayDismiss={overlayDismiss}
@@ -392,24 +393,19 @@ export const SaveNewDocumentDialog = memo(function SaveNewDocumentDialog({
             >
               {validationMessage ?? `将保存为 ${normalizedSaveName}${extension}`}
             </p>
-            <div className="filelist__detail-actions filelist__save-dialog-actions">
-              <button
-                type="button"
-                className="filelist__import-scene-btn"
-                disabled={busy}
-                onClick={onClose}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                className="filelist__new-btn"
-                disabled={busy || !canSave}
-                onClick={() => void handleSave()}
-              >
-                {saving ? "保存中…" : "保存"}
-              </button>
-            </div>
+            <ShellDialogActions
+              className="filelist__save-dialog-actions"
+              primary={{
+                label: saving ? "保存中…" : "保存",
+                disabled: busy || !canSave,
+                onClick: () => void handleSave(),
+              }}
+              secondary={{
+                label: "取消",
+                disabled: busy,
+                onClick: onClose,
+              }}
+            />
           </>
         ) : (
           <>
@@ -454,30 +450,24 @@ export const SaveNewDocumentDialog = memo(function SaveNewDocumentDialog({
                 <p className="filelist__save-destination-summary">
                   已选择：{selectedDestination?.label ?? "请选择保存目录"}
                 </p>
-                <div className="filelist__detail-actions filelist__save-dialog-actions">
-                  <button
-                    type="button"
-                    className="filelist__import-scene-btn"
-                    disabled={busy}
-                    onClick={onClose}
-                  >
-                    取消
-                  </button>
-                  <button
-                    type="button"
-                    className="filelist__new-btn"
-                    disabled={busy || !selectedDestination}
-                    onClick={() => handleChooseDestination()}
-                  >
-                    下一步
-                  </button>
-                </div>
+                <ShellDialogActions
+                  className="filelist__save-dialog-actions"
+                  primary={{
+                    label: "下一步",
+                    disabled: busy || !selectedDestination,
+                    onClick: () => handleChooseDestination(),
+                  }}
+                  secondary={{
+                    label: "取消",
+                    disabled: busy,
+                    onClick: onClose,
+                  }}
+                />
               </section>
             </div>
           </>
         )}
       </div>
-    </ShellDialogOverlay>,
-    document.body,
+    </ShellDialogPortal>
   );
 });

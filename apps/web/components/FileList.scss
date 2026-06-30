@@ -1426,18 +1426,21 @@
 /* ── New file card (recent view) ── */
 .filelist__card--new {
   .filelist__card-thumb--new {
-    display: flex;
-    align-items: center;
-    justify-content: center;
     background: var(--nb-surface, #fff);
     border: 1px dashed var(--nb-filelist-border, rgba(0, 0, 0, 0.12));
   }
 
   .filelist__card-new-plus {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     font-size: 2.5rem;
     font-weight: 300;
     line-height: 1;
     color: var(--nb-text-faint, rgba(15, 23, 42, 0.35));
+    pointer-events: none;
   }
 
   &:hover .filelist__card-thumb--new {
@@ -1447,6 +1450,12 @@
 
   &:hover .filelist__card-new-plus {
     color: var(--nb-primary);
+  }
+
+  .filelist__card-meta--reserved {
+    visibility: hidden;
+    pointer-events: none;
+    user-select: none;
   }
 }
 
@@ -1521,15 +1530,9 @@
 }
 
 .filelist__card-thumb {
-  position: relative;
-  aspect-ratio: 5 / 3;
-  width: 100%;
-  max-height: clamp(6rem, 13vw, 8.25rem);
-  height: auto;
+  @include filelist-card-thumb-box;
   /* 与画布比例不一致时两侧/上下留白用干净中性冷底，整页更清爽 */
   background: var(--nb-filelist-thumb-bg);
-  overflow: hidden;
-  border-radius: var(--nb-radius-lg) var(--nb-radius-lg) 0 0;
 }
 
 .filelist__card-thumb-loading {
@@ -1775,6 +1778,8 @@
 
 /* ── Loading Skeleton ── */
 .filelist__skeleton-card {
+  display: flex;
+  flex-direction: column;
   background: var(--fl-panel-solid);
   border: var(--nb-border-width) solid var(--fl-border);
   border-radius: var(--nb-radius-lg);
@@ -1783,7 +1788,7 @@
 }
 
 .filelist__skeleton-thumb {
-  height: clamp(7.5rem, 16vw, 10rem);
+  @include filelist-card-thumb-box;
   background: linear-gradient(
     90deg,
     var(--nb-shimmer-from) 0%,
@@ -1795,7 +1800,8 @@
 }
 
 .filelist__skeleton-body {
-  padding: var(--nb-space-5) var(--nb-space-6);
+  padding: var(--nb-space-4) var(--nb-space-6);
+  flex: 1;
   border-top: var(--nb-border-width) solid var(--fl-border);
 }
 
@@ -1813,12 +1819,13 @@
 
   &:first-child {
     width: 65%;
-    margin-bottom: var(--nb-space-3);
+    height: var(--nb-filelist-card-name-row-min-height);
+    margin-bottom: var(--nb-space-2);
   }
 
   &:last-child {
     width: 40%;
-    height: var(--nb-space-4);
+    height: calc(var(--nb-font-caption) * 1.3);
   }
 }
 
@@ -2245,10 +2252,6 @@
   }
 }
 
-.filelist__folder-delete-dialog {
-  width: min(var(--nb-filelist-move-max-w), 100%);
-}
-
 /* ── Mobile Sheet ── */
 .filelist__mobile-sheet {
   z-index: var(--nb-z-filelist-sheet);
@@ -2321,6 +2324,7 @@
 /* ── Tablet ── */
 @media (max-width: 51.25rem) {
   .filelist {
+    --nb-filelist-card-thumb-max-h: clamp(5.5rem, 20vw, 7.5rem);
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -2417,10 +2421,6 @@
     padding: var(--nb-space-4) var(--nb-space-7) 0;
   }
 
-  .filelist__card-thumb {
-    max-height: clamp(5.5rem, 20vw, 7.5rem);
-  }
-
   .filelist__card-actions {
     opacity: 1;
     transform: translateY(0);
@@ -2447,14 +2447,14 @@
 
 /* ── Small phone ── */
 @media (max-width: 31.25rem) {
+  .filelist {
+    --nb-filelist-card-thumb-max-h: clamp(6.25rem, 30vw, 9.375rem);
+  }
+
   .filelist__grid {
     grid-template-columns: 1fr;
     gap: var(--nb-space-5);
     padding: var(--nb-space-5);
-  }
-
-  .filelist__card-thumb {
-    max-height: clamp(6.25rem, 30vw, 9.375rem);
   }
 }
 

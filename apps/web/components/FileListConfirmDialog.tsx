@@ -1,7 +1,5 @@
-import { createPortal } from "react-dom";
-
 import { AppConfirmDialog } from "./AppConfirmDialog";
-import { ShellDialogOverlay } from "./ShellDialogOverlay";
+import { ShellDialogPortal } from "./ShellDialogPortal";
 
 type FileListConfirmDialogProps = {
   open: boolean;
@@ -13,7 +11,7 @@ type FileListConfirmDialogProps = {
   onCancel: () => void;
 };
 
-/** File list destructive confirm — 与新建/导入弹窗共用 ShellDialogOverlay。 */
+/** File list destructive confirm — 与新建/导入弹窗共用 ShellDialogPortal + AppConfirmDialog。 */
 export function FileListConfirmDialog({
   open,
   title,
@@ -23,14 +21,8 @@ export function FileListConfirmDialog({
   onConfirm,
   onCancel,
 }: FileListConfirmDialogProps) {
-  if (!open) {
-    return null;
-  }
-
-  return createPortal(
-    <ShellDialogOverlay
-      onBackdropClick={busy ? undefined : onCancel}
-    >
+  return (
+    <ShellDialogPortal open={open} onBackdropClick={busy ? undefined : onCancel}>
       <AppConfirmDialog
         open={open}
         overlay={false}
@@ -50,7 +42,6 @@ export function FileListConfirmDialog({
           onClick: onConfirm,
         }}
       />
-    </ShellDialogOverlay>,
-    document.body,
+    </ShellDialogPortal>
   );
 }

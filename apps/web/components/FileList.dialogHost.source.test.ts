@@ -7,9 +7,13 @@ import { describe, expect, it } from "vitest";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 describe("FileList dialog host source contract", () => {
-  it("keeps dialog host styles and ShellDialogOverlay on shell modals", () => {
+  it("keeps dialog host styles and ShellDialogPortal on shell modals", () => {
     const hostScss = fs.readFileSync(
       path.join(__dirname, "fileListDialogHost.scss"),
+      "utf8",
+    );
+    const portalSource = fs.readFileSync(
+      path.join(__dirname, "ShellDialogPortal.tsx"),
       "utf8",
     );
     const overlaySource = fs.readFileSync(
@@ -24,8 +28,16 @@ describe("FileList dialog host source contract", () => {
       path.join(__dirname, "NewFileDialog.tsx"),
       "utf8",
     );
+    const importDialog = fs.readFileSync(
+      path.join(__dirname, "ImportDestinationDialog.tsx"),
+      "utf8",
+    );
     const confirmDialog = fs.readFileSync(
       path.join(__dirname, "FileListConfirmDialog.tsx"),
+      "utf8",
+    );
+    const actionsSource = fs.readFileSync(
+      path.join(__dirname, "ShellDialogActions.tsx"),
       "utf8",
     );
 
@@ -37,13 +49,20 @@ describe("FileList dialog host source contract", () => {
     expect(hostScss).toContain("@include shell-confirm-dialog-styles");
     expect(hostScss).not.toContain(".app-confirm-dialog-overlay");
 
+    expect(portalSource).toContain("createPortal");
+    expect(portalSource).toContain("ShellDialogOverlay");
     expect(overlaySource).toContain("filelist-dialog-host");
     expect(overlaySource).toContain("filelist__detail-overlay");
     expect(overlaySource).toContain("useLiveShellTheme");
 
-    expect(confirmDialog).toContain("ShellDialogOverlay");
+    expect(actionsSource).toContain("app-confirm-dialog__btn");
+
+    expect(confirmDialog).toContain("ShellDialogPortal");
     expect(confirmDialog).toContain("overlay={false}");
-    expect(saveDialog).toContain("ShellDialogOverlay");
-    expect(kindDialog).toContain("ShellDialogOverlay");
+    expect(saveDialog).toContain("ShellDialogPortal");
+    expect(saveDialog).toContain("ShellDialogActions");
+    expect(kindDialog).toContain("ShellDialogPortal");
+    expect(importDialog).toContain("ShellDialogPortal");
+    expect(importDialog).toContain("ShellDialogActions");
   });
 });

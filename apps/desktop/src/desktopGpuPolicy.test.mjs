@@ -15,11 +15,12 @@ describe("desktopGpuPolicy", () => {
     expect(mac.switches.map((s) => s.key)).not.toContain("use-angle");
   });
 
-  it("always forces GPU rasterization and ignores the blocklist", () => {
+  it("requests GPU rasterization without overriding the blocklist", () => {
     const policy = resolveDesktopGpuSwitches({ platform: "linux", env: {} });
     const keys = policy.switches.map((s) => s.key);
 
-    expect(keys).toContain("ignore-gpu-blocklist");
+    // 不再强行无视检测：保留特性请求，移除 ignore-gpu-blocklist。
+    expect(keys).not.toContain("ignore-gpu-blocklist");
     expect(keys).toContain("enable-gpu-rasterization");
     expect(keys).toContain("enable-features");
   });
@@ -42,10 +43,10 @@ describe("desktopGpuPolicy", () => {
       { platform: "win32", env: {} },
     );
 
-    expect(appendSwitch).toHaveBeenCalledWith("ignore-gpu-blocklist");
     expect(appendSwitch).toHaveBeenCalledWith("use-angle", "d3d11");
+    expect(appendSwitch).not.toHaveBeenCalledWith("ignore-gpu-blocklist");
     expect(result.applied).toContain("use-angle=d3d11");
-    expect(result.applied).toContain("ignore-gpu-blocklist");
+    expect(result.applied).not.toContain("ignore-gpu-blocklist");
   });
 
   it("tolerates a missing commandLine without throwing", () => {

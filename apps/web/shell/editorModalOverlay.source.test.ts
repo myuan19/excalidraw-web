@@ -67,9 +67,9 @@ describe("Save dialog folder picker source contract", () => {
     expect(saveDialogSource).toContain('setStep("destination")');
     expect(saveDialogSource).toContain("hasSaveNameConflict");
     expect(saveDialogSource).toContain("该文件夹中已存在同名文件");
-    expect(saveDialogSource).toContain("disabled={busy || !canSave}");
+    expect(saveDialogSource).toContain("disabled: busy || !canSave");
     expect(saveDialogSource).not.toContain("defaultSelectFirst");
-    expect(saveDialogSource).toContain("disabled={busy || !selectedDestination}");
+    expect(saveDialogSource).toContain("disabled: busy || !selectedDestination");
     expect(saveDialogSource).toContain("打开电脑目录");
     expect(saveDialogSource).toContain("filelist__save-destination-list");
     expect(saveDialogSource).toContain("filelist__save-disk-row");

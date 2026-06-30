@@ -41,6 +41,9 @@
     var(--fl-topbar-control-h) + var(--fl-topbar-pad-y) * 2 +
       var(--nb-border-width)
   );
+  /* 列表卡片缩略图区：骨架屏 / 真实卡片 / loading 共用，避免冷启动高度跳变 */
+  --nb-filelist-card-thumb-aspect: 5 / 3;
+  --nb-filelist-card-thumb-max-h: clamp(6rem, 13vw, 8.25rem);
   /* 须在 .filelist 上定义，避免 :root 预计算渐变导致暗色侧栏仍为亮色 */
   --fl-sidebar-gradient: linear-gradient(
     180deg,
@@ -51,4 +54,17 @@
 
 @mixin filelist-topbar-chip {
   @include shell-chrome-control;
+}
+
+/** 文件列表卡片缩略图占位盒：aspect-ratio + max-height，骨架屏与真实卡片须一致。 */
+@mixin filelist-card-thumb-box {
+  position: relative;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 100%;
+  aspect-ratio: var(--nb-filelist-card-thumb-aspect);
+  max-height: var(--nb-filelist-card-thumb-max-h);
+  height: auto;
+  overflow: hidden;
+  border-radius: var(--nb-radius-lg) var(--nb-radius-lg) 0 0;
 }

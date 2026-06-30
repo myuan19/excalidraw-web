@@ -9,10 +9,11 @@ import {
 import { editorRegistry } from "../editors";
 import type { EditorPlugin } from "../editors/types";
 
+import { ShellDialogActions } from "./ShellDialogActions";
 import {
-  ShellDialogOverlay,
+  ShellDialogPortal,
   type ShellOverlayDismissHandlers,
-} from "./ShellDialogOverlay";
+} from "./ShellDialogPortal";
 
 export type OverlayDismissHandlers = ShellOverlayDismissHandlers;
 
@@ -80,14 +81,17 @@ export const EditorKindDialog = memo(function EditorKindDialog({
   }
 
   return (
-    <ShellDialogOverlay
+    <ShellDialogPortal
+      open={open}
+      overlayDismiss={overlayDismiss}
       role="dialog"
       aria-modal
-      overlayDismiss={overlayDismiss}
     >
       <div
         className="filelist__detail-card filelist__new-file-dialog"
-        onPointerDown={(e) => e.stopPropagation()}
+        onPointerDown={(e: PointerEvent<HTMLDivElement>) =>
+          e.stopPropagation()
+        }
       >
         <h2 className="filelist__detail-title">{title}</h2>
         <p className="filelist__new-file-hint">{hint}</p>
@@ -109,17 +113,11 @@ export const EditorKindDialog = memo(function EditorKindDialog({
             </button>
           ))}
         </div>
-        <div className="filelist__detail-actions filelist__new-file-actions">
-          <button
-            type="button"
-            className="filelist__import-scene-btn"
-            onClick={onClose}
-          >
-            取消
-          </button>
-        </div>
+        <ShellDialogActions
+          primary={{ label: "取消", onClick: onClose }}
+        />
       </div>
-    </ShellDialogOverlay>
+    </ShellDialogPortal>
   );
 });
 

@@ -309,8 +309,28 @@ describe("FileList layout source contract", () => {
     expect(wrapper).not.toContain("refreshSeqRef");
   });
 
+  it("keeps bootstrap skeleton thumb geometry aligned with real file cards", () => {
+    const styles = fs.readFileSync(path.join(__dirname, "FileList.scss"), "utf8");
+    const tokens = fs.readFileSync(
+      path.join(__dirname, "_filelist-design-tokens.scss"),
+      "utf8",
+    );
+
+    expect(tokens).toContain("--nb-filelist-card-thumb-aspect:");
+    expect(tokens).toContain("--nb-filelist-card-thumb-max-h:");
+    expect(tokens).toContain("@mixin filelist-card-thumb-box");
+    expect(styles).toMatch(
+      /\.filelist__card-thumb \{[\s\S]*@include filelist-card-thumb-box;/,
+    );
+    expect(styles).toMatch(
+      /\.filelist__skeleton-thumb \{[\s\S]*@include filelist-card-thumb-box;/,
+    );
+    expect(styles).not.toMatch(/\.filelist__skeleton-thumb \{[\s\S]*height: clamp\(7\.5rem/);
+  });
+
   it("uses left-right shell with sidebar tools and a single new entry card", () => {
     const source = fs.readFileSync(controllerPath, "utf8");
+    const styles = fs.readFileSync(path.join(__dirname, "FileList.scss"), "utf8");
 
     expect(source).toContain("renderSidebar()");
     expect(source).toContain("filelist__workspace");
@@ -320,8 +340,14 @@ describe("FileList layout source contract", () => {
     expect(source).toContain("renderTopbarImport");
     expect(source).toContain("detectImportCandidateKinds");
     expect(source).toContain('key="new-entry"');
+    expect(source).toContain("filelist__card-meta--reserved");
     expect(source).not.toContain("renderNewFileCard");
     expect(source).not.toContain('className="filelist__new-btn" onClick={openNewFileDialog}');
     expect(source).not.toContain("打开编辑器");
+    expect(styles).toMatch(/\.filelist__card-thumb \{[\s\S]*flex-shrink: 0;/);
+    expect(styles).toContain(".filelist__card-new-plus");
+    expect(styles).toMatch(
+      /\.filelist__card--new \{[\s\S]*\.filelist__card-new-plus \{[\s\S]*position: absolute;/,
+    );
   });
 });

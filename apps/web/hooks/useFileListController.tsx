@@ -12,7 +12,8 @@ import {
   formatEditorMaxImageFileSizeMb,
 } from "@excalidraw/common";
 import { FileListConfirmDialog } from "../components/FileListConfirmDialog";
-import { ShellDialogOverlay } from "../components/ShellDialogOverlay";
+import { ShellDialogActions } from "../components/ShellDialogActions";
+import { ShellDialogPortal } from "../components/ShellDialogPortal";
 import {
   applyMainSiteDocumentBranding,
   HOME_APP_TITLE,
@@ -20,6 +21,7 @@ import {
 } from "../lib/appBranding";
 import { serverThumbnailCacheKey } from "../data/serverThumbnailUrl";
 import { shellThemeClassName, useShellTheme } from "./useShellTheme";
+import { useStrictOverlayDismiss } from "./useStrictOverlayDismiss";
 import { createLogger, logFileListOpen } from "../lib/logger";
 import { traceResourceOp, traceTreeStateApply } from "../lib/resourceTrace";
 import {
@@ -751,30 +753,6 @@ function ImageIcon({
       height={size}
       draggable={false}
     />
-  );
-}
-
-/**
- * 仅在「按下」和「松手」都点在同一层遮罩上时才关闭，避免在弹层内选区/复制时松手落在外侧误关。
- */
-function useStrictOverlayDismiss(onDismiss: () => void) {
-  const pointerDownOnBackdrop = useRef(false);
-  return useMemo(
-    () => ({
-      onPointerDown: (e: React.PointerEvent) => {
-        pointerDownOnBackdrop.current = e.target === e.currentTarget;
-      },
-      onPointerUp: (e: React.PointerEvent) => {
-        if (e.target === e.currentTarget && pointerDownOnBackdrop.current) {
-          onDismiss();
-        }
-        pointerDownOnBackdrop.current = false;
-      },
-      onPointerCancel: () => {
-        pointerDownOnBackdrop.current = false;
-      },
-    }),
-    [onDismiss],
   );
 }
 
@@ -5330,7 +5308,15 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         </span>
       </div>
       <div className="filelist__card-body">
-        <span className="filelist__card-name">新建</span>
+        <div className="filelist__card-name-row">
+          <span className="filelist__card-name">新建</span>
+        </div>
+        <div
+          className="filelist__card-meta filelist__card-meta--reserved"
+          aria-hidden="true"
+        >
+          <span>—</span>
+        </div>
       </div>
     </div>
   );
@@ -5975,8 +5961,9 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
 
       {renderFolderContextMenu()}
 
-      {folderDraft && (
-        <ShellDialogOverlay
+      {folderDraft ? (
+        <ShellDialogPortal
+          open
           theme={shellTheme}
           role="dialog"
           aria-modal
@@ -6003,25 +5990,19 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
                 }
               }}
             />
-            <div className="filelist__detail-actions">
-              <button
-                type="button"
-                className="filelist__new-btn"
-                onClick={() => void commitFolderDraft()}
-              >
-                保存
-              </button>
-              <button
-                type="button"
-                className="filelist__import-scene-btn"
-                onClick={() => setFolderDraft(null)}
-              >
-                取消
-              </button>
-            </div>
+            <ShellDialogActions
+              primary={{
+                label: "保存",
+                onClick: () => void commitFolderDraft(),
+              }}
+              secondary={{
+                label: "取消",
+                onClick: () => setFolderDraft(null),
+              }}
+            />
           </div>
-        </ShellDialogOverlay>
-      )}
+        </ShellDialogPortal>
+      ) : null}
 
       {folderDeleteTarget ? (
         <FileListConfirmDialog
@@ -6105,8 +6086,9 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         onCommit={commitImportKindPick}
       />
 
-      {moveDialogFile && (
-        <ShellDialogOverlay
+      {moveDialogFile ? (
+        <ShellDialogPortal
+          open
           theme={shellTheme}
           role="dialog"
           aria-modal
@@ -6127,28 +6109,21 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
             >
               {renderMoveTargetFolderTree(ROOT_ID, 0)}
             </div>
-            <div className="filelist__detail-actions">
-              <button
-                type="button"
-                className="filelist__new-btn"
-                disabled={
-                  moveTargetFolderId === (moveDialogFile.folder_id ?? null)
-                }
-                onClick={() => void commitMove()}
-              >
-                移动
-              </button>
-              <button
-                type="button"
-                className="filelist__import-scene-btn"
-                onClick={() => setMoveDialogFile(null)}
-              >
-                取消
-              </button>
-            </div>
+            <ShellDialogActions
+              primary={{
+                label: "移动",
+                disabled:
+                  moveTargetFolderId === (moveDialogFile.folder_id ?? null),
+                onClick: () => void commitMove(),
+              }}
+              secondary={{
+                label: "取消",
+                onClick: () => setMoveDialogFile(null),
+              }}
+            />
           </div>
-        </ShellDialogOverlay>
-      )}
+        </ShellDialogPortal>
+      ) : null}
 
       {importFolderPickerOpen ? (
         <ImportDestinationDialog
