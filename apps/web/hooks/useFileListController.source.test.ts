@@ -45,7 +45,10 @@ describe("useFileListController source contracts", () => {
     expect(source).toContain(
       "resolveFileCardThumbDisplay(\n      f.id,\n      f,\n      fetchedThumbs[f.id] ?? null,\n      fetchedThumbContentSha,",
     );
-    expect(source).toContain("showFetchLoading: visibleThumbIds.has(f.id)");
+    // loading 仅在拉取开启且卡片可见时点亮，避免冷启动门控期的假 loading。
+    expect(source).toContain(
+      "startupGate.canFetchThumbnails && visibleThumbIds.has(f.id)",
+    );
     expect(source).not.toContain("thumbFetchAllowIds.has(f.id)");
     expect(source).not.toContain("THUMB_PREFETCH_RECENT_ALL");
     expect(source).not.toContain("THUMB_PREFETCH_FIRST_N");
