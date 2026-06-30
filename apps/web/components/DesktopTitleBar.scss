@@ -87,8 +87,9 @@
   background: transparent;
   color: var(--nb-text-muted, rgba(30, 41, 59, 0.62));
   font-size: var(--nb-font-caption, 0.75rem);
-  transition: background 0.12s, color 0.12s, box-shadow 0.12s,
-    transform 0.12s ease-out;
+  /* 点击激活/主题切换即时生效：不过渡背景/颜色/阴影（否则激活高亮颜色「慢半拍」才变），
+     仅 hover 平滑淡入、拖拽归位用 transform 过渡 */
+  transition: transform 0.12s ease-out;
   touch-action: none;
   -webkit-app-region: no-drag;
 }
@@ -109,6 +110,7 @@
 .titlebar-tabs__tab:hover {
   background: var(--nb-fill-hover, rgba(14, 165, 233, 0.07));
   color: var(--nb-text, #1e293b);
+  transition: background 0.12s, color 0.12s, transform 0.12s ease-out;
 }
 
 .titlebar-tabs__tab--active {

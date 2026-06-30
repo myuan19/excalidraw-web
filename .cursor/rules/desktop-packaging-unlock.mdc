@@ -17,7 +17,8 @@ alwaysApply: true
    yarn build:desktop:dist          # 正式包
    yarn build:desktop:dist:debug    # 调试包（产物名 EditorHub Debug，内置 debug 能力）
    ```
-   或手动：`EDITORHUB_DESKTOP_DEBUG_PACK=1` + `bash scripts/build-desktop.sh dist-debug`；Windows 也可用 `node scripts/build-desktop-dist.mjs --debug`
+   - `yarn build:desktop:dist` / `:debug` 已切到 Windows 原生入口（`node scripts/build-desktop-dist.mjs`）：用 Windows Node 重建 web app 再跑 electron-builder，**每次都会重建 app**，避免打出 stale 包。
+   - ⚠️ 别用 WSL bash 跑 electron-builder：本机 WSL Node 仍是 18，`require()` 不了 ESM-only 的 `@noble/hashes`（electron-builder 26 依赖），会 `ERR_REQUIRE_ESM`。需要 bash/WSL 流程时用 `:bash` 变体（`yarn build:desktop:dist:bash` / `:debug:bash`，或直接 `bash scripts/build-desktop.sh dist[-debug]`），前提是 WSL Node ≥ 20.19。
 
 3. **打包完成后**核对 `LastWriteTime`：`EditorHub Setup 0.0.0.exe`、`EditorHub 0.0.0.exe`、`win-unpacked\EditorHub.exe` 均应为本次构建时间；若便携 exe 时间未变，说明仍被锁或未写入成功。
 

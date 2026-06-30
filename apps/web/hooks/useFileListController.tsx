@@ -46,6 +46,10 @@ import {
 } from "../lib/thumbPipelineTrace";
 import { bindDesktopOpenDocumentPaths } from "../shell/desktopOpenDocuments";
 import { isDebugRuntimeEnabled } from "../data/debugCapability";
+import {
+  isInterfaceRevealAnimationEnabled,
+  subscribeAppSettings,
+} from "../data/appSettings";
 import { readFileDraftStatus } from "./useFileDraftStatus";
 import {
   readFileListTreeCache,
@@ -2915,20 +2919,59 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     [currentFolderId, defaultDataDirectoryOnlyView, flatFolderView, searchQuery, sidebarView, sortKey],
   );
 
-  const GRID_ENTER_ANIM_MS = 280;
-  const [gridEnterAnimate, setGridEnterAnimate] = useState(true);
-  useLayoutEffect(() => {
-    if (startupGate.isColdStart || filteredFiles.length > 24) {
-      setGridEnterAnimate(false);
+  // 需覆盖完整错峰：最大延迟 min(index,20)*25=500ms + 动画 250ms ≈ 750ms，
+  // 否则移除 animate-children 类会截断后排卡片的浮现（甚至停在 opacity:0 后突兀弹出）。
+  const GRID_ENTER_ANIM_MS = 800;
+  const [gridEnterAnimate, setGridEnterAnimate] = useState(false);
+  // 每次入场都自增：让计时窗口随「切换视图 / 首批文件到达」重启，避免被上一次计时器提前关闭。
+  const [gridEnterTick, setGridEnterTick] = useState(0);
+  // 用户偏好「界面浮出动画」开关：关闭时完全不浮现、直接显示。订阅设置变化以即时生效。
+  const [revealAnimationEnabled, setRevealAnimationEnabled] = useState(
+    isInterfaceRevealAnimationEnabled,
+  );
+  useEffect(
+    () =>
+      subscribeAppSettings(() =>
+        setRevealAnimationEnabled(isInterfaceRevealAnimationEnabled()),
+      ),
+    [],
+  );
+  // 记录「上一次渲染」的视图 key 与文件数（每次渲染都刷新），据此判定是否发生了视图切换。
+  // 关键修复：之前用「最后一次有文件的 key」做基准，经过空文件夹（length 0、只有新建卡片）时
+  // 基准不更新而卡死，返回曾访问过的视图时 key 恰好相等 → 不触发动画（且表现为概率性恢复）。
+  // 改用「上一次渲染 key」彻底规避：只要相邻两次渲染的视图 key 不同，就视为切换。
+  const gridEnterPrevKeyRef = useRef<string | null>(null);
+  const gridEnterPrevLenRef = useRef(0);
+  const gridHasFiles = filteredFiles.length > 0;
+  // 空文件夹只有「新建」卡片时也算有内容：切换时同样由下而上浮现，并保持基准随每次切换刷新。
+  const gridHasContent = gridHasFiles || showNewEntryCard;
+  const gridEnterShouldStart =
+    revealAnimationEnabled &&
+    gridHasContent &&
+    (gridEnterPrevKeyRef.current !== gridListKey ||
+      (gridEnterPrevLenRef.current === 0 && gridHasFiles));
+  gridEnterPrevKeyRef.current = gridListKey;
+  gridEnterPrevLenRef.current = filteredFiles.length;
+  // 在「渲染期」就为新视图打开入场动画：网格不再用 key={gridListKey} 重新挂载
+  //（重挂代价高——会销毁并重建全部卡片 DOM，正是点击 Tab/筛选「过一会儿才生效」的卡顿来源）。
+  // 改为切换时打开 animate-children 类：新卡片在插入那一刻父级已带类 → fadeSlideUp 随插入播放；
+  // 沿用的卡片则因该类「移除→再加」而重启动画（CSS 动画的标准重播方式）。
+  // 覆盖：冷启动首屏文件首次出现、切换文件夹/视图（含返回曾访问过的视图、空文件夹互切）都会重新浮现；
+  // 同一视图的增量加载/无关重渲染不重播。
+  if (gridEnterShouldStart) {
+    setGridEnterAnimate(true);
+    setGridEnterTick((tick) => tick + 1);
+  }
+  useEffect(() => {
+    if (!gridEnterAnimate) {
       return;
     }
-    setGridEnterAnimate(true);
     const timer = window.setTimeout(
       () => setGridEnterAnimate(false),
       GRID_ENTER_ANIM_MS,
     );
     return () => window.clearTimeout(timer);
-  }, [gridListKey, filteredFiles.length, startupGate.isColdStart]);
+  }, [gridEnterAnimate, gridEnterTick]);
 
   useEffect(() => {
     startFileListScrollMonitoring();
@@ -2953,7 +2996,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     visibleThumbIds.size,
   ]);
 
-  // 切换作用域（文件夹/视图/排序/搜索）时重置可见集，卡片会随 gridListKey 重新挂载再测量。
+  // 切换作用域（文件夹/视图/排序/搜索）时重置可见集，随后按新布局重新测量可见卡片。
   useLayoutEffect(() => {
     setVisibleThumbIds(new Set());
   }, [gridListKey]);
@@ -5248,7 +5291,8 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         onClick={toggleShellTheme}
         title={shellTheme === "dark" ? "切换为亮色" : "切换为暗色"}
       >
-        <Icon type={shellTheme === "dark" ? "sun" : "moon"} size={16} />
+        {/* 图标表示「当前」主题：白天太阳、夜晚月亮（title 仍提示点击后切换的目标） */}
+        <Icon type={shellTheme === "dark" ? "moon" : "sun"} size={16} />
         <span>主题</span>
       </button>
       <button
@@ -5347,7 +5391,10 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       { showFetchLoading: visibleThumbIds.has(f.id) },
     );
     const cardThumbSvg = thumbDisplay.cardThumbSvg;
-    if (syncState === "draft" || !thumbSvg) {
+    if (
+      (syncState === "draft" || !thumbSvg) &&
+      isFileListThumbnailDebugEnabled()
+    ) {
       debugFileListThumbnail("thumbnail choice", {
         id: f.id,
         id8: f.id.slice(0, 8),
@@ -5453,11 +5500,6 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       >
         <FileCardThumb
           kind={kind}
-          style={
-            {
-              "--fl-thumb-reveal-delay": `${Math.min(index, 12) * 30}ms`,
-            } as React.CSSProperties
-          }
           cardThumbSvg={cardThumbSvg}
           thumbLoading={thumbLoading}
           thumbSwitchLoading={thumbSwitchLoading}
@@ -5652,14 +5694,15 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const renderFileGrid = () => {
     const gridClassName = [
       "filelist__grid",
-      gridEnterAnimate ? "filelist__grid--animate-children" : "",
-      filteredFiles.length > 24 ? "filelist__grid--no-enter-animate" : "",
+      gridEnterAnimate && revealAnimationEnabled
+        ? "filelist__grid--animate-children"
+        : "",
     ]
       .filter(Boolean)
       .join(" ");
 
     return (
-      <div className={gridClassName} ref={gridRef} key={gridListKey}>
+      <div className={gridClassName} ref={gridRef}>
         {showNewEntryCard ? renderNewEntryCard(0) : null}
         {filteredFiles.map((f, i) =>
           renderFileCard(f, showNewEntryCard ? i + 1 : i),

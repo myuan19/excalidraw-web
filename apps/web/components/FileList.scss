@@ -431,11 +431,15 @@
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
+  /* 点击选中/主题切换即时生效：不过渡背景/边框/颜色（否则激活高亮淡入显得「慢半拍」），仅 hover 平滑淡入 */
+  transition: transform 0.1s var(--nb-ease-ui);
 
   &:hover:not(.filelist__view-mode-toggle--active) {
     background: var(--nb-fill-hover);
     border-color: var(--fl-border-strong);
     color: var(--nb-text-muted);
+    transition: background-color var(--nb-dur-hover) var(--nb-ease-ui),
+      border-color var(--nb-dur-hover) var(--nb-ease-ui);
   }
 
   &--active {
@@ -476,11 +480,15 @@
   font-size: var(--nb-font-caption);
   font-weight: 500;
   line-height: 1;
+  /* 点击切换/主题切换即时生效：不过渡背景/边框/颜色（否则激活高亮淡入显得「慢半拍」），仅 hover 平滑淡入 */
+  transition: transform 0.1s var(--nb-ease-ui);
 
   &:hover:not(.filelist__filter-chip--active) {
     background: var(--nb-fill-hover);
     border-color: var(--fl-border-strong);
     color: var(--nb-text-muted);
+    transition: background-color var(--nb-dur-hover) var(--nb-ease-ui),
+      border-color var(--nb-dur-hover) var(--nb-ease-ui);
   }
 
   &--active {
@@ -785,11 +793,12 @@
   text-align: left;
   cursor: pointer;
   white-space: nowrap;
-  transition: background-color var(--nb-dur-hover) var(--nb-ease-ui),
-    color var(--nb-dur-hover) var(--nb-ease-ui);
+  /* 点击切换视图/主题切换即时生效：不过渡背景/颜色（否则激活高亮淡入显得「慢半拍」），仅 hover 平滑淡入 */
+  transition: transform 0.1s var(--nb-ease-ui);
 
   &:hover {
     background: var(--fl-nav-surface-hover);
+    transition: background-color var(--nb-dur-hover) var(--nb-ease-ui);
   }
 }
 
@@ -1401,12 +1410,10 @@
     .filelist__card {
       animation: fadeSlideUp 0.25s var(--nb-ease-ui) both;
     }
-  }
-
-  &.filelist__grid--no-enter-animate {
-    .filelist__folder-card,
-    .filelist__card {
-      animation: none;
+    /* 入场动画期间，首屏卡片不被 content-visibility 跳过，确保整卡片块的浮现真正可见 */
+    .filelist__folder-card:nth-child(-n + 30),
+    .filelist__card:nth-child(-n + 30) {
+      content-visibility: visible;
     }
   }
 }
@@ -1522,6 +1529,9 @@
 .filelist__card {
   display: flex;
   flex-direction: column;
+  /* 缩略图非常多时，屏外卡片（含重型 inline SVG）跳过渲染，显著降低滚动开销 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 12rem;
 
   &:hover .filelist__card-actions {
     opacity: 1;
@@ -1570,18 +1580,6 @@
   }
 }
 
-/* 缩略图到达时柔和浮现：配合较低并发，按到达/索引先后逐个淡入，而非一次性刷出 */
-@keyframes fileCardThumbReveal {
-  from {
-    opacity: 0;
-    transform: scale(0.985);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
 .filelist__card-thumb-badge {
   position: absolute;
   top: var(--nb-space-3);
@@ -1619,8 +1617,6 @@
   width: 100%;
   height: 100%;
   line-height: 0;
-  animation: fileCardThumbReveal 0.34s var(--nb-ease-ui) both;
-  animation-delay: var(--fl-thumb-reveal-delay, 0ms);
 
   svg {
     display: block;
@@ -1638,15 +1634,6 @@
   height: 100%;
   object-fit: contain;
   pointer-events: none;
-  animation: fileCardThumbReveal 0.34s var(--nb-ease-ui) both;
-  animation-delay: var(--fl-thumb-reveal-delay, 0ms);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .filelist__card-thumb-svg,
-  .filelist__card-thumb-img {
-    animation: none;
-  }
 }
 
 .filelist__card-thumb-placeholder {

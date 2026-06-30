@@ -27,6 +27,8 @@ export interface AppSettings {
   debugLoggingEnabled: boolean;
   /** 桌面端新建内容默认落盘目录。 */
   defaultDataDirectoryPath: string;
+  /** 用户偏好：界面入场动画。开启后切换文件夹/视图时卡片由下而上逐个浮现；关闭则直接显示。 */
+  interfaceRevealAnimationEnabled: boolean;
 }
 
 const STORAGE_KEY = "editorhub-app-settings";
@@ -41,6 +43,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   debugLoggingMode: "off",
   debugLoggingEnabled: false,
   defaultDataDirectoryPath: DEFAULT_DATA_DIRECTORY_PATH,
+  interfaceRevealAnimationEnabled: true,
 };
 
 let cache: AppSettings = { ...DEFAULT_SETTINGS };
@@ -104,6 +107,10 @@ function normalizeSettings(parsed: Record<string, unknown>): AppSettings {
     parsed.defaultDataDirectoryPath.trim()
       ? parsed.defaultDataDirectoryPath.trim()
       : DEFAULT_SETTINGS.defaultDataDirectoryPath;
+  const interfaceRevealAnimationEnabled =
+    typeof parsed.interfaceRevealAnimationEnabled === "boolean"
+      ? parsed.interfaceRevealAnimationEnabled
+      : DEFAULT_SETTINGS.interfaceRevealAnimationEnabled;
 
   return {
     autoSaveEnabled,
@@ -112,6 +119,7 @@ function normalizeSettings(parsed: Record<string, unknown>): AppSettings {
     debugLoggingMode,
     debugLoggingEnabled: debugLoggingMode !== "off",
     defaultDataDirectoryPath,
+    interfaceRevealAnimationEnabled,
   };
 }
 
@@ -186,4 +194,9 @@ export function getDebugLoggingMode(): DebugLoggingMode {
 
 export function isAiDebugLoggingEnabled(): boolean {
   return getDebugLoggingMode() === "ai";
+}
+
+/** 用户偏好：界面是否启用由下而上的入场浮现动画。 */
+export function isInterfaceRevealAnimationEnabled(): boolean {
+  return getAppSettings().interfaceRevealAnimationEnabled;
 }

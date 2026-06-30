@@ -125,7 +125,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     string | null
   >(null);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<"general" | "ai">("general");
+  const [activeTab, setActiveTab] = useState<
+    "general" | "preferences" | "ai"
+  >("general");
   const [debugCapability, setDebugCapability] = useState(getDebugCapability);
   const shellTheme = useLiveShellTheme();
   const { mounted, active, onDrawerTransitionEnd } = useDrawerTransition(open);
@@ -369,6 +371,15 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <button
             type="button"
             className={`settings-panel__tab ${
+              activeTab === "preferences" ? "settings-panel__tab--active" : ""
+            }`}
+            onClick={() => setActiveTab("preferences")}
+          >
+            用户偏好
+          </button>
+          <button
+            type="button"
+            className={`settings-panel__tab ${
               activeTab === "ai" ? "settings-panel__tab--active" : ""
             }`}
             onClick={() => setActiveTab("ai")}
@@ -378,6 +389,35 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </nav>
 
         <div className="settings-panel__body">
+          {activeTab === "preferences" && (
+            <div className="settings-panel__section">
+              <h3>界面</h3>
+              <div className="settings-panel__option">
+                <div className="settings-panel__option-text">
+                  <span className="settings-panel__option-label">
+                    界面浮出动画
+                  </span>
+                  <span className="settings-panel__option-desc">
+                    开启后，切换文件夹或视图时卡片由下而上逐个浮现；关闭则直接显示。
+                  </span>
+                </div>
+                <label className="settings-panel__toggle">
+                  <input
+                    type="checkbox"
+                    checked={appSettings.interfaceRevealAnimationEnabled}
+                    onChange={(e) =>
+                      handleAppSettingChange(
+                        "interfaceRevealAnimationEnabled",
+                        e.target.checked,
+                      )
+                    }
+                  />
+                  <span className="settings-panel__toggle-track" />
+                </label>
+              </div>
+            </div>
+          )}
+
           {activeTab === "general" && (
             <>
               <div className="settings-panel__section">

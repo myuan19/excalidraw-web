@@ -50,13 +50,14 @@ The catalog root (`userData/catalog`) stores desktop metadata only — not your 
 ## Packaging
 
 ```bash
-yarn build:desktop        # Web + MindMap build, then Windows installer + portable exe
+yarn build:desktop:dist        # Windows installer + portable exe (Windows-native Node; rebuilds web app)
 yarn build:desktop:dist:debug  # same, but debug pack (EditorHub Debug *.exe)
-yarn build:desktop:pack   # unpacked Electron app for quick inspection
-yarn build:desktop:verify # verify existing Web build and desktop runtime modules
+yarn build:desktop             # full Web + MindMap (native) rebuild, then installer + portable (bash/WSL)
+yarn build:desktop:pack        # unpacked Electron app for quick inspection
+yarn build:desktop:verify      # verify existing Web build and desktop runtime modules
 ```
 
-Debug pack sets `EDITORHUB_DESKTOP_DEBUG_PACK=1` at build time (Web `VITE_APP_DEPLOY_DEBUG=true` + baked `desktopBuildFlags.json`). On Windows without bash, use `node scripts/build-desktop-dist.mjs --debug`.
+Debug pack sets `EDITORHUB_DESKTOP_DEBUG_PACK=1` at build time (Web `VITE_APP_DEPLOY_DEBUG=true` + baked `desktopBuildFlags.json`). `build:desktop:dist[:debug]` run the Windows-native Node entry (`scripts/build-desktop-dist.mjs`) and work without WSL; the `:bash` variants (or `bash scripts/build-desktop.sh dist[-debug]`) use the WSL/bash flow and need WSL Node ≥ 20.19 (older Node can't `require()` the ESM-only `@noble/hashes` that electron-builder 26 pulls in).
 
 Desktop artifacts are written to:
 
