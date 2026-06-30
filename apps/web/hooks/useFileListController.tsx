@@ -5641,10 +5641,22 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   };
 
   const showLocalDirectoryHub = false;
+  // 「最近」条目在本地（localStorage）同步可知，冷启动首屏据此渲染等量骨架，
+  // 而非写死 6 个：实际只有 1 条时只占 1 个位，刷新后不会从 6 个塌缩成 1 个。
+  const isRecentSkeletonScope = sidebarView === "recent" && !searchQuery.trim();
+  const recentSkeletonCount = isRecentSkeletonScope
+    ? getRecentFileEntries().length
+    : 0;
   const showBootstrapSkeleton =
     (awaitingFirstFetch || loading) &&
     filteredFiles.length === 0 &&
-    !showLocalDirectoryHub;
+    !showLocalDirectoryHub &&
+    // 最近视图无任何本地记录时无需骨架，直接走空状态文案。
+    (!isRecentSkeletonScope || recentSkeletonCount > 0);
+  // 非最近视图（文件夹/全部）冷启动无本地计数可依，用一屏占位的保守默认值。
+  const bootstrapSkeletonCount = isRecentSkeletonScope
+    ? Math.min(recentSkeletonCount, 24)
+    : 6;
   const empty =
     !showBootstrapSkeleton &&
     filteredFiles.length === 0 &&
@@ -5902,7 +5914,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         <div className="filelist__body" ref={mainRef}>
           {showBootstrapSkeleton ? (
             <div className="filelist__grid" ref={gridRef}>
-              {Array.from({ length: 6 }, (_, i) => (
+              {Array.from({ length: bootstrapSkeletonCount }, (_, i) => (
                 <div
                   key={i}
                   className="filelist__skeleton-card"
