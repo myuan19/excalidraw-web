@@ -2611,9 +2611,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     fileThumbHashByIdRef,
     setFetchedThumbs: setFetchedThumbsWithLayoutDebug,
     onThumbnailServerMiss,
-    // 可见集已限定在视口，直接并发拉取，使点亮 loading 的卡都真正在拉，
-    // 而非串行排队时大片空转（“假 loading”）。
-    serialFetch: false,
+    serialFetch: startupGate.isColdStart,
     fetchEnabled: startupGate.canFetchThumbnails,
   });
 
@@ -5365,12 +5363,7 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       f,
       fetchedThumbs[f.id] ?? null,
       fetchedThumbContentSha,
-      // 仅当拉取真正开启（canFetchThumbnails）且卡片在可见集内才点亮 loading，
-      // 避免冷启动门控关闭期间出现一批“并未在加载”的蓝色 loading。
-      {
-        showFetchLoading:
-          startupGate.canFetchThumbnails && visibleThumbIds.has(f.id),
-      },
+      { showFetchLoading: visibleThumbIds.has(f.id) },
     );
     const cardThumbSvg = thumbDisplay.cardThumbSvg;
     if (syncState === "draft" || !thumbSvg) {
