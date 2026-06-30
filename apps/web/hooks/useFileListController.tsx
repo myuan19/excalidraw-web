@@ -826,14 +826,11 @@ function expandFolderAncestorIds(
   );
 }
 
-function getInitialFileListStateFromCache(skipCache: boolean): {
+function getInitialFileListStateFromCache(): {
   files: ServerFile[];
   folders: ServerFolder[];
   hasCache: boolean;
 } {
-  if (skipCache) {
-    return { files: [], folders: [], hasCache: false };
-  }
   const cached = readFileListTreeCache();
   if (!cached) {
     return { files: [], folders: [], hasCache: false };
@@ -850,16 +847,15 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   const startupGate = useStartupFileListGate();
   const startupPhase = useStartupPhase();
   const showWebOnlyFileActions = !isDesktopEditorHub();
-  const initialList = getInitialFileListStateFromCache(false);
+  const initialList = getInitialFileListStateFromCache();
   useEffect(() => {
     purgeLegacyTempArtifacts();
     applyMainSiteDocumentBranding();
-    const bootList = getInitialFileListStateFromCache(false);
+    const bootList = getInitialFileListStateFromCache();
     traceHomeRenderMount({
       cachedFiles: bootList.files.length,
       cachedFolders: bootList.folders.length,
       hasCache: bootList.hasCache,
-      skipInitialCache: false,
     });
     return () => {
       traceIssueDiag("home.render", "unmount", {}, "ok");
