@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -10,19 +10,25 @@ const flagsPath = path.join(
 );
 
 describe("applyDesktopBuildFlags", () => {
-  let backupFlags = "";
+  let backupFlags = null;
+  let hadFlagsFile = false;
   const originalDebug = process.env.EDITORHUB_DESKTOP_DEBUG;
   const originalDeploy = process.env.DEPLOY_DEBUG;
 
   beforeEach(() => {
-    backupFlags = readFileSync(flagsPath, "utf8");
+    hadFlagsFile = existsSync(flagsPath);
+    backupFlags = hadFlagsFile ? readFileSync(flagsPath, "utf8") : null;
     delete process.env.EDITORHUB_DESKTOP_DEBUG;
     delete process.env.DEPLOY_DEBUG;
     vi.resetModules();
   });
 
   afterEach(() => {
-    writeFileSync(flagsPath, backupFlags, "utf8");
+    if (hadFlagsFile) {
+      writeFileSync(flagsPath, backupFlags, "utf8");
+    } else if (existsSync(flagsPath)) {
+      rmSync(flagsPath);
+    }
     vi.resetModules();
     if (originalDebug === undefined) {
       delete process.env.EDITORHUB_DESKTOP_DEBUG;

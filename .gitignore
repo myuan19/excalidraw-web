@@ -38,6 +38,11 @@ server/data/
 # Generated MindMap bundles (build → public/mind-map/dist for serve; not in git)
 # Covered by `dist` below; native source build output:
 # app/editors/mindmap/native/dist/
+public/mind-map/index.html
+apps/web/editors/mindmap/native/index.html
+
+# Desktop pack flags (written by write-build-flags.mjs before electron-builder)
+apps/desktop/src/desktopBuildFlags.json
 
 # Local-only dev/deploy helpers (not part of source)
 _scripts/
