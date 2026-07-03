@@ -18,6 +18,12 @@ import type { ServerFile } from "../data/ServerSync";
 const logPipe = createLogger({ module: "thumbPipeline" });
 const logThumb = createLogger({ module: "thumbnail" });
 
+/**
+ * 列表 GET /thumbnail 并发上限：取较小值，既比串行快，又保留缩略图
+ * 先后到达的「逐个浮现」节奏，避免一次性把全部缩略图刷出来。
+ */
+export const THUMB_SERVER_FETCH_CONCURRENCY = 3;
+
 function isThumbnailPipelineDebugEnabled(): boolean {
   if (isDevDebugChannelEnabled("thumbnail-pipeline")) {
     return true;
@@ -236,10 +242,12 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
       });
     }
 
+    const fetchRunners: Array<() => Promise<void>> = [];
     for (const item of toFetch) {
       thumbFetchingRef.current.add(item.id);
       const id8 = item.id.slice(0, 8);
-      void fetchThumbnailSvgForCard(item.url, { id8 })
+      const runFetch = () =>
+        fetchThumbnailSvgForCard(item.url, { id8 })
         .then(({ svg, status, errPreview }) => {
           if (!mountedRef.current) {
             logPipe.debug("GET thumb ignored (FileList unmounted)", {
@@ -326,7 +334,28 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
         .finally(() => {
           thumbFetchingRef.current.delete(item.id);
         });
+      fetchRunners.push(runFetch);
     }
+
+    // 有界并发：最多同时拉 THUMB_SERVER_FETCH_CONCURRENCY 张，其余排队，
+    // 让缩略图按到达先后逐个浮现，而不是一次性全部刷出。
+    const concurrency = Math.max(
+      1,
+      Math.min(THUMB_SERVER_FETCH_CONCURRENCY, fetchRunners.length || 1),
+    );
+    let nextIndex = 0;
+    let activeCount = 0;
+    const pumpFetches = () => {
+      while (activeCount < concurrency && nextIndex < fetchRunners.length) {
+        const run = fetchRunners[nextIndex++]!;
+        activeCount += 1;
+        void run().finally(() => {
+          activeCount -= 1;
+          pumpFetches();
+        });
+      }
+    };
+    pumpFetches();
   }, [
     draftStateById,
     thumbLoadScopeFiles,

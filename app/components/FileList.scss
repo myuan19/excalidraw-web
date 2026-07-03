@@ -40,6 +40,18 @@
   }
 }
 
+/* 缩略图到达时柔和浮现：配合有界并发，按到达/索引先后逐个淡入，而非一次性刷出 */
+@keyframes fileCardThumbReveal {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 @keyframes modalSlideUp {
   from {
     opacity: 0;
@@ -1324,12 +1336,20 @@
   width: 100%;
   height: 100%;
   line-height: 0;
+  animation: fileCardThumbReveal 0.34s var(--nb-ease-ui) both;
+  animation-delay: var(--fl-thumb-reveal-delay, 0ms);
 
   svg {
     display: block;
     width: 100%;
     height: 100%;
     pointer-events: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .filelist__card-thumb-svg {
+    animation: none;
   }
 }
 
@@ -1474,34 +1494,19 @@
 
 /* 文件选择器用 `.filelist__file-input-overlay` 叠在「导入」按钮上，勿再用零尺寸+clip 隐藏。 */
 
-/* ── Loading Skeleton ── */
-.filelist__skeleton-card {
-  background: var(--fl-panel-solid);
-  border: var(--nb-border-width) solid var(--fl-border);
-  border-radius: var(--nb-radius-lg);
-  overflow: hidden;
-  animation: fadeSlideUp 0.25s var(--nb-ease-ui) both;
-}
-
-.filelist__skeleton-thumb {
-  height: clamp(7.5rem, 16vw, 10rem);
-  background: linear-gradient(
-    90deg,
-    var(--nb-shimmer-from) 0%,
-    var(--nb-shimmer-mid) 40%,
-    var(--nb-shimmer-from) 80%
-  );
-  background-size: var(--nb-shimmer-bg-size) 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
-}
-
-.filelist__skeleton-body {
-  padding: var(--nb-space-5) var(--nb-space-6);
-  border-top: var(--nb-border-width) solid var(--fl-border);
+/* ── Loading Skeleton ──
+   骨架卡片复用真实卡片结构：外框用 .filelist__card，缩略图区用
+   .filelist__card-thumb-loading（即真实缩略图加载时的同一套骨架），
+   列表就绪后可无缝过渡为真实卡片。 */
+.filelist__card--skeleton {
+  pointer-events: none;
+  cursor: default;
 }
 
 .filelist__skeleton-line {
-  height: var(--nb-font-micro);
+  display: block;
+  width: 70%;
+  height: var(--nb-font-body-sm);
   border-radius: var(--nb-radius-xs);
   background: linear-gradient(
     90deg,
@@ -1511,16 +1516,11 @@
   );
   background-size: var(--nb-shimmer-bg-size) 100%;
   animation: shimmer 1.4s ease-in-out infinite;
+}
 
-  &:first-child {
-    width: 65%;
-    margin-bottom: var(--nb-space-3);
-  }
-
-  &:last-child {
-    width: 40%;
-    height: var(--nb-space-4);
-  }
+.filelist__skeleton-line--meta {
+  width: 45%;
+  height: var(--nb-font-caption);
 }
 
 /* ── Status / Empty ── */

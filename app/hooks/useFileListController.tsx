@@ -78,7 +78,10 @@ import {
   isAIConfigured,
   subscribeAIConfig,
 } from "../data/aiConfig";
-import { computeThumbFetchAllowIds } from "../data/thumbCoverage";
+import {
+  computeThumbFetchAllowIds,
+  measureVisibleThumbIdsInRoot,
+} from "../data/thumbCoverage";
 import { EmbedTokenManager } from "../components/EmbedTokenManager";
 import { SettingsPanel } from "../components/SettingsPanel";
 import { FileListFolderDraftDialog } from "../components/FileListFolderDraftDialog";
@@ -369,6 +372,9 @@ type FolderDraft =
 
 const ROOT_ID: string | null = null;
 
+/** 骨架卡片数量上限：给「最近」真实条数封顶，避免一次渲染过多 DOM。 */
+const SKELETON_MAX_COUNT = 24;
+
 type SidebarView = "recent" | "all";
 const SIDEBAR_VIEW_STORAGE_KEY = "editorhub-filelist-sidebar-view";
 const FLAT_FOLDER_VIEW_STORAGE_KEY = "excalidraw-filelist-flat-view";
@@ -626,7 +632,9 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     applyMainSiteDocumentBranding();
   }, []);
 
-  const initialList = getInitialFileListStateFromCache();
+  // 仅首挂载读一次会话缓存（内部会 JSON.parse 整棵文件树）；后续渲染复用同一
+  // 快照，避免每次 render 都重复解析缓存（滚动/hover 等高频渲染下尤为浪费）。
+  const [initialList] = useState(getInitialFileListStateFromCache);
   const [files, setFiles] = useState<ServerFile[]>(initialList.files);
   const [folders, setFolders] = useState<ServerFolder[]>(initialList.folders);
   const [currentFolderId, setCurrentFolderIdRaw] = useState<string | null>(() => {
@@ -1249,9 +1257,35 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     return () => window.clearTimeout(timer);
   }, [gridListKey]);
 
-  useEffect(() => {
-    setVisibleThumbIds(new Set());
-  }, [currentFolderId, flatFolderView, sidebarView]);
+  // 视图/列表变化后，首帧同步测量视口内缩略图并整体替换可见集：
+  // 既清理上个视图的旧可见 id，又按「真实可见数量」一次性播种 loading，
+  // 不等 IntersectionObserver 异步分批回调（避免 loading 一个个蹦出来）。
+  // 滚动时不触发此 effect（filteredFiles 不变），由 IO 增量补充可见 id。
+  useLayoutEffect(() => {
+    if (loading) {
+      // 加载中只有骨架卡，没有真实缩略图节点可测。
+      return;
+    }
+    const measured = measureVisibleThumbIdsInRoot(
+      mainRef.current,
+      thumbNodeMap.current,
+    );
+    setVisibleThumbIds((prev) => {
+      if (prev.size === measured.size) {
+        let same = true;
+        for (const id of measured) {
+          if (!prev.has(id)) {
+            same = false;
+            break;
+          }
+        }
+        if (same) {
+          return prev;
+        }
+      }
+      return measured;
+    });
+  }, [loading, filteredFiles]);
 
   const collectLayoutDebugData = useCallback(
     (data: Record<string, unknown> = {}) => {
@@ -1458,16 +1492,17 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
 
   /**
    * 当前视图所有文件均参与缩略图拉取/生成，包括嵌套子文件夹中的文件。
-   * thumbCoverage 机制（visibleIds ∪ 前 N 条）已通过 IntersectionObserver 控制优先级。
+   * 实际拉取与 loading 由可见集（见 thumbCoverage）约束，仅视口内卡片生效。
    */
   const thumbLoadScopeFiles = useMemo(() => filteredFiles, [filteredFiles]);
 
   /**
-   * 首屏必须与 IntersectionObserver 可见集合并：可见 id ∪ 当前作用域排序前 N 条（见 thumbCoverage）。
+   * 拉取/加载准入 = 可见集（视口 ± margin）。不做「前 N 条」off-screen 预取，
+   * 因此 loading 微光只对真正在拉的卡亮，屏外卡不会显示假加载态。
    */
   const thumbFetchAllowIds = useMemo(
-    () => computeThumbFetchAllowIds(visibleThumbIds, thumbLoadScopeFiles),
-    [visibleThumbIds, thumbLoadScopeFiles],
+    () => computeThumbFetchAllowIds(visibleThumbIds),
+    [visibleThumbIds],
   );
 
   const onThumbnailServerMiss = useCallback(() => {
@@ -2877,6 +2912,29 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
     </div>
   );
 
+  // 加载态骨架卡片：与真实卡片同结构，缩略图区复用 `filelist__card-thumb-loading`，
+  // 也就是文件真实缩略图加载时用的同一套骨架 —— 列表就绪后无缝过渡为真实卡片。
+  const renderSkeletonCard = (index: number) => (
+    <div
+      key={`skeleton-${index}`}
+      className="filelist__card filelist__card--skeleton"
+      style={{ animationDelay: `${Math.min(index, 20) * 25}ms` }}
+      aria-hidden
+    >
+      <div className="filelist__card-thumb">
+        <div className="filelist__card-thumb-loading" />
+      </div>
+      <div className="filelist__card-body">
+        <div className="filelist__card-name-row">
+          <span className="filelist__skeleton-line" />
+        </div>
+        <div className="filelist__card-meta">
+          <span className="filelist__skeleton-line filelist__skeleton-line--meta" />
+        </div>
+      </div>
+    </div>
+  );
+
   const renderFileCard = (f: ServerFile, index: number) => {
     const isBrowserDraft = isLocalDraftFileId(f.id);
     const state = draftStateById[f.id];
@@ -2942,7 +3000,10 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       });
     }
     const q = searchQuery.trim();
-    const thumbLoading = thumbDisplay.thumbLoading;
+    // loading 微光只对可见（在拉取准入集内）的卡亮：屏外卡即使有缩略图也不显示
+    // 假加载态，滚动进入视口（含 400px margin）后才点亮并真正拉取。
+    const thumbLoading =
+      thumbDisplay.thumbLoading && thumbFetchAllowIds.has(f.id);
     return (
       <div
         key={f.id}
@@ -2973,6 +3034,11 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       >
         <FileCardThumb
           kind={kind}
+          style={
+            {
+              "--fl-thumb-reveal-delay": `${Math.min(index, 12) * 30}ms`,
+            } as React.CSSProperties
+          }
           cardThumbSvg={cardThumbSvg}
           thumbLoading={thumbLoading}
           badge={thumbDisplay.badge}
@@ -3081,6 +3147,20 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   };
 
   const showNewEntryCard = !searchQuery.trim();
+  // 「最近」条目在本地（localStorage）同步可知，冷启动首屏据此渲染等量骨架，
+  // 而非写死固定数：实际只有 1 条时只占 1 个位，刷新后不会从 N 个塌缩成 1 个。
+  // 其它视图（全部/文件夹/搜索中）冷启动没有任何真实依据，绝不编造固定数量的
+  // 假骨架 —— 直接展示真实的「新建」卡片并等真实文件陆续加载。
+  const isRecentSkeletonScope = sidebarView === "recent" && !searchQuery.trim();
+  // 仅在加载中才读「最近」条数（localStorage + parse），加载完成后不再每次渲染重算。
+  const recentSkeletonCount =
+    loading && isRecentSkeletonScope ? getRecentFileEntries().length : 0;
+  const showBootstrapSkeleton =
+    loading && filteredFiles.length === 0 && recentSkeletonCount > 0;
+  const bootstrapSkeletonCount = Math.min(
+    recentSkeletonCount,
+    SKELETON_MAX_COUNT,
+  );
   const empty =
     !loading && filteredFiles.length === 0 && !showNewEntryCard;
 
@@ -3278,21 +3358,14 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         </header>
 
         <div className="filelist__body" ref={mainRef}>
-          {loading ? (
-            <div className="filelist__grid" ref={gridRef}>
-              {Array.from({ length: 6 }, (_, i) => (
-                <div
-                  key={i}
-                  className="filelist__skeleton-card"
-                  style={{ animationDelay: `${i * 60}ms` }}
-                >
-                  <div className="filelist__skeleton-thumb" />
-                  <div className="filelist__skeleton-body">
-                    <div className="filelist__skeleton-line" />
-                    <div className="filelist__skeleton-line" />
-                  </div>
-                </div>
-              ))}
+          {showBootstrapSkeleton ? (
+            <div
+              className="filelist__grid filelist__grid--animate-children"
+              ref={gridRef}
+            >
+              {Array.from({ length: bootstrapSkeletonCount }, (_, i) =>
+                renderSkeletonCard(i),
+              )}
             </div>
           ) : empty ? (
             <div className="filelist__empty">
