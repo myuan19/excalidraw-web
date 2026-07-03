@@ -1,3 +1,5 @@
+import { isDesktopEditorHub } from "../lib/runtimePlatform";
+
 import type { FileTreeResponse, ServerFile } from "./ServerSync";
 
 const CACHE_KEY = "excalidraw-filelist-tree-v1";
@@ -5,6 +7,20 @@ const CACHE_ETAG_KEY = "excalidraw-filelist-tree-etag-v1";
 // 轻量版本哨兵：每次写缓存自增并写入一个很短的字符串。读取热路径只需比较这个短串，
 // 即可判断 memParsed 是否仍然有效，而无需 getItem 拷贝并逐字符比较整棵大树字符串。
 const CACHE_VERSION_KEY = "excalidraw-filelist-tree-ver-v1";
+
+/**
+ * 桌面端跨会话镜像（localStorage）：sessionStorage 每次启动为空，冷启动首屏
+ * 必然退化为骨架 + 全量 GET /tree。镜像让 SWR 首屏在启动瞬间就有上次的树
+ * （文件名/contentSha/has_thumbnail），刷新语义不变：GET /tree 返回后照常覆盖。
+ * ETag 一并镜像，配合 Express 默认弱 ETag，内容未变时首个 /tree 直接 304。
+ * Web 端不镜像——浏览器同 tab 刷新本就保留 sessionStorage，跨 tab 用旧树反而更陈旧。
+ */
+const PERSIST_KEY = "excalidraw-filelist-tree-persist-v1";
+const PERSIST_ETAG_KEY = "excalidraw-filelist-tree-persist-etag-v1";
+
+function isTreePersistMirrorEnabled(): boolean {
+  return isDesktopEditorHub();
+}
 
 /**
  * 内存记忆层：sessionStorage 里整棵文件树（可达数千文件夹）的 JSON 体量很大（可达 1-2MB）。
@@ -61,6 +77,53 @@ function stripFilesForCache(files: ServerFile[]): ServerFile[] {
   });
 }
 
+function parseTreeCacheRaw(raw: string): FileTreeResponse | null {
+  try {
+    const parsed = JSON.parse(raw) as FileTreeResponse;
+    if (
+      !parsed ||
+      !Array.isArray(parsed.folders) ||
+      !Array.isArray(parsed.files)
+    ) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+/** 冷启动从持久镜像回填 session 层；返回解析结果（同时同步 memParsed）。 */
+function seedSessionFromPersistMirror(): FileTreeResponse | null {
+  if (!isTreePersistMirrorEnabled()) {
+    return null;
+  }
+  try {
+    const raw = localStorage.getItem(PERSIST_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = parseTreeCacheRaw(raw);
+    if (!parsed) {
+      localStorage.removeItem(PERSIST_KEY);
+      localStorage.removeItem(PERSIST_ETAG_KEY);
+      return null;
+    }
+    sessionStorage.setItem(CACHE_KEY, raw);
+    const nextVersion = String(++writeCounter);
+    sessionStorage.setItem(CACHE_VERSION_KEY, nextVersion);
+    const persistedEtag = localStorage.getItem(PERSIST_ETAG_KEY);
+    if (persistedEtag?.trim()) {
+      sessionStorage.setItem(CACHE_ETAG_KEY, persistedEtag.trim());
+    }
+    memParsed = parsed;
+    memVersion = nextVersion;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 export function readFileListTreeCache(): FileTreeResponse | null {
   try {
     const version = sessionStorage.getItem(CACHE_VERSION_KEY);
@@ -71,16 +134,16 @@ export function readFileListTreeCache(): FileTreeResponse | null {
     }
     const raw = sessionStorage.getItem(CACHE_KEY);
     if (!raw) {
+      const seeded = seedSessionFromPersistMirror();
+      if (seeded) {
+        return seeded;
+      }
       memParsed = null;
       memVersion = null;
       return null;
     }
-    const parsed = JSON.parse(raw) as FileTreeResponse;
-    if (
-      !parsed ||
-      !Array.isArray(parsed.folders) ||
-      !Array.isArray(parsed.files)
-    ) {
+    const parsed = parseTreeCacheRaw(raw);
+    if (!parsed) {
       memParsed = null;
       memVersion = null;
       return null;
@@ -108,6 +171,13 @@ export function writeFileListTreeCache(tree: FileTreeResponse): void {
     sessionStorage.setItem(CACHE_VERSION_KEY, nextVersion);
     memParsed = payload;
     memVersion = nextVersion;
+    if (isTreePersistMirrorEnabled()) {
+      try {
+        localStorage.setItem(PERSIST_KEY, raw);
+      } catch {
+        // localStorage 配额独立于 sessionStorage：镜像失败不影响会话缓存
+      }
+    }
   } catch {
     // 配额或隐私模式：忽略
   }
@@ -116,7 +186,19 @@ export function writeFileListTreeCache(tree: FileTreeResponse): void {
 export function readFileListTreeCacheEtag(): string | null {
   try {
     const raw = sessionStorage.getItem(CACHE_ETAG_KEY);
-    return raw?.trim() ? raw.trim() : null;
+    if (raw?.trim()) {
+      return raw.trim();
+    }
+    if (!isTreePersistMirrorEnabled()) {
+      return null;
+    }
+    // 冷启动回填：etag 只有在缓存树同样可用时才能带（304 时须能直接返回缓存树），
+    // 读一次树即触发镜像回填（含 etag），再从 session 取。
+    if (!readFileListTreeCache()) {
+      return null;
+    }
+    const seeded = sessionStorage.getItem(CACHE_ETAG_KEY);
+    return seeded?.trim() ? seeded.trim() : null;
   } catch {
     return null;
   }
@@ -126,9 +208,26 @@ export function writeFileListTreeCacheEtag(etag: string | null): void {
   try {
     if (!etag?.trim()) {
       sessionStorage.removeItem(CACHE_ETAG_KEY);
+      writeEtagPersistMirror(null);
       return;
     }
     sessionStorage.setItem(CACHE_ETAG_KEY, etag.trim());
+    writeEtagPersistMirror(etag.trim());
+  } catch {
+    /* ignore */
+  }
+}
+
+function writeEtagPersistMirror(etag: string | null): void {
+  if (!isTreePersistMirrorEnabled()) {
+    return;
+  }
+  try {
+    if (etag) {
+      localStorage.setItem(PERSIST_ETAG_KEY, etag);
+    } else {
+      localStorage.removeItem(PERSIST_ETAG_KEY);
+    }
   } catch {
     /* ignore */
   }

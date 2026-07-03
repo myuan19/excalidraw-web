@@ -7,6 +7,10 @@
 
 import { createLogger } from "../lib/logger";
 import {
+  deletePersistedThumbnail,
+  persistSavedThumbnail,
+} from "./persistentThumbnailStore";
+import {
   decodeMindMapThumbnailPayload,
   isNativeMindMapThumbnailSvg,
   normalizeMindMapThumbnailSvg,
@@ -221,6 +225,9 @@ export const LocalThumbnailCache = {
         return;
       }
       writeSavedMeta(fileId, { contentSha: opts.contentSha });
+      // 桌面端 write-through：saved 槽是「contentSha 绑定已保存图」的唯一入口，
+      // 在此处落 IndexedDB 让保存/拉取产生的图都能跨启动复用（web 为 no-op）。
+      persistSavedThumbnail(fileId, opts.contentSha, written);
       logThumb.debug(`localThumb saved ${fileId.slice(0, 8)} len=${written.length}`);
       emitThumbUpdated(fileId);
       return;
@@ -322,6 +329,37 @@ export const LocalThumbnailCache = {
     this.set(fileId, svg, { sceneHash: sceneHash ?? null });
   },
 
+  /**
+   * 启动水合专用：把持久层条目批量还原到 saved 槽。
+   * 与 set() 的区别：不逐条发更新事件（由调用方汇总发一次），也不回写持久层
+   * （数据本来自持久层）。已有同 sha 槽位时跳过，绝不覆盖会话内更新的数据。
+   */
+  restoreSavedContentThumb(
+    fileId: string,
+    contentSha: string,
+    svg: string,
+  ): boolean {
+    if (!contentSha || !svg) {
+      return false;
+    }
+    try {
+      if (
+        this.getBoundContentSha(fileId) &&
+        sessionStorage.getItem(this.savedKey(fileId))
+      ) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+    const written = writeSvgToKey(this.savedKey(fileId), svg, fileId.slice(0, 8));
+    if (!written) {
+      return false;
+    }
+    writeSavedMeta(fileId, { contentSha });
+    return true;
+  },
+
   bindToContentSha(
     fileId: string,
     contentSha: string | null | undefined,
@@ -341,6 +379,7 @@ export const LocalThumbnailCache = {
   },
 
   clear(fileId: string): void {
+    deletePersistedThumbnail(fileId);
     try {
       sessionStorage.removeItem(this.draftKey(fileId));
       sessionStorage.removeItem(this.draftMetaKey(fileId));

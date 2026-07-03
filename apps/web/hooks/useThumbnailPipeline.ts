@@ -3,6 +3,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 
 import { createLogger } from "../lib/logger";
 import { devDebug } from "../lib/devDebug";
+import { isDesktopEditorHub } from "../lib/runtimePlatform";
 import { traceResourceOp } from "../lib/resourceTrace";
 import {
   nextThumbPipelineTick,
@@ -16,6 +17,7 @@ import { buildServerThumbnailRequestPath } from "../data/serverThumbnailUrl";
 import { isLocalDraftFileId } from "../data/localDraftFileId";
 import { LocalThumbnailCache } from "../data/localThumbnailCache";
 import { isNativeThumbnailPending } from "../data/nativeThumbnailPending";
+import { persistSavedThumbnail } from "../data/persistentThumbnailStore";
 import {
   markThumbnailServerMiss,
   shouldFetchServerThumbnail,
@@ -29,9 +31,22 @@ const logPipe = createLogger({ module: "thumbPipeline" });
 
 /**
  * 列表 GET /thumbnail 并发上限（冷启动亦适用，避免 PriorityTaskQueue 串行逐张加载）。
- * 取较小值：既比串行快，又保留缩略图先后到达的「逐个浮现」节奏，不一次性全部刷出。
+ * Web 取较小值：既比串行快，又保留缩略图先后到达的「逐个浮现」节奏，不一次性全部刷出。
  */
 export const THUMB_SERVER_FETCH_CONCURRENCY = 3;
+
+/**
+ * 桌面端上限：请求走 IPC → loopback Express（本地磁盘读），没有网络成本，
+ * 低并发只会拉长冷启动首屏；「浮现」节奏由入场动画负责，不用网络节流实现。
+ * 常态下持久层水合已覆盖大多数卡片，真正走到拉取的只有内容变化的少数文件。
+ */
+export const THUMB_SERVER_FETCH_CONCURRENCY_DESKTOP = 10;
+
+function defaultThumbFetchConcurrency(): number {
+  return isDesktopEditorHub()
+    ? THUMB_SERVER_FETCH_CONCURRENCY_DESKTOP
+    : THUMB_SERVER_FETCH_CONCURRENCY;
+}
 
 function debugThumbnailPipeline(
   label: string,
@@ -74,7 +89,7 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
     fileThumbHashByIdRef,
     setFetchedThumbs,
     onThumbnailServerMiss,
-    maxConcurrentFetches = THUMB_SERVER_FETCH_CONCURRENCY,
+    maxConcurrentFetches = defaultThumbFetchConcurrency(),
     fetchEnabled = true,
   } = deps;
 
@@ -346,6 +361,8 @@ export function useThumbnailPipeline(deps: ThumbPipelineDeps): {
           }
           fetchedThumbHashByIdRef.current[item.id] = item.cacheKey;
           setFetchedThumbs((prev) => ({ ...prev, [item.id]: svg }));
+          // 桌面端：拉到的 contentSha 绑定图落持久层，下次启动免拉（web no-op）。
+          persistSavedThumbnail(item.id, item.contentSha, svg);
           traceThumbFetchEnd({
             fileId: item.id,
             tick,

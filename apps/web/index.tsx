@@ -5,10 +5,13 @@ import "./editors/eagerEditorChunkStyles";
 import { initGlobalErrorCapture } from "./lib/logger";
 import { installUserTraceGlobals } from "./lib/userTrace";
 import { bootResourceTrace } from "./lib/resourceTrace";
+import { warmStartPersistedThumbnails } from "./data/thumbnailWarmStart";
 
 initGlobalErrorCapture();
 installUserTraceGlobals();
 bootResourceTrace();
+// 桌面端：首帧渲染前启动缩略图持久层水合（web / 嵌入页内部 no-op）。
+void warmStartPersistedThumbnails();
 
 window.__EXCALIDRAW_SHA__ = import.meta.env.VITE_APP_GIT_SHA;
 

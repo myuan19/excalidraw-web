@@ -5,7 +5,9 @@ import {
   patchFileListTreeCacheSavedFile,
   patchFileListTreeCacheThumbnailMissing,
   readFileListTreeCache,
+  readFileListTreeCacheEtag,
   writeFileListTreeCache,
+  writeFileListTreeCacheEtag,
 } from "./fileListSessionCache";
 import type { ServerFile } from "./ServerSync";
 
@@ -89,6 +91,17 @@ describe("fileListSessionCache", () => {
     expect(sessionStorage.getItem("excalidraw-filelist-tree-etag-v1")).toBeNull();
   });
 
+  it("does not mirror the tree to localStorage on web", () => {
+    writeFileListTreeCache({
+      folders: [],
+      files: [mockFile({ id: "file-1" })],
+    });
+
+    expect(
+      localStorage.getItem("excalidraw-filelist-tree-persist-v1"),
+    ).toBeNull();
+  });
+
   it("prefers newer session-cache metadata when merging catalog trees", () => {
     writeFileListTreeCache({
       folders: [],
@@ -122,5 +135,77 @@ describe("fileListSessionCache", () => {
       has_thumbnail: true,
       updated_at: "2026-06-22T00:01:00.000Z",
     });
+  });
+});
+
+describe("fileListSessionCache desktop persist mirror", () => {
+  afterEach(() => {
+    sessionStorage.clear();
+    localStorage.clear();
+    delete (window as Window & { editorHubDesktop?: unknown }).editorHubDesktop;
+  });
+
+  it("seeds the session cache from localStorage after a cold start", () => {
+    window.editorHubDesktop = { platform: "win32" };
+    writeFileListTreeCache({
+      folders: [],
+      files: [mockFile({ id: "file-1", name: "持久化" })],
+    });
+    writeFileListTreeCacheEtag('W/"tree-1"');
+
+    // 模拟重启：session 层清空，localStorage 镜像仍在
+    sessionStorage.clear();
+
+    const tree = readFileListTreeCache();
+    expect(tree?.files[0]).toMatchObject({ id: "file-1", name: "持久化" });
+    // etag 随树一起回填，首个 GET /tree 可命中 304
+    expect(readFileListTreeCacheEtag()).toBe('W/"tree-1"');
+  });
+
+  it("never returns a persisted etag without a usable cached tree", () => {
+    window.editorHubDesktop = { platform: "win32" };
+    // 只有孤儿 etag，没有镜像树（如镜像写入曾因配额失败）
+    localStorage.setItem(
+      "excalidraw-filelist-tree-persist-etag-v1",
+      'W/"orphan"',
+    );
+
+    expect(readFileListTreeCacheEtag()).toBeNull();
+  });
+
+  it("clears the mirrored etag when local mutations invalidate it", () => {
+    window.editorHubDesktop = { platform: "win32" };
+    writeFileListTreeCache({
+      folders: [],
+      files: [mockFile({ id: "file-1" })],
+    });
+    writeFileListTreeCacheEtag('W/"tree-1"');
+
+    patchFileListTreeCacheSavedFile("file-1", { name: "改名" });
+
+    expect(
+      localStorage.getItem("excalidraw-filelist-tree-persist-etag-v1"),
+    ).toBeNull();
+    // 镜像树保持最新（patch 后的树也已镜像）
+    sessionStorage.clear();
+    expect(readFileListTreeCache()?.files[0]).toMatchObject({ name: "改名" });
+    expect(readFileListTreeCacheEtag()).toBeNull();
+  });
+
+  it("drops a corrupt mirror instead of seeding from it", () => {
+    window.editorHubDesktop = { platform: "win32" };
+    localStorage.setItem("excalidraw-filelist-tree-persist-v1", "{corrupt");
+    localStorage.setItem(
+      "excalidraw-filelist-tree-persist-etag-v1",
+      'W/"stale"',
+    );
+
+    expect(readFileListTreeCache()).toBeNull();
+    expect(
+      localStorage.getItem("excalidraw-filelist-tree-persist-v1"),
+    ).toBeNull();
+    expect(
+      localStorage.getItem("excalidraw-filelist-tree-persist-etag-v1"),
+    ).toBeNull();
   });
 });
