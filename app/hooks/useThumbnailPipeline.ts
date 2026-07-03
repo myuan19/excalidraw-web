@@ -22,7 +22,7 @@ const logThumb = createLogger({ module: "thumbnail" });
  * 列表 GET /thumbnail 并发上限：取较小值，既比串行快，又保留缩略图
  * 先后到达的「逐个浮现」节奏，避免一次性把全部缩略图刷出来。
  */
-export const THUMB_SERVER_FETCH_CONCURRENCY = 3;
+export const THUMB_SERVER_FETCH_CONCURRENCY = 6;
 
 function isThumbnailPipelineDebugEnabled(): boolean {
   if (isDevDebugChannelEnabled("thumbnail-pipeline")) {
