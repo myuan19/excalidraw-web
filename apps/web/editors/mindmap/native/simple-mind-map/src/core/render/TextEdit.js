@@ -7,6 +7,7 @@ import {
   handleInputPasteText,
   checkSmmFormatData,
   getTextFromHtml,
+  isEmptyRichTextContent,
   isWhite,
   getVisibleColorFromTheme,
   loadImage,
@@ -642,12 +643,17 @@ export default class TextEdit {
     if (!this.showTextEdit || !this.currentNode) {
       return false
     }
+    const text = this.getEditText()
+    // 与富文本路径一致：编辑框内容为空的瞬时态（全选重打/刚清空）不作为
+    // 快照内容提交，避免自动保存撞上时把空文本写进数据与缩略图
+    if (
+      isEmptyRichTextContent(text) &&
+      !isEmptyRichTextContent(this.currentNode.getData('text'))
+    ) {
+      return false
+    }
     return this.waitForNodeTreeRenderEndAfter(() =>
-      this.mindMap.execCommand(
-        'SET_NODE_TEXT',
-        this.currentNode,
-        this.getEditText()
-      )
+      this.mindMap.execCommand('SET_NODE_TEXT', this.currentNode, text)
     )
   }
 

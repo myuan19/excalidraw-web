@@ -306,6 +306,11 @@
       const DRAFT_THUMB_EXPORT_DEBOUNCE_MS = 450
       let draftThumbExportTimer = null
       let draftThumbExportRevision = 0
+      let draftThumbExportWaitingIdle = false
+      // 隐藏页跳过的缩略图导出待办：回到可见后补一次
+      let thumbnailPendingWhileHidden = false
+      // 隐藏页跳过的文本强制渲染待办：回到可见后补跑健康度检查
+      let textRenderEnsurePendingWhileHidden = false
       let nativeSaveInFlight = null
       let dirtyNotifyEnabled = false
       let dirtyNotifyEnableTimer = null
@@ -348,6 +353,143 @@
           )
         }
       }
+      // ===== 拖拽会话状态 =====
+      // 节点拖拽（node_dragging/node_dragend）与画布平移（drag/mouseup）期间，
+      // 缩略图导出、宿主发起的保存快照等重活会吃掉拖拽帧预算（iframe 与宿主
+      // 同主线程），统一推迟到拖拽结束后执行；状态同步给宿主，宿主侧的
+      // 空闲自动保存/草稿写盘同样让路（对应 Excalidraw 的 pointerDrag 机制）
+      const DRAG_IDLE_SETTLE_MS = 240
+      const DRAG_ACTIVE_SAFETY_MS = 15000
+      let interactionDragActive = false
+      let dragIdleWaiters = []
+      let dragIdleFlushTimer = null
+      let dragActiveSafetyTimer = null
+      const flushDragIdleWaiters = () => {
+        if (interactionDragActive) return
+        const waiters = dragIdleWaiters.splice(0)
+        waiters.forEach(fn => {
+          try {
+            fn()
+          } catch (error) {
+            console.warn('[mindmap-bridge] drag idle waiter failed', error)
+          }
+        })
+      }
+      const setInteractionDragActive = active => {
+        if (interactionDragActive === active) return
+        interactionDragActive = active
+        if (dragActiveSafetyTimer) {
+          window.clearTimeout(dragActiveSafetyTimer)
+          dragActiveSafetyTimer = null
+        }
+        postToHost('mindMapInteractionState', { dragging: active })
+        debugMindMapOpen('interaction drag state', {
+          active,
+          pendingIdleWaiters: dragIdleWaiters.length
+        })
+        if (active) {
+          if (dragIdleFlushTimer) {
+            window.clearTimeout(dragIdleFlushTimer)
+            dragIdleFlushTimer = null
+          }
+          // 安全阀：mouseup 丢失（窗口失焦等）时不至于永久搁置重活
+          dragActiveSafetyTimer = window.setTimeout(() => {
+            dragActiveSafetyTimer = null
+            setInteractionDragActive(false)
+          }, DRAG_ACTIVE_SAFETY_MS)
+          return
+        }
+        // 结束后留一小段冷却，让 drop 提交的渲染先落地
+        dragIdleFlushTimer = window.setTimeout(() => {
+          dragIdleFlushTimer = null
+          flushDragIdleWaiters()
+        }, DRAG_IDLE_SETTLE_MS)
+      }
+      const runWhenDragIdle = fn => {
+        if (!interactionDragActive) {
+          fn()
+          return
+        }
+        dragIdleWaiters.push(fn)
+      }
+      const waitForDragIdle = (timeoutMs = 8000) => {
+        return new Promise(resolve => {
+          if (!interactionDragActive) {
+            resolve(true)
+            return
+          }
+          let settled = false
+          const timer = window.setTimeout(() => {
+            if (settled) return
+            settled = true
+            resolve(false)
+          }, timeoutMs)
+          dragIdleWaiters.push(() => {
+            if (settled) return
+            settled = true
+            window.clearTimeout(timer)
+            resolve(true)
+          })
+        })
+      }
+      // ===== 宿主 pane 前后台（编辑器标签切换，与浏览器级 document.hidden 独立）=====
+      // 语义对齐 Excalidraw：离开编辑器视图 = 提交当前输入。pane 转后台时结束
+      // 进行中的文本编辑（文字落进节点数据，触发 dirty → 保存链），随后的
+      // 后台保存拿到的是完整数据；保存跑完黄点清空后宿主才会休眠该 pane。
+      let hostPaneForeground = true
+      const commitPendingTextEditForBackground = reason => {
+        if (!nativeMindMap || !isTextEditVisible()) {
+          return
+        }
+        try {
+          const textEdit = nativeMindMap.renderer.textEdit
+          if (textEdit && typeof textEdit.hideEditTextBox === 'function') {
+            textEdit.hideEditTextBox()
+            traceNativeMindMapOp('textEdit.commitOnBackground', { reason })
+          }
+        } catch (error) {
+          console.warn(
+            '[mindmap-bridge] commit text edit on background failed',
+            error
+          )
+        }
+      }
+      const resumeVisualTasksAfterHidden = () => {
+        if (textRenderEnsurePendingWhileHidden && nativeMindMap) {
+          textRenderEnsurePendingWhileHidden = false
+          void ensureMindMapTextRendered('resume-after-visible')
+        }
+        if (thumbnailPendingWhileHidden && nativeMindMap) {
+          thumbnailPendingWhileHidden = false
+          traceNativeMindMapOp('thumbnailExport.resumeAfterVisible', {})
+          scheduleDraftThumbnailExport(++mindMapDataRevision)
+        }
+      }
+      const setHostPaneForeground = foreground => {
+        if (hostPaneForeground === foreground) {
+          return
+        }
+        hostPaneForeground = foreground
+        traceNativeMindMapOp('hostPaneVisibility', { foreground })
+        if (!foreground) {
+          setInteractionDragActive(false)
+          commitPendingTextEditForBackground('pane-background')
+          return
+        }
+        resumeVisualTasksAfterHidden()
+      }
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          setInteractionDragActive(false)
+          // 浏览器级隐藏（切浏览器标签/最小化）同样视为离开编辑器：提交输入，
+          // 让后台保存链拿到完整数据
+          commitPendingTextEditForBackground('document-hidden')
+          return
+        }
+        // 回到可见：补跑隐藏期间被跳过的文本强制渲染与缩略图导出
+        // （后台保存只保数据，视觉产物延迟到可见后）
+        resumeVisualTasksAfterHidden()
+      })
       const reportMindMapSaveProgress = (requestId, phase, extra) => {
         if (
           nativeSaveInFlight &&
@@ -369,8 +511,11 @@
         })
       }
       let nativeTraceSeq = 0
+      // data 支持传函数：getData()/全树采样等重实参只在调试开启时才求值，
+      // 否则 JS 会先算实参——每次编辑/拖拽落点都平白付出整树深拷贝的代价
       const traceNativeMindMapOp = (label, data) => {
         if (!isMindMapOperationTraceEnabled()) return
+        const resolved = typeof data === 'function' ? data() : data
         nativeTraceSeq += 1
         const payload = {
           nativeSeq: nativeTraceSeq,
@@ -378,7 +523,7 @@
           label,
           t: Math.round(performance.now()),
           sinceBridgeStart: Math.round(performance.now() - bridgeStartedAt),
-          ...(data || {})
+          ...(resolved || {})
         }
         debugMindMapOpen(`op.${label}`, payload)
         postToHost('mindMapNativeOperationTrace', payload)
@@ -477,13 +622,24 @@
           })
         })
       }
+      const isDocumentHidden = () =>
+        typeof document !== 'undefined' &&
+        document.visibilityState === 'hidden'
+      // rAF 与定时器竞速：document.hidden 时浏览器完全暂停 rAF，
+      // 仅靠 rAF 会让保存链在后台永久挂起（后台保存超时的根因）；
+      // 可见时 rAF 先到（下一帧语义不变），定时器只是兜底
       const waitForNextFrame = () => {
         return new Promise(resolve => {
-          if (window.requestAnimationFrame) {
-            window.requestAnimationFrame(() => resolve())
-            return
+          let settled = false
+          const finish = () => {
+            if (settled) return
+            settled = true
+            resolve()
           }
-          window.setTimeout(resolve, 0)
+          if (window.requestAnimationFrame) {
+            window.requestAnimationFrame(finish)
+          }
+          window.setTimeout(finish, 250)
         })
       }
       const isTextEditVisible = () => {
@@ -500,6 +656,11 @@
       const waitForPendingInsertEditForSnapshot = async reason => {
         const renderer = nativeMindMap && nativeMindMap.renderer
         if (!renderer) {
+          return true
+        }
+        // 隐藏页：不可能有进行中的输入，且页内定时器被节流，
+        // 等待渲染安定只会拖慢乃至拖垮后台保存，直接放行取数据
+        if (isDocumentHidden()) {
           return true
         }
         let waited = false
@@ -571,16 +732,45 @@
         if (!textEdit || !isTextEditVisible()) {
           return true
         }
-        // 与点击画布空白一致：编辑中直接 getData 会丢字，须先 hideEditTextBox。
-        try {
-          if (typeof textEdit.hideEditTextBox === 'function') {
+        // pane 后台 / 页面隐藏：用户已离开编辑器，「不打断编辑」的顾虑不存在。
+        // 提交式结束编辑（数据完整性优先，空文本也是用户意图），保证后台保存
+        // 拿到编辑框里的真实内容——否则保存旧数据清掉黄点后宿主会休眠 pane，
+        // 编辑框里未落库的文字随卸载丢失（表现为切回后修改全部消失）。
+        if (!hostPaneForeground || isDocumentHidden()) {
+          try {
             textEdit.hideEditTextBox()
+            traceNativeMindMapOp('snapshot.commitTextEdit.background', {
+              reason
+            })
+            return true
+          } catch (error) {
+            console.warn(
+              'Failed to commit MindMap text edit before background snapshot',
+              error
+            )
+            traceNativeMindMapOp('snapshot.finishTextEdit.fail', {
+              reason,
+              message: error && error.message ? error.message : String(error)
+            })
+            return false
+          }
+        }
+        // 前台快照走非破坏式同步：编辑中直接 getData 会丢字，但强制
+        // hideEditTextBox 会把 Tab 新建后正在编辑的节点踢出编辑/选中态。
+        // syncEditingTextToNode 把编辑中的文本落进节点数据（编辑框与光标/
+        // 全选保持不动）；缩略图侧的"编辑中 SVG 文本被隐藏导致丢字"由
+        // Export.svg 的 preserveTextEdit 分支在克隆期间临时恢复可见性兜底。
+        try {
+          if (typeof nativeMindMap.syncEditingTextToNodeForSnapshot === 'function') {
+            await nativeMindMap.syncEditingTextToNodeForSnapshot()
+          } else if (typeof textEdit.syncEditingTextToNode === 'function') {
+            await textEdit.syncEditingTextToNode()
           }
           await waitForMindMapRenderSettled()
           await waitForNextFrame()
-          return !isTextEditVisible()
+          return true
         } catch (error) {
-          console.warn('Failed to finish MindMap text edit before snapshot', error)
+          console.warn('Failed to sync MindMap text edit before snapshot', error)
           traceNativeMindMapOp('snapshot.finishTextEdit.fail', {
             reason,
             message: error && error.message ? error.message : String(error)
@@ -589,7 +779,9 @@
         }
       }
       const collectMindMapDataForSnapshot = async (reason, options = {}) => {
-        const ensureRendered = options.ensureRendered !== false
+        // 隐藏页跳过强制渲染：getData 读的是数据树，与 SVG 渲染无关
+        const ensureRendered =
+          options.ensureRendered !== false && !isDocumentHidden()
         const insertSettled = await waitForPendingInsertEditForSnapshot(reason)
         if (!insertSettled) {
           traceNativeMindMapOp('requestMindMapSave.skipUnsettled', {
@@ -622,8 +814,11 @@
           return null
         }
         try {
+          // preserveTextEdit：不打断进行中的文本编辑（同步文本+临时恢复隐藏文本）
+          // removeActiveState：在导出克隆上剥离选中/高亮态，缩略图与选中状态解耦
           return await nativeMindMap.export('svg', false, 'MindMap', {
-            preserveTextEdit: true
+            preserveTextEdit: true,
+            removeActiveState: true
           })
         } catch (error) {
           console.warn('Failed to export MindMap thumbnail', error)
@@ -732,6 +927,15 @@
         if (!nativeMindMap || !nativeMindMap.renderer) {
           return
         }
+        // 隐藏页布局停摆：强制渲染 + 健康度检查（逐 foreignObject 量矩形）
+        // 只能量出全零，白耗节流定时器；回到可见后由 visibilitychange 补跑
+        if (isDocumentHidden()) {
+          textRenderEnsurePendingWhileHidden = true
+          traceNativeMindMapOp('ensureTextRendered.skippedWhileHidden', {
+            reason
+          })
+          return
+        }
         const renderer = nativeMindMap.renderer
         if (typeof renderer.forceLoadNode !== 'function') {
           if (!renderEnded) {
@@ -775,6 +979,13 @@
         if (!nativeMindMap || typeof nativeMindMap.export !== 'function') {
           return null
         }
+        // 隐藏页 rAF 暂停 + 布局不更新，导缩略图必然挂起或产出坏图；
+        // 记下待办，回到可见后由 visibilitychange 补一次导出
+        if (isDocumentHidden()) {
+          thumbnailPendingWhileHidden = true
+          traceNativeMindMapOp('thumbnailExport.skippedWhileHidden', { reason })
+          return null
+        }
         await syncPendingTextEditForSnapshot(reason)
         await ensureMindMapTextRendered(reason)
         return await getMindMapThumbnail()
@@ -788,6 +999,21 @@
         window.clearTimeout(draftThumbExportTimer)
         draftThumbExportTimer = window.setTimeout(() => {
           draftThumbExportTimer = null
+          // 连续拖拽时 450ms 防抖尾正好落进下一次拖拽：全树强制渲染 + svg 克隆
+          // + 序列化是最大的单笔卡顿来源，推迟到拖拽结束后按原防抖重排
+          if (interactionDragActive) {
+            if (!draftThumbExportWaitingIdle) {
+              draftThumbExportWaitingIdle = true
+              traceNativeMindMapOp('draftThumbnailExport.deferredWhileDragging', {
+                revision: draftThumbExportRevision
+              })
+              runWhenDragIdle(() => {
+                draftThumbExportWaitingIdle = false
+                scheduleDraftThumbnailExport(draftThumbExportRevision)
+              })
+            }
+            return
+          }
           const revisionAtExport = draftThumbExportRevision
           traceNativeMindMapOp('draftThumbnailExport.timerFired', {
             revision: revisionAtExport
@@ -834,14 +1060,14 @@
       const postMindMapDataToHost = async (data, requestId, providedThumbnail) => {
         const revision = ++mindMapDataRevision
         const draftUserEditMeta = consumePendingUserEditDraftMeta()
-        traceNativeMindMapOp('saveMindMapData.prepare', {
+        traceNativeMindMapOp('saveMindMapData.prepare', () => ({
           requestId: requestId || null,
           revision,
           userEdit: draftUserEditMeta.userEdit,
           reason: draftUserEditMeta.reason,
           dirtyNotifyEnabled,
           data: summarizeNativeMindMapDataForTrace(data)
-        })
+        }))
         if (requestId) {
           const exportStart = performance.now()
           debugMindMapOpen('postMindMapDataToHost before thumbnail export', {
@@ -858,14 +1084,14 @@
               'save-mindmap-data'
             )
           }
-          traceNativeMindMapOp('saveMindMapData.thumbnailExported', {
+          traceNativeMindMapOp('saveMindMapData.thumbnailExported', () => ({
             requestId,
             revision,
             elapsed: Math.round(performance.now() - exportStart),
             hasThumbnail: !!thumbnail,
             thumbnailLength: thumbnail ? thumbnail.length : 0,
             data: summarizeNativeMindMapDataForTrace(data)
-          })
+          }))
           debugMindMapOpen('postMindMapDataToHost after thumbnail export', {
             requestId,
             revision,
@@ -881,24 +1107,24 @@
             userEdit: draftUserEditMeta.userEdit,
             reason: draftUserEditMeta.reason
           })
-          traceNativeMindMapOp('saveMindMapData.postedSaveResponse', {
+          traceNativeMindMapOp('saveMindMapData.postedSaveResponse', () => ({
             requestId,
             revision,
             userEdit: draftUserEditMeta.userEdit,
             reason: draftUserEditMeta.reason,
             hasThumbnail: !!thumbnail,
             data: summarizeNativeMindMapDataForTrace(data)
-          })
+          }))
           return
         }
         if (!dirtyNotifyEnabled && !draftUserEditMeta.userEdit) {
-          traceNativeMindMapOp('saveMindMapData.suppressed', {
+          traceNativeMindMapOp('saveMindMapData.suppressed', () => ({
             ...describeDirtyNotifyWindow(),
             revision,
             userEdit: draftUserEditMeta.userEdit,
             reason: draftUserEditMeta.reason,
             data: summarizeNativeMindMapDataForTrace(data)
-          })
+          }))
           debugMindMapOpen('postMindMapDataToHost draft push suppressed', {
             ...describeDirtyNotifyWindow(),
             revision,
@@ -913,33 +1139,36 @@
           })
           return
         }
-        const sampleText = (() => {
-          let sample = ''
-          const walk = node => {
-            if (sample || !node || !node.data) return
-            const text = String(node.data.text || '')
-            if (text.includes('<strong') || text.includes('ql-indent-')) {
-              sample = text
-              return
+        // 富文本采样走全树遍历，仅在调试开启时执行
+        if (isMindMapDebugEnabled()) {
+          const sampleText = (() => {
+            let sample = ''
+            const walk = node => {
+              if (sample || !node || !node.data) return
+              const text = String(node.data.text || '')
+              if (text.includes('<strong') || text.includes('ql-indent-')) {
+                sample = text
+                return
+              }
+              (node.children || []).forEach(walk)
             }
-            (node.children || []).forEach(walk)
-          }
-          if (data && data.root) walk(data.root)
-          return sample
-        })()
-        debugMindMapOpen('postMindMapDataToHost draft data push', {
-          revision,
-          userEdit: draftUserEditMeta.userEdit,
-          reason: draftUserEditMeta.reason,
-          rootChildren:
-            data && data.root && data.root.children
-              ? data.root.children.length
+            if (data && data.root) walk(data.root)
+            return sample
+          })()
+          debugMindMapOpen('postMindMapDataToHost draft data push', {
+            revision,
+            userEdit: draftUserEditMeta.userEdit,
+            reason: draftUserEditMeta.reason,
+            rootChildren:
+              data && data.root && data.root.children
+                ? data.root.children.length
+                : 0,
+            sampleStrongCount: sampleText
+              ? (sampleText.match(/<strong\b/gi) || []).length
               : 0,
-          sampleStrongCount: sampleText
-            ? (sampleText.match(/<strong\b/gi) || []).length
-            : 0,
-          sampleTextLen: sampleText.length
-        })
+            sampleTextLen: sampleText.length
+          })
+        }
         postToHost('saveMindMapData', {
           revision,
           data,
@@ -947,12 +1176,12 @@
           userEdit: draftUserEditMeta.userEdit,
           reason: draftUserEditMeta.reason
         })
-        traceNativeMindMapOp('saveMindMapData.postedDraft', {
+        traceNativeMindMapOp('saveMindMapData.postedDraft', () => ({
           revision,
           userEdit: draftUserEditMeta.userEdit,
           reason: draftUserEditMeta.reason,
           data: summarizeNativeMindMapDataForTrace(data)
-        })
+        }))
         scheduleDirtyNotifyEnable('draft-push')
         scheduleDraftThumbnailExport(revision)
       }
@@ -1050,24 +1279,24 @@
         window.takeOverAppMethods.saveMindMapData = data => {
           void (async () => {
             if (isTextEditVisible()) {
-              traceNativeMindMapOp('takeOverApp.saveMindMapData.skippedWhileEditing', {
+              traceNativeMindMapOp('takeOverApp.saveMindMapData.skippedWhileEditing', () => ({
                 data: summarizeNativeMindMapDataForTrace(data)
-              })
+              }))
               return
             }
             const snapshot =
               await collectMindMapDataForSnapshot('takeover-save')
             if (!snapshot) {
-              traceNativeMindMapOp('takeOverApp.saveMindMapData.skippedUnsettled', {
+              traceNativeMindMapOp('takeOverApp.saveMindMapData.skippedUnsettled', () => ({
                 data: summarizeNativeMindMapDataForTrace(data)
-              })
+              }))
               return
             }
             bridgeState.mindMapData = snapshot
-            traceNativeMindMapOp('takeOverApp.saveMindMapData', {
+            traceNativeMindMapOp('takeOverApp.saveMindMapData', () => ({
               usedSnapshot: true,
               data: summarizeNativeMindMapDataForTrace(snapshot)
-            })
+            }))
             await postMindMapDataToHost(snapshot)
           })()
         }
@@ -1238,7 +1467,7 @@
             )
             return
           }
-          traceNativeMindMapOp('dirtyNotify.emit', {
+          traceNativeMindMapOp('dirtyNotify.emit', () => ({
             phase: forceUserEdit ? 'user-edit' : 'data-change',
             forced: forceUserEdit && !dirtyNotifyEnabled,
             reason: opts.reason || null,
@@ -1248,7 +1477,7 @@
                 ? nativeMindMap.getData()
                 : null
             )
-          })
+          }))
           debugMindMapOpen('dirty notify emit', {
             phase: forceUserEdit ? 'text-edit' : 'data-change',
             forced: forceUserEdit && !dirtyNotifyEnabled,
@@ -1334,16 +1563,31 @@
             renderEnded
           })
           notifyHostAppInited('app_inited')
+          // 拖拽会话跟踪：node_dragging（节点拖拽，逐帧触发、内部去重）与
+          // drag（画布平移）标记开始；mouseup/node_dragend 标记结束。
+          // 节点 mousedown 会阻止冒泡，两类手势不会互相误报
+          nativeMindMap.on('node_dragging', () => {
+            setInteractionDragActive(true)
+          })
+          nativeMindMap.on('drag', () => {
+            setInteractionDragActive(true)
+          })
+          nativeMindMap.on('node_dragend', () => {
+            setInteractionDragActive(false)
+          })
+          nativeMindMap.on('mouseup', () => {
+            setInteractionDragActive(false)
+          })
           // 直接在 mindMap 实例上监听文本编辑变化（不通过 $bus 转发，避免触发 RichText 内部错误）
           nativeMindMap.on('node_text_edit_change', () => {
             if (textEditDirtyTimer) return
-          traceNativeMindMapOp('user.textEdit.change', {
+          traceNativeMindMapOp('user.textEdit.change', () => ({
             data: summarizeNativeMindMapDataForTrace(
               nativeMindMap && typeof nativeMindMap.getData === 'function'
                 ? nativeMindMap.getData(true)
                 : null
             )
-          })
+          }))
             notifyDirty({ userEdit: true, reason: 'text-edit' })
             textEditDirtyTimer = setTimeout(() => {
               textEditDirtyTimer = null
@@ -1351,14 +1595,14 @@
           })
           nativeMindMap.on('afterExecCommand', commandName => {
             if (!userEditCommandNames.has(commandName)) return
-          traceNativeMindMapOp('user.command.afterExec', {
+          traceNativeMindMapOp('user.command.afterExec', () => ({
             commandName,
             data: summarizeNativeMindMapDataForTrace(
               nativeMindMap && typeof nativeMindMap.getData === 'function'
                 ? nativeMindMap.getData(true)
                 : null
             )
-          })
+          }))
             notifyDirty({
               userEdit: true,
               reason: `command:${commandName}`
@@ -1470,6 +1714,14 @@
             debugMindMapOpen('mindMapHostSaveStatus skipped: bus unavailable')
           }
         }
+        if (message.type === 'mindMapPaneVisibility') {
+          const foreground = !!(
+            message.payload &&
+            typeof message.payload === 'object' &&
+            message.payload.foreground === true
+          )
+          setHostPaneForeground(foreground)
+        }
         if (message.type === 'mindMapHostOpenExport') {
           debugMindMapOpen('mindMapHostOpenExport', {
             hasBus: !!(window.$bus && typeof window.$bus.$emit === 'function'),
@@ -1494,7 +1746,7 @@
             renderEnded,
             hasNativeMindMap: !!nativeMindMap
           })
-          void (async () => {
+          runWhenDragIdle(() => void (async () => {
             const exportStart = performance.now()
             const thumbnail = await exportMindMapThumbnailSnapshot(
               'host-export-draft'
@@ -1512,7 +1764,7 @@
               revision,
               thumbnail
             })
-          })()
+          })())
         }
         if (message.type === 'requestMindMapSave') {
           const requestId = message.payload && message.payload.requestId
@@ -1560,6 +1812,17 @@
             startedAt: saveStartedAt,
             phase: 'snapshot'
           }
+          // 拖拽中不做快照/缩略图导出（重活会砸进拖拽帧）；发进度心跳保活
+          // 宿主保存协调器的 inactivity 计时，最多等 8s 兜底放行
+          if (interactionDragActive) {
+            reportMindMapSaveProgress(requestId, 'wait-drag-idle', {
+              renderEnded
+            })
+            const dragIdleReached = await waitForDragIdle(8000)
+            reportMindMapSaveProgress(requestId, 'drag-idle-resume', {
+              dragIdleReached
+            })
+          }
           reportMindMapSaveProgress(requestId, 'snapshot', { renderEnded })
           try {
             const snapshotStartedAt = performance.now()
@@ -1577,11 +1840,11 @@
               return
             }
             bridgeState.mindMapData = snapshotData
-            traceNativeMindMapOp('requestMindMapSave.snapshot', {
+            traceNativeMindMapOp('requestMindMapSave.snapshot', () => ({
               requestId: requestId || null,
               snapshotMs: Math.round(performance.now() - snapshotStartedAt),
               data: summarizeNativeMindMapDataForTrace(bridgeState.mindMapData)
-            })
+            }))
             reportMindMapSaveProgress(requestId, 'thumbnail', {
               snapshotMs: Math.round(performance.now() - snapshotStartedAt),
               renderEnded

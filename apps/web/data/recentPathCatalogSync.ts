@@ -67,7 +67,26 @@ export function collectRecentAbsPathsFromEntries(): string[] {
   return paths;
 }
 
-/** Prefer catalog tree / prior resolve metadata so thumbnails are not reset. */
+function isNewerUpdatedAt(
+  candidate: string | null | undefined,
+  base: string | null | undefined,
+): boolean {
+  const candidateMs = candidate ? Date.parse(candidate) : Number.NaN;
+  const baseMs = base ? Date.parse(base) : Number.NaN;
+  return (
+    Number.isFinite(candidateMs) &&
+    (!Number.isFinite(baseMs) || candidateMs > baseMs)
+  );
+}
+
+/**
+ * Prefer catalog tree / prior resolve metadata so thumbnails are not reset.
+ *
+ * 易变元数据（updated_at/version/content_sha256/name）取「更新时间最新」的一侧：
+ * path 解析结果是打开时的快照，保存后目录树/增量 patch 会更新——若让旧快照
+ * 覆盖回去，列表排序键（effectiveUpdatedAt）在保存提交清掉 localEditTime 的
+ * 瞬间会塌回旧时间，卡片被其他文件反超（「保存后跳位」）。
+ */
 export function mergeCatalogFileForRecentDisplay(
   resolved: ServerFile,
   opts?: {
@@ -87,12 +106,38 @@ export function mergeCatalogFileForRecentDisplay(
     !!resolved.has_thumbnail ||
     !!sameTree?.has_thumbnail ||
     !!samePrev?.has_thumbnail;
-  return {
+  const merged: ServerFile = {
     ...(sameTree ?? samePrev ?? {}),
     ...resolved,
     content_sha256,
     has_thumbnail,
   };
+  for (const candidate of [samePrev, sameTree]) {
+    if (!candidate || !isNewerUpdatedAt(candidate.updated_at, merged.updated_at)) {
+      continue;
+    }
+    merged.updated_at = candidate.updated_at;
+    if (candidate.content_sha256) {
+      merged.content_sha256 = candidate.content_sha256;
+    }
+    if (typeof candidate.version === "number") {
+      merged.version = candidate.version;
+    }
+    if (candidate.name) {
+      merged.name = candidate.name;
+    }
+  }
+  return merged;
+}
+
+function recentDisplayMetadataChanged(a: ServerFile, b: ServerFile): boolean {
+  return (
+    a.has_thumbnail !== b.has_thumbnail ||
+    a.content_sha256 !== b.content_sha256 ||
+    a.updated_at !== b.updated_at ||
+    a.version !== b.version ||
+    a.name !== b.name
+  );
 }
 
 export function mergeRecentPathCatalogFromTree(
@@ -110,15 +155,55 @@ export function mergeRecentPathCatalogFromTree(
       previous: file,
       fromTree: treeFile,
     });
-    if (
-      merged.has_thumbnail !== file.has_thumbnail ||
-      merged.content_sha256 !== file.content_sha256
-    ) {
+    if (recentDisplayMetadataChanged(merged, file)) {
       next[absPath] = merged;
       changed = true;
     }
   }
   return changed ? next : catalog;
+}
+
+export type RecentPathCatalogMetadataPatch = Partial<
+  Pick<
+    ServerFile,
+    | "name"
+    | "kind"
+    | "has_thumbnail"
+    | "content_sha256"
+    | "version"
+    | "updated_at"
+  >
+>;
+
+/**
+ * 保存完成等场景：按 fileId 就地覆盖 path-catalog 条目的易变元数据。
+ * 覆盖不在主目录树里的「最近路径」文件——那类条目收不到 setFiles 的
+ * 增量 patch，只有这里能把保存后的 updated_at/content_sha 写进排序与缩略图链路。
+ */
+export function patchRecentPathCatalogFileMetadata(
+  catalog: Readonly<Record<string, ServerFile>>,
+  fileId: string,
+  patch: RecentPathCatalogMetadataPatch,
+): Record<string, ServerFile> {
+  const definedPatch = Object.fromEntries(
+    Object.entries(patch).filter(([, value]) => value !== undefined),
+  ) as Partial<ServerFile>;
+  if (Object.keys(definedPatch).length === 0) {
+    return catalog as Record<string, ServerFile>;
+  }
+  let changed = false;
+  const next: Record<string, ServerFile> = { ...catalog };
+  for (const [absPath, file] of Object.entries(catalog)) {
+    if (file.id !== fileId) {
+      continue;
+    }
+    const merged = { ...file, ...definedPatch };
+    if (recentDisplayMetadataChanged(merged, file)) {
+      next[absPath] = merged;
+      changed = true;
+    }
+  }
+  return changed ? next : (catalog as Record<string, ServerFile>);
 }
 
 export function mergeRecentPathCatalogBatch(

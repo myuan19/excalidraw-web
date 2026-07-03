@@ -147,7 +147,7 @@ describe("resolveFileCardThumbDisplay", () => {
     expect(display.badge).toBeNull();
   });
 
-  it("keeps last saved thumb while draft hash changes before save", () => {
+  it("shows the current draft preview while unsaved instead of the last saved thumb", () => {
     FileSyncState.setDraftHash("file-1", "draft-hash");
     FileSyncState.setBaselineHash("file-1", "baseline-hash");
     LocalThumbnailCache.bindToContentSha(
@@ -163,8 +163,23 @@ describe("resolveFileCardThumbDisplay", () => {
 
     const display = resolveFileCardThumbDisplay("file-1", mockFile());
 
+    // 未保存窗口内展示「上一次修改」的草稿预览；saved 槽仅在预览缺失时兜底。
+    expect(display.cardThumbSvg).toContain("mindmap-native");
+    expect(display.badge).toBe("draft");
+  });
+
+  it("falls back to the last saved thumb while unsaved when no draft preview exists", () => {
+    FileSyncState.setDraftHash("file-1", "draft-hash");
+    FileSyncState.setBaselineHash("file-1", "baseline-hash");
+    LocalThumbnailCache.bindToContentSha(
+      "file-1",
+      "sha-1",
+      '<svg><path data-thumb="saved" d="M0 0 L10 10"/></svg>',
+    );
+
+    const display = resolveFileCardThumbDisplay("file-1", mockFile());
+
     expect(display.cardThumbSvg).toContain('data-thumb="saved"');
-    expect(display.cardThumbSvg).not.toContain("mindmap-native");
     expect(display.badge).toBe("draft");
   });
 

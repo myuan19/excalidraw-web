@@ -13,12 +13,13 @@ export type FileCardThumbnailChoice = {
  * 文件列表卡片本地缩略图策略（单一真相来源）。
  *
  * - live-draft-preview：浏览器 local-draft，列表跟 session 实时预览。
- * - last-saved-until-sync：已入库文件未保存，列表固定展示上次已保存图，角标标未保存。
+ * - draft-preview-until-sync：已入库文件未保存，优先展示当前草稿会话预览
+ *   （用户「上一次修改」的样子），取不到再回落上次已保存图；角标标未保存。
  * - synced-session：已同步，可用 contentSha 绑定的 session 缩略图。
  */
 export type FileListCardLocalThumbPolicy =
   | "live-draft-preview"
-  | "last-saved-until-sync"
+  | "draft-preview-until-sync"
   | "synced-session";
 
 export function resolveFileListCardLocalThumbPolicy(
@@ -29,7 +30,7 @@ export function resolveFileListCardLocalThumbPolicy(
     return "live-draft-preview";
   }
   if (syncState === "draft") {
-    return "last-saved-until-sync";
+    return "draft-preview-until-sync";
   }
   return "synced-session";
 }
@@ -48,8 +49,16 @@ export function resolveListCardLocalThumb(opts: {
         LocalThumbnailCache.getDraftPreview(fileId, draftHash) ??
         LocalThumbnailCache.getDraftSvg(fileId)
       );
-    case "last-saved-until-sync":
-      return LocalThumbnailCache.getSavedContentThumb(fileId, contentSha);
+    case "draft-preview-until-sync":
+      // 草稿态展示顺序：当前 draftHash 精确匹配的预览 → 会话内最近一次草稿
+      // 导出（450ms 防抖导出天然落后当前 hash 一拍，但仍新于上次保存）→
+      // 上次已保存图。草稿槽只在编辑会话中写入且保存后与基线内容一致，
+      // 因此会话内它恒不旧于 saved 槽，直接优先是安全的。
+      return (
+        LocalThumbnailCache.getDraftPreview(fileId, draftHash) ??
+        LocalThumbnailCache.getDraftSvg(fileId) ??
+        LocalThumbnailCache.getSavedContentThumb(fileId, contentSha)
+      );
     case "synced-session": {
       const bound = LocalThumbnailCache.getSavedContentThumb(fileId, contentSha);
       if (bound) {
@@ -125,7 +134,7 @@ export function chooseFileCardThumbnail(opts: {
     });
   }
   const allowStaleFetchedFallback =
-    opts.listLocalPolicy === "last-saved-until-sync";
+    opts.listLocalPolicy === "draft-preview-until-sync";
   const blockStaleFetchedFallback =
     opts.listLocalPolicy === "live-draft-preview" &&
     (opts.preferLocalThumb ?? opts.syncState === "draft");

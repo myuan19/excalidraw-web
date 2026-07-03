@@ -11,6 +11,11 @@ import { fileURLToPath } from "node:url";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const distDir = path.join(repoRoot, "dist", "desktop");
 
+// Windows 的 tasklist/powershell 偶发在杀软扫描或进程枚举卡顿时长时间不返回，
+// 会把这个「打包前占用预检」拖成整包 hang。给子进程调用加硬超时：超时即当作
+// 「查不到占用」放行（execSync 超时会抛错，被 catch 兜底返回 []），预检永不阻断打包。
+const PROBE_TIMEOUT_MS = 8000;
+
 function listWindowsEditorHubProcesses() {
   if (process.platform !== "win32") {
     return [];
@@ -18,7 +23,13 @@ function listWindowsEditorHubProcesses() {
   try {
     const output = execSync(
       'tasklist /FI "IMAGENAME eq EditorHub.exe" /FO CSV /NH & tasklist /FI "IMAGENAME eq EditorHub Debug.exe" /FO CSV /NH',
-      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], shell: true },
+      {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        shell: true,
+        timeout: PROBE_TIMEOUT_MS,
+        windowsHide: true,
+      },
     );
     return output
       .split(/\r?\n/)
@@ -36,7 +47,12 @@ function listPortableMatches() {
   try {
     const output = execSync(
       `powershell -NoProfile -Command "Get-Process -Name 'EditorHub*' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path"`,
-      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+      {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: PROBE_TIMEOUT_MS,
+        windowsHide: true,
+      },
     );
     return output
       .split(/\r?\n/)

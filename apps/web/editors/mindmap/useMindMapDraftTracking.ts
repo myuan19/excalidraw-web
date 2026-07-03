@@ -22,6 +22,7 @@ import {
   markMindMapNativeDirtyPending,
   type MindMapSaveDocument,
 } from "./mindMapDraftState";
+import { runAfterMindMapNativeDrag } from "./mindMapNativeInteraction";
 import { matchesMindMapPersistedSnapshot } from "./mindMapPersistedSnapshot";
 import { toMindMapLocalCacheRecord } from "./mindMapLocalCacheRecord";
 import { debugMindMapPersist } from "./mindMapPersistDebug";
@@ -33,41 +34,51 @@ export function useMindMapDraftTracking(
   const allowInactiveFileRef = useRef(opts?.allowInactiveFile === true);
   allowInactiveFileRef.current = opts?.allowInactiveFile === true;
   const debouncedCacheRef = useRef(
-    debounce((targetFileId: string, getDocument: () => MindMapSaveDocument | null) => {
-      if (!allowInactiveFileRef.current && getFileIdFromHash() !== targetFileId) {
-        return;
-      }
-      const document = getDocument();
-      if (!document) {
-        return;
-      }
-      const state = evaluateCurrentFileModificationState({
-        fileId: targetFileId,
-        kind: "mindmap",
-        mindMapDocument: document,
-      });
-      traceMindMapOperation("draftTracking.debounce.cache", {
-        fileId8: targetFileId.slice(0, 8),
-        document: summarizeMindMapTraceDocument(document),
-        modificationState: state,
-        fileStateBeforeCache: readMindMapTraceFileState(targetFileId),
-      });
-      if (!state.modified) {
-        return;
-      }
-      FileSyncState.setLocalCache(
-        targetFileId,
-        toMindMapLocalCacheRecord(document),
-      );
-      traceMindMapOperation("draftTracking.debounce.afterCache", {
-        fileId8: targetFileId.slice(0, 8),
-        modified: state.modified,
-        fileStateAfterCache: readMindMapTraceFileState(targetFileId),
-      });
-      if (isLocalDraftFileId(targetFileId)) {
-        notifyLocalDraftEdited(targetFileId);
-      }
-    }, 450),
+    debounce(
+      (targetFileId: string, getDocument: () => MindMapSaveDocument | null) => {
+        // 全量 stringify + 同步 localStorage 写盘：连续拖拽时 450ms 防抖尾
+        // 正好落在下一次拖拽中，推迟到拖拽结束再写（结果一致，只是更晚）。
+        runAfterMindMapNativeDrag(() => {
+          if (
+            !allowInactiveFileRef.current &&
+            getFileIdFromHash() !== targetFileId
+          ) {
+            return;
+          }
+          const document = getDocument();
+          if (!document) {
+            return;
+          }
+          const state = evaluateCurrentFileModificationState({
+            fileId: targetFileId,
+            kind: "mindmap",
+            mindMapDocument: document,
+          });
+          traceMindMapOperation("draftTracking.debounce.cache", {
+            fileId8: targetFileId.slice(0, 8),
+            document: summarizeMindMapTraceDocument(document),
+            modificationState: state,
+            fileStateBeforeCache: readMindMapTraceFileState(targetFileId),
+          });
+          if (!state.modified) {
+            return;
+          }
+          FileSyncState.setLocalCache(
+            targetFileId,
+            toMindMapLocalCacheRecord(document),
+          );
+          traceMindMapOperation("draftTracking.debounce.afterCache", {
+            fileId8: targetFileId.slice(0, 8),
+            modified: state.modified,
+            fileStateAfterCache: readMindMapTraceFileState(targetFileId),
+          });
+          if (isLocalDraftFileId(targetFileId)) {
+            notifyLocalDraftEdited(targetFileId);
+          }
+        });
+      },
+      450,
+    ),
   );
 
   useEffect(() => {
@@ -131,11 +142,12 @@ export function useMindMapDraftTracking(
       notifyEditForFile(fileId, {
         allowInactiveFile: allowInactiveFileRef.current,
       });
-      debugMindMapPersist("[DEBUG] markDocumentChanged", {
+      debugMindMapPersist("[DEBUG] markDocumentChanged", () => ({
         fileId8: fileId.slice(0, 8),
         contentHash8: hashDocumentSnapshot(document).slice(0, 8),
-        baselineHash8: FileSyncState.getBaselineHash(fileId)?.slice(0, 8) ?? null,
-      });
+        baselineHash8:
+          FileSyncState.getBaselineHash(fileId)?.slice(0, 8) ?? null,
+      }));
     },
     [fileId],
   );

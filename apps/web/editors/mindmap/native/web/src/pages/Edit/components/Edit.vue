@@ -675,13 +675,16 @@ export default {
           ...(this.mindMapData || {}),
           ...payload
         }
-        const sampleText = this.findMindMapPersistSampleText(root)
-        mindmapDevDebug('mindmap-persist', 'bindSaveEvent storeData', {
-          rootChildren: root.children ? root.children.length : 0,
-          sampleTextLen: sampleText.length,
-          sampleStrongCount: (sampleText.match(/<strong\b/gi) || []).length,
-          samplePreview: sampleText.slice(0, 120)
-        })
+        // 采样要走全树遍历，只在调试开启时执行（data_change 是每次编辑的热路径）
+        if (isMindmapDevDebugEnabled()) {
+          const sampleText = this.findMindMapPersistSampleText(root)
+          mindmapDevDebug('mindmap-persist', 'bindSaveEvent storeData', {
+            rootChildren: root.children ? root.children.length : 0,
+            sampleTextLen: sampleText.length,
+            sampleStrongCount: (sampleText.match(/<strong\b/gi) || []).length,
+            samplePreview: sampleText.slice(0, 120)
+          })
+        }
         storeData(payload)
         const configPatch = {}
         ;['outerFramePaddingX', 'outerFramePaddingY'].forEach(key => {

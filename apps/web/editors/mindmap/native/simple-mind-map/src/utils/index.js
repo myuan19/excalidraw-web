@@ -622,6 +622,17 @@ export const getTextFromHtml = html => {
   return getTextFromHtmlEl.textContent
 }
 
+// 富文本内容是否为空（空 Quill 文档如 <p><br></p>、纯空白/不换行空格）
+export const isEmptyRichTextContent = html => {
+  if (isUndef(html)) {
+    return true
+  }
+  const text = /<[^>]+>/.test(String(html))
+    ? getTextFromHtml(String(html))
+    : String(html)
+  return !text.replace(/\u00a0/g, ' ').trim()
+}
+
 // 将blob转成data:url
 export const readBlob = blob => {
   return new Promise((resolve, reject) => {

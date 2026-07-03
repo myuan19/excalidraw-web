@@ -409,6 +409,7 @@ export class FolderMappingStore {
       health: "ok",
       parse_error: null,
     };
+    this.syncUpdatedAtWithDisk(file);
     meta.files.push(file);
     this.sidecar.save(meta);
 
@@ -488,6 +489,7 @@ export class FolderMappingStore {
       origin: "managed",
       archives: [],
     };
+    this.syncUpdatedAtWithDisk(file);
     meta.files.push(file);
     this.sidecar.save(meta);
     return this.mapFile(file);
@@ -586,7 +588,14 @@ export class FolderMappingStore {
     if (hasThumbnail) {
       this.writeThumbnail(file, body.thumbnail);
     }
-    file.updated_at = nowIso();
+    if (hasData && !skipDataWrite) {
+      // 数据已写盘：updated_at 对齐磁盘 mtime，扫描 stat 快速通道才能命中
+      //（见 syncUpdatedAtWithDisk 注释）。
+      this.syncUpdatedAtWithDisk(file);
+    } else if (hasName) {
+      file.updated_at = nowIso();
+    }
+    // 仅缩略图上传不改 updated_at：文档内容未变（与 DB 后端行为一致）。
     this.sidecar.save(meta);
     return {
       ok: true,
@@ -847,7 +856,9 @@ export class FolderMappingStore {
     }
 
     this.writeThumbnail(file, thumbnail);
-    file.updated_at = nowIso();
+    // 不改 updated_at：缩略图是派生产物，文档内容未变。以往这里的 nowIso
+    // 会让 updated_at 与磁盘 mtime 永久错位，之后每次扫描都对该文件走
+    // 内容重读（放大扫描与保存的竞态窗口）。
     this.sidecar.save(meta);
     return {
       ok: true,
@@ -911,7 +922,7 @@ export class FolderMappingStore {
     );
     file.content_sha256 = hashJson(data);
     file.version = nextFileVersion(file.version);
-    file.updated_at = nowIso();
+    this.syncUpdatedAtWithDisk(file);
     this.sidecar.save(meta);
     return {
       ok: true,
@@ -1023,7 +1034,7 @@ export class FolderMappingStore {
     }
     file.content_sha256 = nextSha;
     file.version = nextFileVersion(file.version);
-    file.updated_at = nowIso();
+    this.syncUpdatedAtWithDisk(file);
     file.health = "ok";
     file.parse_error = null;
     this.sidecar.save(meta);
@@ -1054,6 +1065,22 @@ export class FolderMappingStore {
     };
     file.archives.push(archive);
     return withoutArchivePath(archive);
+  }
+
+  /**
+   * 磁盘写入后用文件真实 mtime 回填 updated_at。
+   * 扫描的 stat 快速通道以 `updated_at === mtime` 判定「未变」；用 nowIso
+   * 会与 mtime 永远相差几毫秒，导致每个保存过的文件在之后每次扫描都被
+   * 内容重读，既浪费也拉宽「扫描快照 vs 应用内保存」的竞态窗口（该竞态
+   * 曾把刚保存的缩略图当外部变更删掉）。
+   */
+  syncUpdatedAtWithDisk(file) {
+    try {
+      file.updated_at = statSync(this.sidecar.resolve(file.path))
+        .mtime.toISOString();
+    } catch {
+      file.updated_at = nowIso();
+    }
   }
 
   writeThumbnail(file, thumbnail) {

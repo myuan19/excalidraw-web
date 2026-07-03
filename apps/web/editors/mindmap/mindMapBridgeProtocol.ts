@@ -96,7 +96,8 @@ export type NativeMindMapMessage =
         | "saveLocalConfig"
         | "saveLanguage"
         | "mindMapDirtyState"
-        | "mindMapViewState";
+        | "mindMapViewState"
+        | "mindMapInteractionState";
       payload: unknown;
     }
   | {
@@ -175,7 +176,11 @@ export function parseIframeFailureKind(
 }
 
 export function classifyMindMapIframeFailure(
-  payload: MindMapIframeFailurePayload | Record<string, unknown> | null | undefined,
+  payload:
+    | MindMapIframeFailurePayload
+    | Record<string, unknown>
+    | null
+    | undefined,
 ): MindMapIframeFailureClassification {
   const normalized: MindMapIframeFailurePayload | null =
     payload && typeof payload === "object"
@@ -212,9 +217,7 @@ export function classifyMindMapIframeFailure(
 
 export function isBridgeReadyPhase(phase: MindMapHostBridgePhase): boolean {
   return (
-    phase === "bridge_ready" ||
-    phase === "init_sent" ||
-    phase === "app_ready"
+    phase === "bridge_ready" || phase === "init_sent" || phase === "app_ready"
   );
 }
 
@@ -258,6 +261,8 @@ export function parseMindMapSaveProgress(
     thumbnailMs:
       typeof record.thumbnailMs === "number" ? record.thumbnailMs : null,
     hasThumbnail:
-      typeof record.hasThumbnail === "boolean" ? record.hasThumbnail : undefined,
+      typeof record.hasThumbnail === "boolean"
+        ? record.hasThumbnail
+        : undefined,
   };
 }

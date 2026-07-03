@@ -42,7 +42,8 @@ describe("Editor platform shell theme source contract", () => {
 
     expect(sidebarSource).toContain("editor-platform-shell");
     expect(sidebarSource).toContain("shellThemeClassName");
-    expect(sidebarSource).toContain("subscribeShellThemeChange");
+    // 主题订阅已收敛进 useShellTheme（context 内部使用 subscribeShellThemeChange）
+    expect(sidebarSource).toContain("useShellTheme");
     expect(scssSource).toContain(".editor-platform-shell.theme--dark");
   });
 });

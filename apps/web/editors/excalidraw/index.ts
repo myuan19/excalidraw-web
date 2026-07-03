@@ -13,6 +13,9 @@ export const excalidrawPlugin: EditorPlugin = {
   icon: "/icons/excalidraw.svg",
   isDefault: true,
   omitKindInHash: true,
+  // 启动空闲期预热编辑器 chunk（同 mindmap 注释：防便携版 %TEMP% 资源被清
+  // 后懒加载失败）。
+  prefetchOnFileListReady: true,
   adapter: ExcalidrawAdapter,
   loadEditorShell: () => import("./EditorShell"),
   loadEmbedViewer: () => import("../../embed/ExcalidrawEmbedViewer"),

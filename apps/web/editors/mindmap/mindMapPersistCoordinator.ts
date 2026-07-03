@@ -59,10 +59,10 @@ export function recordMindMapPersisted(
     serverContentSha256: opts?.serverContentSha256 ?? null,
     fileStateAfter: readMindMapTraceFileState(fileId),
   });
-  debugMindMapPersist("recordMindMapPersisted", {
+  debugMindMapPersist("recordMindMapPersisted", () => ({
     fileId8: fileId.slice(0, 8),
     serverSha8: opts?.serverContentSha256?.slice(0, 8) ?? null,
     contentHash8: hashDocumentSnapshot(document).slice(0, 8),
     sampleNode: findFirstRichMindMapNodeSummary(document.data),
-  });
+  }));
 }

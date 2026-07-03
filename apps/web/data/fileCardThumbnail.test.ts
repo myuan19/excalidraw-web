@@ -16,9 +16,9 @@ describe("resolveFileListCardLocalThumbPolicy", () => {
     ).toBe("live-draft-preview");
   });
 
-  it("maps unsaved server files to last-saved policy", () => {
+  it("maps unsaved server files to draft-preview-first policy", () => {
     expect(resolveFileListCardLocalThumbPolicy("file-1", "draft")).toBe(
-      "last-saved-until-sync",
+      "draft-preview-until-sync",
     );
   });
 
@@ -30,23 +30,50 @@ describe("resolveFileListCardLocalThumbPolicy", () => {
 });
 
 describe("resolveListCardLocalThumb", () => {
-  it("reads saved slot for last-saved-until-sync without draft preview", () => {
-    const saved =
-      '<svg><path data-thumb="saved" d="M0 0 L10 10"/></svg>';
+  it("prefers current draft preview for draft-preview-until-sync", () => {
+    const saved = '<svg><path data-thumb="saved" d="M0 0 L10 10"/></svg>';
+    const draft = '<svg><path data-thumb="draft" d="M0 0 L10 10"/></svg>';
     LocalThumbnailCache.bindToContentSha("file-1", "sha-1", saved);
-    LocalThumbnailCache.setDraftPreview(
-      "file-1",
-      '<svg data-thumb="draft"></svg>',
-      "draft-hash",
-    );
+    LocalThumbnailCache.setDraftPreview("file-1", draft, "draft-hash");
 
     expect(
       resolveListCardLocalThumb({
         fileId: "file-1",
-        policy: "last-saved-until-sync",
+        policy: "draft-preview-until-sync",
+        draftHash: "draft-hash",
         contentSha: "sha-1",
       }),
-    ).toContain("data-thumb=\"saved\"");
+    ).toContain('data-thumb="draft"');
+  });
+
+  it("falls back to latest draft export when draft hash lags behind", () => {
+    const saved = '<svg><path data-thumb="saved" d="M0 0 L10 10"/></svg>';
+    const draft = '<svg><path data-thumb="draft" d="M0 0 L10 10"/></svg>';
+    LocalThumbnailCache.bindToContentSha("file-2", "sha-1", saved);
+    LocalThumbnailCache.setDraftPreview("file-2", draft, "hash-older");
+
+    expect(
+      resolveListCardLocalThumb({
+        fileId: "file-2",
+        policy: "draft-preview-until-sync",
+        draftHash: "hash-newer",
+        contentSha: "sha-1",
+      }),
+    ).toContain('data-thumb="draft"');
+  });
+
+  it("falls back to saved slot when no draft preview exists", () => {
+    const saved = '<svg><path data-thumb="saved" d="M0 0 L10 10"/></svg>';
+    LocalThumbnailCache.bindToContentSha("file-3", "sha-1", saved);
+
+    expect(
+      resolveListCardLocalThumb({
+        fileId: "file-3",
+        policy: "draft-preview-until-sync",
+        draftHash: "any-hash",
+        contentSha: "sha-1",
+      }),
+    ).toContain('data-thumb="saved"');
   });
 });
 
@@ -80,10 +107,10 @@ describe("chooseFileCardThumbnail", () => {
     expect(choice.finalSource).toBe("none");
   });
 
-  it("allows stale fetched fallback for unsaved server files when saved slot is empty", () => {
+  it("allows stale fetched fallback for unsaved server files when local slots are empty", () => {
     const choice = chooseFileCardThumbnail({
       syncState: "draft",
-      listLocalPolicy: "last-saved-until-sync",
+      listLocalPolicy: "draft-preview-until-sync",
       preferLocalThumb: true,
       localThumb: null,
       fetchedThumb: '<svg data-thumb="server"></svg>',

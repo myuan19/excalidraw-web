@@ -47,10 +47,10 @@ describe("thumbnailLifecycle", () => {
 
     const slot = buildThumbnailDraftSlot(file());
     expect(slot.syncState).toBe("draft");
-    expect(slot.listLocalPolicy).toBe("last-saved-until-sync");
+    expect(slot.listLocalPolicy).toBe("draft-preview-until-sync");
   });
 
-  it("keeps list thumb on saved slot while draft preview updates", () => {
+  it("serves the draft preview on list cards while unsaved", () => {
     vi.setSystemTime(new Date("2026-06-22T00:01:00.000Z"));
     LocalThumbnailCache.bindToContentSha("file-1", "server-sha", VISIBLE_SVG);
     FileSyncState.setBaselineHash("file-1", "server-sha");
@@ -62,7 +62,7 @@ describe("thumbnailLifecycle", () => {
       file({ kind: "mindmap", content_sha256: "server-sha" }),
     );
     expect(slot.syncState).toBe("draft");
-    expect(slot.listLocalPolicy).toBe("last-saved-until-sync");
+    expect(slot.listLocalPolicy).toBe("draft-preview-until-sync");
     expect(slot.listLocalThumb).toBe(VISIBLE_SVG);
     expect(slot.localDraftThumb).toBe(VISIBLE_SVG);
   });

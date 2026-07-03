@@ -14,6 +14,7 @@ import {
   ensureCatalogThumbnails,
   validateCatalogDocument,
 } from "./catalogDocument.js";
+import { pickFresherCatalogFile } from "./mappingRootUtils.js";
 
 export const SIDECAR_DIR = ".editorhub";
 export const SIDECAR_FILE = "workspace.json";
@@ -221,7 +222,14 @@ export class FolderMappingSidecar {
     const foldersByPath = new Map(
       meta.folders.map((folder) => [folder.path, folder]),
     );
-    const filesByPath = new Map(meta.files.map((file) => [file.path, file]));
+    // 同 path 重复条目按新旧收敛，避免快照拿到过期 sha 误删缩略图
+    const filesByPath = new Map();
+    for (const file of meta.files) {
+      filesByPath.set(
+        file.path,
+        pickFresherCatalogFile(filesByPath.get(file.path), file),
+      );
+    }
     const mappingRoots = [...(meta.mapping_roots ?? [])];
     const next = {
       version: SIDECAR_VERSION,

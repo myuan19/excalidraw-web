@@ -36,6 +36,50 @@ export function saveMindMapBrowserView(fileId: string, view: unknown): void {
   }
 }
 
+const VIEW_SAVE_DEBOUNCE_MS = 300;
+
+let pendingBrowserView: { fileId: string; view: unknown } | null = null;
+let browserViewSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * 平移/缩放会在拖拽期间逐帧触发 view_data_change，若每帧都同步写 localStorage，
+ * 会阻塞与思维导图 iframe 共用的主线程造成拖拽卡顿（对应 Excalidraw 侧的
+ * scheduleExcalidrawBrowserSceneSave 防抖）。这里做尾部防抖，只在停止交互后落一次盘，
+ * 并通过 flushMindMapBrowserView 在切后台/卸载时把最后一次视图状态补写落盘。
+ */
+export function scheduleSaveMindMapBrowserView(
+  fileId: string,
+  view: unknown,
+): void {
+  if (!isMindMapBrowserViewState(view)) {
+    return;
+  }
+  if (pendingBrowserView && pendingBrowserView.fileId !== fileId) {
+    flushMindMapBrowserView();
+  }
+  pendingBrowserView = { fileId, view };
+  if (browserViewSaveTimer !== null) {
+    clearTimeout(browserViewSaveTimer);
+  }
+  browserViewSaveTimer = setTimeout(() => {
+    browserViewSaveTimer = null;
+    flushMindMapBrowserView();
+  }, VIEW_SAVE_DEBOUNCE_MS);
+}
+
+export function flushMindMapBrowserView(): void {
+  if (browserViewSaveTimer !== null) {
+    clearTimeout(browserViewSaveTimer);
+    browserViewSaveTimer = null;
+  }
+  if (!pendingBrowserView) {
+    return;
+  }
+  const { fileId, view } = pendingBrowserView;
+  pendingBrowserView = null;
+  saveMindMapBrowserView(fileId, view);
+}
+
 export function saveMindMapBrowserViewFromData(
   fileId: string,
   data: unknown,

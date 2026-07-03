@@ -1,4 +1,4 @@
-import { devDebug } from "../../lib/devDebug";
+import { devDebug, isDevDebugChannelEnabled } from "../../lib/devDebug";
 import { forwardMindMapHostDebug } from "./mindMapHostDebugForward";
 
 import type { MindMapDocumentData } from "../../data/formats/MindMapAdapter";
@@ -18,9 +18,7 @@ export function summarizeMindMapRichTextNode(text: string | undefined): {
   };
 }
 
-export function summarizeMindMapRichTextTree(
-  data: MindMapDocumentData,
-): {
+export function summarizeMindMapRichTextTree(data: MindMapDocumentData): {
   nodeCount: number;
   richTextNodeCount: number;
   totalStrongCount: number;
@@ -84,10 +82,19 @@ export function findFirstRichMindMapNodeSummary(
   return found;
 }
 
+export function isMindMapPersistDebugEnabled(): boolean {
+  return isDevDebugChannelEnabled("mindmap-persist");
+}
+
 export function debugMindMapPersist(
   label: string,
-  data?: Record<string, unknown>,
+  data?: Record<string, unknown> | (() => Record<string, unknown>),
 ): void {
-  devDebug("mindmap-persist", label, data);
-  forwardMindMapHostDebug("mindmap-persist", label, data);
+  if (!isMindMapPersistDebugEnabled()) {
+    return;
+  }
+  // 惰性数据：哈希/全树采样等重实参放进函数，关闭调试时不求值。
+  const resolved = typeof data === "function" ? data() : data;
+  devDebug("mindmap-persist", label, resolved);
+  forwardMindMapHostDebug("mindmap-persist", label, resolved);
 }

@@ -130,6 +130,11 @@ export function summarizeMindMapTraceData(
   if (!data?.root) {
     return null;
   }
+  // 关闭调试时短路：该函数常作为 trace 实参被无条件求值（JS 实参先算），
+  // 全树遍历/展平在大图上是热路径主线程开销（拖拽卡顿的组成部分）。
+  if (!isDebugLoggingEnabled()) {
+    return null;
+  }
   const root = data.root as MindMapNodeLike;
   const firstChildren = Array.isArray(root.children) ? root.children : [];
   return {
@@ -153,6 +158,10 @@ export function summarizeMindMapTraceDocument(
   if (!document) {
     return null;
   }
+  // 同上：hashDocumentSnapshot 是整文档 stringify + 深排序，关闭调试时不做。
+  if (!isDebugLoggingEnabled()) {
+    return null;
+  }
   return {
     kind: document.kind,
     containerVersion: document.containerVersion,
@@ -167,6 +176,11 @@ export function readMindMapTraceFileState(
   fileId: string | null | undefined,
 ): Record<string, unknown> | null {
   if (!fileId) {
+    return null;
+  }
+  // 关闭调试时短路：getLocalCache 会同步 getItem+JSON.parse 整份文档，
+  // 再对缓存文档全量求哈希；作为 trace 实参时每次调用都会白付这笔钱。
+  if (!isDebugLoggingEnabled()) {
     return null;
   }
   const localCache = FileSyncState.getLocalCache(fileId);
@@ -203,11 +217,13 @@ export function traceMindMapDraftStatusTransition(
 
 export function traceMindMapOperation(
   label: string,
-  data?: Record<string, unknown>,
+  data?: Record<string, unknown> | (() => Record<string, unknown>),
 ): void {
   if (!isDebugLoggingEnabled()) {
     return;
   }
+  // 支持惰性数据：重开销的采样统计放进函数，仅在调试开启时求值。
+  const resolved = typeof data === "function" ? data() : data;
   seq += 1;
   const payload = {
     opSeq: seq,
@@ -215,7 +231,7 @@ export function traceMindMapOperation(
     at: new Date().toISOString(),
     perfMs:
       typeof performance !== "undefined" ? Math.round(performance.now()) : null,
-    ...(data ?? {}),
+    ...(resolved ?? {}),
   };
   devDebug("mindmap-op", label, payload);
   opLog.info(label, payload);

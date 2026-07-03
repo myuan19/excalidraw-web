@@ -12,6 +12,10 @@ import drawBackgroundImageToCanvas from '../utils/simulateCSSBackgroundInCanvas'
 import { ERROR_TYPES } from '../constants/constant'
 import { transformToTxt } from '../parse/toTxt'
 
+// 导出 SVG（preserveTextEdit）时，给活画布上「正在编辑节点」的文本元素打的
+// 临时标记。仅用于克隆副本上定位并恢复其可见性，不影响活画布渲染
+const EXPORT_EDIT_TEXT_MARK = 'data-smm-export-edit-text'
+
 //  导出插件
 class Export {
   //  构造函数
@@ -396,20 +400,78 @@ class Export {
   }
 
   //  导出为svg
+  // preserveTextEdit：不打断进行中的文本编辑。先把编辑中的文本同步进节点数据
+  // （syncEditingTextToNode 不关闭编辑框），再导出；removeActiveState：在导出
+  // 克隆上剥离节点选中/高亮态，避免缩略图带出选中边框
   async svg(name, options = {}) {
-    const { preserveTextEdit = false } = options || {}
+    const { preserveTextEdit = false, removeActiveState = false } =
+      options || {}
     const textEdit = this.mindMap.renderer.textEdit
+    let markedEditTextEl = null
     if (preserveTextEdit) {
       await textEdit.syncEditingTextToNode()
+      const editNode =
+        typeof textEdit.getCurrentEditNode === 'function'
+          ? textEdit.getCurrentEditNode()
+          : null
+      if (editNode) {
+        // syncEditingTextToNode 同步写入了 data.text，但它触发的整树渲染是
+        // 异步的（rAF/定时器驱动，页面切后台时被节流甚至暂停）。Tab 新建
+        // 节点以"空文本"渲染出空文字容器后立即进入编辑，若输入后没等实时
+        // 渲染跑完就导出（典型：输入完立刻切走页面），克隆会带走这个空容
+        // 器——数据有字、缩略图该节点没字。这里用与打字实时渲染相同的
+        // 同步路径重建该节点文字内容，让克隆不依赖异步渲染时序。
+        try {
+          editNode.reRender(['text'])
+        } catch (error) {
+          // 重建失败不阻断导出，克隆恢复分支按标记不到处理
+        }
+        // openRealtimeRenderOnNodeTextEdit 下正在编辑的节点，其文本在活画布上
+        // 是「隐藏」的：进入编辑到首次输入前是 display:none（TextEdit.show 的
+        // g.hide()），输入/重渲染后是 opacity:0（nodeLayout 对 getCurrentEditNode
+        // ===this 的节点置 0）。getSvgData 克隆活画布，这些隐藏态会原样进入
+        // 导出结果 → 缩略图该节点空白（这正是「前台保存丢字、后台保存正常」的
+        // 根因：后台先 hideEditTextBox 结束编辑，节点文本恢复可见）。
+        // 处理方式：给活画布的编辑文本元素打一个不影响渲染的 data 标记（活画布
+        // 不改可见性，避免与编辑框叠加闪烁），克隆后在副本上按标记精准恢复
+        // display+opacity，再移除标记。
+        const editTextEl = editNode._textData ? editNode._textData.node : null
+        if (editTextEl && editTextEl.node) {
+          editTextEl.attr(EXPORT_EDIT_TEXT_MARK, '1')
+          markedEditTextEl = editTextEl
+        }
+      }
     } else {
       textEdit.hideEditTextBox()
     }
-    const { node } = await this.getSvgData()
-    node.first().before(SVG(`<title>${name}</title>`))
-    await this.drawBackgroundToSvg(node)
-    const str = node.svg()
-    const res = await this.fixSvgStrAndToBlob(str)
-    return res
+    try {
+      const { node } = await this.getSvgData()
+      if (preserveTextEdit) {
+        // 克隆副本上恢复编辑中节点文本的可见性（仅作用于导出结果，活画布不动）
+        node.find(`[${EXPORT_EDIT_TEXT_MARK}]`).forEach(item => {
+          item.css('display', '')
+          item.attr('opacity', 1)
+          item.attr(EXPORT_EDIT_TEXT_MARK, null)
+        })
+      }
+      if (removeActiveState) {
+        node.find('.smm-node.active').forEach(item => {
+          item.removeClass('active')
+        })
+        node.find('.smm-node-highlight').forEach(item => {
+          item.removeClass('smm-node-highlight')
+        })
+      }
+      node.first().before(SVG(`<title>${name}</title>`))
+      await this.drawBackgroundToSvg(node)
+      const str = node.svg()
+      const res = await this.fixSvgStrAndToBlob(str)
+      return res
+    } finally {
+      if (markedEditTextEl) {
+        markedEditTextEl.attr(EXPORT_EDIT_TEXT_MARK, null)
+      }
+    }
   }
 
   // 修复svg字符串，并且转换为blob数据

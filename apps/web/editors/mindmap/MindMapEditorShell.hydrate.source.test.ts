@@ -80,4 +80,21 @@ describe("MindMapEditorShell hydrate source contract", () => {
       "isMindMapNativeDirtyPending(fileId) &&\n            !isCurrentSaveResponse",
     );
   });
+
+  it("never adopts hydrate baselines over real unsaved local drafts", () => {
+    const source = fs.readFileSync(
+      path.join(__dirname, "MindMapEditorShell.tsx"),
+      "utf8",
+    );
+    const adoptBlock = source.slice(
+      source.indexOf("} else if (draftResult.shouldExtendSettle) {"),
+      source.indexOf('"host.message.saveMindMapData.action.adoptBaseline"'),
+    );
+
+    // adopt 守卫必须与 hydrateSettleEnd 的 skipAdopt 同标准：pending 哨兵
+    // 或真实草稿哈希（本地恢复的未保存内容）都要阻止基线对齐，
+    // 否则恢复的草稿会被伪变绿且永不落库
+    expect(adoptBlock).toContain("isMindMapNativeDirtyPending(fileId) ||");
+    expect(adoptBlock).toContain("FileSyncState.hasUnsavedChanges(fileId)");
+  });
 });

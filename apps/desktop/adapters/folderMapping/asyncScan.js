@@ -12,7 +12,10 @@ import {
   ensureCatalogThumbnails,
   validateCatalogDocument,
 } from "./catalogDocument.js";
-import { resolveMappingRootPath } from "./mappingRootUtils.js";
+import {
+  pickFresherCatalogFile,
+  resolveMappingRootPath,
+} from "./mappingRootUtils.js";
 import {
   SIDECAR_DIR,
   currentFileVersion,
@@ -69,7 +72,15 @@ export async function scanCatalogAsync(sidecar, meta, options = {}) {
   const foldersByPath = new Map(
     meta.folders.map((folder) => [folder.path, folder]),
   );
-  const filesByPath = new Map(meta.files.map((file) => [file.path, file]));
+  // 历史 meta 可能残留同 path 重复条目（API 更新第一条、Map 覆盖取最后
+  // 一条会拿到过期 sha，触发缩略图误删）；建快照时按新旧收敛而非盲覆盖。
+  const filesByPath = new Map();
+  for (const file of meta.files) {
+    filesByPath.set(
+      file.path,
+      pickFresherCatalogFile(filesByPath.get(file.path), file),
+    );
+  }
   const uniqueRoots = [];
   const seenRootPaths = new Set();
   for (const root of meta.mapping_roots ?? []) {
@@ -102,6 +113,34 @@ export async function scanCatalogAsync(sidecar, meta, options = {}) {
     return mappingAbsPaths.some(
       (root) => resolved === root || resolved.startsWith(`${root}${path.sep}`),
     );
+  };
+
+  // 扫描持有的是 pass 开始时的 meta 快照；应用内保存会在扫描期间同时更新
+  // 磁盘文件与实时 meta。若只用快照 sha 判定「内容变更」，扫描进行中刚保存
+  // 的文件会被误判为外部修改，刚上传的缩略图被 rmSync 删除（下次打开首页
+  // GET /thumbnail 404 → 卡片空白）。因此任何破坏性动作（删缩略图、版本
+  // 抬升）前都用实时 meta 复核；实时 meta 带短 TTL 缓存，避免大目录首扫
+  // 时逐文件重复解析 workspace.json。
+  const LIVE_META_MAX_AGE_MS = 2000;
+  let liveFilesById = null;
+  let liveMetaLoadedAt = 0;
+  const loadLiveFileById = (fileId) => {
+    const now = Date.now();
+    if (!liveFilesById || now - liveMetaLoadedAt > LIVE_META_MAX_AGE_MS) {
+      liveMetaLoadedAt = now;
+      try {
+        liveFilesById = new Map();
+        for (const file of sidecar.load().files ?? []) {
+          liveFilesById.set(
+            file.id,
+            pickFresherCatalogFile(liveFilesById.get(file.id), file),
+          );
+        }
+      } catch {
+        liveFilesById = new Map();
+      }
+    }
+    return liveFilesById.get(fileId) ?? null;
   };
 
   let processed = 0;
@@ -285,10 +324,22 @@ export async function scanCatalogAsync(sidecar, meta, options = {}) {
     const nextSha = validation.ok
       ? hashString(raw)
       : existing?.content_sha256 ?? null;
-    const contentChanged =
+    let versionBase = existing?.version;
+    let contentChanged =
       validation.ok &&
       existing &&
       existing.content_sha256 !== nextSha;
+    if (contentChanged) {
+      const live = loadLiveFileById(existing.id);
+      if (live) {
+        versionBase = live.version;
+        if (live.content_sha256 === nextSha) {
+          // 快照已过期：磁盘上的新内容来自扫描期间的应用内保存（实时 meta
+          // 已记录同一 sha），不是外部变更，不得删缩略图/抬版本。
+          contentChanged = false;
+        }
+      }
+    }
     if (contentChanged) {
       rmSync(sidecar.thumbnailPath(existing.id), { force: true });
     }
@@ -302,8 +353,8 @@ export async function scanCatalogAsync(sidecar, meta, options = {}) {
       updated_at: mtimeIso,
       content_sha256: nextSha,
       version: contentChanged
-        ? nextFileVersion(existing.version)
-        : currentFileVersion(existing?.version),
+        ? nextFileVersion(versionBase)
+        : currentFileVersion(versionBase ?? existing?.version),
       path: storePath,
       origin,
       archives: existing?.archives ?? [],

@@ -122,8 +122,8 @@ class Drag extends Base {
     this.isMousedown = true
     // 记录鼠标按下时的节点
     this.mousedownNode = node
-    // 记录鼠标按下的坐标
-    const { x, y } = this.updateDragPointer(e.clientX, e.clientY)
+    // 记录鼠标按下的坐标（按下时刷新一次容器矩形，之后拖拽中复用）
+    const { x, y } = this.updateDragPointer(e.clientX, e.clientY, true)
     this.mouseDownX = x
     this.mouseDownY = y
     this.bindDocumentDragEvents()
@@ -152,8 +152,13 @@ class Drag extends Base {
     } catch (err) {}
   }
 
-  updateDragPointer(clientX, clientY) {
-    this.refreshMindMapRect()
+  // refreshRect：容器矩形只在按下、外层滚动、视图变换时刷新；
+  // 每次 mousemove 都 getBoundingClientRect 会与克隆层 transform 写入交错，
+  // 造成逐帧强制布局（拖拽卡顿来源之一）
+  updateDragPointer(clientX, clientY, refreshRect = false) {
+    if (refreshRect) {
+      this.refreshMindMapRect()
+    }
     const { x, y } = this.mindMap.toPos(clientX, clientY)
     this.mouseMoveX = x
     this.mouseMoveY = y
@@ -457,7 +462,8 @@ class Drag extends Base {
       Number.isFinite(this.lastDragClientX) &&
       Number.isFinite(this.lastDragClientY)
     ) {
-      this.updateDragPointer(this.lastDragClientX, this.lastDragClientY)
+      // 外层滚动等会改变容器与视口的相对位置，此路径需要重取容器矩形
+      this.updateDragPointer(this.lastDragClientX, this.lastDragClientY, true)
     }
     this.drawTransform = this.mindMap.draw.transform()
     this.updateClonePositionFromPointer()

@@ -58,12 +58,21 @@ export const mindMapNativeSavePaneBoostClasses = {
 
 export async function waitForMindMapNativeSavePaneBoost(): Promise<void> {
   await new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve();
+    };
+    // rAF 与定时器竞速：document.hidden 时 rAF 暂停，仅靠 rAF 会让
+    // 后台 pane 的保存请求在发出前就永久挂起
     if (typeof window.requestAnimationFrame === "function") {
       window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => resolve());
+        window.requestAnimationFrame(finish);
       });
-      return;
     }
-    window.setTimeout(resolve, 32);
+    window.setTimeout(finish, 150);
   });
 }

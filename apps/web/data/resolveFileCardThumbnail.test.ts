@@ -103,7 +103,7 @@ describe("resolveFileCardThumbnail", () => {
     expect(savedSurvivesDraftWrite.thumbSvg).toContain("local");
   });
 
-  it("falls back to stale fetched thumbs for draft files awaiting a matching session preview", () => {
+  it("serves the latest draft export for draft files even when its hash lags", () => {
     FileSyncState.setBaselineHash("file-1", "sha-1");
     FileSyncState.setDraftHash("file-1", "draft-2");
     LocalThumbnailCache.setDraftPreview(
@@ -115,6 +115,23 @@ describe("resolveFileCardThumbnail", () => {
     const choice = chooseFileCardThumbnailForFile(
       "file-1",
       mockFile(),
+      "<svg id='server'></svg>",
+      "sha-old",
+    );
+
+    // 会话内最近一次草稿导出（draft-1）仍新于服务器旧缩略图：未保存窗口
+    // 展示「上一次修改」而不是打开时版本。
+    expect(choice.finalSource).toBe("localThumb");
+    expect(choice.thumbSvg).toContain("draft-old");
+  });
+
+  it("falls back to stale fetched thumbs for draft files without any session preview", () => {
+    FileSyncState.setBaselineHash("file-2", "sha-1");
+    FileSyncState.setDraftHash("file-2", "draft-2");
+
+    const choice = chooseFileCardThumbnailForFile(
+      "file-2",
+      mockFile({ id: "file-2" }),
       "<svg id='server'></svg>",
       "sha-old",
     );

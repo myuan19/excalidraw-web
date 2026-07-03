@@ -115,6 +115,7 @@ import {
   findCatalogFileByAbsPath,
   mergeRecentPathCatalogBatch,
   mergeRecentPathCatalogFromTree,
+  patchRecentPathCatalogFileMetadata,
   resolveRecentPathCatalogByPaths,
 } from "../data/recentPathCatalogSync";
 import { isDesktopEditorHub, canOpenRecentByCatalogPath } from "../lib/runtimePlatform";
@@ -2633,6 +2634,18 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       if (!cachePatch && Object.keys(mergedPatch).length === 0) {
         return false;
       }
+      // 保存元数据的单一写入口：同一份 patch 同步写到全部列表数据源。
+      // 1) 会话树缓存：排序键 resolveListSortUpdatedAt 直接读它。以往新
+      //    updated_at 要等缩略图上传后的 finalize 才落缓存，保存提交清掉
+      //    localEditTime 到 finalize 之间排序键塌回旧时间（「保存后跳位」）。
+      if (Object.keys(eventPatch).length > 0) {
+        patchFileListTreeCacheSavedFile(fileId, eventPatch);
+      }
+      // 2) path-catalog（桌面「最近」视图按路径解析的条目）：不在主目录树的
+      //    文件收不到 setFiles patch，只有这里能刷新它的排序/缩略图元数据。
+      setRecentPathCatalogFiles((prev) =>
+        patchRecentPathCatalogFileMetadata(prev, fileId, mergedPatch),
+      );
       let applied = false;
       setFiles((prev) => {
         const index = prev.findIndex((file) => file.id === fileId);
@@ -2725,6 +2738,8 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
   }, [applySavedFileListMetadata, scheduleSilentRefresh]);
 
   const nativeListThumbInFlightRef = useRef<Set<string>>(new Set());
+  /** fileId → 失败时的缩略图 cacheKey：同版本不重试，内容变化后自动解除。 */
+  const nativeListThumbFailedKeyRef = useRef<Map<string, string>>(new Map());
   useEffect(() => {
     if (!isDesktopEditorHub()) {
       return;
@@ -2737,6 +2752,16 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
         return false;
       }
       if (nativeListThumbInFlightRef.current.has(file.id)) {
+        return false;
+      }
+      // 失败退避：同一内容版本（cacheKey 含 content_sha）失败过就不再重排，
+      // 否则 finally 里 clearNativeThumbnailPending 触发重渲染 → effect 重跑
+      // → 立刻重新入队，形成 mark/clear 无限循环（Maximum update depth）。
+      // 内容变化后 cacheKey 变化，自然恢复重试。
+      if (
+        nativeListThumbFailedKeyRef.current.get(file.id) ===
+        fileThumbnailCacheKey(file)
+      ) {
         return false;
       }
       if (FileSyncState.hasUnsavedChanges(file.id)) {
@@ -2766,9 +2791,17 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
       nativeListThumbInFlightRef.current.add(file.id);
       void persistTrackedFileThumbnail(file)
         .then((updated) => {
-          if (cancelled || !updated.has_thumbnail) {
+          if (cancelled) {
             return;
           }
+          if (!updated.has_thumbnail) {
+            nativeListThumbFailedKeyRef.current.set(
+              file.id,
+              fileThumbnailCacheKey(file),
+            );
+            return;
+          }
+          nativeListThumbFailedKeyRef.current.delete(file.id);
           const localThumb =
             LocalThumbnailCache.getForContent(
               updated.id,
@@ -2794,6 +2827,10 @@ export function useFileListController({ onOpenFile, onReady }: FileListProps) {
           });
         })
         .catch((error: unknown) => {
+          nativeListThumbFailedKeyRef.current.set(
+            file.id,
+            fileThumbnailCacheKey(file),
+          );
           devDebug("thumbnail-pipeline", "[DEBUG] native-list-thumb | error", {
             id: file.id,
             id8: file.id.slice(0, 8),

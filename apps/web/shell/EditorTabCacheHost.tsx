@@ -63,7 +63,16 @@ export function EditorTabCacheHost({
       : fileTabs.find((tab) => tab.id === tabState.activeTabId) ?? null;
   /** 运行时以标签页为准；冷启动 intent 的 shellMode 不会随打开文件更新。 */
   const showHomePane = tabState.activeTabId === HOME_TAB_ID;
-  const showEditorShell = !showHomePane;
+  /**
+   * 只要存在文件标签，编辑器栈就保持挂载；主页激活仅靠 CSS 隐藏
+   * （--home-active 下 .editor-platform-shell 为 visibility:hidden）。
+   * 若按「主页激活」卸载：iframe 内未保存的 MindMap 内容会随卸载丢失，
+   * 且 onPaneBackground 立即保存、空闲保存计时器、tab 保存处理器全部
+   * 被销毁——表现为切回主页后黄点消失但从未真正保存。
+   * 冷启动开销由 EditorPaneStackItem 的 startup 门控兜住：后台且无
+   * 未保存状态的 pane 不会挂载编辑器本体。
+   */
+  const showEditorShell = hasFileTabs;
   const homeActive = showHomePane;
 
   useEffect(() => {

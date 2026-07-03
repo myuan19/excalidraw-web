@@ -1,16 +1,166 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  dedupeCatalogFiles,
   dedupeFoldersByPath,
   dedupeMappingRoots,
   mergePartialScanCheckpoint,
   mergeScanCheckpoint,
   normalizeMappingRootPlacement,
+  pickFresherCatalogFile,
   reconcileScanMetaWithMappingRoots,
   repairMappingMeta,
 } from "./mappingRootUtils.js";
 
 describe("mappingRootUtils", () => {
+  it("picks the fresher catalog file by version, then updated_at", () => {
+    const older = {
+      id: "f1",
+      version: 13,
+      updated_at: "2026-07-02T13:33:29.893Z",
+      content_sha256: "old",
+    };
+    const newer = {
+      id: "f1",
+      version: 51,
+      updated_at: "2026-07-02T14:04:18.270Z",
+      content_sha256: "new",
+    };
+    expect(pickFresherCatalogFile(older, newer)).toBe(newer);
+    expect(pickFresherCatalogFile(newer, older)).toBe(newer);
+    expect(
+      pickFresherCatalogFile(
+        { ...older, version: 51 },
+        newer,
+      ),
+    ).toBe(newer);
+  });
+
+  it("collapses duplicate file entries keeping the freshest (id then path)", () => {
+    const fresh = {
+      id: "f1",
+      path: "C:/topics/a.smm",
+      version: 51,
+      updated_at: "2026-07-02T14:04:18.270Z",
+      content_sha256: "fresh-sha",
+    };
+    const meta = {
+      mapping_roots: [],
+      folders: [],
+      files: [
+        fresh,
+        {
+          id: "f1",
+          path: "C:/topics/a.smm",
+          version: 12,
+          updated_at: "2026-07-02T09:37:07.238Z",
+          content_sha256: "stale-sha",
+        },
+        {
+          id: "f1",
+          path: "C:/topics/a.smm",
+          version: 13,
+          updated_at: "2026-07-02T13:33:29.893Z",
+          content_sha256: "stale-sha-2",
+        },
+        { id: "f2", path: "C:/topics/b.smm", version: 1, updated_at: "2026-01-01" },
+      ],
+    };
+
+    expect(dedupeCatalogFiles(meta)).toBe(true);
+    expect(meta.files).toHaveLength(2);
+    const f1 = meta.files.find((file) => file.id === "f1");
+    expect(f1?.version).toBe(51);
+    expect(f1?.content_sha256).toBe("fresh-sha");
+    // 幂等：二次调用无改动
+    expect(dedupeCatalogFiles(meta)).toBe(false);
+  });
+
+  it("repairMappingMeta heals metas that accumulated duplicate file entries", () => {
+    const meta = {
+      mapping_roots: [],
+      folders: [],
+      files: [
+        { id: "f1", path: "p", version: 51, updated_at: "2026-07-02T14:04:18Z" },
+        { id: "f1", path: "p", version: 13, updated_at: "2026-07-02T13:33:29Z" },
+      ],
+    };
+    expect(repairMappingMeta(meta)).toBe(true);
+    expect(meta.files).toHaveLength(1);
+    expect(meta.files[0].version).toBe(51);
+  });
+
+  it("does not duplicate externally tracked files across scan checkpoint merges", () => {
+    const external = {
+      id: "ext-1",
+      path: "C:/topics/tracked.smm",
+      folder_id: null,
+      origin: "external",
+      version: 13,
+      updated_at: "2026-07-02T13:33:29.893Z",
+      content_sha256: "sha-13",
+    };
+    const current = {
+      version: 1,
+      mapping_roots: [],
+      folders: [],
+      files: [external],
+    };
+    // 扫描输出里同样带这个外部文件（外部跟踪文件轮询会 ingest 它）
+    const scanned = {
+      version: 1,
+      mapping_roots: [],
+      folders: [],
+      files: [{ ...external }],
+    };
+
+    let merged = mergeScanCheckpoint(scanned, current);
+    expect(
+      merged.files.filter((file) => file.id === "ext-1"),
+    ).toHaveLength(1);
+    // 再合并一轮（模拟多次 checkpoint）也不会累积
+    merged = mergePartialScanCheckpoint(scanned, merged);
+    expect(
+      merged.files.filter((file) => file.id === "ext-1"),
+    ).toHaveLength(1);
+  });
+
+  it("keeps the in-app saved (fresher) entry when scan snapshot is stale", () => {
+    const savedInApp = {
+      id: "ext-1",
+      path: "C:/topics/tracked.smm",
+      folder_id: null,
+      origin: "external",
+      version: 51,
+      updated_at: "2026-07-02T14:04:18.270Z",
+      content_sha256: "sha-51",
+    };
+    const staleScanCopy = {
+      ...savedInApp,
+      version: 13,
+      updated_at: "2026-07-02T13:33:29.893Z",
+      content_sha256: "sha-13",
+    };
+    const current = {
+      version: 1,
+      mapping_roots: [],
+      folders: [],
+      files: [savedInApp],
+    };
+    const scanned = {
+      version: 1,
+      mapping_roots: [],
+      folders: [],
+      files: [staleScanCopy],
+    };
+
+    const merged = mergeScanCheckpoint(scanned, current);
+    const entry = merged.files.filter((file) => file.id === "ext-1");
+    expect(entry).toHaveLength(1);
+    expect(entry[0].version).toBe(51);
+    expect(entry[0].content_sha256).toBe("sha-51");
+  });
+
   it("forces mapping roots to the tree root", () => {
     const meta = {
       mapping_roots: [

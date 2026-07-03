@@ -49,7 +49,9 @@ describe("EditorPaneStack source contract", () => {
     expect(stackSource).not.toContain("isEditorTabActive");
     expect(stackSource).not.toContain("FileSyncState");
     expect(stackSource).not.toContain("isTabFileDirty");
-    expect(runStateSource).toContain("excalidraw-file-sync-state");
+    // 事件名已收敛为 editorPaneEditPipeline 导出的常量（值仍是
+    // "excalidraw-file-sync-state"），run-state 必须订阅同一事件
+    expect(runStateSource).toContain("EDITOR_FILE_SYNC_STATE_EVENT");
     expect(runStateSource).toContain("FileSyncState.hasUnsavedChanges");
     expect(runStateSource).toContain("isTabFileDirty");
     expect(stackSource).toContain("editor-pane-stack__pane--keep-running");

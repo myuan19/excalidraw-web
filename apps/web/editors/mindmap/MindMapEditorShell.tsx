@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import type { EditorShellCacheProps } from "../editorShellCacheProps";
 import { resolvePaneForeground } from "../editorShellCacheProps";
@@ -56,7 +63,10 @@ import {
   type MindMapDocumentData,
 } from "../../data/formats/MindMapAdapter";
 import { compactMindMapPersistedConfig } from "../../data/formats/mindMapPersistedConfig";
-import { saveMindMapBrowserView } from "../../data/mindMapBrowserViewStorage";
+import {
+  flushMindMapBrowserView,
+  scheduleSaveMindMapBrowserView,
+} from "../../data/mindMapBrowserViewStorage";
 import { hashDocumentSnapshot } from "../../data/sceneHash";
 import { createSerializedSaveRunner } from "../../data/serializedSave";
 
@@ -128,6 +138,7 @@ import {
   waitForMindMapNativeSavePaneBoost,
 } from "./mindMapNativeSavePaneBoost";
 import { isAllowedNativeMindMapMessageOrigin } from "./mindMapBridgeOrigins";
+import { useMindMapBackgroundSaveFlush } from "./useMindMapBackgroundSaveFlush";
 import { useMindMapHostBridge } from "./useMindMapHostBridge";
 import { useMindMapFileSave } from "./useMindMapFileSave";
 import { toNativeMindMapBridgePayload } from "./mindMapBridgePayload";
@@ -158,6 +169,10 @@ import {
 } from "./mindMapPersistDebug";
 import { createMindMapHydrateCoordinator } from "./mindMapHydrateCoordinator";
 import { recordMindMapPersisted } from "./mindMapPersistCoordinator";
+import {
+  runAfterMindMapNativeDrag,
+  setMindMapNativeDragging,
+} from "./mindMapNativeInteraction";
 import { canSkipMindMapNativeSyncOnLeave } from "./mindMapLeaveState";
 import {
   adoptMindMapNativeBaseline,
@@ -325,6 +340,11 @@ async function shouldRefreshMindMapServerThumbnail(
 
 export default function MindMapEditorShell(props: EditorShellCacheProps = {}) {
   const isPaneForeground = resolvePaneForeground(props);
+  // 渲染期即更新：onPaneBackground（useEditorPaneLifecycle 的 effect 先于
+  // requestNativeSaveRef 的同步 effect 执行）触发的立即保存会拿到上一次
+  // commit 的 requestNativeSave 闭包，读 ref 才能拿到真实的前后台状态
+  const isPaneForegroundRef = useRef(isPaneForeground);
+  isPaneForegroundRef.current = isPaneForeground;
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const shellRootRef = useRef<HTMLDivElement | null>(null);
   const mountNativeFrame = useEditorPaneMountGate(isPaneForeground);
@@ -485,6 +505,8 @@ export default function MindMapEditorShell(props: EditorShellCacheProps = {}) {
   const flushMindMapAutoSaveWhenInactive = useCallback(
     (reason: string) => {
       flushDraft();
+      // 视图状态写盘做了防抖，切后台/隐藏时把最后一帧补落盘，避免丢失最新平移/缩放
+      flushMindMapBrowserView();
       if (!fileId || !FileSyncState.hasUnsavedChanges(fileId)) {
         return;
       }
@@ -559,11 +581,11 @@ export default function MindMapEditorShell(props: EditorShellCacheProps = {}) {
       settledDocument: summarizeMindMapTraceDocument(baselineDocument),
       fileStateAfterAdopt: readMindMapTraceFileState(fileId),
     });
-    debugMindMapPersist("[DEBUG] native hydrate settle aligned", {
+    debugMindMapPersist("[DEBUG] native hydrate settle aligned", () => ({
       fileId8: fileId.slice(0, 8),
       contentHash8: hashDocumentSnapshot(baselineDocument).slice(0, 8),
       sampleNode: findFirstRichMindMapNodeSummary(baselineDocument.data),
-    });
+    }));
   }, [fileId, flushDeferredMindMapAutoSave]);
 
   const {
@@ -619,6 +641,26 @@ export default function MindMapEditorShell(props: EditorShellCacheProps = {}) {
     onPaneBackground: () => flushMindMapAutoSaveWhenInactive("pane-background"),
     debugOpen,
   });
+
+  // 状态驱动的后台待保存冲刷：边沿回调（onPaneBackground）只覆盖「切换瞬间
+  // 宿主已记录到未保存」的情况；迟到的草稿推送、后台重挂载、后台期间新编辑
+  // 由该不变量兜底（详见 useMindMapBackgroundSaveFlush 注释）。
+  useMindMapBackgroundSaveFlush({
+    fileId,
+    isPaneForeground,
+    isNativeReady,
+    flush: flushMindMapAutoSaveWhenInactive,
+  });
+
+  // pane 前后台推给 iframe：转后台时 iframe 提交进行中的文本编辑（对齐
+  // Excalidraw「离开视图 = 提交输入」），保证后台保存链拿到编辑框真实内容；
+  // isNativeReady 变化时补发当前状态，覆盖后台挂载/重挂载的初始同步。
+  useEffect(() => {
+    if (!isNativeReady) {
+      return;
+    }
+    postToNative("mindMapPaneVisibility", { foreground: isPaneForeground });
+  }, [isNativeReady, isPaneForeground, postToNative]);
 
   const nativeSaveContextRef = useRef({
     fileId,
@@ -1512,6 +1554,7 @@ export default function MindMapEditorShell(props: EditorShellCacheProps = {}) {
       }
       saveTimerRef.current = window.setTimeout(() => {
         saveTimerRef.current = null;
+        const fireAutoSaveTimer = () => {
         traceMindMapOperation("host.queueAutoSave.timerFired", {
           fileId8: fileId?.slice(0, 8) ?? null,
           saveSource,
@@ -1602,6 +1645,15 @@ export default function MindMapEditorShell(props: EditorShellCacheProps = {}) {
           nativeSaveCoordinatorRef.current.fulfillCurrentSave(ok);
           pendingNativeSaveSourceRef.current.delete(requestId);
         });
+        };
+        if (!requestId) {
+          // 空闲自动保存若正撞上 iframe 内的节点/画布拖拽，推迟到拖拽结束
+          // （native 侧另有兜底）；带 requestId 的保存响应链路不能延迟，
+          // 否则保存协调器会等到 inactivity 超时。
+          runAfterMindMapNativeDrag(fireAutoSaveTimer);
+          return;
+        }
+        fireAutoSaveTimer();
       }, delay);
     },
     [file?.name, fileId, finishMindMapAutoSaveRequest, nativeHydratingRef, persistMindMapDocument, postToNative],
@@ -1670,9 +1722,13 @@ export default function MindMapEditorShell(props: EditorShellCacheProps = {}) {
         openSaveDialog(source === "exit");
         return Promise.resolve(false);
       }
+      // 读 ref 而非闭包：onPaneBackground 的立即保存发生在
+      // requestNativeSaveRef 同步 effect 之前，闭包里的 isPaneForeground
+      // 还是切走前的 true，会漏掉后台 pane 的可见性 boost
+      const paneForegroundAtRequest = isPaneForegroundRef.current;
       const releasePaneBoost = beginMindMapNativeSavePaneBoost(
         shellRootRef.current,
-        isPaneForeground,
+        paneForegroundAtRequest,
       );
       if (fileId) {
         transferEditorPaneEditPipelineHold(
@@ -1685,7 +1741,7 @@ export default function MindMapEditorShell(props: EditorShellCacheProps = {}) {
       const nativeSaveStartedAt =
         typeof performance !== "undefined" ? performance.now() : Date.now();
       const savePromise = (async () => {
-        if (!isPaneForeground) {
+        if (!paneForegroundAtRequest) {
           await waitForMindMapNativeSavePaneBoost();
         }
         const promise =
@@ -1695,13 +1751,13 @@ export default function MindMapEditorShell(props: EditorShellCacheProps = {}) {
         devDebug("mindmap-bridge", "requestNativeSave | start", {
           requestId,
           source,
-          paneBoost: !isPaneForeground,
+          paneBoost: !paneForegroundAtRequest,
         });
         traceMindMapOperation("host.requestNativeSave.start", {
           fileId8: fileId?.slice(0, 8) ?? null,
           requestId,
           source,
-          paneBoost: !isPaneForeground,
+          paneBoost: !paneForegroundAtRequest,
           fileStateAtRequest: readMindMapTraceFileState(fileId),
         });
         traceUserAction(
@@ -1711,8 +1767,8 @@ export default function MindMapEditorShell(props: EditorShellCacheProps = {}) {
             fileId8: fileId?.slice(0, 8) ?? null,
             requestId,
             source,
-            paneBoost: !isPaneForeground,
-            paneForeground: isPaneForeground,
+            paneBoost: !paneForegroundAtRequest,
+            paneForeground: paneForegroundAtRequest,
           },
           "start",
         );
@@ -1741,7 +1797,7 @@ export default function MindMapEditorShell(props: EditorShellCacheProps = {}) {
               fileId8: fileId?.slice(0, 8) ?? null,
               source,
               ok,
-              paneBoost: !isPaneForeground,
+              paneBoost: !paneForegroundAtRequest,
               elapsedMs,
             },
             ok ? "ok" : "fail",
@@ -1759,7 +1815,7 @@ export default function MindMapEditorShell(props: EditorShellCacheProps = {}) {
             {
               fileId8: fileId?.slice(0, 8) ?? null,
               source,
-              paneBoost: !isPaneForeground,
+              paneBoost: !paneForegroundAtRequest,
               elapsedMs,
               error:
                 error instanceof Error
@@ -1776,26 +1832,26 @@ export default function MindMapEditorShell(props: EditorShellCacheProps = {}) {
       });
       return savePromise;
     },
-    [file?.folder_id, fileId, isNativeReady, isPaneForeground, openSaveDialog],
+    [file?.folder_id, fileId, isNativeReady, openSaveDialog],
   );
 
-  useEffect(() => {
+  // 布局期同步赋值：保存入口 ref 必须在任何 passive effect 读取前指向本次
+  // 提交的最新闭包。此前用「effect 赋值 + 依赖变化时清理置 null」：React 对
+  // 一次提交先跑完整棵树的 passive 清理再跑挂载，凡 requestNativeSave 身份
+  // 变化的提交，清理阶段 ref 被置空，同一提交里更早注册的 effect（pane
+  // 生命周期的立即保存、后台待保存冲刷、空闲计时器恰落在该窗口时）读到
+  // null，保存请求被可选链静默吞掉。仅在卸载时置空，杜绝时序窗口。
+  useLayoutEffect(() => {
     requestNativeSaveRef.current = requestNativeSave;
-    return () => {
-      if (requestNativeSaveRef.current === requestNativeSave) {
-        requestNativeSaveRef.current = null;
-      }
-    };
-  }, [requestNativeSave]);
+    queueAutoSaveRef.current = queueAutoSave;
+  });
 
   useEffect(() => {
-    queueAutoSaveRef.current = queueAutoSave;
     return () => {
-      if (queueAutoSaveRef.current === queueAutoSave) {
-        queueAutoSaveRef.current = null;
-      }
+      requestNativeSaveRef.current = null;
+      queueAutoSaveRef.current = null;
     };
-  }, [queueAutoSave]);
+  }, []);
 
   useEffect(() => {
     if (!fileId || !isNativeReady || !nativeHydrateSettled) {
@@ -2118,6 +2174,10 @@ export default function MindMapEditorShell(props: EditorShellCacheProps = {}) {
       }
 
       if (event.data.type === "mindMapSaveProgress") {
+        // 必须先喂给保存协调器刷新 inactivity 计时（native 拖拽等待期间靠
+        // wait-drag-idle 心跳保活）；此前该调用位于下方的重复分支里，属于
+        // 永远走不到的死代码
+        nativeSaveCoordinatorRef.current.handleSaveProgress(event.data.payload);
         const payload =
           event.data.payload &&
           typeof event.data.payload === "object" &&
@@ -2242,11 +2302,6 @@ export default function MindMapEditorShell(props: EditorShellCacheProps = {}) {
         return;
       }
 
-      if (event.data.type === "mindMapSaveProgress") {
-        nativeSaveCoordinatorRef.current.handleSaveProgress(event.data.payload);
-        return;
-      }
-
       if (event.data.type === "saveMindMapData") {
         const parsed = parseMindMapSavePayload(event.data.payload);
         if (!parsed) {
@@ -2360,7 +2415,7 @@ export default function MindMapEditorShell(props: EditorShellCacheProps = {}) {
           document: summarizeMindMapTraceDocument(document),
           fileStateBeforeDecisionAction: readMindMapTraceFileState(fileId),
         });
-        debugMindMapPersist("[DEBUG] saveMindMapData parsed", {
+        debugMindMapPersist("[DEBUG] saveMindMapData parsed", () => ({
           isCurrentSaveResponse,
           isCurrentSnapshotResponse,
           revision: parsed.revision ?? null,
@@ -2373,7 +2428,7 @@ export default function MindMapEditorShell(props: EditorShellCacheProps = {}) {
           richText: summarizeMindMapRichTextTree(parsed.mindMapData),
           sampleNode: findFirstRichMindMapNodeSummary(parsed.mindMapData),
           syncState: fileId ? FileSyncState.getSyncState(fileId) : null,
-        });
+        }));
         if (parsed.thumbnail) {
           const decodedThumb = decodeMindMapThumbnailPayload(parsed.thumbnail);
           if (decodedThumb && fileId && !isCurrentSaveResponse) {
@@ -2430,8 +2485,13 @@ export default function MindMapEditorShell(props: EditorShellCacheProps = {}) {
           );
         } else if (draftResult.shouldExtendSettle) {
           extendNativeHydrateSettle("draft-push");
+          // 与 hydrateSettleEnd 的 skipAdopt 同一判定标准：pending 哨兵
+          // 或真实草稿哈希（本地恢复的未保存内容）都不允许把 iframe 回推
+          // 当作已保存基线对齐——否则恢复的草稿会被"伪变绿"且永不落库
           const hasUserDirtyPending =
-            !!fileId && isMindMapNativeDirtyPending(fileId);
+            !!fileId &&
+            (isMindMapNativeDirtyPending(fileId) ||
+              FileSyncState.hasUnsavedChanges(fileId));
           if (fileId && draftResult.shouldAdoptBaseline && !hasUserDirtyPending) {
             adoptMindMapNativeBaseline(fileId, document);
             traceMindMapOperation(
@@ -2630,8 +2690,19 @@ export default function MindMapEditorShell(props: EditorShellCacheProps = {}) {
 
       if (event.data.type === "mindMapViewState") {
         if (fileId) {
-          saveMindMapBrowserView(fileId, event.data.payload);
+          scheduleSaveMindMapBrowserView(fileId, event.data.payload);
         }
+        return;
+      }
+
+      if (event.data.type === "mindMapInteractionState") {
+        // native 拖拽会话状态：拖拽期间宿主推迟空闲自动保存/草稿写盘等重活
+        const dragging = !!(
+          event.data.payload &&
+          typeof event.data.payload === "object" &&
+          (event.data.payload as { dragging?: unknown }).dragging === true
+        );
+        setMindMapNativeDragging(dragging);
         return;
       }
 
@@ -2678,7 +2749,11 @@ export default function MindMapEditorShell(props: EditorShellCacheProps = {}) {
     };
 
     window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
+    return () => {
+      window.removeEventListener("message", onMessage);
+      // 卸载/换文件时释放拖拽态，避免遗留的 dragging=true 拖住延迟队列
+      setMindMapNativeDragging(false);
+    };
   }, [
     activateHomeTabWithoutSnapshot,
     extendNativeHydrateSettle,
@@ -2766,13 +2841,18 @@ export default function MindMapEditorShell(props: EditorShellCacheProps = {}) {
       if (saveTimerRef.current !== null) {
         window.clearTimeout(saveTimerRef.current);
       }
+      // 卸载前把 450ms 防抖中的本地草稿缓存补落盘：任何卸载路径（清洁后台
+      // pane 低占用卸载、关标签等）都不得丢弃宿主已收到的最新草稿，
+      // 否则重开时按本地缓存恢复会拿到旧文档（Excalidraw 侧为非防抖直写）。
+      flushDraft();
+      flushMindMapBrowserView();
       releaseEditorPaneEditPipelineHold(releaseAutoSavePipelineRef);
       releaseEditorPaneEditPipelineHold(releaseNativeSavePipelineRef);
       if (missingFileRedirectTimerRef.current !== null) {
         window.clearTimeout(missingFileRedirectTimerRef.current);
       }
     };
-  }, []);
+  }, [flushDraft]);
 
   const displayError = error ?? bridgeError;
 

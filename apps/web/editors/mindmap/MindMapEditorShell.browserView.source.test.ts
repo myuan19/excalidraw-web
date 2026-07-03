@@ -22,7 +22,7 @@ describe("MindMapEditorShell browser viewport source contract", () => {
     expect(bridgePayloadSource).toContain("applyMindMapBrowserView");
     expect(bridgePayloadSource).toContain("applyBrowserView?: boolean");
     expect(source).toContain(
-      "saveMindMapBrowserView(fileId, event.data.payload)",
+      "scheduleSaveMindMapBrowserView(fileId, event.data.payload)",
     );
     expect(source).toContain('event.data.type === "mindMapViewState"');
     expect(source).toContain('event.data.type === "saveMindMapThumbnail"');

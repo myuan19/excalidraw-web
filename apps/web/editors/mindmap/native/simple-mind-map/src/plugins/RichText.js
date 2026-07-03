@@ -4,6 +4,7 @@ import 'quill/dist/quill.snow.css'
 import {
   walk,
   getTextFromHtml,
+  isEmptyRichTextContent,
   isUndef,
   checkSmmFormatData,
   formatGetNodeGeneralization,
@@ -834,6 +835,9 @@ class RichText {
   // 设置文本编辑框是否处于显示状态
   setIsShowTextEdit(val) {
     this.showTextEdit = val
+    // 编辑会话开启/结束都复位组合输入标记：切页/失焦可能吞掉 compositionend，
+    // 卡死的 isCompositing 会让快照同步永远跳过（保存旧数据 → 切回丢改动）
+    this.isCompositing = false
     if (val) {
       this.mindMap.keyCommand.stopCheckInSvg()
     } else {
@@ -925,13 +929,24 @@ class RichText {
     if (!this.showTextEdit || !this.node || !this.quill) {
       return false
     }
+    // IME 组合输入中（拼音等未上屏）：编辑框 DOM 里是预编辑串，
+    // 不能作为节点内容提交，等 compositionend 后的下一次同步
+    if (this.isCompositing) {
+      return false
+    }
+    const html = linkifyRichTextHtml(this.getEditText())
+    // 空文档几乎总是「全选重打 / 刚清空还没输入」的瞬时过渡态。快照同步
+    // 把空值落进节点数据的话，自动保存恰好撞上这一瞬间时，数据与缩略图
+    // 都会带出空白节点（首页卡片上该节点没字）。跳过本次同步、保留节点
+    // 原文本；用户真正想清空文本由结束编辑的 hideEditText 提交，语义不变
+    if (
+      isEmptyRichTextContent(html) &&
+      !isEmptyRichTextContent(this.node.getData('text'))
+    ) {
+      return false
+    }
     return this.mindMap.renderer.textEdit.waitForNodeTreeRenderEndAfter(() =>
-      this.mindMap.execCommand(
-        'SET_NODE_TEXT',
-        this.node,
-        linkifyRichTextHtml(this.getEditText()),
-        true
-      )
+      this.mindMap.execCommand('SET_NODE_TEXT', this.node, html, true)
     )
   }
 

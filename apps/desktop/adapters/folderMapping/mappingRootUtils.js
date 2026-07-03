@@ -212,6 +212,80 @@ export function removeOrphanMappingMounts(meta) {
   return true;
 }
 
+/**
+ * 同一文件的两条 catalog 记录取更新的那条。
+ * checkpoint 合并/外部跟踪曾会追加重复条目；API 写的是第一条、扫描的
+ * Map 取最后一条，重复会让扫描永远拿到过期 sha，把刚保存的缩略图当成
+ * 外部修改删掉。判序：version > updated_at > 是否有 content_sha256。
+ */
+export function pickFresherCatalogFile(a, b) {
+  if (!a) {
+    return b;
+  }
+  if (!b) {
+    return a;
+  }
+  const versionA = Number(a.version ?? 0);
+  const versionB = Number(b.version ?? 0);
+  if (versionA !== versionB) {
+    return versionA > versionB ? a : b;
+  }
+  const updatedA = String(a.updated_at ?? "");
+  const updatedB = String(b.updated_at ?? "");
+  if (updatedA !== updatedB) {
+    return updatedA > updatedB ? a : b;
+  }
+  if (!!a.content_sha256 !== !!b.content_sha256) {
+    return a.content_sha256 ? a : b;
+  }
+  return a;
+}
+
+/** Collapse duplicate file records (same id, then same path) keeping the freshest. */
+export function dedupeCatalogFiles(meta) {
+  const files = meta.files ?? [];
+  let changed = false;
+
+  const keptById = new Map();
+  const withoutId = [];
+  for (const file of files) {
+    if (!file?.id) {
+      withoutId.push(file);
+      continue;
+    }
+    const existing = keptById.get(file.id);
+    if (!existing) {
+      keptById.set(file.id, file);
+      continue;
+    }
+    changed = true;
+    keptById.set(file.id, pickFresherCatalogFile(existing, file));
+  }
+  let deduped = [...keptById.values(), ...withoutId];
+
+  const keptByPath = new Map();
+  for (const file of deduped) {
+    if (!file?.path) {
+      continue;
+    }
+    const existing = keptByPath.get(file.path);
+    if (!existing) {
+      keptByPath.set(file.path, file);
+      continue;
+    }
+    changed = true;
+    keptByPath.set(file.path, pickFresherCatalogFile(existing, file));
+  }
+  deduped = deduped.filter(
+    (file) => !file?.path || keptByPath.get(file.path) === file,
+  );
+
+  if (changed) {
+    meta.files = deduped;
+  }
+  return changed;
+}
+
 export function repairMappingMeta(meta) {
   let changed = false;
   if (normalizeMappingRootPlacement(meta)) {
@@ -224,6 +298,9 @@ export function repairMappingMeta(meta) {
     changed = true;
   }
   if (removeOrphanMappingMounts(meta)) {
+    changed = true;
+  }
+  if (dedupeCatalogFiles(meta)) {
     changed = true;
   }
   return changed;
@@ -341,6 +418,10 @@ function mergeScanCheckpointInner(scanned, current, options) {
         scanSlice.files,
       )
     : scanSlice.files;
+  // 外部跟踪文件（folder_id=null）会同时出现在 workspaceFiles（来自 current）
+  // 和扫描结果里；拼接产生的重复交给 repairMappingMeta → dedupeCatalogFiles
+  // 收敛（按 version/updated_at 取更新的一条），既堵住重复累积，又保证
+  // 扫描期间应用内保存的新版本不会被扫描快照覆盖。
   const merged = {
     ...current,
     mapping_roots: activeRoots,
