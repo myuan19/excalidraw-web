@@ -44,6 +44,13 @@ apps/web/editors/mindmap/native/index.html
 # Desktop pack flags (written by write-build-flags.mjs before electron-builder)
 apps/desktop/src/desktopBuildFlags.json
 
+# apps/desktop/build is electron-builder buildResources; icons are synced by
+# sync-app-icon.mjs but installer.nsh is authored source — keep it tracked
+# (re-include dir, re-ignore contents, then whitelist the file)
+!apps/desktop/build/
+apps/desktop/build/*
+!apps/desktop/build/installer.nsh
+
 # Local-only dev/deploy helpers (not part of source)
 _scripts/
 apps/desktop/.runtime/
