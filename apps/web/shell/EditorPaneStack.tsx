@@ -55,6 +55,14 @@ function EditorPaneStackItem({
     );
   }, [isForeground, keepRunning, tab.id, tab.fileId, tab.kind]);
 
+  // Hooks 必须在任何 early return 之前调用，否则 definition/LazyEditor 短暂
+  // 缺失再出现时 hook 数量变化，React 会直接抛错。
+  const canMountForeground = useStartupForegroundEditorGate(isForeground);
+  const canMountBackground = useStartupBackgroundEditorGate(
+    isForeground,
+    keepRunning,
+  );
+
   const editorDefinition = editorRegistry.getByKind(tab.kind);
   if (!editorDefinition) {
     devDebug("app", "[DEBUG] EditorPaneStack | missing editor definition", {
@@ -76,12 +84,6 @@ function EditorPaneStackItem({
     });
     return null;
   }
-
-  const canMountForeground = useStartupForegroundEditorGate(isForeground);
-  const canMountBackground = useStartupBackgroundEditorGate(
-    isForeground,
-    keepRunning,
-  );
 
   const shouldMountEditor = isForeground
     ? canMountForeground

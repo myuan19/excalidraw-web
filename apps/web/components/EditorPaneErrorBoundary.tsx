@@ -39,6 +39,22 @@ export class EditorPaneErrorBoundary extends React.Component<
       kind: this.props.kind,
       componentStack: errorInfo.componentStack?.split("\n").slice(0, 10).join("\n"),
     });
+    // traceUserError 在 release 包里只进 trace 管道，不会出现在 desktop-op.log
+    // （2026-07-03 的崩溃日志只有 React 自己的 console.error 一行，拿不到堆栈）。
+    // 这里显式用单字符串 console.error 落盘：主进程 webcontents-console-message
+    // 会写入 desktop-op.log。主进程对单条消息截断 2000 字符，堆栈与组件栈
+    // 拆成两条各自带 tabId 的记录。
+    const head = `tab | editorPane.crash | tabId=${this.props.tabId} fileId8=${
+      this.props.fileId8 ?? "-"
+    } kind=${this.props.kind ?? "-"}`;
+    const stack = (error.stack ?? "").split("\n").slice(0, 10).join("\n");
+    const componentStack = (errorInfo.componentStack ?? "")
+      .split("\n")
+      .filter(Boolean)
+      .slice(0, 8)
+      .join("\n");
+    console.error(`${head} | ${error.name}: ${error.message}\nstack:\n${stack}`);
+    console.error(`${head} | componentStack:\n${componentStack}`);
   }
 
   render() {
